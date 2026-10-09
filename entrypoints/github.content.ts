@@ -95,7 +95,11 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
   };
   const headerResizes = new ResizeObserver(placeBelowHeader);
   const findHeader = () => {
-    const found = document.querySelector<HTMLElement>('header.AppHeader, .AppHeader, header[role="banner"]');
+    // Signed in, GitHub's global nav is a React partial whose <header> carries the GlobalNav class; signed out and on
+    // older pages it is header.AppHeader.
+    const found = document.querySelector<HTMLElement>(
+      'header.GlobalNav, react-partial[partial-name="global-nav-bar"] header, header.AppHeader, .AppHeader, header[role="banner"]',
+    );
     if (found !== header) {
       if (header) headerResizes.unobserve(header);
       header = found;
