@@ -1,7 +1,7 @@
 // Everything the UI needs from the outside world, behind one interface so the same pages render
 // from the content script's RPC in the extension and from fixtures in the dev harness (`?fixtures=1`).
 
-import type { PrDetail, RepoRef, View, ViewResult } from '../lib/model';
+import type { PrDetail, RepoRef, ReviewerCandidate, View, ViewResult } from '../lib/model';
 import { rpc, type MergeMethod } from '../lib/rpc';
 import { DEFAULT_SETTINGS, getSettings, setSettings, watchSettings, type Settings } from '../lib/settings';
 
@@ -10,6 +10,12 @@ export interface ReviewThreadDraft {
   line: number;
   side: 'LEFT' | 'RIGHT';
   body: string;
+}
+
+/** A user or team whose review request is added or withdrawn, by GitHub's numeric id. */
+export interface ReviewerChange {
+  id: string;
+  isTeam: boolean;
 }
 
 export interface DataSource {
@@ -24,6 +30,9 @@ export interface DataSource {
   markFileViewed(prId: string, path: string, viewed: boolean): Promise<void>;
   setDraft(prId: string, draft: boolean): Promise<void>;
   setAutoMerge(prId: string, enabled: boolean, method: MergeMethod): Promise<void>;
+  reviewerCandidates(prId: string, query: string): Promise<{ suggested: ReviewerCandidate[]; reviewers: ReviewerCandidate[] }>;
+  modifyReviewers(prId: string, add: ReviewerChange[], remove: ReviewerChange[]): Promise<void>;
+  reRequestReview(prId: string, reviewerId: string): Promise<void>;
   getSettings(): Promise<Settings>;
   setSettings(patch: Partial<Settings>): Promise<Settings>;
   watchSettings(onChange: (settings: Settings) => void): () => void;
@@ -42,6 +51,9 @@ export function createRpcDataSource(): DataSource {
     markFileViewed: (prId, path, viewed) => rpc('pr.markFileViewed', { prId, path, viewed }),
     setDraft: (prId, draft) => rpc('pr.setDraft', { prId, draft }),
     setAutoMerge: (prId, enabled, method) => rpc('pr.setAutoMerge', { prId, enabled, method }),
+    reviewerCandidates: (prId, query) => rpc('pr.reviewerCandidates', { prId, query }),
+    modifyReviewers: (prId, add, remove) => rpc('pr.modifyReviewers', { prId, add, remove }),
+    reRequestReview: (prId, reviewerId) => rpc('pr.reRequestReview', { prId, reviewerId }),
     getSettings,
     setSettings,
     watchSettings,
@@ -77,6 +89,13 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     markFileViewed: (...args) => log('markFileViewed', ...args),
     setDraft: (...args) => log('setDraft', ...args),
     setAutoMerge: (...args) => log('setAutoMerge', ...args),
+    reviewerCandidates: async (_prId, query) => {
+      const needle = query.trim().toLowerCase();
+      const matching = FIXTURE_REVIEWER_CANDIDATES.filter((candidate) => candidate.login.includes(needle) || !!candidate.name?.toLowerCase().includes(needle));
+      return { suggested: matching.slice(0, 2), reviewers: matching.slice(2) };
+    },
+    modifyReviewers: (...args) => log('modifyReviewers', ...args),
+    reRequestReview: (...args) => log('reRequestReview', ...args),
     getSettings: async () => settings,
     setSettings: async (patch) => {
       settings = { ...settings, ...patch };
@@ -89,3 +108,14 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     },
   };
 }
+
+/** Whom the harness's reviewer picker offers: the fixture PRs' reviewers and a few more, two of them as suggestions. */
+const FIXTURE_REVIEWER_CANDIDATES: ReviewerCandidate[] = [
+  { id: '1002', login: 'jlord', name: 'Jessica Lord', avatarUrl: 'https://github.com/identicons/jlord.png', kind: 'user' },
+  { id: '7001', login: 'acme/parcs', name: 'PARCS', avatarUrl: '', kind: 'team' },
+  { id: '1001', login: 'hubot', name: 'Hubot', avatarUrl: 'https://github.com/identicons/hubot.png', kind: 'user' },
+  { id: '583231', login: 'octocat', name: 'The Octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/583231?v=4', kind: 'user' },
+  { id: '1003', login: 'nat', name: 'Nat Friedman', avatarUrl: 'https://github.com/identicons/nat.png', kind: 'user' },
+  { id: '1004', login: 'priya', name: 'Priya Raman', avatarUrl: 'https://github.com/identicons/priya.png', kind: 'user' },
+  { id: '7002', login: 'acme/platform-reviewers', name: 'Platform reviewers', avatarUrl: '', kind: 'team' },
+];

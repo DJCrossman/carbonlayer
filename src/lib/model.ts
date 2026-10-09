@@ -48,11 +48,26 @@ export type MergeStatus =
   | 'UNKNOWN';
 
 export interface ReviewerSummary {
-  /** A user, bot, or a team (teams have no avatar; `login` holds the team slug). */
+  /** A user, bot, or a team (`login` holds the team's `org/slug`). */
   kind: 'user' | 'team';
   user: UserRef;
   /** Latest opinionated review state from this reviewer, or PENDING when only requested. */
   state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'PENDING' | 'DISMISSED';
+  /** GitHub's numeric user or team id, which requesting and removing reviewers name; absent where GitHub does not give it (the inbox). */
+  id?: string;
+  /** Whether the viewer may ask this reviewer to review again (a completed review GitHub offers to re-request). */
+  canReRequest?: boolean;
+}
+
+/** Someone the viewer can ask for a review, as GitHub's reviewer picker lists them. */
+export interface ReviewerCandidate {
+  /** GitHub's numeric user or team id. */
+  id: string;
+  /** A user's login, or a team's `org/slug`. */
+  login: string;
+  name: string | null;
+  avatarUrl: string;
+  kind: 'user' | 'team';
 }
 
 export interface LabelSummary {

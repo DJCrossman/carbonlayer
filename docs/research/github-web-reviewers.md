@@ -26,6 +26,10 @@ entries without `deferredType`.
 **Re-request `POST P/re_request_review_from_user`** `{ reviewerId: <number> }` (sidebar) or `{ reviewerLogin }`
 (timeline menu); only for completed reviews with `canReRequest`. **Remove** = `modify_reviewers` with `removeReviewers`.
 Dismiss a review: `POST P/dismiss_review` `{ reviewId, message }`.
+**In the app**: the Reviewers card (`src/pr/Reviewers.tsx`; `r e` opens the picker) reads all of the above through
+`github-web/reviews.ts` and writes through `pr.modifyReviewers` / `pr.reRequestReview` (`github-web/mutations.ts`).
+Teams are told apart by `reviewerType` alone (bots carry a `slug` too). Who already reviewed stays ticked and locked in
+the picker; only pending requests can be withdrawn.
 
 ## Assignees and labels (same delta pattern)
 `GET P/assignees` → `{ assignees: [{ id, displayLogin, avatarUrl, slug?, nodeId }], suggestedAssignees? }`;

@@ -71,6 +71,11 @@ describe('createChordReader', () => {
     expect(other(key('ArrowUp', 0, { ctrlKey: true, shiftKey: true }))).toEqual({ action: 'stack-up' });
   });
 
+  it('keeps every binding reachable: no chord starts with another whole binding', () => {
+    // A stroke that completes one binding and starts a longer chord waits for the next key, so the shorter one never runs.
+    expect(PR_KEYBINDINGS.filter(({ chord }) => PR_KEYBINDINGS.some((other) => other.chord.startsWith(`${chord} `))).map(({ chord }) => chord)).toEqual([]);
+  });
+
   it('leaves browser shortcuts alone', () => {
     expect(mac()(key('r', 0, { metaKey: true }))).toBeNull();
     expect(mac()(key('f', 0, { ctrlKey: true }))).toBeNull();

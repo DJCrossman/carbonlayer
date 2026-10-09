@@ -1,0 +1,85 @@
+/* Reviewers card: per-reviewer re-request / remove buttons and the reviewer picker, which opens inside the card
+   (the sidebar scrolls, so a floating popover would be clipped). */
+
+.reviewer-action {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--gg-fg-subtle);
+  cursor: pointer;
+}
+.reviewer-action:hover:not(:disabled) { background: var(--gg-bg-hover); color: var(--gg-fg); }
+.reviewer-action:focus-visible { outline: 2px solid var(--gg-accent); outline-offset: -1px; }
+.reviewer-action:disabled { opacity: 0.5; cursor: default; }
+
+.reviewer-picker {
+  margin-bottom: 8px;
+  border: 1px solid var(--gg-border);
+  border-radius: var(--gg-radius);
+  background: var(--gg-bg);
+  box-shadow: var(--gg-shadow-overlay);
+}
+.reviewer-picker-search {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-bottom: 1px solid var(--gg-border-muted);
+  border-radius: var(--gg-radius) var(--gg-radius) 0 0;
+  background: transparent;
+  color: var(--gg-fg);
+  font: 13px var(--gg-font);
+}
+.reviewer-picker-search:focus { outline: none; box-shadow: inset 0 -1px 0 var(--gg-accent); }
+.reviewer-picker-list {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px;
+}
+.reviewer-picker-list[aria-busy='true'] { opacity: 0.7; }
+.reviewer-picker-note { padding: 6px 4px; font-size: 12px; }
+.reviewer-picker-group {
+  padding: 6px 4px 2px;
+  color: var(--gg-fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.reviewer-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.reviewer-option:hover { background: var(--gg-bg-hover); }
+.reviewer-option input { margin: 0; }
+.reviewer-option.is-locked { cursor: default; }
+.reviewer-option.is-locked:hover { background: none; }
+.reviewer-option-login { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.reviewer-option-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.reviewer-picker-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--gg-border-muted);
+  font-size: 12px;
+}

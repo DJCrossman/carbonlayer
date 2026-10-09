@@ -7,7 +7,7 @@ import type { MergeMethod, RpcMethods } from '../rpc';
 import type { MergeBox } from './merge-box';
 import { getJson, send } from './session';
 
-export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'pr.fetch'>]: (args: RpcMethods[M]['args']) => Promise<undefined> } = {
+export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'pr.fetch' | 'pr.reviewerCandidates'>]: (args: RpcMethods[M]['args']) => Promise<RpcMethods[M]['result']> } = {
   'pr.review': async ({ prId, event, body, threads }) => {
     const pull = pullRequestFor(prId);
     // Batched inline comments join the viewer's pending review; submitting the review publishes them.
@@ -78,6 +78,16 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'pr.fe
   'pr.setDraft': async ({ prId, draft }) => {
     await send(`${pullRequestFor(prId).path}/page_data/${draft ? 'convert_to_draft' : 'mark_ready_for_review'}`, 'POST');
   },
+  'pr.modifyReviewers': async ({ prId, add, remove }) => {
+    // GitHub's picker sends the whole change once, naming users and teams by numeric id.
+    await send(`${pullRequestFor(prId).path}/page_data/modify_reviewers`, 'POST', {
+      addReviewers: add.map(({ id, isTeam }) => ({ reviewerId: Number(id), isTeam })),
+      removeReviewers: remove.map(({ id, isTeam }) => ({ reviewerId: Number(id), isTeam })),
+    });
+  },
+  'pr.reRequestReview': async ({ prId, reviewerId }) => {
+    await send(`${pullRequestFor(prId).path}/page_data/re_request_review_from_user`, 'POST', { reviewerId: Number(reviewerId) });
+  },
 };
 
 /** Remembers a loaded PR (and its threads) so later writes can address it. */
@@ -93,7 +103,8 @@ export function rememberPullRequest(detail: PrDetail): void {
   }
 }
 
-function pullRequestFor(prId: string): KnownPullRequest {
+/** What a request about a loaded PR needs to address it; throws when the app has not loaded it here. */
+export function pullRequestFor(prId: string): KnownPullRequest {
   const pull = pullRequests.get(prId);
   if (!pull) throw new Error('Open the pull request first');
   return pull;

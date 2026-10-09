@@ -2,7 +2,7 @@
 // GitHub with the user's session. Inside github.com the app posts requests to its parent window, the
 // content script answers them with same-origin fetches (cookies included); see src/lib/github-web/.
 
-import type { PrDetail, RepoRef, View, ViewResult } from './model';
+import type { PrDetail, RepoRef, ReviewerCandidate, View, ViewResult } from './model';
 
 export type MergeMethod = 'MERGE' | 'SQUASH' | 'REBASE';
 
@@ -30,6 +30,14 @@ export interface RpcMethods {
   'pr.markFileViewed': { args: { prId: string; path: string; viewed: boolean }; result: undefined };
   'pr.setDraft': { args: { prId: string; draft: boolean }; result: undefined };
   'pr.setAutoMerge': { args: { prId: string; enabled: boolean; method: MergeMethod }; result: undefined };
+  /** Whom the viewer can ask for a review: GitHub's suggestions, then everyone else matching `query`. */
+  'pr.reviewerCandidates': { args: { prId: string; query: string }; result: { suggested: ReviewerCandidate[]; reviewers: ReviewerCandidate[] } };
+  /** Requests and withdraws reviews in one go, by GitHub's numeric user or team id. */
+  'pr.modifyReviewers': {
+    args: { prId: string; add: Array<{ id: string; isTeam: boolean }>; remove: Array<{ id: string; isTeam: boolean }> };
+    result: undefined;
+  };
+  'pr.reRequestReview': { args: { prId: string; reviewerId: string }; result: undefined };
 }
 
 export type RpcMethod = keyof RpcMethods;

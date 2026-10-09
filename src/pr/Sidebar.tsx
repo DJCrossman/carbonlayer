@@ -1,6 +1,6 @@
-// The right sidebar: status (with Merge when ready), the one next step, checks, reviewers, labels and
+// The right sidebar: status (with Merge when ready), the one next step, checks, reviewers (Reviewers.tsx), labels and
 // assignees. Cards with nothing to show are left out.
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { MergeMethod } from '../lib/rpc';
 import type { PrDetail } from '../lib/model';
 import { Avatar } from '../ui/Avatar';
@@ -9,7 +9,6 @@ import { Card } from '../ui/Card';
 import { Icon } from '../ui/Icon';
 import { LabelChip } from '../ui/LabelChip';
 import { RelativeTime } from '../ui/RelativeTime';
-import { ReviewStatus } from '../ui/ReviewStatus';
 import { goToPr } from './navigation';
 import { nextActionFor } from './next-action';
 import { StatePill } from './primitives';
@@ -22,6 +21,7 @@ export function Sidebar({
   onMarkReady,
   onMerge,
   onViewThreads,
+  reviewersCard,
 }: {
   pr: PrDetail;
   /** The method the viewer prefers, already narrowed to what the repository allows. */
@@ -30,32 +30,15 @@ export function Sidebar({
   onMarkReady: () => Promise<boolean>;
   onMerge: (method: MergeMethod) => Promise<boolean>;
   onViewThreads: () => void;
+  /** The Reviewers card (Reviewers.tsx), wired to the page's data source. */
+  reviewersCard: ReactNode;
 }) {
   return (
     <aside className="pr-sidebar" aria-label="Status">
       <StatusCard pr={pr} mergeMethod={mergeMethod} onAutoMerge={onAutoMerge} />
       <ActionCard pr={pr} mergeMethod={mergeMethod} onMarkReady={onMarkReady} onMerge={onMerge} onViewThreads={onViewThreads} />
       {pr.ci.checks.length > 0 && <ChecksCard pr={pr} />}
-      {pr.reviewers.length > 0 && (
-        <Card className="side-card">
-          <h3 className="side-card-title">Reviewers</h3>
-          <ul className="side-list">
-            {pr.reviewers.map((reviewer) => (
-              <li key={reviewer.user.login} className="side-person">
-                {reviewer.kind === 'team' ? (
-                  <span className="side-team-icon">
-                    <Icon name="people" size={12} />
-                  </span>
-                ) : (
-                  <Avatar user={reviewer.user} size={20} />
-                )}
-                <span className="side-person-name">{reviewer.user.login}</span>
-                <ReviewStatus state={reviewer.state} size={14} />
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
+      {reviewersCard}
       {pr.labels.length > 0 && (
         <Card className="side-card">
           <h3 className="side-card-title">Labels</h3>

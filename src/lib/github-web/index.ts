@@ -6,8 +6,10 @@ import type { RpcMethod, RpcMethods, RpcRequest, RpcResponse } from '../rpc';
 import { getSettings } from '../settings';
 import { resolveViewQuery } from '../views';
 import { fetchInbox } from './inbox';
-import { mutations, rememberPullRequest } from './mutations';
+import { mutations, pullRequestFor, rememberPullRequest } from './mutations';
 import { fetchPullRequestPage } from './pull-request';
+import { reviewerCandidatesFrom } from './reviews';
+import { getJson } from './session';
 
 export async function handleRpc(request: RpcRequest): Promise<RpcResponse> {
   try {
@@ -36,6 +38,16 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
     const detail = await cached(key, 30_000, force, () => fetchPullRequestPage(repo, number, mergeMethod));
     rememberPullRequest(detail);
     return detail;
+  },
+  'pr.reviewerCandidates': async ({ prId, query }) => {
+    const { path } = pullRequestFor(prId);
+    const q = query.trim();
+    // The picker asks again after every pause in typing; what it asked in the last minute is answered from memory.
+    const [available, suggested] = await Promise.all([
+      cached(`reviewers:${path}?q=${q}`, 60_000, false, () => getJson<unknown>(`${path}/page_data/reviewers${q ? `?q=${encodeURIComponent(q)}` : ''}`)),
+      cached(`suggested-reviewers:${path}`, 60_000, false, () => getJson<unknown>(`${path}/page_data/suggested_reviewers`)),
+    ]);
+    return reviewerCandidatesFrom(available, suggested, q);
   },
   ...mutations,
 };

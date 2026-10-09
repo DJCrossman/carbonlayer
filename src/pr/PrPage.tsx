@@ -21,6 +21,7 @@ import { usePrKeybindings } from './keybindings';
 import { goToPr, openOnGitHub } from './navigation';
 import { StatePill } from './primitives';
 import { QuickApproveDialog, ReviewComposer, type ReviewEvent } from './ReviewComposer';
+import { ReviewersCard } from './Reviewers';
 import { ShortcutHelp, ShortcutLegend } from './ShortcutHelp';
 import { Sidebar } from './Sidebar';
 import { StackCard } from './StackCard';
@@ -96,6 +97,7 @@ function PrView({
   const [review, setReview] = useState<{ open: boolean; event: ReviewEvent; body: string }>({ open: false, event: 'COMMENT', body: '' });
   const [quickApprove, setQuickApprove] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [reviewerPickerOpen, setReviewerPickerOpen] = useState(false);
   const [stackCollapsed, setStackCollapsed] = useState(false);
   const [legendHidden, setLegendHidden] = useState(() => {
     try {
@@ -229,6 +231,8 @@ function PrView({
         return openReview('APPROVE');
       case 'quick-approve':
         return setQuickApprove(true);
+      case 'edit-reviewers':
+        return setReviewerPickerOpen(true);
       case 'toggle-viewed':
         return currentFile && toggleViewed(currentFile.path);
       case 'toggle-file':
@@ -311,6 +315,18 @@ function PrView({
         onMarkReady={() => setDraft(false)}
         onMerge={(method) => mutate(() => source.merge(pr.id, method, pr.headOid), 'Could not merge', { success: `Merged #${pr.number}` })}
         onViewThreads={() => files.stepThread(1)}
+        reviewersCard={
+          <ReviewersCard
+            pr={pr}
+            pickerOpen={reviewerPickerOpen}
+            onPickerOpenChange={setReviewerPickerOpen}
+            searchReviewers={(query) => source.reviewerCandidates(pr.id, query)}
+            onModify={(add, remove) => mutate(() => source.modifyReviewers(pr.id, add, remove), 'Could not change the reviewers', { success: 'Reviewers updated' })}
+            onReRequest={(reviewer) =>
+              mutate(() => source.reRequestReview(pr.id, reviewer.id), 'Could not re-request the review', { success: `Asked ${reviewer.user.login} to review again` })
+            }
+          />
+        }
       />
       <FilesSection
         pr={pr}

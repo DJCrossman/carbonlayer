@@ -28,7 +28,7 @@ const summary41: PrSummary = {
   headRefName: 'mona/parcs-client',
   baseRefName: 'main',
   reviewDecision: 'APPROVED',
-  reviewers: [{ kind: 'user', user: hubot, state: 'APPROVED' }],
+  reviewers: [{ kind: 'user', user: hubot, state: 'APPROVED', id: '1001', canReRequest: true }],
   ci: {
     state: 'SUCCESS',
     checks: [
@@ -77,9 +77,9 @@ const summary42: PrSummary = {
   baseRefName: 'mona/parcs-client',
   reviewDecision: 'CHANGES_REQUESTED',
   reviewers: [
-    { kind: 'user', user: hubot, state: 'APPROVED' },
-    { kind: 'team', user: parcsTeam, state: 'PENDING' },
-    { kind: 'user', user: jlord, state: 'CHANGES_REQUESTED' },
+    { kind: 'user', user: hubot, state: 'APPROVED', id: '1001', canReRequest: true },
+    { kind: 'team', user: parcsTeam, state: 'PENDING', id: '7001', canReRequest: false },
+    { kind: 'user', user: jlord, state: 'CHANGES_REQUESTED', id: '1002', canReRequest: true },
   ],
   ci: { state: 'FAILURE', checks: checks42, counts: { success: 5, failure: 1, pending: 2, other: 0 } },
   mergeStatus: 'BLOCKED',
