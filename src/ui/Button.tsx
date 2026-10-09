@@ -1,4 +1,4 @@
-// Compact button: default / primary / danger / ghost in sm (24px) or md (28px), optional leading icon; icon-only when no children.
+// Compact button: default / primary / ghost in sm (24px) or md (28px), optional leading icon; icon-only when no children.
 import type { ButtonHTMLAttributes } from 'react';
 import { Icon, type IconName } from './Icon';
 import './ui.css';
@@ -11,7 +11,7 @@ export function Button({
   children,
   type = 'button',
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'default' | 'primary' | 'danger' | 'ghost'; size?: 'sm' | 'md'; icon?: IconName }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'default' | 'primary' | 'ghost'; size?: 'sm' | 'md'; icon?: IconName }) {
   const iconOnly = children === undefined || children === null;
   return (
     <button

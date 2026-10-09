@@ -292,14 +292,7 @@
 .gg-btn--primary:hover:not(:disabled) {
   background: color-mix(in srgb, var(--gg-accent) 88%, #000);
 }
-.gg-btn--danger {
-  color: var(--gg-danger);
-}
-.gg-btn--danger:hover:not(:disabled) {
-  border-color: var(--gg-danger);
-  background: var(--gg-danger);
-  color: #fff;
-}
+
 .gg-btn--ghost {
   border-color: transparent;
   background: transparent;

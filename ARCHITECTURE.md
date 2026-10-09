@@ -22,20 +22,27 @@ CSP. The content script is a thin bridge.
 
 | file | role |
 | --- | --- |
-| `background.ts` | Nothing data-related; kept minimal. |
-| `github.content.ts` | Content script on `github.com/*`. Recognises the inbox (`/pulls`) and PR (`/:owner/:repo/pull/:n`) routes (`src/app/routes.ts`), hides GitHub's `main`, mounts the iframe pointing at `app.html#<route>`, forwards theme + keydown to the iframe, performs top-level navigations the iframe asks for (`src/app/bridge.ts`), answers the iframe's RPC requests with `handleRpc` from `src/lib/github-web/` (session fetches), and re-routes on `wxt:locationchange`. `?gh=1` or the popup toggle leaves GitHub untouched. |
+| `github.content.ts` | Content script on `github.com/*`, run at `document_start`. Recognises the inbox (`/pulls`) and PR (`/:owner/:repo/pull/:n`, plus `/files`, `/changes`, `/commits`, `/checks`) routes (`src/app/routes.ts`). On a handled route it reads the settings, then hides GitHub's `main` with a `<style>` on `<html>` before the page paints, and mounts the iframe (`app.html#<route>`) on `<html>` too, below GitHub's header, so Turbo's `<body>` swaps leave both in place and a soft navigation moves the loaded app with `gg:route` instead of reloading it. It forwards theme and keydown to the iframe, performs top-level navigations the iframe asks for (`src/app/bridge.ts`), answers the iframe's RPC requests with `handleRpc` from `src/lib/github-web/` (session fetches), and re-routes on `wxt:locationchange`. `?gh=1` or the popup toggle leaves GitHub untouched. |
 | `app/` | The React app (`entrypoints/app/main.tsx`): hash router → `InboxPage` (`src/inbox/`) or `PrPage` (`src/pr/`). Data comes through a `DataSource` (`src/app/data-source.ts`): the RPC-backed one in the extension, a fixture-backed one when opened with `?fixtures=1` (the dev harness). Listed in `web_accessible_resources` for `https://github.com/*`. |
-| `options/` | Options page: merge method, diff layout, inbox scope, views editor, keybinding reference. |
+| `options/` | Options page: inbox scope and views editor, merge method, diff layout, theme, on/off switches. |
 | `popup/` | Toolbar popup: on/off toggles, links to inbox and options. |
 
 ## Data flow: the user's github.com session, no token
 
 App (iframe) → `window.parent.postMessage` RPC (`src/lib/rpc.ts`) → content script on github.com →
 `src/lib/github-web/` makes same-origin fetches against the JSON endpoints GitHub's own React UI
-uses (`/pulls/inbox/queries`, `/pulls/search`, `/{o}/{r}/pull/{n}/page_data/*`, the pages' embedded
-`react-app.embeddedData`) with the session cookies → normalised domain objects (`src/lib/model.ts`)
-are posted back. See `docs/research/github-web-endpoints.md`. No api.github.com, no PAT. The
-background service worker has no data role.
+uses (`/pulls/inbox/queries`, `/pulls/search`, `/pulls/…/deferred`, `/{o}/{r}/pull/{n}/page_data/*`,
+the pages' embedded `react-app.embeddedData`) with the session cookies → normalised domain objects
+(`src/lib/model.ts`) are posted back. Writes go to the `page_data/*` routes GitHub's PR page posts
+to. See `docs/research/github-web-endpoints.md` and `github-web-mutations.md`. No api.github.com, no
+token, no background service worker.
+
+Signed-in state comes from the fetched PR page's `meta[name="user-login"]`: empty means the PR page
+shows "Sign in to github.com in this tab". Signed in, the routes behind the sidebar (`merge_box`,
+`status_checks`, `stack_mergeability`, `review_requests`, `labels`, `assignees`, `description`) and
+the inbox's deferred fields are side details: a failure is logged with `console.debug('[gg]', …)` and
+leaves that card empty. Reads are cached in the content script for 30–60 s; a successful write clears
+the cache and the page refetches with `force`.
 
 Stacks: GitHub-native `stack` from the PR page's embedded data first; otherwise Graphite's stack
 comment in the timeline, enriched through a `/pulls/search` query on the author's open PRs.
@@ -46,14 +53,17 @@ comment in the timeline, enriched through a `/pulls/search` query on the author'
 type View = { id: string; name: string; query: string; limit?: number; collapsed?: boolean }
 ```
 
-Stored in `chrome.storage.sync`. Default views mirror Graphite's sections. Sharing: "Copy link" encodes
+Stored in `chrome.storage.sync`. Default views mirror Graphite's sections; a query `inbox:<filter>` is one
+of GitHub's own inbox sections (`/pulls/inbox/queries`), anything else a search (`/pulls/search`) with
+the inbox scope prepended. Sharing: "Share" encodes
 the view list into `https://github.com/pulls#views=<base64url json>`; opening such a link with the
 extension installed offers to import (replace or append).
 
 ## Verification
 
-- `pnpm compile` (tsc) and `pnpm build` must pass.
-- `pnpm test` (vitest) covers pure logic: stack inference, view link encode/decode, status derivation.
+- `pnpm typecheck` (tsc) and `pnpm build` must pass.
+- `pnpm test` (vitest) covers pure logic: the github-web mappers and session handling, stack inference,
+  view link encode/decode, routes, keyboard chords, next-step derivation.
 - Harness: `pnpm build`, then serve `.output/chrome-mv3` statically and open `app.html?fixtures=1#/inbox` or
-  `app.html?fixtures=1#/pr/acme/widgets/42` for visual checks (no token, no `chrome.*`).
+  `app.html?fixtures=1#/pr/acme/widgets/42` for visual checks (no session, no `chrome.*`).
 - Real-site check: load `.output/chrome-mv3` unpacked while signed in to github.com, open github.com/pulls.

@@ -4,27 +4,10 @@
 .pr-fg-success { color: var(--gg-success); }
 .pr-fg-danger { color: var(--gg-danger); }
 .pr-fg-attention { color: var(--gg-attention); }
-.pr-fg-done { color: var(--gg-done); }
 .pr-fg-muted { color: var(--gg-fg-muted); }
 
 .pr-muted { color: var(--gg-fg-muted); }
 .pr-mono { font-family: var(--gg-font-mono); font-size: 12px; }
-
-.pr-badge {
-  display: inline-grid;
-  place-items: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  box-sizing: border-box;
-}
-
-/* Graphite's merge button is purple. */
-.gg-btn.pr-merge-button { background: var(--gg-done); color: #fff; }
-.gg-btn.pr-merge-button:hover:not(:disabled) { background: color-mix(in srgb, var(--gg-done) 88%, #000); }
 
 /* Key caps inside filled buttons take the button's colours. */
 .gg-btn--primary .gg-kbd {
@@ -47,13 +30,3 @@
 }
 .pr-textarea:focus { outline: none; border-color: var(--gg-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gg-accent) 25%, transparent); }
 .pr-textarea::placeholder { color: var(--gg-fg-subtle); }
-
-.pr-select {
-  height: 28px;
-  padding: 0 6px;
-  border: 1px solid var(--gg-border);
-  border-radius: var(--gg-radius);
-  background: var(--gg-bg);
-  color: var(--gg-fg);
-  font: 12px var(--gg-font);
-}

@@ -20,15 +20,10 @@ pnpm build
 ```
 
 Then in Chrome open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and
-pick the `.output/chrome-mv3` folder. Open the extension's **Options** page and paste a GitHub
-personal access token:
-
-- classic token: scopes `repo` and `read:org`; or
-- fine-grained token: Pull requests (read/write), Contents (read; write if you want to merge),
-  Metadata (read), Commit statuses (read), and the organisation's Members (read) for team reviews.
-  A fine-grained token covers a single organisation.
-
-Click **Test connection**, then visit `https://github.com/pulls`.
+pick the `.output/chrome-mv3` folder. There is no token to set up: the extension reads and writes
+through your github.com session, so sign in to github.com in that browser profile and visit
+`https://github.com/pulls`. The extension's **Options** page holds the inbox views and scope, the
+merge method, diff layout and theme, and the on/off switches.
 
 ## Develop
 
@@ -39,7 +34,7 @@ pnpm test         # vitest
 pnpm build        # production build into .output/chrome-mv3
 ```
 
-To look at the UI without a token, build and serve the output folder, then open
+To look at the UI without loading the extension, build and serve the output folder, then open
 `app.html?fixtures=1#/inbox` or `app.html?fixtures=1#/pr/acme/widgets/42`:
 
 ```bash
@@ -47,4 +42,4 @@ pnpm build && (cd .output/chrome-mv3 && python3 -m http.server 4310)
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for how the pieces fit, and `docs/research/` for the notes
-behind the design (Graphite's conventions, the GitHub API fields used, the diff library).
+behind the design (Graphite's conventions, the github.com endpoints read and written, the diff library).

@@ -127,5 +127,6 @@ viewerPendingReview, codeowners, fileFilter, markers, urls, user, pullRequest, r
 A unified patch for `@pierre/diffs` can be rebuilt from `diffLines` (HUNK lines are the `@@` headers; prefix
 ADDITION with `+`, DELETION with `-`, CONTEXT with a space).
 
-## Not yet observed
-Mutation requests (review submit, comment, inline comment, resolve, merge, auto-merge, viewed, draft).
+## Writes
+Review submit, comment, inline comment, resolve, merge, auto-merge, viewed and draft: see
+`github-web-mutations.md` (read from GitHub's bundles; none sent yet).

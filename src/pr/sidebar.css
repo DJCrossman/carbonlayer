@@ -98,7 +98,19 @@
   gap: 6px;
   margin-top: 8px;
 }
+.pr-select {
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--gg-border);
+  border-radius: var(--gg-radius);
+  background: var(--gg-bg);
+  color: var(--gg-fg);
+  font: 12px var(--gg-font);
+}
 .merge-row .pr-select { flex: 1; min-width: 0; }
+/* Graphite's merge button is purple. */
+.gg-btn.pr-merge-button { background: var(--gg-done); color: #fff; }
+.gg-btn.pr-merge-button:hover:not(:disabled) { background: color-mix(in srgb, var(--gg-done) 88%, #000); }
 .merge-row .gg-btn { flex: none; }
 .merge-confirm {
   margin-top: 8px;
