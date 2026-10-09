@@ -176,7 +176,7 @@
   height: 18px;
   padding: 0 6px;
   border-radius: 999px;
-  background: var(--gg-neutral-bg);
+  background: color-mix(in srgb, var(--gg-fg-muted) 18%, transparent);
   color: var(--gg-fg-muted);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
