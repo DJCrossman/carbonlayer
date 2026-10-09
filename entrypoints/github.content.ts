@@ -116,9 +116,19 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
       iframe.title = 'Pull requests';
       iframe.allow = 'clipboard-write';
       iframe.src = browser.runtime.getURL(`/app.html${appHash}`);
+      // Inside a shadow root: on the signed-in homepage something strips the iframe out of the wrapper shortly after
+      // it loads (page scripts and other extensions sweep `document.querySelectorAll('iframe')`); a shadow root is
+      // outside their reach, and the guard below puts the frame back if anything still removes it.
+      wrapper.attachShadow({ mode: 'open' }).append(iframe);
     },
   });
   ui.mount();
+  const frameGuard = new MutationObserver(() => {
+    if (!ui.wrapper.isConnected) html.append(ui.wrapper);
+    if (!ui.iframe.isConnected) ui.wrapper.shadowRoot?.append(ui.iframe);
+  });
+  frameGuard.observe(html, { childList: true });
+  frameGuard.observe(ui.wrapper.shadowRoot!, { childList: true });
 
   // GitHub's header is parsed after this runs at document_start, and replaced with <body> on Turbo visits.
   let header: HTMLElement | null = null;
@@ -269,6 +279,7 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
       if (ready) post({ type: 'gg:route', hash });
     },
     release() {
+      frameGuard.disconnect();
       listeners.abort();
       pageChanges.disconnect();
       headerResizes.disconnect();
