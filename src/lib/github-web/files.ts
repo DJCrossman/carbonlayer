@@ -45,22 +45,6 @@ export async function changedFiles(pullPath: string, repo: RepoRef, comparison: 
 }
 
 /**
- * The unified patch for one file, or null for binary, too-large and empty diffs. GitHub's diff lines already
- * carry their `+` / `-` / space prefix (observed); a line without one gets it added.
- */
-export function patchOf(entry: DiffEntry): string | null {
-  if (entry.isBinary || entry.isTooBig || !entry.diffLines?.length) return null;
-  const prefixes: Record<string, string> = { HUNK: '@@', ADDITION: '+', DELETION: '-', CONTEXT: ' ' };
-  const lines = entry.diffLines.flatMap((line) => {
-    const prefix = prefixes[line.type];
-    if (prefix === undefined) return [];
-    const text = line.text.startsWith(prefix) || prefix === '@@' ? line.text : prefix + line.text;
-    return line.displayNoNewLineWarning ? [text, '\\ No newline at end of file'] : [text];
-  });
-  return lines.length > 0 ? lines.join('\n') : null;
-}
-
-/**
  * Full-PR diff entries for up to 20 paths. Without `range` GitHub answers with the whole PR's diff (observed);
  * if it ever refuses, the request is retried with the head OID as `range`, as GitHub's own UI sends it.
  */
@@ -77,6 +61,22 @@ async function diffEntries(pullPath: string, paths: string[], fullDiff: { baseOi
     console.debug('[gg] diff_entries needed range=<head OID>');
     return entries;
   }
+}
+
+/**
+ * The unified patch for one file, or null for binary, too-large and empty diffs. GitHub's diff lines already
+ * carry their `+` / `-` / space prefix (observed); a line without one gets it added.
+ */
+export function patchOf(entry: DiffEntry): string | null {
+  if (entry.isBinary || entry.isTooBig || !entry.diffLines?.length) return null;
+  const prefixes: Record<string, string> = { HUNK: '@@', ADDITION: '+', DELETION: '-', CONTEXT: ' ' };
+  const lines = entry.diffLines.flatMap((line) => {
+    const prefix = prefixes[line.type];
+    if (prefix === undefined) return [];
+    const text = line.text.startsWith(prefix) || prefix === '@@' ? line.text : prefix + line.text;
+    return line.displayNoNewLineWarning ? [text, '\\ No newline at end of file'] : [text];
+  });
+  return lines.length > 0 ? lines.join('\n') : null;
 }
 
 /** page_data/base_comparison_info (the fields read here). */
