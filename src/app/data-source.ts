@@ -5,11 +5,18 @@ import type { PrDetail, RepoRef, View, ViewResult } from '../lib/model';
 import { rpc, type MergeMethod } from '../lib/rpc';
 import { DEFAULT_SETTINGS, getSettings, setSettings, watchSettings, type Settings } from '../lib/settings';
 
+export interface ReviewThreadDraft {
+  path: string;
+  line: number;
+  side: 'LEFT' | 'RIGHT';
+  body: string;
+}
+
 export interface DataSource {
   authStatus(): Promise<{ ok: boolean; login: string | null; error: string | null }>;
   fetchInbox(views: View[], force?: boolean): Promise<ViewResult[]>;
   fetchPr(repo: RepoRef, number: number, force?: boolean): Promise<PrDetail>;
-  review(prId: string, event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT', body: string): Promise<void>;
+  review(prId: string, event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT', body: string, threads?: ReviewThreadDraft[]): Promise<void>;
   comment(prId: string, body: string): Promise<void>;
   merge(prId: string, method: MergeMethod, expectedHeadOid: string): Promise<void>;
   addThread(prId: string, path: string, line: number, side: 'LEFT' | 'RIGHT', body: string): Promise<void>;
@@ -28,7 +35,7 @@ export function createRpcDataSource(): DataSource {
     authStatus: () => rpc('auth.status', undefined),
     fetchInbox: (views, force) => rpc('inbox.fetch', { views, force }),
     fetchPr: (repo, number, force) => rpc('pr.fetch', { repo, number, force }),
-    review: (prId, event, body) => rpc('pr.review', { prId, event, body }),
+    review: (prId, event, body, threads) => rpc('pr.review', { prId, event, body, threads }),
     comment: (prId, body) => rpc('pr.comment', { prId, body }),
     merge: (prId, method, expectedHeadOid) => rpc('pr.merge', { prId, method, expectedHeadOid }),
     addThread: (prId, path, line, side, body) => rpc('pr.addThread', { prId, path, line, side, body }),

@@ -11,7 +11,13 @@ export interface RpcMethods {
   'inbox.fetch': { args: { views: View[]; force?: boolean }; result: ViewResult[] };
   'pr.fetch': { args: { repo: RepoRef; number: number; force?: boolean }; result: PrDetail };
   'pr.review': {
-    args: { prId: string; event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT'; body: string };
+    args: {
+      prId: string;
+      event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
+      body: string;
+      /** Inline comments batched into this review (Graphite's "Add to review"). */
+      threads?: Array<{ path: string; line: number; side: 'LEFT' | 'RIGHT'; body: string }>;
+    };
     result: undefined;
   };
   'pr.comment': { args: { prId: string; body: string }; result: undefined };
