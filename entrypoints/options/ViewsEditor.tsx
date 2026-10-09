@@ -1,8 +1,8 @@
-// The inbox views: one row per view (name, search query, limit), reordering, Graphite's defaults,
+// The inbox views: one row per view (name, query, limit), reordering, Graphite's defaults,
 // and share links in both directions. Only a list where every view is valid is passed on to be saved.
 import { useState } from 'react';
 import type { View } from '../../src/lib/model';
-import { DEFAULT_VIEWS, decodeViewsShareHash, encodeViewsShareLink } from '../../src/lib/views';
+import { DEFAULT_VIEWS, GITHUB_INBOX_FILTERS, decodeViewsShareHash, encodeViewsShareLink } from '../../src/lib/views';
 
 export function ViewsEditor({ views, onChange }: { views: View[]; onChange: (views: View[], typing: boolean) => void }) {
   const [draft, setDraft] = useState(views);
@@ -114,7 +114,14 @@ export function ViewsEditor({ views, onChange }: { views: View[]; onChange: (vie
         </div>
       ))}
       <p className="hint">
-        GitHub search syntax. <code>@me</code> is you; <code>{'{{7d}}'}</code> is the date seven days ago. Limit defaults to 50, at most 100.
+        A GitHub search (<code>@me</code> is you, <code>{'{{7d}}'}</code> the date seven days ago) or one of GitHub's inbox sections:{' '}
+        {GITHUB_INBOX_FILTERS.map((filter, i) => (
+          <span key={filter}>
+            {i > 0 && ', '}
+            <code>inbox:{filter}</code>
+          </span>
+        ))}
+        . Limit defaults to 50, at most 100.
       </p>
 
       <div className="row">

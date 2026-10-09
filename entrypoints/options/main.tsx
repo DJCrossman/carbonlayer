@@ -1,8 +1,7 @@
-// Options page: GitHub token, inbox scope and views, PR page preferences, on/off switches.
+// Options page: inbox scope and views, PR page preferences, on/off switches.
 // Every change is saved as it is made (text fields 400 ms after the last keystroke).
 import { StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { rpc } from '../../src/lib/rpc';
 import { getSettings, setSettings, type Settings } from '../../src/lib/settings';
 import '../../src/ui/tokens.css';
 import './options.css';
@@ -65,14 +64,6 @@ function OptionsPage() {
         </span>
       </header>
 
-      <TokenSection
-        savedToken={settings.token}
-        onSave={async (token) => {
-          setLocalSettings((current) => current && { ...current, token });
-          await save({ token });
-        }}
-      />
-
       <section>
         <h2>Inbox</h2>
         <label className="field">
@@ -86,7 +77,7 @@ function OptionsPage() {
             onChange={(event) => update({ inboxScope: event.target.value }, 400)}
           />
         </label>
-        <p className="hint">Prepended to every view, e.g. org:acme or repo:acme/widgets</p>
+        <p className="hint">Prepended to every search view, e.g. org:acme or repo:acme/widgets (GitHub's inbox sections use GitHub's own repository filter)</p>
         <ViewsEditor views={settings.views} onChange={(views, typing) => update({ views }, typing ? 400 : 0)} />
       </section>
 
@@ -129,56 +120,5 @@ function OptionsPage() {
         </label>
       </section>
     </main>
-  );
-}
-
-function TokenSection({ savedToken, onSave }: { savedToken: string; onSave: (token: string) => Promise<void> }) {
-  const [draft, setDraft] = useState(savedToken);
-  const [status, setStatus] = useState<{ tone: 'ok' | 'error' | 'muted'; text: string } | null>(null);
-  const changed = draft.trim() !== savedToken;
-
-  async function testConnection() {
-    if (changed) await onSave(draft.trim());
-    setStatus({ tone: 'muted', text: 'Checking…' });
-    try {
-      const auth = await rpc('auth.status', undefined);
-      setStatus(auth.ok ? { tone: 'ok', text: `Connected as ${auth.login}` } : { tone: 'error', text: auth.error ?? 'Not connected' });
-    } catch (error) {
-      setStatus({ tone: 'error', text: error instanceof Error ? error.message : String(error) });
-    }
-  }
-
-  return (
-    <section>
-      <h2>GitHub token</h2>
-      <div className="row">
-        <input
-          type="password"
-          className="mono grow"
-          value={draft}
-          placeholder="ghp_… or github_pat_…"
-          autoComplete="off"
-          spellCheck={false}
-          aria-label="GitHub personal access token"
-          onChange={(event) => setDraft(event.target.value)}
-        />
-        <button type="button" className="primary" disabled={!changed} onClick={() => void onSave(draft.trim())}>
-          Save
-        </button>
-        <button type="button" disabled={!draft.trim()} onClick={() => void testConnection()}>
-          Test connection
-        </button>
-      </div>
-      {status && <p className={`status ${status.tone}`}>{status.text}</p>}
-      <p className="hint">
-        Classic token: scopes <code>repo</code> and <code>read:org</code> (for team review requests). Fine-grained token: Pull requests read
-        and write, Contents read (write to merge), Metadata read, Commit statuses read, and organisation Members read for teams; a
-        fine-grained token covers a single organisation. Organisations with SAML SSO need the token authorised for them. Create one at{' '}
-        <a href="https://github.com/settings/tokens" target="_blank" rel="noreferrer">
-          github.com/settings/tokens
-        </a>
-        . The token stays in this browser and is only sent to api.github.com.
-      </p>
-    </section>
   );
 }

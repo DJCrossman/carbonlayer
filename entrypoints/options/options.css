@@ -38,7 +38,6 @@ body {
 }
 
 .options input[type='text'],
-.options input[type='password'],
 .options input[type='number'],
 .options select {
   min-width: 0;
@@ -70,12 +69,6 @@ body {
 
 .options button:hover:not(:disabled) {
   background: var(--gg-bg-hover);
-}
-
-.options button.primary {
-  color: var(--gg-accent-fg);
-  background: var(--gg-accent);
-  border-color: transparent;
 }
 
 .options button:disabled {
@@ -131,14 +124,6 @@ body {
 .hint {
   font-size: 12px;
   color: var(--gg-fg-muted);
-}
-
-.status.ok {
-  color: var(--gg-success);
-}
-
-.status.error {
-  color: var(--gg-danger);
 }
 
 .status.muted {
