@@ -1,12 +1,11 @@
-// User settings. The PAT lives in browser.storage.local only; everything else syncs.
-// Usable from the background, content scripts, options and popup (all have the `storage` permission).
+// User settings, synced through browser.storage.sync. Usable from the content script, the app,
+// options and popup (all have the `storage` permission). There is no token: GitHub's session is used.
 
 import { browser } from 'wxt/browser';
 import type { View } from './model';
 import { DEFAULT_VIEWS } from './views';
 
 export interface Settings {
-  token: string;
   views: View[];
   /** Prepended to every view query, e.g. "org:offstreet" — Graphite's repo picker equivalent. */
   inboxScope: string;
@@ -18,7 +17,6 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  token: '',
   views: DEFAULT_VIEWS,
   inboxScope: '',
   inboxEnabled: true,
@@ -29,19 +27,14 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 export async function getSettings(): Promise<Settings> {
-  const [local, sync] = await Promise.all([browser.storage.local.get('token'), browser.storage.sync.get('settings')]);
+  const sync = await browser.storage.sync.get('settings');
   const stored = (sync.settings ?? {}) as Partial<Settings>;
-  return { ...DEFAULT_SETTINGS, ...stored, token: typeof local.token === 'string' ? local.token : '' };
+  return { ...DEFAULT_SETTINGS, ...stored };
 }
 
 export async function setSettings(patch: Partial<Settings>): Promise<Settings> {
-  const { token, ...rest } = patch;
-  if (token !== undefined) await browser.storage.local.set({ token });
-  if (Object.keys(rest).length > 0) {
-    const current = await getSettings();
-    const { token: _omit, ...syncable } = { ...current, ...rest };
-    await browser.storage.sync.set({ settings: syncable });
-  }
+  const current = await getSettings();
+  await browser.storage.sync.set({ settings: { ...current, ...patch } });
   return getSettings();
 }
 

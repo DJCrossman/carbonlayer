@@ -22,21 +22,23 @@ CSP. The content script is a thin bridge.
 
 | file | role |
 | --- | --- |
-| `background.ts` | Owns the GitHub API client (GraphQL + REST), the PAT, a short TTL cache, and answers RPC messages (`src/lib/rpc.ts`). |
-| `github.content.ts` | Content script on `github.com/*`. Recognises the inbox (`/pulls`) and PR (`/:owner/:repo/pull/:n`) routes (`src/app/routes.ts`), hides GitHub's `main`, mounts the iframe pointing at `app.html#<route>`, forwards theme + keydown to the iframe, performs top-level navigations the iframe asks for (`src/app/bridge.ts`), and re-routes on `wxt:locationchange`. `?gh=1` or the popup toggle leaves GitHub untouched. |
+| `background.ts` | Nothing data-related; kept minimal. |
+| `github.content.ts` | Content script on `github.com/*`. Recognises the inbox (`/pulls`) and PR (`/:owner/:repo/pull/:n`) routes (`src/app/routes.ts`), hides GitHub's `main`, mounts the iframe pointing at `app.html#<route>`, forwards theme + keydown to the iframe, performs top-level navigations the iframe asks for (`src/app/bridge.ts`), answers the iframe's RPC requests with `handleRpc` from `src/lib/github-web/` (session fetches), and re-routes on `wxt:locationchange`. `?gh=1` or the popup toggle leaves GitHub untouched. |
 | `app/` | The React app (`entrypoints/app/main.tsx`): hash router → `InboxPage` (`src/inbox/`) or `PrPage` (`src/pr/`). Data comes through a `DataSource` (`src/app/data-source.ts`): the RPC-backed one in the extension, a fixture-backed one when opened with `?fixtures=1` (the dev harness). Listed in `web_accessible_resources` for `https://github.com/*`. |
-| `options/` | Options page: PAT, merge method, diff layout, inbox scope, views editor, keybinding reference. |
-| `popup/` | Toolbar popup: auth status, on/off toggles, links to inbox and options. |
+| `options/` | Options page: merge method, diff layout, inbox scope, views editor, keybinding reference. |
+| `popup/` | Toolbar popup: on/off toggles, links to inbox and options. |
 
-## Data flow
+## Data flow: the user's github.com session, no token
 
-App (iframe) → `browser.runtime.sendMessage` RPC → background → `api.github.com` (PAT in
-`browser.storage.local`). Normalised domain objects (`src/lib/model.ts`) cross the boundary, never raw
-GraphQL. The background keeps a short TTL cache keyed by query so navigating within a stack is fast.
+App (iframe) → `window.parent.postMessage` RPC (`src/lib/rpc.ts`) → content script on github.com →
+`src/lib/github-web/` makes same-origin fetches against the JSON endpoints GitHub's own React UI
+uses (`/pulls/inbox/queries`, `/pulls/search`, `/{o}/{r}/pull/{n}/page_data/*`, the pages' embedded
+`react-app.embeddedData`) with the session cookies → normalised domain objects (`src/lib/model.ts`)
+are posted back. See `docs/research/github-web-endpoints.md`. No api.github.com, no PAT. The
+background service worker has no data role.
 
-Stacks: GitHub-native `stack`/`stackEntry` first; otherwise infer from branches (walk `baseRefName`
-downwards until the default branch, `headRefName` upwards); Graphite's stack comment is only a
-fallback for ordering. See `docs/research/github-api.md` §5.
+Stacks: GitHub-native `stack` from the PR page's embedded data first; otherwise Graphite's stack
+comment in the timeline, enriched through a `/pulls/search` query on the author's open PRs.
 
 ## Views (inbox)
 
@@ -54,4 +56,4 @@ extension installed offers to import (replace or append).
 - `pnpm test` (vitest) covers pure logic: stack inference, view link encode/decode, status derivation.
 - Harness: `pnpm build`, then serve `.output/chrome-mv3` statically and open `app.html?fixtures=1#/inbox` or
   `app.html?fixtures=1#/pr/acme/widgets/42` for visual checks (no token, no `chrome.*`).
-- Real-site check: load `.output/chrome-mv3` unpacked, add a PAT in Options, open github.com/pulls.
+- Real-site check: load `.output/chrome-mv3` unpacked while signed in to github.com, open github.com/pulls.

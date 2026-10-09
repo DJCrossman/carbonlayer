@@ -58,7 +58,7 @@ export interface Fixtures {
 
 /** Serves fixture data and logs mutations; settings live in memory. */
 export function createFixtureDataSource(fixtures: Fixtures): DataSource {
-  let settings: Settings = { ...DEFAULT_SETTINGS, token: 'fixture' };
+  let settings: Settings = { ...DEFAULT_SETTINGS };
   const listeners = new Set<(settings: Settings) => void>();
   const log = async (...args: unknown[]) => {
     console.info('[fixtures] mutation', ...args);

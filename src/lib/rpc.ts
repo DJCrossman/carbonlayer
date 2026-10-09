@@ -1,12 +1,13 @@
-// RPC contract between the content scripts / pages (callers) and the background (handler).
-// Callers use `rpc('pr.fetch', { ... })`; the background registers one handler per method.
+// RPC contract between the app (iframe on github.com, or the options page) and whoever can reach
+// GitHub with the user's session. Inside github.com the app posts requests to its parent window, the
+// content script answers them with same-origin fetches (cookies included); see src/lib/github-web/.
 
-import { browser } from 'wxt/browser';
 import type { PrDetail, RepoRef, View, ViewResult } from './model';
 
 export type MergeMethod = 'MERGE' | 'SQUASH' | 'REBASE';
 
 export interface RpcMethods {
+  /** Whether github.com has a signed-in session, and who. */
   'auth.status': { args: undefined; result: { ok: boolean; login: string | null; error: string | null } };
   'inbox.fetch': { args: { views: View[]; force?: boolean }; result: ViewResult[] };
   'pr.fetch': { args: { repo: RepoRef; number: number; force?: boolean }; result: PrDetail };
@@ -37,18 +38,51 @@ export type RpcMethod = keyof RpcMethods;
 
 export interface RpcRequest<M extends RpcMethod = RpcMethod> {
   kind: 'gg-rpc';
+  id: string;
   method: M;
   args: RpcMethods[M]['args'];
 }
 
-export type RpcResponse<M extends RpcMethod = RpcMethod> =
+export type RpcResponse<M extends RpcMethod = RpcMethod> = { kind: 'gg-rpc-result'; id: string } & (
   | { ok: true; result: RpcMethods[M]['result'] }
-  | { ok: false; error: string };
+  | { ok: false; error: string }
+);
 
-export async function rpc<M extends RpcMethod>(method: M, args: RpcMethods[M]['args']): Promise<RpcMethods[M]['result']> {
-  const request: RpcRequest<M> = { kind: 'gg-rpc', method, args };
-  const response = (await browser.runtime.sendMessage(request)) as RpcResponse<M> | undefined;
-  if (!response) throw new Error(`No response from background for ${method}`);
-  if (!response.ok) throw new Error(response.error);
-  return response.result;
+export function isRpcRequest(data: unknown): data is RpcRequest {
+  return typeof data === 'object' && data !== null && (data as { kind?: unknown }).kind === 'gg-rpc';
+}
+
+export function isRpcResponse(data: unknown): data is RpcResponse {
+  return typeof data === 'object' && data !== null && (data as { kind?: unknown }).kind === 'gg-rpc-result';
+}
+
+const pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
+let listening = false;
+
+/** Calls the content script on github.com through the parent window. Rejects when the app is not embedded. */
+export function rpc<M extends RpcMethod>(method: M, args: RpcMethods[M]['args']): Promise<RpcMethods[M]['result']> {
+  if (window.parent === window) {
+    return Promise.reject(new Error('Open this page from github.com; it needs your GitHub session.'));
+  }
+  if (!listening) {
+    listening = true;
+    window.addEventListener('message', (event: MessageEvent) => {
+      if (event.origin !== 'https://github.com' || !isRpcResponse(event.data)) return;
+      const waiter = pending.get(event.data.id);
+      if (!waiter) return;
+      pending.delete(event.data.id);
+      if (event.data.ok) waiter.resolve(event.data.result);
+      else waiter.reject(new Error(event.data.error));
+    });
+  }
+  const id = crypto.randomUUID();
+  const request: RpcRequest<M> = { kind: 'gg-rpc', id, method, args };
+  return new Promise((resolve, reject) => {
+    pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
+    window.parent.postMessage(request, 'https://github.com');
+    setTimeout(() => {
+      if (!pending.delete(id)) return;
+      reject(new Error(`GitHub did not answer ${method} within 60 s`));
+    }, 60_000);
+  });
 }

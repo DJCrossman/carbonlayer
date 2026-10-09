@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_VIEWS, decodeViewsShareHash, encodeViewsShareLink, resolveViewQuery } from './views';
+import { DEFAULT_VIEWS, decodeViewsShareHash, encodeViewsShareLink, inboxFilterOf, resolveViewQuery } from './views';
 
 describe('share links', () => {
   it('round-trips the default views through a share link', () => {
@@ -31,5 +31,13 @@ describe('resolveViewQuery', () => {
 
   it('leaves plain queries alone when there is no scope', () => {
     expect(resolveViewQuery({ id: 'a', name: 'A', query: ' is:pr author:@me ' }, '')).toBe('is:pr author:@me');
+  });
+
+  it("recognises GitHub's own inbox sections and never scopes them", () => {
+    const view = { id: 'n', name: 'Needs review', query: 'inbox:review-requested' };
+    expect(inboxFilterOf(view)).toBe('review-requested');
+    expect(inboxFilterOf({ id: 'x', name: 'X', query: 'inbox:bogus' })).toBeNull();
+    expect(inboxFilterOf({ id: 'y', name: 'Y', query: 'is:pr inbox:review-requested' })).toBeNull();
+    expect(resolveViewQuery(view, 'org:acme')).toBe('inbox:review-requested');
   });
 });
