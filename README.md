@@ -14,9 +14,9 @@ A Chrome extension that makes GitHub's pull requests look and work like [Graphit
   CI checks, reviewers and a single "next step" merge card in a right sidebar, diffs rendered with
   [`@pierre/diffs`](https://diffs.com), and Graphite's keyboard shortcuts.
 
-GitHub's own page is one click away: "Use GitHub's view" in the inbox bar or the PR header switches that surface
-back to GitHub (remembered, like the popup's switches), and a small "Graphite view" button at the bottom right of
-GitHub's page switches it on again. Add `?gh=1` to any URL to see GitHub's page just once.
+GitHub's own page is one click away: a "GitHub | Graphite" switch in GitHub's header, at the top right next to the
++ and notification buttons, flips the homepage or the pull request page between GitHub's view and this one, in
+place (remembered per surface, like the popup's switches). Add `?gh=1` to any URL to see GitHub's page just once.
 
 ## Install (unpacked, for development)
 

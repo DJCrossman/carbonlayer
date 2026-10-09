@@ -1,8 +1,8 @@
 // Content script on github.com: recognises the inbox (the homepage, signed in) and PR routes, hides GitHub's page
 // content below its header, shows app.html there in an iframe, and bridges theme, keystrokes, titles and navigation
 // (src/app/bridge.ts). It also answers the app's data requests (src/lib/rpc.ts) with the user's github.com session.
-// `?gh=1` leaves GitHub untouched for one visit; a disabled setting leaves it untouched and offers a "Graphite view"
-// button that switches back.
+// `?gh=1` leaves GitHub untouched for one visit. On every handled route it adds a "GitHub | Graphite" switch to
+// GitHub's header, which saves the surface's setting; while that is off, GitHub's page stays untouched.
 import { browser } from 'wxt/browser';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { createIframeUi } from 'wxt/utils/content-script-ui/iframe';
@@ -20,7 +20,7 @@ export default defineContentScript({
   async main(ctx) {
     let settings = await getSettings();
     let takeover: ReturnType<typeof takeOverPage> | null = null;
-    let graphiteViewButton: HTMLElement | null = null;
+    let pageViewSwitch: ReturnType<typeof addPageViewSwitch> | null = null;
     let awaitingSignIn: MutationObserver | null = null;
 
     // WXT reports navigations through the Navigation API before they commit, and none to the URL already shown, so
@@ -56,13 +56,13 @@ export default defineContentScript({
       } else {
         takeover = takeOverPage(ctx, route);
       }
-      // GitHub's own page by choice: offer the way back, on this surface only.
-      const switchedOff = (route.page === 'inbox' && !settings.inboxEnabled) || (route.page === 'pr' && !settings.prEnabled);
-      if (!switchedOff) {
-        graphiteViewButton?.remove();
-        graphiteViewButton = null;
+      // The way between GitHub's page and ours, on every handled route.
+      if (route.page === 'none') {
+        pageViewSwitch?.remove();
+        pageViewSwitch = null;
       } else {
-        graphiteViewButton ??= offerGraphiteView();
+        pageViewSwitch ??= addPageViewSwitch();
+        pageViewSwitch.show(route.page === 'inbox' ? 'inboxEnabled' : 'prEnabled', enabled);
       }
     };
 
@@ -77,8 +77,8 @@ export default defineContentScript({
       awaitingSignIn?.disconnect();
       takeover?.release();
       takeover = null;
-      graphiteViewButton?.remove();
-      graphiteViewButton = null;
+      pageViewSwitch?.remove();
+      pageViewSwitch = null;
     });
   },
 });
@@ -128,11 +128,7 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
   };
   const headerResizes = new ResizeObserver(placeBelowHeader);
   const findHeader = () => {
-    // Signed in, GitHub's global nav is a React partial whose <header> carries the GlobalNav class; signed out and on
-    // older pages it is header.AppHeader.
-    const found = document.querySelector<HTMLElement>(
-      'header.GlobalNav, react-partial[partial-name="global-nav-bar"] header, header.AppHeader, .AppHeader, header[role="banner"]',
-    );
+    const found = document.querySelector<HTMLElement>(GITHUB_HEADER);
     if (found !== header) {
       if (header) headerResizes.unobserve(header);
       header = found;
@@ -284,58 +280,144 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
   return takeover;
 }
 
+/**
+ * GitHub's global header: signed in, a React partial whose <header> carries the GlobalNav class; signed out, the
+ * marketing header (role="banner"), with the repository's navigation in a second header below it; on older pages
+ * header.AppHeader. The first one in the document is the bar at the top of the page.
+ */
+const GITHUB_HEADER =
+  'header.GlobalNav, react-partial[partial-name="global-nav-bar"] header, header.AppHeader, .AppHeader, header[role="banner"]';
+
 /** Keys the app binds, chord strokes included (inbox and PR page); GitHub keeps every other shortcut. */
 const APP_KEYS = new Set(['j', 'k', 'o', 'enter', 'r', '?', 'n', 'p', 'f', 's', 'v', 'e', 'g', 'c', 'a', 'y', 'd', 'h']);
 
 /**
- * The way back from GitHub's own page, once the user chose it: a small "Graphite view" pill at the bottom right that
- * switches this surface's takeover on again, which mounts the app in place. GitHub's colour variables make it fit
- * either theme; a shadow root keeps GitHub's styles off it. Like the app, it sits on <html>, outside the <body> Turbo
- * replaces.
+ * "GitHub | Graphite" in GitHub's header, just before its + and notification buttons (signed out, before the search
+ * box): which page this surface shows, and the way to change it. A click saves the surface's setting; the settings
+ * watcher then mounts or releases the app in place and calls `show` again.
+ *
+ * GitHub's headers are React partials rendered on the server and hydrated later, and an element inserted among their
+ * children before hydration makes React render the header again without it. So the switch sits in a shadow root on
+ * the button cluster, next to a <slot> that keeps GitHub's own children rendering as before: hydration walks only
+ * those children and never sees it. GitHub's colour variables reach into the shadow root, so it fits either theme.
  */
-function offerGraphiteView(): HTMLElement {
-  const host = document.createElement('gg-graphite-view');
-  const shadow = host.attachShadow({ mode: 'closed' });
+function addPageViewSwitch() {
+  const group = document.createElement('div');
+  group.setAttribute('role', 'group');
+  group.setAttribute('aria-label', 'Page view');
   const style = document.createElement('style');
-  // Below GitHub's menus and dialogs (z-index 100+), like the app.
   style.textContent = `
-    :host { position: fixed; right: 16px; bottom: 16px; z-index: 30; }
-    button {
-      display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px 0 10px; box-sizing: border-box;
-      border: 1px solid var(--borderColor-default, #d1d9e0); border-radius: 999px;
-      background: var(--bgColor-default, #ffffff); color: var(--fgColor-default, #1f2328);
-      box-shadow: var(--shadow-resting-medium, 0 1px 3px rgba(31, 35, 40, 0.12));
-      font: 500 12px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
-      cursor: pointer;
+    [role="group"] {
+      display: inline-flex; flex: none; align-self: center; box-sizing: border-box; height: 26px; overflow: hidden;
+      border: 1px solid var(--borderColor-default, #d1d9e0); border-radius: 6px; background: var(--bgColor-default, #ffffff);
+      white-space: nowrap;
     }
-    button:hover { background: var(--bgColor-muted, #f6f8fa); }
-    button:focus-visible { outline: 2px solid var(--focus-outlineColor, #0969da); outline-offset: 2px; }
-    svg { flex: none; color: var(--fgColor-muted, #59636e); }
+    button {
+      margin: 0; padding: 0 8px; border: 0; background: none; color: var(--fgColor-muted, #59636e); cursor: pointer;
+      font: 500 12px/1 var(--fontStack-sansSerif, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif);
+    }
+    button + button { border-inline-start: 1px solid var(--borderColor-default, #d1d9e0); }
+    button:hover { background: var(--bgColor-muted, #f6f8fa); color: var(--fgColor-default, #1f2328); }
+    button[aria-pressed="true"] {
+      background: var(--bgColor-accent-muted, var(--fgColor-default, #1f2328));
+      color: var(--fgColor-accent, var(--bgColor-default, #ffffff));
+      cursor: default;
+    }
+    button:focus-visible { outline: 2px solid var(--focus-outlineColor, #0969da); outline-offset: -2px; }
   `;
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.title = 'Show this page in Graphite-style GitHub';
-  // Octicons' stack (MIT), the app's own glyph for stacks.
-  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  icon.setAttribute('width', '14');
-  icon.setAttribute('height', '14');
-  icon.setAttribute('viewBox', '0 0 16 16');
-  icon.setAttribute('fill', 'currentColor');
-  icon.setAttribute('aria-hidden', 'true');
-  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  path.setAttribute(
-    'd',
-    'M7.122.392a1.75 1.75 0 0 1 1.756 0l5.003 2.902c.83.481.83 1.68 0 2.162L8.878 8.358a1.75 1.75 0 0 1-1.756 0L2.119 5.456a1.251 1.251 0 0 1 0-2.162ZM8.125 1.69a.248.248 0 0 0-.25 0l-4.63 2.685 4.63 2.685a.248.248 0 0 0 .25 0l4.63-2.685ZM1.601 7.789a.75.75 0 0 1 1.025-.273l5.249 3.044a.248.248 0 0 0 .25 0l5.249-3.044a.75.75 0 0 1 .752 1.298l-5.248 3.044a1.75 1.75 0 0 1-1.756 0L1.874 8.814A.75.75 0 0 1 1.6 7.789Zm0 3.5a.75.75 0 0 1 1.025-.273l5.249 3.044a.248.248 0 0 0 .25 0l5.249-3.044a.75.75 0 0 1 .752 1.298l-5.248 3.044a1.75 1.75 0 0 1-1.756 0l-5.248-3.044a.75.75 0 0 1-.273-1.025Z',
-  );
-  icon.append(path);
-  button.append(icon, 'Graphite view');
-  button.addEventListener('click', () => {
-    // The settings watcher then mounts the app and removes this button.
-    const route = parseGitHubLocation(new URL(location.href));
-    if (route.page === 'inbox') void setSettings({ inboxEnabled: true });
-    if (route.page === 'pr') void setSettings({ prEnabled: true });
-  });
-  shadow.append(style, button);
-  document.documentElement.append(host);
-  return host;
+  const github = document.createElement('button');
+  github.textContent = 'GitHub';
+  github.title = "Show GitHub's own page here from now on";
+  const graphite = document.createElement('button');
+  graphite.textContent = 'Graphite';
+  graphite.title = 'Show the Graphite-style page here from now on';
+  let setting: 'inboxEnabled' | 'prEnabled' = 'prEnabled';
+  let graphiteShown = false;
+  for (const button of [github, graphite]) {
+    button.type = 'button';
+    button.addEventListener('click', () => {
+      const showGraphite = button === graphite;
+      if (showGraphite === graphiteShown) return;
+      void setSettings(setting === 'inboxEnabled' ? { inboxEnabled: showGraphite } : { prEnabled: showGraphite });
+    });
+  }
+  group.append(style, github, graphite);
+
+  const listeners = new AbortController();
+  let header: Element | null = null;
+  let cluster: Element | null = null;
+  // Once GitHub's header is parsed whole, so its button cluster is there too, and again whenever a Turbo visit swaps
+  // <body> or React renders the header again without the switch.
+  const place = () => {
+    if (document.readyState === 'loading') return;
+    const found = document.querySelector(GITHUB_HEADER);
+    if (found !== header) {
+      header = found;
+      headerChanges.disconnect();
+      // The whole partial: React may replace the <header> element itself.
+      if (header) headerChanges.observe(header.closest('react-partial') ?? header, { childList: true, subtree: true });
+    }
+    if (!header || (cluster?.isConnected && header.contains(cluster))) return;
+    // Signed in: the + / issues / pull requests / notifications cluster (older headers: .AppHeader-actions). Signed
+    // out: the search box and the sign-in buttons. Failing those, the end of the header.
+    const candidates = [
+      header.querySelector('[data-testid="top-bar-actions"]'),
+      header.querySelector('[data-testid="top-nav-right"]'),
+      header.querySelector('.AppHeader-actions'),
+      header.querySelector('[class*="MarketingHeader-module__ctaContainer"]'),
+      header,
+    ];
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      // Ours already when the switch was here before, from this script or an earlier copy of it.
+      let root = candidate.shadowRoot;
+      if (!root) {
+        try {
+          root = candidate.attachShadow({ mode: 'open' });
+        } catch {
+          // An element that cannot host a shadow root, or already hosts a closed one.
+          continue;
+        }
+        const githubContent = document.createElement('slot');
+        githubContent.id = 'gg-github-content';
+        root.append(githubContent);
+      } else if (!root.getElementById('gg-github-content')) {
+        // Someone else's.
+        continue;
+      }
+      // Clusters that do not space their buttons with a gap space them with margins; the switch brings its own.
+      const spacing = parseFloat(getComputedStyle(candidate).columnGap) > 0 ? '0' : '8px';
+      if (candidate === header) {
+        group.style.margin = `0 0 0 ${spacing}`;
+        root.append(group);
+      } else {
+        group.style.margin = `0 ${spacing} 0 0`;
+        root.prepend(group);
+      }
+      cluster = candidate;
+      return;
+    }
+  };
+  const pageChanges = new MutationObserver(place);
+  pageChanges.observe(document.documentElement, { childList: true });
+  const headerChanges = new MutationObserver(place);
+  document.addEventListener('DOMContentLoaded', place, { once: true, signal: listeners.signal });
+  place();
+
+  return {
+    /** Shows which page the surface whose switch is `surfaceSetting` is set to: ours when `graphiteOn`. */
+    show(surfaceSetting: 'inboxEnabled' | 'prEnabled', graphiteOn: boolean) {
+      setting = surfaceSetting;
+      graphiteShown = graphiteOn;
+      github.setAttribute('aria-pressed', String(!graphiteOn));
+      graphite.setAttribute('aria-pressed', String(graphiteOn));
+    },
+    remove() {
+      listeners.abort();
+      pageChanges.disconnect();
+      headerChanges.disconnect();
+      // A shadow root cannot be removed; left with only its <slot>, it renders GitHub's children exactly as before.
+      group.remove();
+    },
+  };
 }
