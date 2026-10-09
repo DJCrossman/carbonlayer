@@ -30,7 +30,21 @@ export function importGraphiteSections(
       notes.push(...section.notes.map((note) => `${name}: ${note}`));
       continue;
     }
-    const search = searchForFilter(section.filter, section.repos, viewer);
+    // Views keep the filter with the viewer as @me, as the section editor offers it, and the section's own repositories.
+    const filter: GraphiteFilter = {
+      groups: section.filter.groups.map((group) => ({
+        rules: group.rules.map((rule) => ({
+          ...rule,
+          conditions: rule.conditions.map((condition) =>
+            typeof condition.username === 'string' && (condition.username === '<REPLACE_USERNAME>' || condition.username.toLowerCase() === viewer)
+              ? { ...condition, username: '@me' }
+              : condition,
+          ),
+        })),
+      })),
+    };
+    const repos = section.repos.map((repo) => ({ owner: repo.owner, name: repo.name }));
+    const search = searchForFilter(filter, repos);
     if (search.query === null) {
       const leftOut = "GitHub's search can express none of its filter groups; that section was left out.";
       notes.push(...[...section.notes, ...search.notes, leftOut].map((note) => `${name}: ${note}`));
@@ -38,14 +52,15 @@ export function importGraphiteSections(
     }
     // One search holds at most five AND / OR / NOT operators.
     if (search.operators <= 5 || search.groupsKept.length < 2) {
-      views.push({ view: { id: crypto.randomUUID(), name, query: search.query }, notes: [...new Set([...section.notes, ...search.notes])] });
+      views.push({ view: { id: crypto.randomUUID(), name, query: search.query, filter, ...(repos.length > 0 && { repos }) }, notes: [...new Set([...section.notes, ...search.notes])] });
       continue;
     }
     const split = `Graphite matches any of its ${search.groupsKept.length} filter groups, more than one GitHub search can OR; each group is a view of its own.`;
     search.groupsKept.forEach((groupIndex, index) => {
-      const group = searchForFilter({ groups: [section.filter!.groups[groupIndex]!] }, section.repos, viewer);
+      const groupFilter = { groups: [filter.groups[groupIndex]!] };
+      const group = searchForFilter(groupFilter, repos);
       views.push({
-        view: { id: crypto.randomUUID(), name: `${name} (${index + 1})`, query: group.query! },
+        view: { id: crypto.randomUUID(), name: `${name} (${index + 1})`, query: group.query!, filter: groupFilter, ...(repos.length > 0 && { repos }) },
         notes: [...new Set([...section.notes, split, ...group.notes])],
       });
     });
@@ -160,11 +175,12 @@ interface GraphiteSection {
   notes: string[];
 }
 
-interface GraphiteFilter {
+/** A section's filter as Graphite's share links write it (its inbox page's tree converts to it); views keep it as is. */
+export interface GraphiteFilter {
   groups: Array<{ rules: GraphiteRule[] }>;
 }
 
-interface GraphiteRule {
+export interface GraphiteRule {
   isNegated: boolean;
   /** Never empty, and every condition has the same kind. */
   conditions: Array<{ kind: string } & Record<string, unknown>>;
@@ -390,10 +406,10 @@ function searchForCondition(kind: string, value: string, negated: boolean): stri
 }
 
 /**
- * Graphite's condition kinds: its filter editor's label and operators for each (for notes), and the field holding a
- * condition's value; no field for kinds GitHub cannot search by.
+ * Graphite's condition kinds: its filter editor's label and operators for each (for notes and the section editor), and
+ * the field holding a condition's value; no field for kinds GitHub cannot search by.
  */
-const RULE_KINDS: Record<string, { label: string; field?: string; verbs?: [string, string] }> = {
+export const RULE_KINDS: Record<string, { label: string; field?: string; verbs?: [string, string] }> = {
   CONSOLIDATED_PR_STATUS_IS: { label: 'PR status', field: 'status' },
   AUTHOR_IS: { label: 'Author', field: 'username' },
   REVIEW_STATUS_IS: { label: 'Review status', field: 'state', verbs: ['equals', 'does not equal'] },
@@ -508,7 +524,7 @@ function groupsOf(filter: unknown): GraphiteFilter | null {
 }
 
 /** Whether a decoded payload is a section filter as Graphite writes it, with the value every known condition kind needs. */
-function isGraphiteFilter(value: unknown): value is GraphiteFilter {
+export function isGraphiteFilter(value: unknown): value is GraphiteFilter {
   const groups = (value as { groups?: unknown } | null)?.groups;
   return (
     Array.isArray(groups) &&

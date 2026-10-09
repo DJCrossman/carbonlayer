@@ -10,6 +10,20 @@ describe('share links', () => {
     expect(decoded?.map((v) => v.query)).toEqual(DEFAULT_VIEWS.map((v) => v.query));
   });
 
+  it("carries a view's Graphite filter and repositories", () => {
+    const views = [
+      {
+        id: 'mine',
+        name: 'Mine',
+        query: 'is:pr repo:acme/web author:@me sort:updated-desc',
+        filter: { groups: [{ rules: [{ isNegated: false, conditions: [{ kind: 'AUTHOR_IS', username: '@me' }] }] }] },
+        repos: [{ owner: 'acme', name: 'web' }],
+      },
+    ];
+    expect(decodeViewsShareHash(new URL(encodeViewsShareLink(views)).hash)).toEqual(views);
+    expect(decodeViewsShareHash(new URL(encodeViewsShareLink([{ ...views[0]!, filter: { groups: 'all' } as never }])).hash)).toBeNull();
+  });
+
   it('rejects hashes without views or with malformed payloads', () => {
     expect(decodeViewsShareHash('')).toBeNull();
     expect(decodeViewsShareHash('#other=1')).toBeNull();
@@ -31,10 +45,16 @@ describe('resolveViewQuery', () => {
 
   it('ORs repeated repo: terms in the scope and the query, which GitHub would AND', () => {
     const view = { id: 'r', name: 'Repos', query: 'is:pr repo:acme/web repo:acme/api author:@me' };
-    expect(resolveViewQuery(view, 'repo:acme/web repo:acme/api repo:acme/ios')).toBe(
-      '(repo:acme/web OR repo:acme/api OR repo:acme/ios) is:pr (repo:acme/web OR repo:acme/api) author:@me',
+    expect(resolveViewQuery({ ...view, query: 'is:pr author:@me' }, 'repo:acme/web repo:acme/api repo:acme/ios')).toBe(
+      '(repo:acme/web OR repo:acme/api OR repo:acme/ios) is:pr author:@me',
     );
-    expect(resolveViewQuery({ ...view, query: 'is:pr repo:acme/web' }, '(repo:acme/web OR repo:acme/api)')).toBe('(repo:acme/web OR repo:acme/api) is:pr repo:acme/web');
+    expect(resolveViewQuery(view, '')).toBe('is:pr (repo:acme/web OR repo:acme/api) author:@me');
+  });
+
+  it('searches the repositories a query names instead of the inbox scope, as a Graphite section with its own does', () => {
+    const view = { id: 'r', name: 'Repos', query: 'is:pr (repo:acme/web OR repo:acme/api) author:@me' };
+    expect(resolveViewQuery(view, 'org:acme')).toBe(view.query);
+    expect(resolveViewQuery({ ...view, query: 'is:pr -repo:acme/web' }, 'org:acme')).toBe('org:acme is:pr -repo:acme/web');
   });
 
   it('leaves plain queries alone when there is no scope', () => {

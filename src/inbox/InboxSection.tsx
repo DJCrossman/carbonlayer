@@ -1,7 +1,9 @@
-// One inbox view as a collapsible card: header "Name N", then one dense row per PR (skeleton rows while loading).
+// One inbox view as a collapsible card: header "Name N" with a gear that opens the section editor, then one dense row
+// per PR (skeleton rows while loading).
 import { useEffect, useRef, type MouseEvent } from 'react';
 import type { PrSummary, View, ViewResult } from '../lib/model';
 import { Avatar } from '../ui/Avatar';
+import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { CiStatus } from '../ui/CiStatus';
 import { Icon } from '../ui/Icon';
@@ -19,6 +21,7 @@ export function InboxSection({
   selectedPrId,
   overdueAfterHours,
   onToggleCollapsed,
+  onEdit,
   onOpen,
 }: {
   view: View;
@@ -27,6 +30,7 @@ export function InboxSection({
   selectedPrId: string | null;
   overdueAfterHours: number | undefined;
   onToggleCollapsed: () => void;
+  onEdit: () => void;
   onOpen: (pr: PrSummary, newTab: boolean) => void;
 }) {
   const expanded = view.collapsed !== true;
@@ -35,19 +39,22 @@ export function InboxSection({
     <Card
       className="gg-section"
       header={
-        <button type="button" className="gg-section__toggle" aria-expanded={expanded} onClick={onToggleCollapsed}>
-          <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={14} className="gg-section__chevron" />
-          <span className="gg-section__name">{view.name}</span>
-          {empty ? (
-            <span className="gg-section__empty">No pull requests</span>
-          ) : (
-            result && (
-              <span className="gg-section__count">
-                {view.limit !== undefined && result.totalCount > view.limit ? `${view.limit}+` : result.totalCount}
-              </span>
-            )
-          )}
-        </button>
+        <>
+          <button type="button" className="gg-section__toggle" aria-expanded={expanded} onClick={onToggleCollapsed}>
+            <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={14} className="gg-section__chevron" />
+            <span className="gg-section__name">{view.name}</span>
+            {empty ? (
+              <span className="gg-section__empty">No pull requests</span>
+            ) : (
+              result && (
+                <span className="gg-section__count">
+                  {view.limit !== undefined && result.totalCount > view.limit ? `${view.limit}+` : result.totalCount}
+                </span>
+              )
+            )}
+          </button>
+          <Button variant="ghost" size="sm" icon="gear" className="gg-section__edit" aria-label={`Edit ${view.name}`} title="Edit section" onClick={onEdit} />
+        </>
       }
     >
       {expanded &&

@@ -54,12 +54,17 @@ comment in the timeline, enriched through a `/pulls/search` query on the author'
 ## Views (inbox)
 
 ```ts
-type View = { id: string; name: string; query: string; limit?: number; collapsed?: boolean }
+type View = { id: string; name: string; query: string; filter?: GraphiteFilter; repos?: RepoRef[]; limit?: number; collapsed?: boolean }
 ```
 
 Stored in `chrome.storage.sync`. Default views mirror Graphite's sections; a query `inbox:<filter>` is one
 of GitHub's own inbox sections (`/pulls/inbox/queries`), anything else a search (`/pulls/search`) with
-the inbox scope prepended. Sharing: "Share" encodes
+the inbox scope prepended, unless the query names repositories of its own (`repo:`), which it then searches instead.
+A view with a `filter` (Graphite's share-link form, `{ groups: [{ rules: [{ isNegated, conditions }] }] }`) is edited
+row by row in the section editor (`src/inbox/SectionEditor.tsx`, a right-side drawer like Graphite's "Update section",
+opened from a section's gear in the inbox and from "Edit…" on the options page), and its `query` is compiled from the
+filter and its own `repos` on every save with the import's mapping (`searchForFilter` in `src/lib/graphite.ts`).
+"Advanced" there shows that query and lets the user write one by hand instead, which drops the filter. Sharing: "Share" encodes
 the view list into `https://github.com/#views=<base64url json>`; opening such a link with the
 extension installed offers to import (replace or append).
 

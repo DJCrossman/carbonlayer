@@ -2,6 +2,7 @@
 // (`inbox:<filter>`, served by /pulls/inbox/queries) or a GitHub search query (served by
 // /pulls/search), plus the share-link format (`https://github.com/#views=<base64url json>`).
 
+import { isGraphiteFilter } from './graphite';
 import type { View } from './model';
 
 /** GitHub's built-in inbox sections, usable as a view query `inbox:<id>`. */
@@ -36,7 +37,7 @@ export const DEFAULT_VIEWS: View[] = [
 
 /** A link that shares these views: their JSON as base64url (UTF-8) in the `views` hash parameter of the github.com homepage. */
 export function encodeViewsShareLink(views: View[]): string {
-  const json = JSON.stringify(views.map(({ id, name, query, limit }) => ({ id, name, query, limit })));
+  const json = JSON.stringify(views.map(({ id, name, query, filter, repos, limit }) => ({ id, name, query, filter, repos, limit })));
   let binary = '';
   for (const byte of new TextEncoder().encode(json)) binary += String.fromCharCode(byte);
   return `https://github.com/#views=${btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`;
@@ -60,7 +61,9 @@ export function decodeViewsShareHash(hash: string): View[] | null {
 
 /**
  * The query GitHub sees: `{{7d}}`-style relative times resolved to the moment that long before `now`, and the inbox
- * scope prepended. `inbox:<filter>` views are returned unchanged (GitHub scopes them with its own repo picker).
+ * scope prepended unless the query names repositories of its own, which it then searches instead, as a Graphite section
+ * with its own repositories does. `inbox:<filter>` views are returned unchanged (GitHub scopes them with its own repo
+ * picker).
  */
 export function resolveViewQuery(view: View, scope: string, now = new Date()): string {
   if (inboxFilterOf(view)) return view.query.trim();
@@ -76,7 +79,8 @@ export function resolveViewQuery(view: View, scope: string, now = new Date()): s
   };
   // A date alone counts the whole day: "merged in the last 7 days" needs the time too.
   const resolved = view.query.replace(/\{\{(\d+)d\}\}/g, (_, days: string) => `${new Date(now.getTime() - Number(days) * 86_400_000).toISOString().slice(0, 19)}Z`);
-  return [anyRepository(scope), anyRepository(resolved)].filter(Boolean).join(' ');
+  const ownRepositories = /(^|[\s(])repo:/.test(view.query);
+  return [ownRepositories ? '' : anyRepository(scope), anyRepository(resolved)].filter(Boolean).join(' ');
 }
 
 /**
@@ -95,6 +99,9 @@ export function isView(value: unknown): value is View {
     typeof v.id === 'string' &&
     typeof v.name === 'string' &&
     typeof v.query === 'string' &&
+    (v.filter === undefined || isGraphiteFilter(v.filter)) &&
+    (v.repos === undefined ||
+      (Array.isArray(v.repos) && v.repos.every((repo: unknown) => typeof (repo as { owner?: unknown })?.owner === 'string' && typeof (repo as { name?: unknown })?.name === 'string'))) &&
     (v.limit === undefined || typeof v.limit === 'number') &&
     (v.collapsed === undefined || typeof v.collapsed === 'boolean')
   );

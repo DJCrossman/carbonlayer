@@ -1,0 +1,317 @@
+/* The section editor (SectionEditor.tsx): a right-side drawer like Graphite's "Update section", dense rows of 24px
+   controls. Rendered into <body>, so it also works on the options page without the page's own form styles. */
+
+.gg-drawer-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(1, 4, 9, 0.3);
+}
+.gg-drawer {
+  display: flex;
+  flex-direction: column;
+  width: min(600px, 100vw);
+  height: 100%;
+  border-left: 1px solid var(--gg-border);
+  background: var(--gg-bg);
+  box-shadow: var(--gg-shadow-overlay);
+  color: var(--gg-fg);
+  font-family: var(--gg-font);
+  font-size: var(--gg-font-size);
+  line-height: var(--gg-line-height);
+  box-sizing: border-box;
+  animation: gg-drawer-in 140ms ease-out;
+}
+@keyframes gg-drawer-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+.gg-drawer__header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  height: 48px;
+  padding: 0 var(--gg-space-2) 0 var(--gg-space-4);
+  border-bottom: 1px solid var(--gg-border-muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+.gg-drawer__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--gg-space-4);
+  padding: var(--gg-space-4);
+  overflow: auto;
+}
+.gg-drawer__footer {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 10px var(--gg-space-4);
+  border-top: 1px solid var(--gg-border-muted);
+}
+
+/* Fields */
+.gg-editor__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gg-editor__field > label,
+.gg-editor__label {
+  color: var(--gg-fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.gg-editor input[type='text'],
+.gg-editor select,
+.gg-editor textarea {
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--gg-border);
+  border-radius: var(--gg-radius);
+  background: var(--gg-bg);
+  color: var(--gg-fg);
+  font: inherit;
+  font-size: 12px;
+  box-sizing: border-box;
+}
+.gg-editor select {
+  padding-right: 2px;
+  cursor: pointer;
+}
+.gg-editor textarea {
+  height: auto;
+  padding: 6px 8px;
+  font: 12px/1.45 var(--gg-font-mono);
+  resize: vertical;
+}
+.gg-editor input:focus,
+.gg-editor select:focus,
+.gg-editor textarea:focus {
+  outline: 2px solid var(--gg-accent);
+  outline-offset: -1px;
+}
+.gg-editor__field > input[type='text'] {
+  height: 28px;
+  font-size: 13px;
+}
+
+/* Filter rows: join word · kind · operator · values · remove */
+.gg-editor__group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gg-editor__rule {
+  display: grid;
+  grid-template-columns: 32px 148px 118px minmax(0, 1fr) 24px;
+  gap: 6px;
+  align-items: start;
+}
+.gg-editor__join {
+  color: var(--gg-fg-muted);
+  font-size: 12px;
+  line-height: 24px;
+  text-align: right;
+}
+.gg-editor__values,
+.gg-editor__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 24px;
+}
+.gg-editor__chips {
+  padding: 1px 2px 1px 3px;
+  border: 1px solid var(--gg-border);
+  border-radius: var(--gg-radius);
+  background: var(--gg-bg);
+  box-sizing: border-box;
+  cursor: text;
+}
+.gg-editor__chips:focus-within {
+  outline: 2px solid var(--gg-accent);
+  outline-offset: -1px;
+}
+.gg-editor .gg-editor__chips input[type='text'] {
+  flex: 1;
+  min-width: 80px;
+  height: 20px;
+  padding: 0 3px;
+  border: 0;
+  outline: none;
+  background: transparent;
+}
+.gg-editor__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 20px;
+  padding: 0 2px 0 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--gg-fg-muted) 16%, transparent);
+  color: var(--gg-fg);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.gg-editor__values > .gg-editor__chip {
+  height: 22px;
+}
+.gg-editor__chip button,
+.gg-editor__suggestion {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--gg-fg-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.gg-editor__chip button {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+}
+.gg-editor__chip button:hover {
+  background: var(--gg-bg-hover);
+  color: var(--gg-fg);
+}
+.gg-editor__suggestion {
+  height: 20px;
+  padding: 0 6px;
+  border: 1px dashed var(--gg-border);
+  border-radius: 999px;
+  font-size: 12px;
+}
+.gg-editor__suggestion:hover {
+  border-color: var(--gg-accent);
+  color: var(--gg-accent);
+}
+.gg-editor .gg-editor__add-value {
+  width: 80px;
+  border-style: dashed;
+  color: var(--gg-fg-muted);
+}
+.gg-editor__add {
+  align-self: flex-start;
+  margin-left: 32px;
+}
+.gg-editor__add-group {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+.gg-editor__or {
+  display: flex;
+  align-items: center;
+  gap: var(--gg-space-2);
+  margin: 2px 0;
+  color: var(--gg-fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.gg-editor__or::before,
+.gg-editor__or::after {
+  flex: 1;
+  height: 1px;
+  background: var(--gg-border-muted);
+  content: '';
+}
+
+/* Notes, advanced, footer */
+.gg-editor__notes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--gg-fg-muted);
+  font-size: 12px;
+}
+.gg-editor__notes li,
+.gg-editor__warning {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  padding: 1px 0;
+  color: var(--gg-fg-muted);
+  font-size: 12px;
+}
+.gg-editor__notes .gg-icon,
+.gg-editor__warning .gg-icon {
+  position: relative;
+  top: 1px;
+  color: var(--gg-attention);
+}
+.gg-editor__disclosure {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--gg-fg-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.gg-editor__disclosure:hover {
+  color: var(--gg-fg);
+}
+.gg-editor__advanced {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.gg-editor__advanced textarea {
+  width: 100%;
+}
+.gg-editor__query {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--gg-border-muted);
+  border-radius: var(--gg-radius);
+  background: var(--gg-bg-subtle);
+  font: 12px/1.45 var(--gg-font-mono);
+  overflow-wrap: anywhere;
+  box-sizing: border-box;
+}
+.gg-editor__hint {
+  margin: 0;
+  color: var(--gg-fg-muted);
+  font-size: 12px;
+  line-height: 24px;
+}
+.gg-editor__advanced .gg-editor__hint {
+  line-height: 1.45;
+}
+.gg-editor__hint code {
+  font: 11px var(--gg-font-mono);
+}
+.gg-drawer__footer .gg-editor__delete {
+  margin-right: auto;
+  color: var(--gg-danger);
+}
+.gg-editor__problem {
+  min-width: 0;
+  margin-right: 4px;
+  color: var(--gg-danger);
+  font-size: 12px;
+}

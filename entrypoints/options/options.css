@@ -180,6 +180,18 @@ body {
   margin-bottom: var(--gg-space-1);
 }
 
+.view-query {
+  min-width: 0;
+  padding: 3px 6px;
+  overflow: hidden;
+  border: 1px solid var(--gg-border-muted);
+  border-radius: var(--gg-radius);
+  background: var(--gg-bg-subtle);
+  color: var(--gg-fg-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .row-actions {
   display: flex;
   gap: 2px;

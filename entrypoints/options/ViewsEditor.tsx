@@ -1,16 +1,19 @@
-// The inbox views: one row per view (name, query, limit), reordering, Graphite's defaults,
-// share links in both directions and Graphite's own section links. Only a list where every view is valid is passed on
-// to be saved.
+// The inbox views: one row per view (name, its search query as text, limit, "Edit…" for the section editor),
+// reordering, Graphite's defaults, share links in both directions and Graphite's own section links. Only a list where
+// every view is valid is passed on to be saved.
 import { useState } from 'react';
 import type { View } from '../../src/lib/model';
 import { GraphiteImport } from '../../src/inbox/GraphiteImport';
 import { importViews } from '../../src/inbox/import-views';
-import { DEFAULT_VIEWS, GITHUB_INBOX_FILTERS, decodeViewsShareHash, encodeViewsShareLink } from '../../src/lib/views';
+import { SectionEditor } from '../../src/inbox/SectionEditor';
+import { DEFAULT_VIEWS, decodeViewsShareHash, encodeViewsShareLink } from '../../src/lib/views';
 
 export function ViewsEditor({ views, onChange }: { views: View[]; onChange: (views: View[], typing: boolean) => void }) {
   const [draft, setDraft] = useState(views);
   const [importLink, setImportLink] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
+  // The view in the section editor, 'new' for one being added.
+  const [editing, setEditing] = useState<View | 'new' | null>(null);
   const problems = draft.map((view, index) => viewProblem(view, draft, index));
 
   function change(next: View[], typing = false) {
@@ -63,15 +66,9 @@ export function ViewsEditor({ views, onChange }: { views: View[]; onChange: (vie
       {draft.map((view, index) => (
         <div key={view.id} className="view-row">
           <input type="text" aria-label="View name" value={view.name} placeholder="Name" onChange={(event) => edit(index, { name: event.target.value })} />
-          <input
-            type="text"
-            className="mono"
-            aria-label="Search query"
-            value={view.query}
-            placeholder="is:pr is:open review-requested:@me"
-            spellCheck={false}
-            onChange={(event) => edit(index, { query: event.target.value })}
-          />
+          <code className="view-query" title={view.query}>
+            {view.query}
+          </code>
           <input
             type="number"
             aria-label="Limit"
@@ -82,6 +79,9 @@ export function ViewsEditor({ views, onChange }: { views: View[]; onChange: (vie
             onChange={(event) => edit(index, { limit: event.target.value === '' ? undefined : Number(event.target.value) })}
           />
           <span className="row-actions">
+            <button type="button" title={view.filter ? 'Edit the filters' : 'Edit the search query'} onClick={() => setEditing(view)}>
+              Edit…
+            </button>
             <button type="button" className="icon" title="Move up" aria-label="Move up" disabled={index === 0} onClick={() => move(index, -1)}>
               ↑
             </button>
@@ -108,20 +108,11 @@ export function ViewsEditor({ views, onChange }: { views: View[]; onChange: (vie
           {problems[index] && <span className="problem">{problems[index]}</span>}
         </div>
       ))}
-      <p className="hint">
-        A GitHub search (<code>@me</code> is you, <code>{'{{7d}}'}</code> the date seven days ago) or one of GitHub's inbox sections:{' '}
-        {GITHUB_INBOX_FILTERS.map((filter, i) => (
-          <span key={filter}>
-            {i > 0 && ', '}
-            <code>inbox:{filter}</code>
-          </span>
-        ))}
-        . Limit defaults to 50, at most 100.
-      </p>
+      <p className="hint">Edit… changes a view's filters the way Graphite's section editor does, or its GitHub search query by hand. Limit defaults to 50, at most 100.</p>
 
       <div className="row">
-        <button type="button" onClick={() => change([...draft, { id: crypto.randomUUID(), name: '', query: 'is:pr is:open ' }])}>
-          Add view
+        <button type="button" onClick={() => setEditing('new')}>
+          Add view…
         </button>
         <button
           type="button"
@@ -165,6 +156,26 @@ export function ViewsEditor({ views, onChange }: { views: View[]; onChange: (vie
           setNotice(`Imported ${imported.length} ${imported.length === 1 ? 'view' : 'views'} from Graphite.`);
         }}
       />
+
+      {editing && (
+        <SectionEditor
+          key={editing === 'new' ? 'new' : editing.id}
+          view={editing === 'new' ? null : editing}
+          onSave={(saved) => {
+            change(draft.some((view) => view.id === saved.id) ? draft.map((view) => (view.id === saved.id ? saved : view)) : [...draft, saved]);
+            setEditing(null);
+          }}
+          onDelete={
+            editing === 'new'
+              ? undefined
+              : () => {
+                  change(draft.filter((view) => view.id !== editing.id));
+                  setEditing(null);
+                }
+          }
+          onClose={() => setEditing(null)}
+        />
+      )}
     </div>
   );
 }

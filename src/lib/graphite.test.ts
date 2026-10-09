@@ -41,7 +41,7 @@ const MERGED = {
 describe('importGraphiteSections', () => {
   it('turns a new-section link into one unnamed view', () => {
     expect(importGraphiteSections(EXAMPLE_LINK)).toEqual({
-      views: [{ view: { id: expect.any(String), name: 'Imported section', query: EXAMPLE_QUERY }, notes: [] }],
+      views: [{ view: { id: expect.any(String), name: 'Imported section', query: EXAMPLE_QUERY, filter: expect.any(Object) }, notes: [] }],
       notes: [],
       sectionCount: 1,
       inboxScope: null,
@@ -54,6 +54,16 @@ describe('importGraphiteSections', () => {
     expect(importGraphiteSections(link).views.map(({ view }) => [view.name, view.query])).toEqual([
       ['Needs my review', 'is:pr (repo:acme/web OR repo:acme/api) review-requested:@me sort:updated-desc'],
       ['Merged', 'is:pr is:merged sort:updated-desc'],
+    ]);
+  });
+
+  it('keeps each view\'s filter, with the viewer as @me, and its own repositories, for the section editor', () => {
+    const link = `https://app.graphite.com/?shared-sections=${encodeURIComponent(btoa(encodeURIComponent(JSON.stringify([NEEDS_REVIEW]))))}`;
+    const [imported] = importGraphiteSections(link).views;
+    expect(imported?.view.filter).toEqual({ groups: [{ rules: [{ isNegated: false, conditions: [{ kind: 'OPEN_REVIEW_REQUEST_FOR', username: '@me' }] }] }] });
+    expect(imported?.view.repos).toEqual([
+      { owner: 'acme', name: 'web' },
+      { owner: 'acme', name: 'api' },
     ]);
   });
 

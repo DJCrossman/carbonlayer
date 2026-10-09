@@ -1,6 +1,8 @@
 // Normalised domain model shared by the content script (producer, src/lib/github-web/) and the UIs (consumers).
 // Nothing here is GitHub-shaped; github-web maps GitHub's page data and page_data routes into these.
 
+import type { GraphiteFilter } from './graphite';
+
 export interface RepoRef {
   owner: string;
   name: string;
@@ -194,8 +196,15 @@ export interface PrDetail extends PrSummary {
 export interface View {
   id: string;
   name: string;
-  /** GitHub search query, e.g. "is:open is:pr review-requested:@me". `@me` is allowed. */
+  /**
+   * GitHub search query, e.g. "is:open is:pr review-requested:@me". `@me` is allowed. With a `filter`, compiled from it
+   * and `repos` whenever the view is saved.
+   */
   query: string;
+  /** Graphite's form of the section's filter, edited row by row; absent for a hand-written query. */
+  filter?: GraphiteFilter;
+  /** The repositories the view searches instead of the inbox's (absent or empty: the inbox's). */
+  repos?: RepoRef[];
   limit?: number;
   collapsed?: boolean;
 }

@@ -1,5 +1,5 @@
 // The inbox (the github.com homepage): one collapsible card per saved view, Graphite-dense rows, j/k keyboard
-// navigation and shareable view lists. Data comes through the DataSource; navigation goes through the parent page
+// navigation, shareable view lists, and Graphite's section editor in a drawer. Data comes through the DataSource; navigation goes through the parent page
 // (src/app/bridge.ts).
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
@@ -16,6 +16,7 @@ import { showToast, ToastHost } from '../ui/Toast';
 import { GraphiteImport } from './GraphiteImport';
 import { importViews } from './import-views';
 import { InboxSection } from './InboxSection';
+import { SectionEditor } from './SectionEditor';
 import { moveSelection, type SelectedRow } from './selection';
 import { ShortcutHelp } from './ShortcutHelp';
 import './inbox.css';
@@ -26,6 +27,8 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   const [selected, setSelected] = useState<SelectedRow | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [graphiteOpen, setGraphiteOpen] = useState(false);
+  // The view in the section editor, 'new' for one being added.
+  const [editing, setEditing] = useState<View | 'new' | null>(null);
   // The import offer is answered once per link; the route keeps the same array until the parent sends a new one.
   const [answeredImport, setAnsweredImport] = useState<View[] | null>(null);
   const pendingImport = route.importViews !== answeredImport ? route.importViews : null;
@@ -48,8 +51,8 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
     if (event.key === 'Escape') {
       if (!helpOpen) return;
       setHelpOpen(false);
-    } else if (graphiteOpen) {
-      // The import dialog's own keys (it closes itself on Esc).
+    } else if (graphiteOpen || editing) {
+      // The import dialog's and the section editor's own keys (they close themselves on Esc).
       return;
     } else if (event.key === '?') {
       setHelpOpen((open) => !open);
@@ -88,6 +91,20 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   function toggleCollapsed(viewId: string) {
     if (!settings) return;
     void inbox.saveSettings({ views: settings.views.map((view) => (view.id === viewId ? { ...view, collapsed: !view.collapsed } : view)) });
+  }
+
+  function saveSection(saved: View) {
+    if (!settings) return;
+    const exists = settings.views.some((view) => view.id === saved.id);
+    void inbox.saveSettings({ views: exists ? settings.views.map((view) => (view.id === saved.id ? saved : view)) : [...settings.views, saved] });
+    showToast(exists ? 'Section saved' : 'Section added');
+    setEditing(null);
+  }
+
+  function deleteSection(deleted: View) {
+    if (!settings || !window.confirm(`Delete the section “${deleted.name}”?`)) return;
+    void inbox.saveSettings({ views: settings.views.filter((view) => view.id !== deleted.id) });
+    setEditing(null);
   }
 
   function answerImport(answer: 'replace' | 'append' | 'dismiss') {
@@ -193,6 +210,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
             selectedPrId={selected?.viewId === view.id ? selected.prId : null}
             overdueAfterHours={view.id === 'needs-review' ? 48 : undefined}
             onToggleCollapsed={() => toggleCollapsed(view.id)}
+            onEdit={() => setEditing(view)}
             onOpen={(pr, newTab) => {
               setSelected({ viewId: view.id, prId: pr.id });
               openPullRequest(pr.url, newTab);
@@ -202,6 +220,15 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
       </main>
 
       {helpOpen && <ShortcutHelp onClose={() => setHelpOpen(false)} />}
+      {editing && (
+        <SectionEditor
+          key={editing === 'new' ? 'new' : editing.id}
+          view={editing === 'new' ? null : editing}
+          onSave={saveSection}
+          onDelete={editing === 'new' ? undefined : () => deleteSection(editing)}
+          onClose={() => setEditing(null)}
+        />
+      )}
       {graphiteOpen && (
         <div
           className="gg-help"
