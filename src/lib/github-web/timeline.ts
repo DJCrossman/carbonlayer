@@ -96,6 +96,9 @@ export function timelineFrom(
       // The requested reviewer (user or team) is the bold name after the actor.
       const requested = row.querySelector('.TimelineItem-body .text-bold:not(.author)')?.textContent?.trim();
       if (requested) items.push({ kind: 'review-requested', id, actor, requested, createdAt });
+    } else if (/review requested due to/.test(text) && actor) {
+      // An automatic request ("Copilot AI balanced review requested due to automatic review settings") names the reviewer as the actor.
+      items.push({ kind: 'review-requested', id, actor: null, requested: actor.login, createdAt });
     } else if (/marked this pull request as ready for review/.test(text)) {
       items.push({ kind: 'ready-for-review', id, actor, createdAt });
     } else if (/marked this pull request as draft/.test(text) || badge.includes('octicon-git-pull-request-draft')) {
