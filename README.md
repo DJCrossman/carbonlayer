@@ -1,4 +1,6 @@
-# Graphite-style GitHub
+# CarbonLayer – Graphite UI for GitHub
+
+We have Graphite at home.
 
 A Chrome extension that makes GitHub's pull requests look and work like [Graphite](https://graphite.dev):
 
@@ -14,7 +16,7 @@ A Chrome extension that makes GitHub's pull requests look and work like [Graphit
   CI checks, reviewers and a single "next step" merge card in a right sidebar, diffs rendered with
   [`@pierre/diffs`](https://diffs.com), and Graphite's keyboard shortcuts.
 
-GitHub's own page is one click away: a "GitHub | Graphite" switch in GitHub's header, at the top right next to the
+GitHub's own page is one click away: a "GitHub | CarbonLayer" switch in GitHub's header, at the top right next to the
 + and notification buttons, flips the homepage or the pull request page between GitHub's view and this one, in
 place (remembered per surface, like the popup's switches). Add `?gh=1` to any URL to see GitHub's page just once.
 
