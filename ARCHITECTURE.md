@@ -9,30 +9,34 @@ surfaces in the style of Graphite:
    vertical scroll (description → activity → diff), CI / reviewers / merge status in a right sidebar,
    diffs rendered with `@pierre/diffs`, Graphite keybindings.
 
+## Why an iframe, not a shadow root
+
+`@pierre/diffs` cannot run in a content script: Chrome's isolated world has no `customElements`
+registry (the library defines `<diffs-container>` at import time) and WXT bundles content scripts as
+one IIFE, which inlines every Shiki grammar (11 MB). See `docs/research/pierre-diffs.md`. So the UI is
+an ordinary extension page, `app.html`, embedded into github.com with WXT's `createIframeUi`. The page
+has a real custom-element registry, ESM code-splitting (grammars load lazily), and the extension's own
+CSP. The content script is a thin bridge.
+
 ## Entry points (`entrypoints/`)
 
 | file | role |
 | --- | --- |
-| `background.ts` | Owns the GitHub API client (GraphQL + REST), the PAT, response cache, and answers RPC messages from content scripts. |
-| `inbox.content.tsx` | Content script matching `github.com/pulls*`. Hides GitHub's `main`, mounts the Inbox React app in a shadow root. |
-| `pr.content.tsx` | Content script matching `github.com/*/*/pull/*`. Hides GitHub's `main`, mounts the PR React app in a shadow root. |
-| `options/` | Options page: PAT, default merge method, views editor, keybinding reference. |
-| `popup/` | Toolbar popup: on/off toggle for the current page, link to inbox and options. |
-| `harness/` | Dev-only page that renders the Inbox and PR apps from JSON fixtures so they can be screenshotted without a token. |
-
-Both content scripts share one mounting approach: `createShadowRootUi` with `cssInjectionMode: 'ui'`,
-`inheritStyles: false`; listen to `wxt:locationchange` to re-route on GitHub's Turbo navigation; a
-`?gh=1` query param (or the popup toggle) leaves GitHub's native page untouched.
+| `background.ts` | Owns the GitHub API client (GraphQL + REST), the PAT, a short TTL cache, and answers RPC messages (`src/lib/rpc.ts`). |
+| `github.content.ts` | Content script on `github.com/*`. Recognises the inbox (`/pulls`) and PR (`/:owner/:repo/pull/:n`) routes (`src/app/routes.ts`), hides GitHub's `main`, mounts the iframe pointing at `app.html#<route>`, forwards theme + keydown to the iframe, performs top-level navigations the iframe asks for (`src/app/bridge.ts`), and re-routes on `wxt:locationchange`. `?gh=1` or the popup toggle leaves GitHub untouched. |
+| `app/` | The React app (`entrypoints/app/main.tsx`): hash router → `InboxPage` (`src/inbox/`) or `PrPage` (`src/pr/`). Data comes through a `DataSource` (`src/app/data-source.ts`): the RPC-backed one in the extension, a fixture-backed one when opened with `?fixtures=1` (the dev harness). Listed in `web_accessible_resources` for `https://github.com/*`. |
+| `options/` | Options page: PAT, merge method, diff layout, inbox scope, views editor, keybinding reference. |
+| `popup/` | Toolbar popup: auth status, on/off toggles, links to inbox and options. |
 
 ## Data flow
 
-Content script → `chrome.runtime.sendMessage` RPC → background → `api.github.com` (PAT in
-`chrome.storage.local`). Normalised domain objects (`src/lib/model.ts`) cross the boundary, never raw
+App (iframe) → `browser.runtime.sendMessage` RPC → background → `api.github.com` (PAT in
+`browser.storage.local`). Normalised domain objects (`src/lib/model.ts`) cross the boundary, never raw
 GraphQL. The background keeps a short TTL cache keyed by query so navigating within a stack is fast.
 
-Stacks are inferred from branches: walk `baseRefName` downwards (PR whose `headRefName` equals the
-current base) until the default branch, and `headRefName` upwards (PRs whose base equals the current
-head). Graphite's stack comment is only a fallback for ordering.
+Stacks: GitHub-native `stack`/`stackEntry` first; otherwise infer from branches (walk `baseRefName`
+downwards until the default branch, `headRefName` upwards); Graphite's stack comment is only a
+fallback for ordering. See `docs/research/github-api.md` §5.
 
 ## Views (inbox)
 
@@ -48,5 +52,6 @@ extension installed offers to import (replace or append).
 
 - `pnpm compile` (tsc) and `pnpm build` must pass.
 - `pnpm test` (vitest) covers pure logic: stack inference, view link encode/decode, status derivation.
-- `pnpm dev:harness` serves the fixture harness for visual checks (no token needed).
+- Harness: `pnpm build`, then serve `.output/chrome-mv3` statically and open `app.html?fixtures=1#/inbox` or
+  `app.html?fixtures=1#/pr/acme/widgets/42` for visual checks (no token, no `chrome.*`).
 - Real-site check: load `.output/chrome-mv3` unpacked, add a PAT in Options, open github.com/pulls.

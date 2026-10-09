@@ -48,6 +48,8 @@ export type MergeStatus =
   | 'UNKNOWN';
 
 export interface ReviewerSummary {
+  /** A user, bot, or a team (teams have no avatar; `login` holds the team slug). */
+  kind: 'user' | 'team';
   user: UserRef;
   /** Latest opinionated review state from this reviewer, or PENDING when only requested. */
   state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'PENDING' | 'DISMISSED';
@@ -83,6 +85,12 @@ export interface PrSummary {
   labels: LabelSummary[];
   /** Comment + review-comment count, for the inbox row. */
   commentCount: number;
+  /** GitHub's isReadByViewer, inverted; null when GitHub does not report it. */
+  unread: boolean | null;
+  isInMergeQueue: boolean;
+  autoMerge: { method: 'MERGE' | 'SQUASH' | 'REBASE' } | null;
+  /** GitHub-native stacked PR position (1 = closest to trunk); null for Graphite stacks and plain PRs. */
+  nativeStack: { position: number; size: number } | null;
 }
 
 export interface Stack {
@@ -91,6 +99,8 @@ export interface Stack {
   /** Index of the PR being viewed in `entries`. */
   currentIndex: number;
   trunk: string;
+  /** Where the ordering came from; 'none' means a single, unstacked PR. */
+  source: 'native' | 'branches' | 'graphite-comment' | 'none';
 }
 
 export interface ReviewThreadComment {
@@ -160,7 +170,11 @@ export interface PrDetail extends PrSummary {
   stack: Stack;
   defaultMergeMethod: 'MERGE' | 'SQUASH' | 'REBASE';
   allowedMergeMethods: Array<'MERGE' | 'SQUASH' | 'REBASE'>;
-  autoMergeEnabled: boolean;
+  viewerCanMerge: boolean;
+  viewerCanEnableAutoMerge: boolean;
+  /** Required checks only, derived from `isRequired`; empty when the repo has no required checks. */
+  requiredCheckNames: string[];
+  unresolvedThreadCount: number;
 }
 
 export interface View {
