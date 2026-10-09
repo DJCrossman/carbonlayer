@@ -4,6 +4,7 @@
 
 import type { PrDetail } from '../model';
 import type { MergeMethod, RpcMethods } from '../rpc';
+import { rerunWorkflowJobs } from './actions';
 import type { MergeBox } from './merge-box';
 import { getJson, send } from './session';
 
@@ -88,12 +89,15 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'pr.fe
   'pr.reRequestReview': async ({ prId, reviewerId }) => {
     await send(`${pullRequestFor(prId).path}/page_data/re_request_review_from_user`, 'POST', { reviewerId: Number(reviewerId) });
   },
+  'pr.rerunFailedJobs': ({ prId, runId }) => rerunWorkflowJobs(pullRequestFor(prId).repoPath, runId, 'failed'),
+  'pr.rerunAllJobs': ({ prId, runId }) => rerunWorkflowJobs(pullRequestFor(prId).repoPath, runId, 'all'),
 };
 
 /** Remembers a loaded PR (and its threads) so later writes can address it. */
 export function rememberPullRequest(detail: PrDetail): void {
   pullRequests.set(detail.id, {
     path: `/${detail.repo.owner}/${detail.repo.name}/pull/${detail.number}`,
+    repoPath: `/${detail.repo.owner}/${detail.repo.name}`,
     headOid: detail.headOid,
     baseOid: detail.baseOid,
     isNativeStack: detail.stack.source === 'native',
@@ -164,6 +168,8 @@ async function stackMergeSettled(pull: KnownPullRequest, uuid: string, initialSt
 interface KnownPullRequest {
   /** `/{owner}/{repo}/pull/{n}` */
   path: string;
+  /** `/{owner}/{repo}`, where its workflow runs live. */
+  repoPath: string;
   headOid: string;
   baseOid: string;
   isNativeStack: boolean;

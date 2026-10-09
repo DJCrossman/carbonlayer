@@ -49,6 +49,14 @@ Candidate lists: `/_ghui/item-pickers/assignees?owner&repo&queryId=…&number&qu
   `<form action>` and its hidden `authenticity_token` from that partial and POST it form-encoded.
 - No `<meta name="csrf-token">`; each classic form carries its own `authenticity_token` (per form). `page_data` needs none.
 - No per-check re-run for non-Actions checks on the page.
+- VERIFIED signed out on cli/cli#14320 (2026-10-09): Actions job links read `/cli/cli/actions/runs/{runId}/job/{jobId}?pr=14320`;
+  `job_rerun_dialogs_partial` is the same empty `js-updatable-content` shell with or without `X-Requested-With`; the run page's
+  bundle only shows per-job "Re-run job" buttons opening server-rendered dialogs (`data-show-dialog-id`). `P/reviewers`,
+  `P/reviewers?q=` and `P/suggested_reviewers` answer `{}` (200).
+- **In the app**: `github-web/actions.ts` loads the partial, takes the form whose action names failed jobs
+  (`rerun_failed_jobs` / `rerun-failed-jobs`) or the run's own `…/rerun` (never a job's), falling back to its dialog's wording,
+  and POSTs its hidden fields form-encoded; no such form → `offered: false`, and the PR page opens the run on GitHub. The
+  Checks card's "Re-run failed" (`c r`) and its menu's "Re-run all jobs" run this once per workflow run with a failed check.
 
 ## Where to re-check (`github.githubassets.com/assets/`)
 `4t-c2bbc4f2c8ef0b83.js` (`modifyReviewers:"modify_reviewers"`, `reRequestReviewFromUser`, `availableReviewers:"reviewers"`,

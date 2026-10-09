@@ -32,9 +32,9 @@ const summary41: PrSummary = {
   ci: {
     state: 'SUCCESS',
     checks: [
-      { name: 'build', state: 'SUCCESS', url: 'https://github.com/acme/widgets/actions/runs/101', description: null, group: 'CI', startedAt: '2026-10-08T16:01:00Z', completedAt: '2026-10-08T16:04:12Z' },
-      { name: 'unit', state: 'SUCCESS', url: 'https://github.com/acme/widgets/actions/runs/102', description: null, group: 'CI', startedAt: '2026-10-08T16:01:00Z', completedAt: '2026-10-08T16:06:40Z' },
-      { name: 'codeql', state: 'SUCCESS', url: 'https://github.com/acme/widgets/actions/runs/103', description: null, group: 'GitHub Actions', startedAt: '2026-10-08T16:01:00Z', completedAt: '2026-10-08T16:09:05Z' },
+      { name: 'build', state: 'SUCCESS', url: 'https://github.com/acme/widgets/actions/runs/101', description: null, group: 'CI', startedAt: '2026-10-08T16:01:00Z', completedAt: '2026-10-08T16:04:12Z', runId: '101' },
+      { name: 'unit', state: 'SUCCESS', url: 'https://github.com/acme/widgets/actions/runs/102', description: null, group: 'CI', startedAt: '2026-10-08T16:01:00Z', completedAt: '2026-10-08T16:06:40Z', runId: '102' },
+      { name: 'codeql', state: 'SUCCESS', url: 'https://github.com/acme/widgets/actions/runs/103', description: null, group: 'GitHub Actions', startedAt: '2026-10-08T16:01:00Z', completedAt: '2026-10-08T16:09:05Z', runId: '103' },
     ],
     counts: { success: 3, failure: 0, pending: 0, other: 0 },
   },
@@ -51,14 +51,14 @@ const summary41: PrSummary = {
 };
 
 const checks42: PrSummary['ci']['checks'] = [
-  { name: 'build', state: 'SUCCESS', url: 'https://github.com/acme/widgets/actions/runs/201', description: null, group: 'CI', startedAt: '2026-10-09T08:31:00Z', completedAt: '2026-10-09T08:33:48Z' },
-  { name: 'lint', state: 'SUCCESS', url: 'https://github.com/acme/widgets/actions/runs/202', description: null, group: 'CI', startedAt: '2026-10-09T08:31:00Z', completedAt: '2026-10-09T08:32:10Z' },
-  { name: 'typecheck', state: 'SUCCESS', url: 'https://github.com/acme/widgets/actions/runs/203', description: null, group: 'CI', startedAt: '2026-10-09T08:31:00Z', completedAt: '2026-10-09T08:34:02Z' },
-  { name: 'unit', state: 'SUCCESS', url: 'https://github.com/acme/widgets/actions/runs/204', description: null, group: 'CI', startedAt: '2026-10-09T08:31:00Z', completedAt: '2026-10-09T08:37:30Z' },
-  { name: 'e2e / portal', state: 'FAILURE', url: 'https://github.com/acme/widgets/actions/runs/205', description: '2 tests failed', group: 'CI', startedAt: '2026-10-09T08:31:00Z', completedAt: '2026-10-09T08:44:19Z' },
-  { name: 'e2e / admin', state: 'PENDING', url: 'https://github.com/acme/widgets/actions/runs/206', description: null, group: 'GitHub Actions', startedAt: '2026-10-09T08:31:00Z', completedAt: null },
-  { name: 'deploy-preview', state: 'PENDING', url: null, description: 'Waiting for e2e', group: 'GitHub Actions', startedAt: null, completedAt: null },
-  { name: 'codeql', state: 'SUCCESS', url: 'https://github.com/acme/widgets/actions/runs/208', description: null, group: 'GitHub Actions', startedAt: '2026-10-09T08:31:00Z', completedAt: '2026-10-09T08:40:51Z' },
+  { name: 'build', state: 'SUCCESS', url: 'https://github.com/acme/widgets/actions/runs/201', description: null, group: 'CI', startedAt: '2026-10-09T08:31:00Z', completedAt: '2026-10-09T08:33:48Z', runId: '201' },
+  { name: 'lint', state: 'SUCCESS', url: 'https://github.com/acme/widgets/actions/runs/202', description: null, group: 'CI', startedAt: '2026-10-09T08:31:00Z', completedAt: '2026-10-09T08:32:10Z', runId: '202' },
+  { name: 'typecheck', state: 'SUCCESS', url: 'https://github.com/acme/widgets/actions/runs/203', description: null, group: 'CI', startedAt: '2026-10-09T08:31:00Z', completedAt: '2026-10-09T08:34:02Z', runId: '203' },
+  { name: 'unit', state: 'SUCCESS', url: 'https://github.com/acme/widgets/actions/runs/204', description: null, group: 'CI', startedAt: '2026-10-09T08:31:00Z', completedAt: '2026-10-09T08:37:30Z', runId: '204' },
+  { name: 'e2e / portal', state: 'FAILURE', url: 'https://github.com/acme/widgets/actions/runs/205', description: '2 tests failed', group: 'CI', startedAt: '2026-10-09T08:31:00Z', completedAt: '2026-10-09T08:44:19Z', runId: '205' },
+  { name: 'e2e / admin', state: 'PENDING', url: 'https://github.com/acme/widgets/actions/runs/206', description: null, group: 'GitHub Actions', startedAt: '2026-10-09T08:31:00Z', completedAt: null, runId: '206' },
+  { name: 'deploy-preview', state: 'PENDING', url: null, description: 'Waiting for e2e', group: 'GitHub Actions', startedAt: null, completedAt: null, runId: null },
+  { name: 'codeql', state: 'SUCCESS', url: 'https://github.com/acme/widgets/actions/runs/208', description: null, group: 'GitHub Actions', startedAt: '2026-10-09T08:31:00Z', completedAt: '2026-10-09T08:40:51Z', runId: '208' },
 ];
 
 const summary42: PrSummary = {
@@ -115,7 +115,7 @@ const summary43: PrSummary = {
   reviewers: [],
   ci: {
     state: 'PENDING',
-    checks: [{ name: 'build', state: 'PENDING', url: null, description: null, group: 'CI', startedAt: '2026-10-09T07:05:30Z', completedAt: null }],
+    checks: [{ name: 'build', state: 'PENDING', url: null, description: null, group: 'CI', startedAt: '2026-10-09T07:05:30Z', completedAt: null, runId: null }],
     counts: { success: 0, failure: 0, pending: 1, other: 0 },
   },
   mergeStatus: 'DRAFT',

@@ -1,6 +1,6 @@
 // The right sidebar: status (with Merge when ready), the one next step, checks, reviewers (Reviewers.tsx), labels and
 // assignees. Cards with nothing to show are left out.
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { MergeMethod } from '../lib/rpc';
 import type { PrDetail } from '../lib/model';
 import { Avatar } from '../ui/Avatar';
@@ -9,6 +9,7 @@ import { Card } from '../ui/Card';
 import { Icon } from '../ui/Icon';
 import { LabelChip } from '../ui/LabelChip';
 import { RelativeTime } from '../ui/RelativeTime';
+import type { CheckReruns } from './check-reruns';
 import { goToPr } from './navigation';
 import { nextActionFor } from './next-action';
 import { StatePill } from './primitives';
@@ -21,6 +22,7 @@ export function Sidebar({
   onMarkReady,
   onMerge,
   onViewThreads,
+  checkReruns,
   reviewersCard,
 }: {
   pr: PrDetail;
@@ -30,6 +32,7 @@ export function Sidebar({
   onMarkReady: () => Promise<boolean>;
   onMerge: (method: MergeMethod) => Promise<boolean>;
   onViewThreads: () => void;
+  checkReruns: CheckReruns;
   /** The Reviewers card (Reviewers.tsx), wired to the page's data source. */
   reviewersCard: ReactNode;
 }) {
@@ -37,7 +40,7 @@ export function Sidebar({
     <aside className="pr-sidebar" aria-label="Status">
       <StatusCard pr={pr} mergeMethod={mergeMethod} onAutoMerge={onAutoMerge} />
       <ActionCard pr={pr} mergeMethod={mergeMethod} onMarkReady={onMarkReady} onMerge={onMerge} onViewThreads={onViewThreads} />
-      {pr.ci.checks.length > 0 && <ChecksCard pr={pr} />}
+      {pr.ci.checks.length > 0 && <ChecksCard pr={pr} reruns={checkReruns} />}
       {reviewersCard}
       {pr.labels.length > 0 && (
         <Card className="side-card">
@@ -223,8 +226,9 @@ function MergeControls({ pr, mergeMethod, onMerge }: { pr: PrDetail; mergeMethod
   );
 }
 
-function ChecksCard({ pr }: { pr: PrDetail }) {
+function ChecksCard({ pr, reruns }: { pr: PrDetail; reruns: CheckReruns }) {
   const [showPassed, setShowPassed] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const { checks } = pr.ci;
   const passed = checks.filter((check) => check.state === 'SUCCESS');
   // Failing first, then running, then everything else.
@@ -239,14 +243,63 @@ function ChecksCard({ pr }: { pr: PrDetail }) {
   ] as const;
   const other = checks.length - segments.reduce((sum, [, count]) => sum + count, 0);
 
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Element) || !event.target.closest('.checks-rerun-menu')) setMenuOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => event.key === 'Escape' && setMenuOpen(false);
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [menuOpen]);
+
   return (
     <Card className="side-card">
-      <h3 className="side-card-title">
-        Checks{' '}
-        <span className="pr-muted">
-          · {passed.length}/{checks.length} passed
-        </span>
-      </h3>
+      <div className="side-card-head">
+        <h3 className="side-card-title">
+          Checks{' '}
+          <span className="pr-muted">
+            · {passed.length}/{checks.length} passed
+          </span>
+        </h3>
+        {reruns.failedRunIds.length > 0 && (
+          <>
+            <Button variant="ghost" size="sm" icon="sync" disabled={reruns.running} title="Re-run the failed jobs of each failing workflow run (c r)" onClick={() => void reruns.rerun('failed')}>
+              {reruns.running ? 'Re-running…' : 'Re-run failed'}
+            </Button>
+            <div className="pr-menu checks-rerun-menu">
+              <Button
+                variant="ghost"
+                size="sm"
+                icon="kebab-horizontal"
+                aria-label="More re-run options"
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                disabled={reruns.running}
+                onClick={() => setMenuOpen((open) => !open)}
+              />
+              {menuOpen && (
+                <div className="pr-menu-list" role="menu">
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      void reruns.rerun('all');
+                    }}
+                  >
+                    <Icon name="sync" size={14} />
+                    Re-run all jobs
+                  </button>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
       <div className="checks-bar" aria-hidden="true">
         {[...segments, ['neutral', other] as const].map(([tone, count]) =>
           count > 0 ? <span key={tone} className={`is-${tone}`} style={{ flexGrow: count }} /> : null,

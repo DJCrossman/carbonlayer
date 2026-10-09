@@ -28,6 +28,8 @@ export interface CheckRunSummary {
   group: string | null;
   startedAt: string | null;
   completedAt: string | null;
+  /** The GitHub Actions workflow run this check is a job of; null for other apps' checks. Re-runs go by run. */
+  runId: string | null;
 }
 
 export interface CiSummary {

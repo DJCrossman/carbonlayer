@@ -38,6 +38,9 @@ export interface RpcMethods {
     result: undefined;
   };
   'pr.reRequestReview': { args: { prId: string; reviewerId: string }; result: undefined };
+  /** `offered: false` when GitHub has no such re-run for the run; its page on GitHub is then the way to do it. */
+  'pr.rerunFailedJobs': { args: { prId: string; runId: string }; result: { offered: boolean } };
+  'pr.rerunAllJobs': { args: { prId: string; runId: string }; result: { offered: boolean } };
 }
 
 export type RpcMethod = keyof RpcMethods;

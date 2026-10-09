@@ -33,6 +33,9 @@ export interface DataSource {
   reviewerCandidates(prId: string, query: string): Promise<{ suggested: ReviewerCandidate[]; reviewers: ReviewerCandidate[] }>;
   modifyReviewers(prId: string, add: ReviewerChange[], remove: ReviewerChange[]): Promise<void>;
   reRequestReview(prId: string, reviewerId: string): Promise<void>;
+  /** `offered: false` when GitHub has no such re-run for the workflow run. */
+  rerunFailedJobs(prId: string, runId: string): Promise<{ offered: boolean }>;
+  rerunAllJobs(prId: string, runId: string): Promise<{ offered: boolean }>;
   getSettings(): Promise<Settings>;
   setSettings(patch: Partial<Settings>): Promise<Settings>;
   watchSettings(onChange: (settings: Settings) => void): () => void;
@@ -54,6 +57,8 @@ export function createRpcDataSource(): DataSource {
     reviewerCandidates: (prId, query) => rpc('pr.reviewerCandidates', { prId, query }),
     modifyReviewers: (prId, add, remove) => rpc('pr.modifyReviewers', { prId, add, remove }),
     reRequestReview: (prId, reviewerId) => rpc('pr.reRequestReview', { prId, reviewerId }),
+    rerunFailedJobs: (prId, runId) => rpc('pr.rerunFailedJobs', { prId, runId }),
+    rerunAllJobs: (prId, runId) => rpc('pr.rerunAllJobs', { prId, runId }),
     getSettings,
     setSettings,
     watchSettings,
@@ -96,6 +101,14 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     },
     modifyReviewers: (...args) => log('modifyReviewers', ...args),
     reRequestReview: (...args) => log('reRequestReview', ...args),
+    rerunFailedJobs: async (...args) => {
+      await log('rerunFailedJobs', ...args);
+      return { offered: true };
+    },
+    rerunAllJobs: async (...args) => {
+      await log('rerunAllJobs', ...args);
+      return { offered: true };
+    },
     getSettings: async () => settings,
     setSettings: async (patch) => {
       settings = { ...settings, ...patch };

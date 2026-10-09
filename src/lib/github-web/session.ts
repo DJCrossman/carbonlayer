@@ -8,11 +8,12 @@ import type { UserRef } from '../model';
 export const SIGNED_OUT = 'Sign in to github.com in this tab, then reload.';
 
 /**
- * The one place a request leaves for GitHub: sends only the headers GitHub's UI sends, and turns a
- * signed-out answer or any other failure into a message the UI can show as is.
+ * The one place a read leaves for GitHub: sends only the headers GitHub's UI sends, and turns a
+ * signed-out answer or any other failure into a message the UI can show as is. `xhr` marks it as one of GitHub's own
+ * scripts' requests, as its JSON routes and the HTML partials its classic pages load into dialogs are.
  */
-export async function request(path: string, accept: 'application/json' | 'text/html'): Promise<Response> {
-  const headers: Record<string, string> = accept === 'application/json' ? { Accept: accept, 'X-Requested-With': 'XMLHttpRequest' } : { Accept: accept };
+export async function request(path: string, accept: 'application/json' | 'text/html', { xhr = accept === 'application/json' } = {}): Promise<Response> {
+  const headers: Record<string, string> = xhr ? { Accept: accept, 'X-Requested-With': 'XMLHttpRequest' } : { Accept: accept };
   let response: Response;
   try {
     response = await fetch(path, { headers, credentials: 'same-origin' });
@@ -62,6 +63,28 @@ export async function send<T>(path: string, method: 'POST' | 'PUT' | 'DELETE', b
     throw new Error(typeof data?.error === 'string' && data.error ? data.error : `GitHub answered ${response.status} to ${method} ${path.split('?')[0]}`);
   }
   return data as T;
+}
+
+/**
+ * A classic, server-rendered form, submitted as the browser would: form-encoded, with the fields it carries (its own
+ * `authenticity_token` among them). Only ever to github.com itself. A 2xx, or a redirect anywhere but sign-in, is success.
+ */
+export async function submitForm(action: string, fields: Array<[string, string]>): Promise<void> {
+  const url = new URL(action, location.origin);
+  if (url.origin !== location.origin) throw new Error(`GitHub's form points away from GitHub (${url.origin}); not sending it`);
+  let response: Response;
+  try {
+    response = await fetch(url.href, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { Accept: 'text/html', 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
+      body: new URLSearchParams(fields).toString(),
+    });
+  } catch {
+    throw new Error('Could not reach GitHub (network error)');
+  }
+  if (response.redirected && new URL(response.url).pathname === '/login') throw new Error(SIGNED_OUT);
+  if (!response.ok && !response.redirected) throw new Error(`GitHub answered ${response.status} to POST ${url.pathname}`);
 }
 
 /** A JSON endpoint of GitHub's web UI. */

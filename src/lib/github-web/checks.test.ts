@@ -26,6 +26,16 @@ describe('checksFrom', () => {
     expect(requiredCheckNames).toEqual(['build', 'lint']);
   });
 
+  it('names the workflow run of each GitHub Actions job (link shape as on cli/cli#14320), for re-runs', () => {
+    const { ci } = checksFrom({
+      statusChecks: [
+        { displayName: 'lint', state: 'FAILURE', targetUrl: 'https://github.com/cli/cli/actions/runs/34362049624/job/102501237455?pr=14320' },
+        { displayName: 'preview', state: 'SUCCESS', targetUrl: 'https://vercel.com/acme/widgets/123' },
+      ],
+    });
+    expect(ci.checks.map((check) => check.runId)).toEqual(['34362049624', null]);
+  });
+
   it("falls back to GitHub's combined verdict when there are no rows, and to NONE without anything", () => {
     expect(checksFrom({ statusRollup: { combinedState: 'PENDING_APPROVAL', summary: [] } }).ci.state).toBe('PENDING');
     expect(checksFrom({ statusRollup: { combinedState: 'PASSED', summary: [] } }).ci.state).toBe('SUCCESS');

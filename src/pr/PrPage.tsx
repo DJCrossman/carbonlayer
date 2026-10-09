@@ -15,6 +15,7 @@ import { RelativeTime } from '../ui/RelativeTime';
 import { Skeleton } from '../ui/Skeleton';
 import { showToast, ToastHost } from '../ui/Toast';
 import { Activity } from './Activity';
+import { useCheckReruns } from './check-reruns';
 import { Markdown } from './Comment';
 import { FilesSection, useFileReview } from './Files';
 import { usePrKeybindings } from './keybindings';
@@ -93,6 +94,7 @@ function PrView({
   const [edits, setEdits] = useState<PendingEdits>({ viewed: {}, resolved: {}, isDraft: null, autoMerge: null });
   const pr = useMemo(() => optimisticPr(fetched, edits), [fetched, edits]);
   const files = useFileReview(pr);
+  const checkReruns = useCheckReruns(pr, source, refetch);
   const [batch, setBatch] = useState<ReviewThreadDraft[]>([]);
   const [review, setReview] = useState<{ open: boolean; event: ReviewEvent; body: string }>({ open: false, event: 'COMMENT', body: '' });
   const [quickApprove, setQuickApprove] = useState(false);
@@ -233,6 +235,8 @@ function PrView({
         return setQuickApprove(true);
       case 'edit-reviewers':
         return setReviewerPickerOpen(true);
+      case 'rerun-failed-checks':
+        return void checkReruns.rerun('failed');
       case 'toggle-viewed':
         return currentFile && toggleViewed(currentFile.path);
       case 'toggle-file':
@@ -315,6 +319,7 @@ function PrView({
         onMarkReady={() => setDraft(false)}
         onMerge={(method) => mutate(() => source.merge(pr.id, method, pr.headOid), 'Could not merge', { success: `Merged #${pr.number}` })}
         onViewThreads={() => files.stepThread(1)}
+        checkReruns={checkReruns}
         reviewersCard={
           <ReviewersCard
             pr={pr}

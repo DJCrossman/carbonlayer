@@ -44,6 +44,8 @@ export function checksFrom(data: unknown): { ci: CiSummary; requiredCheckNames: 
       group: row.avatarDescription ?? row.workflowName ?? row.app?.name ?? null,
       startedAt: row.startedAt ?? (state === 'PENDING' ? (row.stateChangedAt ?? null) : null),
       completedAt: row.completedAt ?? (state === 'PENDING' ? null : (row.stateChangedAt ?? null)),
+      // An Actions job links to /{owner}/{repo}/actions/runs/{runId}/job/{jobId}.
+      runId: /\/actions\/runs\/(\d+)/.exec(row.targetUrl ?? row.detailsUrl ?? row.url ?? '')?.[1] ?? null,
     };
   });
   const counts = { success: 0, failure: 0, pending: 0, other: 0 };
