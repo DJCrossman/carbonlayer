@@ -42,42 +42,6 @@
 .gg-inbox__logo {
   color: var(--gg-fg-muted);
 }
-.gg-inbox__scope {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 320px;
-  height: 24px;
-  padding: 0 9px;
-  overflow: hidden;
-  border: 1px solid var(--gg-border);
-  border-radius: 999px;
-  background: var(--gg-bg);
-  color: var(--gg-fg-muted);
-  font: inherit;
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.gg-inbox__scope:hover {
-  border-color: var(--gg-fg-subtle);
-  color: var(--gg-fg);
-}
-.gg-inbox__scope-input {
-  width: 300px;
-  height: 24px;
-  padding: 0 9px;
-  border: 1px solid var(--gg-accent);
-  border-radius: 999px;
-  outline: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gg-accent) 22%, transparent);
-  background: var(--gg-bg);
-  color: var(--gg-fg);
-  font: inherit;
-  font-size: 12px;
-  box-sizing: border-box;
-}
 .gg-inbox__actions {
   display: flex;
   align-items: center;

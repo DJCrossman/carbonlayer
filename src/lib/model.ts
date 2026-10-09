@@ -8,6 +8,11 @@ export interface RepoRef {
   name: string;
 }
 
+/** A repository the viewer can pick, as GitHub's repository picker lists it. */
+export interface RepoCandidate extends RepoRef {
+  isPrivate: boolean;
+}
+
 export interface UserRef {
   login: string;
   avatarUrl: string;

@@ -2,12 +2,14 @@
 // GitHub with the user's session. Inside github.com the app posts requests to its parent window, the
 // content script answers them with same-origin fetches (cookies included); see src/lib/github-web/.
 
-import type { PrDetail, RepoRef, ReviewerCandidate, View, ViewResult } from './model';
+import type { PrDetail, RepoCandidate, RepoRef, ReviewerCandidate, View, ViewResult } from './model';
 
 export type MergeMethod = 'MERGE' | 'SQUASH' | 'REBASE';
 
 export interface RpcMethods {
   'inbox.fetch': { args: { views: View[]; force?: boolean }; result: ViewResult[] };
+  /** The repositories GitHub's repository picker offers for `query` (what the user typed; empty for its first list). */
+  'repos.search': { args: { query: string }; result: RepoCandidate[] };
   'pr.fetch': { args: { repo: RepoRef; number: number; force?: boolean }; result: PrDetail };
   'pr.review': {
     args: {

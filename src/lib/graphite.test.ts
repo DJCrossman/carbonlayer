@@ -44,7 +44,7 @@ describe('importGraphiteSections', () => {
       views: [{ view: { id: expect.any(String), name: 'Imported section', query: EXAMPLE_QUERY, filter: expect.any(Object) }, notes: [] }],
       notes: [],
       sectionCount: 1,
-      inboxScope: null,
+      inboxRepos: null,
     });
   });
 
@@ -255,12 +255,12 @@ describe('importGraphiteSections', () => {
         { owner: 'acme', name: 'api' },
       ],
     };
-    const { views, sectionCount, inboxScope } = importGraphiteSections(snapshot);
+    const { views, sectionCount, inboxRepos } = importGraphiteSections(snapshot);
     expect(views.map(({ view }) => [view.name, view.query])).toEqual([
       ["Needs anyone's review", EXAMPLE_QUERY],
       ['Merged', 'is:pr repo:acme/web is:merged sort:updated-desc'],
     ]);
-    expect([sectionCount, inboxScope]).toEqual([2, '(repo:acme/web OR repo:acme/api)']);
+    expect([sectionCount, inboxRepos]).toEqual([2, snapshot.defaultRepos]);
   });
 
   it('leaves out, with a note, a copied section whose filter it cannot read', () => {
@@ -327,7 +327,7 @@ describe('importGraphiteSections', () => {
 });
 
 describe("the user's Graphite inbox", () => {
-  const { views, notes, inboxScope } = importGraphiteSections(userInbox as GraphiteInboxSnapshot);
+  const { views, notes, inboxRepos } = importGraphiteSections(userInbox as GraphiteInboxSnapshot);
 
   // Each verified against GitHub's dashboard search, signed in (docs/research/graphite-sections.md, "Verified mapping").
   it.each([
@@ -345,13 +345,13 @@ describe("the user's Graphite inbox", () => {
     expect(views.find(({ view }) => view.name === name)?.view.query.split(' ').sort()).toEqual(query.split(' ').sort());
   });
 
-  it('makes one view per section, noting only the merge-queue group it leaves out, and ORs the inbox repositories', () => {
+  it('makes one view per section, noting only the merge-queue group it leaves out, and offers the inbox repositories', () => {
     expect(views).toHaveLength(9);
     expect(notes).toEqual([]);
     expect(views.filter((imported) => imported.notes.length > 0).map(({ view, notes }) => [view.name, notes])).toEqual([
       ['Merging and recently merged', ['“PR status is MERGING” has no GitHub search equivalent; that filter group was left out.']],
     ]);
-    expect(inboxScope).toBe('(repo:acme/web OR repo:acme/api)');
+    expect(inboxRepos).toEqual(userInbox.defaultRepos);
   });
 });
 

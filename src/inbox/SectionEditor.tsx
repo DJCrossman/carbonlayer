@@ -5,27 +5,30 @@
 import { useId, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { RULE_KINDS, searchForFilter, type GraphiteFilter, type GraphiteRule } from '../lib/graphite';
-import type { RepoRef, View } from '../lib/model';
+import type { RepoCandidate, RepoRef, View } from '../lib/model';
 import { GITHUB_INBOX_FILTERS } from '../lib/views';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
+import { RepoPicker } from './RepoPicker';
 import './section-editor.css';
 
 export function SectionEditor({
   view,
+  searchRepos,
   onSave,
   onDelete,
   onClose,
 }: {
   /** The view to edit, or null for a new one. */
   view: View | null;
+  /** Candidates for the Repositories field, from GitHub's repository picker. */
+  searchRepos: (query: string) => Promise<RepoCandidate[]>;
   onSave: (view: View) => void;
   /** Absent for a view not saved yet. */
   onDelete?: () => void;
   onClose: () => void;
 }) {
   const nameId = useId();
-  const reposId = useId();
   const [name, setName] = useState(view?.name ?? '');
   const [repos, setRepos] = useState<RepoRef[]>(view?.repos ?? []);
   // The filter's rows; null while the query is written by hand, as it is for a view that never had a filter.
@@ -115,19 +118,8 @@ export function SectionEditor({
 
           {groups && (
             <div className="gg-editor__field">
-              <label htmlFor={reposId}>Repositories</label>
-              <ValuesInput
-                id={reposId}
-                values={repos.map((repo) => `${repo.owner}/${repo.name}`)}
-                placeholder={repos.length > 0 ? 'owner/name' : "The inbox's repositories; type owner/name to choose"}
-                onChange={(values) =>
-                  setRepos(
-                    values
-                      .filter((value) => /^[^/\s]+\/[^/\s]+$/.test(value))
-                      .map((value) => ({ owner: value.slice(0, value.indexOf('/')), name: value.slice(value.indexOf('/') + 1) })),
-                  )
-                }
-              />
+              <span className="gg-editor__label">Repositories</span>
+              <RepoPicker selected={repos} emptyLabel="The inbox's repositories" searchRepos={searchRepos} onChange={setRepos} />
             </div>
           )}
 
@@ -336,13 +328,11 @@ function RuleRow({ rule, first, onChange, onRemove }: { rule: Rule; first: boole
  * the last one back. `suggestion` is offered as a one-click chip while it is not among the values.
  */
 function ValuesInput({
-  id,
   values,
   placeholder,
   suggestion,
   onChange,
 }: {
-  id?: string;
   values: string[];
   placeholder: string;
   suggestion?: string;
@@ -365,7 +355,6 @@ function ValuesInput({
         </span>
       ))}
       <input
-        id={id}
         type="text"
         value={text}
         placeholder={values.length > 0 ? '' : placeholder}

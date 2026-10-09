@@ -144,4 +144,6 @@ reviewers, Drafts, Waiting for POMS reviewers, Needs anyone's review, Merging an
 ## GitHub's repository picker
 `GET /repositories/picker/search?q=<text>` (same-origin, signed in; the dashboard sends `q=contributed-by:@me` on open)
 returns the repositories the picker lists; each item is `{ id, nodeId, name, ownerLogin, visibility }`. Shape of the
-envelope unconfirmed (parse tolerantly: an array, or `{ repositories }`/`{ items }`).
+envelope unconfirmed (parse tolerantly: an array, or `{ repositories }`/`{ items }`). CarbonLayer's picker asks it with
+`q=contributed-by:@me <typed text>` and reads an array or `{ repositories | items | results }`
+(`src/lib/github-web/repositories.ts`); not yet observed signed in.

@@ -1,9 +1,10 @@
 // Everything the UI needs from the outside world, behind one interface so the same pages render
 // from the content script's RPC in the extension and from fixtures in the dev harness (`?fixtures=1`).
 
-import type { PrDetail, RepoRef, ReviewerCandidate, View, ViewResult } from '../lib/model';
+import type { PrDetail, RepoCandidate, RepoRef, ReviewerCandidate, View, ViewResult } from '../lib/model';
 import { rpc, type MergeMethod } from '../lib/rpc';
 import { DEFAULT_SETTINGS, getSettings, setSettings, watchSettings, type Settings } from '../lib/settings';
+import { repositoryScope } from '../lib/views';
 
 export interface ReviewThreadDraft {
   path: string;
@@ -20,6 +21,8 @@ export interface ReviewerChange {
 
 export interface DataSource {
   fetchInbox(views: View[], force?: boolean): Promise<ViewResult[]>;
+  /** The repositories GitHub's repository picker offers for what the user typed (nothing: its first list). */
+  searchRepos(query: string): Promise<RepoCandidate[]>;
   fetchPr(repo: RepoRef, number: number, force?: boolean): Promise<PrDetail>;
   review(prId: string, event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT', body: string, threads?: ReviewThreadDraft[]): Promise<void>;
   comment(prId: string, body: string): Promise<void>;
@@ -44,6 +47,7 @@ export interface DataSource {
 export function createRpcDataSource(): DataSource {
   return {
     fetchInbox: (views, force) => rpc('inbox.fetch', { views, force }),
+    searchRepos: (query) => rpc('repos.search', { query }),
     fetchPr: (repo, number, force) => rpc('pr.fetch', { repo, number, force }),
     review: (prId, event, body, threads) => rpc('pr.review', { prId, event, body, threads }),
     comment: (prId, body) => rpc('pr.comment', { prId, body }),
@@ -80,6 +84,10 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
   return {
     fetchInbox: async (views) =>
       views.map((view) => fixtures.inbox.find((r) => r.view.id === view.id) ?? { view, prs: [], totalCount: 0, fetchedAt: new Date().toISOString() }),
+    searchRepos: async (query) => {
+      const needle = query.trim().toLowerCase();
+      return FIXTURE_REPOSITORIES.filter((repo) => `${repo.owner}/${repo.name}`.includes(needle));
+    },
     fetchPr: async (repo, number) => {
       const pr = fixtures.prs.find((p) => p.repo.owner === repo.owner && p.repo.name === repo.name && p.number === number) ?? fixtures.prs[0];
       if (!pr) throw new Error(`No fixture for ${repo.owner}/${repo.name}#${number}`);
@@ -111,7 +119,8 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     },
     getSettings: async () => settings,
     setSettings: async (patch) => {
-      settings = { ...settings, ...patch };
+      // The inbox scope is the chosen repositories whenever they are chosen, as in src/lib/settings.ts.
+      settings = { ...settings, ...patch, ...(patch.inboxRepos && { inboxScope: repositoryScope(patch.inboxRepos) }) };
       for (const listener of listeners) listener(settings);
       return settings;
     },
@@ -121,6 +130,18 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     },
   };
 }
+
+/** What the harness's repository picker offers: the fixture PRs' repositories and a few more. */
+const FIXTURE_REPOSITORIES: RepoCandidate[] = [
+  { owner: 'acme', name: 'widgets', isPrivate: true },
+  { owner: 'acme', name: 'platform', isPrivate: true },
+  { owner: 'acme', name: 'api', isPrivate: true },
+  { owner: 'acme', name: 'ui', isPrivate: false },
+  { owner: 'acme', name: 'infra', isPrivate: true },
+  { owner: 'acme', name: 'docs', isPrivate: false },
+  { owner: 'octocat', name: 'hello-world', isPrivate: false },
+  { owner: 'octocat', name: 'spoon-knife', isPrivate: false },
+];
 
 /** Whom the harness's reviewer picker offers: the fixture PRs' reviewers and a few more, two of them as suggestions. */
 const FIXTURE_REVIEWER_CANDIDATES: ReviewerCandidate[] = [

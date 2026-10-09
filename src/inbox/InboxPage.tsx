@@ -16,6 +16,7 @@ import { showToast, ToastHost } from '../ui/Toast';
 import { GraphiteImport } from './GraphiteImport';
 import { importViews } from './import-views';
 import { InboxSection } from './InboxSection';
+import { RepoPicker } from './RepoPicker';
 import { SectionEditor } from './SectionEditor';
 import { SectionsSidebar } from './SectionsSidebar';
 import { moveSelection, type SelectedRow } from './selection';
@@ -177,7 +178,14 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
             <Icon name="logo" className="gg-inbox__logo" />
             Pull requests
           </h1>
-          <ScopeChip scope={settings.inboxScope} onSave={(inboxScope) => void inbox.saveSettings({ inboxScope })} />
+          <RepoPicker
+            chip
+            selected={settings.inboxRepos}
+            emptyLabel={settings.inboxScope || 'All repositories'}
+            title={settings.inboxScope ? `Every section searches ${settings.inboxScope}, unless it names repositories of its own` : 'Every section searches all repositories'}
+            searchRepos={source.searchRepos}
+            onChange={(inboxRepos) => void inbox.saveSettings({ inboxRepos })}
+          />
           <div className="gg-inbox__actions">
             <Button
               variant="ghost"
@@ -279,6 +287,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
       {helpOpen && <ShortcutHelp onClose={() => setHelpOpen(false)} />}
       {editing && (
         <SectionEditor
+          searchRepos={source.searchRepos}
           key={editing === 'new' ? 'new' : editing.id}
           view={editing === 'new' ? null : editing}
           onSave={saveSection}
@@ -303,10 +312,10 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
               <GraphiteImport
                 autoFocus
                 currentInboxScope={settings.inboxScope}
-                onImport={(views, mode, inboxScope) => {
+                onImport={(views, mode, inboxRepos) => {
                   void inbox.saveSettings({
                     views: importViews(settings.views, views, mode),
-                    ...(inboxScope !== undefined && { inboxScope }),
+                    ...(inboxRepos !== undefined && { inboxRepos }),
                   });
                   showToast(mode === 'replace' ? 'Views replaced' : `Added ${views.length} ${views.length === 1 ? 'view' : 'views'}`);
                   setGraphiteOpen(false);
@@ -437,34 +446,4 @@ function useSectionInView(views: View[] | undefined): [string | null, (viewId: s
 function openPullRequest(url: string, newTab: boolean) {
   if (window.parent === window) window.open(url, '_blank');
   else postToParent({ type: 'gg:navigate', url, newTab });
-}
-
-/** The global scope (`org:acme`) prepended to every view; click to edit inline, Enter saves, Esc or blur cancels. */
-function ScopeChip({ scope, onSave }: { scope: string; onSave: (scope: string) => void }) {
-  const [draft, setDraft] = useState<string | null>(null);
-  if (draft === null) {
-    return (
-      <button type="button" className="gg-inbox__scope" title="Prepended to every view's query. Click to change." onClick={() => setDraft(scope)}>
-        <Icon name="repo" size={14} />
-        {scope || 'All repositories'}
-      </button>
-    );
-  }
-  return (
-    <input
-      className="gg-inbox__scope-input"
-      autoFocus
-      value={draft}
-      placeholder="org:acme or repo:acme/widgets — Enter to save"
-      aria-label="Inbox scope"
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={() => setDraft(null)}
-      onKeyDown={(event) => {
-        if (event.key === 'Escape') setDraft(null);
-        if (event.key !== 'Enter') return;
-        if (draft.trim() !== scope) onSave(draft.trim());
-        setDraft(null);
-      }}
-    />
-  );
 }

@@ -7,8 +7,9 @@ import { getSettings } from '../settings';
 import { fetchInbox } from './inbox';
 import { mutations, pullRequestFor, rememberPullRequest } from './mutations';
 import { fetchPullRequestPage } from './pull-request';
+import { repositoryCandidatesFrom, repositoryPickerPath } from './repositories';
 import { reviewerCandidatesFrom } from './reviews';
-import { getJson } from './session';
+import { getJson, noteShape } from './session';
 
 export async function handleRpc(request: RpcRequest): Promise<RpcResponse> {
   try {
@@ -31,6 +32,13 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
     const results = await cached(key, 60_000, force, () => fetchInbox(views, inboxScope));
     // Results are index-aligned with `views`; the views themselves are not cached so renames show at once.
     return results.map((result, i) => ({ ...result, view: views[i]! }));
+  },
+  'repos.search': async ({ query }) => {
+    // The picker asks again after every pause in typing; what it asked in the last minute is answered from memory.
+    const path = repositoryPickerPath(query.trim());
+    const data = await cached(`repos:${path}`, 60_000, false, () => getJson<unknown>(path));
+    noteShape('repositories/picker/search', data);
+    return repositoryCandidatesFrom(data);
   },
   'pr.fetch': async ({ repo, number, force }) => {
     const { mergeMethod } = await getSettings();

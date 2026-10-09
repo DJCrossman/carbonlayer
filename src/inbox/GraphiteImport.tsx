@@ -10,15 +10,15 @@
 import { Fragment, useEffect, useId, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { importGraphiteSections, type GraphiteInboxSnapshot } from '../lib/graphite';
-import type { View } from '../lib/model';
+import type { RepoRef, View } from '../lib/model';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
 import { RelativeTime } from '../ui/RelativeTime';
 import './graphite-import.css';
 
 /**
- * `currentInboxScope`, when given, offers to set the inbox scope to the Graphite inbox's repositories; `onImport` then
- * gets the scope to save, if it changes.
+ * `currentInboxScope`, when given, offers to set the inbox's repositories to the Graphite inbox's; `onImport` then gets
+ * them to save, if they change.
  */
 export function GraphiteImport({
   autoFocus,
@@ -27,7 +27,7 @@ export function GraphiteImport({
 }: {
   autoFocus?: boolean;
   currentInboxScope?: string;
-  onImport: (views: View[], mode: 'replace' | 'append', inboxScope?: string) => void;
+  onImport: (views: View[], mode: 'replace' | 'append', inboxRepos?: RepoRef[]) => void;
 }) {
   const inputId = useId();
   const [input, setInput] = useState('');
@@ -40,7 +40,7 @@ export function GraphiteImport({
   // Who is signed in to Graphite, from its inbox page: pasted links search that login as @me too.
   const [viewerLogin, setViewerLogin] = useState<string | undefined>();
   const unnamed = preview?.views.some(({ view }) => !view.name.trim()) ?? false;
-  const offeredScope = currentInboxScope !== undefined ? preview?.inboxScope : null;
+  const offeredRepos = currentInboxScope !== undefined ? preview?.inboxRepos : null;
 
   useEffect(() => {
     // Standalone (the harness) no extension copies anything.
@@ -100,11 +100,11 @@ export function GraphiteImport({
     if (!preview || (mode !== 'dismiss' && unnamed)) return;
     if (mode !== 'dismiss') {
       // Adding views to an inbox that already has a scope keeps it.
-      const inboxScope = offeredScope && setScope && (mode === 'replace' || !currentInboxScope?.trim()) ? offeredScope : undefined;
+      const inboxRepos = offeredRepos && setScope && (mode === 'replace' || !currentInboxScope?.trim()) ? offeredRepos : undefined;
       onImport(
         preview.views.map(({ view }) => ({ ...view, name: view.name.trim() })),
         mode,
-        inboxScope,
+        inboxRepos,
       );
       setInput('');
     }
@@ -174,11 +174,11 @@ export function GraphiteImport({
               ))}
             </ul>
           )}
-          {offeredScope && (
+          {offeredRepos && (
             <label className="gg-graphite-import__scope">
               <input type="checkbox" checked={setScope} onChange={(event) => setSetScope(event.target.checked)} />
               <span>
-                Set the inbox scope to these repos: <code>{offeredScope}</code>
+                Search these repositories in the inbox: <code>{offeredRepos.map((repo) => `${repo.owner}/${repo.name}`).join(', ')}</code>
                 {currentInboxScope?.trim() && <span className="gg-graphite-import__status"> (Add views keeps the current scope, {currentInboxScope.trim()})</span>}
               </span>
             </label>

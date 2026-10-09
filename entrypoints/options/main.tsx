@@ -2,9 +2,13 @@
 // Every change is saved as it is made (text fields 400 ms after the last keystroke).
 import { StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { RepoPicker } from '../../src/inbox/RepoPicker';
+import { repositoryCandidatesFrom, repositoryPickerPath } from '../../src/lib/github-web/repositories';
+import type { RepoCandidate } from '../../src/lib/model';
 import { getSettings, setSettings, type Settings } from '../../src/lib/settings';
 import { Icon } from '../../src/ui/Icon';
 import '../../src/ui/tokens.css';
+import { repositoryScope } from '../../src/lib/views';
 import './options.css';
 import { ViewsEditor } from './ViewsEditor';
 
@@ -71,19 +75,25 @@ function OptionsPage() {
 
       <section>
         <h2>Inbox</h2>
-        <label className="field">
-          <span>Scope</span>
-          <input
-            type="text"
-            className="mono"
-            value={settings.inboxScope}
-            placeholder="org:acme"
-            spellCheck={false}
-            onChange={(event) => update({ inboxScope: event.target.value }, 400)}
+        <div className="field">
+          <span>Repositories</span>
+          <RepoPicker
+            selected={settings.inboxRepos}
+            emptyLabel={settings.inboxScope || 'All repositories'}
+            searchRepos={searchRepositories}
+            onChange={(inboxRepos) => update({ inboxRepos, inboxScope: repositoryScope(inboxRepos) })}
           />
-        </label>
-        <p className="hint">Prepended to every search view, e.g. org:acme or repo:acme/widgets (GitHub's inbox sections use GitHub's own repository filter)</p>
-        <ViewsEditor views={settings.views} onChange={(views, typing) => update({ views }, typing ? 400 : 0)} />
+        </div>
+        <p className="hint">
+          Every search view searches these, unless it names repositories of its own; GitHub's inbox sections use GitHub's own repository filter.
+          {settings.inboxScope && (
+            <>
+              {' '}
+              Searched as <code>{settings.inboxScope}</code>.
+            </>
+          )}
+        </p>
+        <ViewsEditor views={settings.views} searchRepos={searchRepositories} onChange={(views, typing) => update({ views }, typing ? 400 : 0)} />
       </section>
 
       <section>
@@ -126,4 +136,23 @@ function OptionsPage() {
       </section>
     </main>
   );
+}
+
+/**
+ * The repositories GitHub's repository picker offers for what the user typed. The options page is no github.com page,
+ * so it asks github.com itself; the extension's host permission lets the request carry the user's session.
+ */
+async function searchRepositories(query: string): Promise<RepoCandidate[]> {
+  let response: Response;
+  try {
+    response = await fetch(`https://github.com${repositoryPickerPath(query.trim())}`, {
+      credentials: 'include',
+      headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    });
+  } catch {
+    throw new Error('could not reach GitHub');
+  }
+  if (response.redirected && new URL(response.url).pathname === '/login') throw new Error('sign in to github.com first');
+  if (!response.ok) throw new Error(`GitHub answered ${response.status}`);
+  return repositoryCandidatesFrom(await response.json());
 }

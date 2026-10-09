@@ -6,20 +6,20 @@
 // becomes one view: GitHub's search ORs parenthesised groups, `is:pr ((a b) OR (c))`, up to five operators a query.
 // See docs/research/graphite-sections.md.
 
-import type { View } from './model';
+import type { RepoRef, View } from './model';
 import { repositoryScope } from './views';
 
 /**
  * The views that pasted Graphite section links (one per line), their decoded JSON, or the sections copied from
  * Graphite's inbox page describe: one per section, with notes on what GitHub's search only approximates or cannot
- * express. Also how many sections there were, notes on any that could not be imported, and the inbox scope that stands
- * for the inbox's repositories when a section searches those. `viewerLogin`, Graphite's signed-in user (the inbox page's
+ * express. Also how many sections there were, notes on any that could not be imported, and the inbox's repositories,
+ * for the inbox's own choice, when a section searches those. `viewerLogin`, Graphite's signed-in user (the inbox page's
  * copy names its own), is searched as `@me`. Throws an Error saying what is wrong with junk.
  */
 export function importGraphiteSections(
   input: string | GraphiteInboxSnapshot,
   options: { viewerLogin?: string } = {},
-): { views: Array<{ view: View; notes: string[] }>; notes: string[]; sectionCount: number; inboxScope: string | null } {
+): { views: Array<{ view: View; notes: string[] }>; notes: string[]; sectionCount: number; inboxRepos: RepoRef[] | null } {
   const sections = typeof input === 'string' ? readSections(input) : sectionsIn(input, "Graphite's inbox");
   const viewer = (options.viewerLogin ?? (typeof input === 'string' ? undefined : input.viewerLogin))?.toLowerCase() || null;
   const views: Array<{ view: View; notes: string[] }> = [];
@@ -65,9 +65,11 @@ export function importGraphiteSections(
       });
     });
   }
-  const inboxScope =
-    typeof input !== 'string' && sections.some((section) => section.usesInboxRepos) && input.defaultRepos.length > 0 ? repositoryScope(input.defaultRepos) : null;
-  return { views, notes, sectionCount: sections.length, inboxScope };
+  const inboxRepos =
+    typeof input !== 'string' && sections.some((section) => section.usesInboxRepos) && input.defaultRepos.length > 0
+      ? input.defaultRepos.map((repo) => ({ owner: repo.owner, name: repo.name }))
+      : null;
+  return { views, notes, sectionCount: sections.length, inboxRepos };
 }
 
 /**

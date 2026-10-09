@@ -35,7 +35,7 @@ CSP. The content script is a thin bridge.
 App (iframe) → `window.parent.postMessage` RPC (`src/lib/rpc.ts`) → content script on github.com →
 `src/lib/github-web/` makes same-origin fetches against the JSON endpoints GitHub's own React UI
 uses (`/pulls/inbox/queries`, `/pulls/search`, `/pulls/…/deferred`, `/{o}/{r}/pull/{n}/page_data/*`,
-the pages' embedded `react-app.embeddedData`) with the session cookies → normalised domain objects
+`/repositories/picker/search`, the pages' embedded `react-app.embeddedData`) with the session cookies → normalised domain objects
 (`src/lib/model.ts`) are posted back. Writes go to the `page_data/*` routes GitHub's PR page posts
 to, except re-running checks: the PR page cannot, so `github-web/actions.ts` submits the classic form GitHub's Actions
 run page loads into its re-run dialog. See `docs/research/github-web-endpoints.md`, `github-web-mutations.md` and
@@ -68,7 +68,15 @@ filter and its own `repos` on every save with the import's mapping (`searchForFi
 section cards, Graphite's sections sidebar (`src/inbox/SectionsSidebar.tsx`) lists every section with its count, the one
 in view highlighted; a click scrolls to the section (expanding it), ↑ / ↓ reorder, the gear opens the editor and "Add
 section" opens it for a new view. It hides with `sidebarCollapsed` in settings, and below 900px it opens over the inbox
-from the top bar's toggle. Sharing: "Share" encodes
+from the top bar's toggle.
+
+Repositories are picked, not typed (`src/inbox/RepoPicker.tsx`): the inbox's top-bar chip, the options page and the
+section editor's Repositories field open a popover with a search box, "Select all / none" and checkboxes, fed by GitHub's
+own repository picker (`repos.search` RPC → `GET /repositories/picker/search?q=contributed-by:@me <text>`, read by
+`src/lib/github-web/repositories.ts`; the options page, no github.com page, asks github.com directly under the
+extension's host permission). The inbox's choice is stored as `inboxRepos`, and `setSettings` keeps `inboxScope` the
+compiled `(repo:a OR repo:b)` that is prepended; a scope saved earlier as bare `repo:` terms reads back as those
+repositories chosen. Sharing: "Share" encodes
 the view list into `https://github.com/#views=<base64url json>`; opening such a link with the
 extension installed offers to import (replace or append).
 
