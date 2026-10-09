@@ -1,35 +1,39 @@
-// One inbox view as a collapsible card: header "Name N" with a gear that opens the section editor, then one dense row
-// per PR (skeleton rows while loading).
+// One inbox view as a collapsible card, laid out like Graphite's inbox: header "Name N" with a gear that opens the section
+// editor, a column header row (sortable Title, Changes and Updated; icons over the Review, CI and Merge columns), then one
+// dense row per PR in fixed columns so the status icons line up (skeleton rows while loading).
 import { useEffect, useRef, type MouseEvent } from 'react';
-import type { PrSummary, View, ViewResult } from '../lib/model';
+import type { PrSummary, ReviewerSummary, View, ViewResult } from '../lib/model';
 import { sectionCount } from '../lib/views';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { CiStatus } from '../ui/CiStatus';
 import { Icon } from '../ui/Icon';
-import { LabelChip } from '../ui/LabelChip';
 import { MergeStatus } from '../ui/MergeStatus';
 import { RelativeTime } from '../ui/RelativeTime';
 import { ReviewStatus } from '../ui/ReviewStatus';
 import { Skeleton } from '../ui/Skeleton';
-import { StatusPill } from '../ui/StatusPill';
 
 export function InboxSection({
   view,
   result,
   loading,
+  sort,
   selectedPrId,
   overdueAfterHours,
+  onSort,
   onToggleCollapsed,
   onEdit,
   onOpen,
 }: {
   view: View;
+  /** The section's rows, already in `sort` order. */
   result: ViewResult | undefined;
   loading: boolean;
+  sort: SectionSort;
   selectedPrId: string | null;
   overdueAfterHours: number | undefined;
+  onSort: (by: SectionSort['by']) => void;
   onToggleCollapsed: () => void;
   onEdit: () => void;
   onOpen: (pr: PrSummary, newTab: boolean) => void;
@@ -44,18 +48,33 @@ export function InboxSection({
           <button type="button" className="gg-section__toggle" aria-expanded={expanded} onClick={onToggleCollapsed}>
             <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={14} className="gg-section__chevron" />
             <span className="gg-section__name">{view.name}</span>
-            {empty ? (
-              <span className="gg-section__empty">No pull requests</span>
-            ) : (
-              result && (
-<span className="gg-section__count">{sectionCount(result)}</span>
-              )
-            )}
+            {empty ? <span className="gg-section__empty">No pull requests</span> : result && <span className="gg-section__count">{sectionCount(result)}</span>}
           </button>
           <Button variant="ghost" size="sm" icon="gear" className="gg-section__edit" aria-label={`Edit ${view.name}`} title="Edit section" onClick={onEdit} />
         </>
       }
     >
+      {expanded && !empty && (result || loading) && (
+        <div className="gg-section__columns">
+          <span />
+          <span />
+          <SortHeader by="title" label="Title" sort={sort} onSort={onSort} />
+          <span className="gg-row__reviewers" />
+          <span className="gg-row__labels" />
+          <span className="gg-row__stack" />
+          <span className="gg-row__status" title="Review status">
+            <Icon name="person-check" size={14} />
+          </span>
+          <span className="gg-row__status" title="CI status">
+            <Icon name="play" size={14} />
+          </span>
+          <span className="gg-row__status" title="Merge status">
+            <Icon name="git-merge" size={14} />
+          </span>
+          <SortHeader by="changes" label="Changes" sort={sort} onSort={onSort} className="gg-row__diff" />
+          <SortHeader by="updated" label="Updated" sort={sort} onSort={onSort} className="gg-row__age" />
+        </div>
+      )}
       {expanded &&
         !empty &&
         (result
@@ -64,6 +83,40 @@ export function InboxSection({
             ))
           : loading && ['48%', '62%', '36%'].map((width) => <SkeletonRow key={width} titleWidth={width} />))}
     </Card>
+  );
+}
+
+/** How a section orders its rows, as its column headers were last clicked; Graphite's default is latest updated first. */
+export interface SectionSort {
+  by: 'title' | 'changes' | 'updated';
+  descending: boolean;
+}
+
+function SortHeader({
+  by,
+  label,
+  sort,
+  onSort,
+  className,
+}: {
+  by: SectionSort['by'];
+  label: string;
+  sort: SectionSort;
+  onSort: (by: SectionSort['by']) => void;
+  className?: string;
+}) {
+  const active = sort.by === by;
+  return (
+    <button
+      type="button"
+      className={`gg-section__sort${active ? ' is-active' : ''}${className ? ` ${className}` : ''}`}
+      aria-pressed={active}
+      title={`Sort by ${label.toLowerCase()}`}
+      onClick={() => onSort(by)}
+    >
+      {label}
+      {active && <Icon name={sort.descending ? 'arrow-down' : 'arrow-up'} size={12} />}
+    </button>
   );
 }
 
@@ -89,52 +142,61 @@ function PrRow({
     event.preventDefault();
     onOpen(pr, event.metaKey || event.ctrlKey);
   };
+  const shownReviewers = pr.reviewers.slice(0, 3);
+  const moreReviewers = pr.reviewers.slice(3);
 
   return (
     <div ref={row} className={selected ? 'gg-row is-selected' : 'gg-row'} onClick={open}>
       <span className="gg-row__unread">{pr.unread && <span className="gg-row__dot" title="Unread" />}</span>
-      <ReviewStatus state={pr.reviewDecision} />
       <Avatar user={pr.author} size={20} />
       <div className="gg-row__main">
         <a className="gg-row__title" href={pr.url} title={pr.title}>
           {pr.title}
         </a>
-        <div className="gg-row__meta">
-          <span className="gg-row__byline">
-            {pr.author.login} • {pr.repo.owner}/{pr.repo.name} #{pr.number}
-          </span>
-          {pr.labels.slice(0, 4).map((label) => (
-            <LabelChip key={label.name} label={label} />
-          ))}
-          {pr.labels.length > 4 && (
-            <span className="gg-row__more" title={pr.labels.slice(4).map((label) => label.name).join(', ')}>
-              +{pr.labels.length - 4}
-            </span>
-          )}
-        </div>
+        <span className="gg-row__byline">
+          {pr.author.login} · {pr.repo.owner}/{pr.repo.name} #{pr.number}
+        </span>
       </div>
+      <span
+        className="gg-row__reviewers"
+        title={pr.reviewers.length > 0 ? `Reviewers: ${pr.reviewers.map((reviewer) => `${reviewer.user.login} (${REVIEWER_STATE_WORDS[reviewer.state]})`).join(', ')}` : undefined}
+      >
+        {shownReviewers.map((reviewer) => (
+          <Avatar key={reviewer.user.login} user={reviewer.user} size={16} />
+        ))}
+        {moreReviewers.length > 0 && <span className="gg-row__more">+{moreReviewers.length}</span>}
+      </span>
+      <span className="gg-row__labels">
+        {pr.labels.length > 0 && (
+          <span className="gg-row__chip" title={pr.labels.map((label) => label.name).join(', ')}>
+            {pr.labels.length} {pr.labels.length === 1 ? 'label' : 'labels'}
+          </span>
+        )}
+      </span>
       <span className="gg-row__stack">
         {pr.nativeStack && (
-          <span className="gg-row__stack-chip" title={`Stacked: ${pr.nativeStack.position} of ${pr.nativeStack.size}`}>
+          <span className="gg-row__chip" title={`Stacked: ${pr.nativeStack.position} of ${pr.nativeStack.size}`}>
             <Icon name="stack" size={12} />
             {pr.nativeStack.position}/{pr.nativeStack.size}
           </span>
         )}
       </span>
-      <span className="gg-row__ci">
-        <CiStatus ci={pr.ci} />
+      <span className="gg-row__status">
+        <ReviewStatus variant="icon" state={pr.reviewDecision} isDraft={pr.isDraft} />
       </span>
-      <span className="gg-row__merge">
-        {pr.state === 'OPEN' && pr.isInMergeQueue ? (
-          <StatusPill tone="accent" icon="git-merge" title="Queued in the merge queue">
-            Merging
-          </StatusPill>
-        ) : pr.state === 'OPEN' && pr.autoMerge ? (
-          <StatusPill tone="accent" icon="clock" title={`Auto-merge (${pr.autoMerge.method.toLowerCase()}) once requirements are met`}>
-            Auto-merge
-          </StatusPill>
+      <span className="gg-row__status">
+        <CiStatus variant="icon" ci={pr.ci} />
+      </span>
+      <span className="gg-row__status">
+        {pr.state === 'OPEN' && (pr.isInMergeQueue || pr.autoMerge) ? (
+          <span className="gg-status-icon gg-status-icon--accent">
+            <Icon
+              name="git-merge"
+              title={pr.isInMergeQueue ? 'Queued in the merge queue' : `Auto-merge (${pr.autoMerge!.method.toLowerCase()}) once requirements are met`}
+            />
+          </span>
         ) : (
-          <MergeStatus status={pr.mergeStatus} state={pr.state} />
+          <MergeStatus variant="icon" status={pr.mergeStatus} state={pr.state} />
         )}
       </span>
       {/* GitHub's dashboard endpoints report no line counts; zeros mean unknown, not an empty diff. */}
@@ -146,14 +208,6 @@ function PrRow({
           </>
         )}
       </span>
-      <span className="gg-row__comments" title={`${pr.commentCount} comments`}>
-        {pr.commentCount > 0 && (
-          <>
-            <Icon name="comment" size={12} />
-            {pr.commentCount}
-          </>
-        )}
-      </span>
       <span className="gg-row__age">
         <RelativeTime date={pr.updatedAt} overdueAfterHours={pr.state === 'OPEN' ? overdueAfterHours : undefined} />
       </span>
@@ -161,19 +215,42 @@ function PrRow({
   );
 }
 
+/** How a reviewer's state reads in the reviewers' tooltip. */
+const REVIEWER_STATE_WORDS: Record<ReviewerSummary['state'], string> = {
+  APPROVED: 'approved',
+  CHANGES_REQUESTED: 'requested changes',
+  COMMENTED: 'commented',
+  PENDING: 'review requested',
+  DISMISSED: 'review dismissed',
+};
+
 function SkeletonRow({ titleWidth }: { titleWidth: string }) {
   return (
     <div className="gg-row gg-row--skeleton" aria-hidden>
       <span />
-      <Skeleton width={14} height={14} />
       <Skeleton width={20} height={20} />
       <div className="gg-row__main">
         <Skeleton width={titleWidth} height={10} />
         <Skeleton width="22%" height={8} />
       </div>
-      <span />
-      <Skeleton width="100%" height={6} />
-      <Skeleton width={72} height={18} />
+      <span className="gg-row__reviewers" />
+      <span className="gg-row__labels" />
+      <span className="gg-row__stack" />
+      <span className="gg-row__status">
+        <Skeleton width={12} height={3} />
+      </span>
+      <span className="gg-row__status">
+        <Skeleton width={12} height={3} />
+      </span>
+      <span className="gg-row__status">
+        <Skeleton width={12} height={3} />
+      </span>
+      <span className="gg-row__diff">
+        <Skeleton width={56} height={8} />
+      </span>
+      <span className="gg-row__age">
+        <Skeleton width={24} height={8} />
+      </span>
     </div>
   );
 }

@@ -146,6 +146,7 @@
 /* Section card */
 .gg-section {
   overflow: hidden;
+  container-type: inline-size;
 }
 .gg-section .gg-card__header {
   padding: 0;
@@ -200,16 +201,57 @@
   font-weight: 400;
 }
 
-/* Row: unread · review · avatar · title/meta · stack · CI · merge · diff · comments · age */
+/* Column header row and rows, in Graphite's columns: unread · avatar · title/byline · reviewers · labels · stack ·
+   review · CI · merge · changes · updated. Fixed widths so the status icons line up across rows and sections; narrower
+   sections drop reviewers and labels, then stack and changes. */
+.gg-section__columns,
 .gg-row {
   display: grid;
-  grid-template-columns: 6px 16px 20px minmax(0, 1fr) 44px 56px 120px 88px 36px 32px;
+  grid-template-columns: 6px 20px minmax(0, 1fr) 52px 60px 44px 16px 16px 16px 88px 56px;
   column-gap: 10px;
   align-items: center;
-  min-height: 40px;
-  padding: 3px var(--gg-space-3) 3px 8px;
-  cursor: pointer;
+  padding: 0 var(--gg-space-3) 0 8px;
   box-sizing: border-box;
+}
+.gg-section__columns {
+  min-height: 28px;
+  border-bottom: 1px solid var(--gg-border-muted);
+  color: var(--gg-fg-subtle);
+  font-size: 12px;
+}
+.gg-section__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.gg-section__columns .gg-section__sort {
+  gap: 2px;
+}
+.gg-section__columns .gg-row__diff,
+.gg-section__columns .gg-row__age {
+  justify-self: end;
+}
+.gg-section__sort:hover,
+.gg-section__sort.is-active {
+  color: var(--gg-fg);
+}
+.gg-section__sort:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid var(--gg-accent);
+}
+.gg-row {
+  min-height: 40px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+  cursor: pointer;
 }
 .gg-row + .gg-row {
   border-top: 1px solid var(--gg-border-muted);
@@ -249,35 +291,37 @@
   color: var(--gg-accent);
   text-decoration: none;
 }
-.gg-row__meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
+.gg-row__byline {
   overflow: hidden;
   color: var(--gg-fg-muted);
   font-size: 12px;
   line-height: 16px;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.gg-row__byline {
-  flex: 0 1 auto;
+.gg-row__reviewers {
+  display: flex;
+  align-items: center;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
-.gg-row__meta .gg-label-chip {
-  flex: none;
+.gg-row__reviewers .gg-avatar {
+  box-shadow: 0 0 0 1.5px var(--gg-bg);
+}
+.gg-row__reviewers .gg-avatar + .gg-avatar {
+  margin-left: -4px;
 }
 .gg-row__more {
-  flex: none;
+  margin-left: 3px;
   color: var(--gg-fg-subtle);
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
+.gg-row__labels,
 .gg-row__stack {
   display: flex;
+  min-width: 0;
 }
-.gg-row__stack-chip {
+.gg-row__chip {
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -288,11 +332,12 @@
   color: var(--gg-fg-muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
-.gg-row__ci,
-.gg-row__merge {
+.gg-row__status {
   display: flex;
   align-items: center;
+  justify-content: center;
 }
 .gg-row__diff {
   display: flex;
@@ -307,15 +352,6 @@
 .gg-row__del {
   color: var(--gg-danger);
 }
-.gg-row__comments {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 3px;
-  color: var(--gg-fg-muted);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
 .gg-row__age {
   font-size: 12px;
   text-align: right;
@@ -326,29 +362,32 @@
 .gg-row--skeleton:hover {
   background: none;
 }
-.gg-row--skeleton > .gg-skeleton:nth-child(3) {
+.gg-row--skeleton > .gg-skeleton:nth-child(2) {
   border-radius: 50%;
 }
 .gg-row--skeleton .gg-row__main {
   gap: 6px;
 }
 
-@media (max-width: 1000px) {
+@container (max-width: 860px) {
+  .gg-section__columns,
   .gg-row {
-    grid-template-columns: 6px 16px 20px minmax(0, 1fr) 44px 56px 120px 32px;
+    grid-template-columns: 6px 20px minmax(0, 1fr) 44px 16px 16px 16px 88px 56px;
   }
-  .gg-row__diff,
-  .gg-row__comments {
+  .gg-row__reviewers,
+  .gg-row__labels {
     display: none;
   }
 }
-@media (max-width: 720px) {
+@container (max-width: 600px) {
+  .gg-section__columns,
   .gg-row {
-    grid-template-columns: 6px 16px 20px minmax(0, 1fr) 32px;
+    grid-template-columns: 6px 20px minmax(0, 1fr) 16px 16px 16px 56px;
   }
+  .gg-row__reviewers,
+  .gg-row__labels,
   .gg-row__stack,
-  .gg-row__ci,
-  .gg-row__merge {
+  .gg-row__diff {
     display: none;
   }
 }

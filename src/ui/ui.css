@@ -94,6 +94,31 @@
   opacity: 0.6;
 }
 
+/* The inbox's status columns: ReviewStatus, CiStatus and MergeStatus as `variant="icon"`, one icon in a tone. */
+.gg-status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.gg-status-icon--success {
+  color: var(--gg-success);
+}
+.gg-status-icon--attention {
+  color: var(--gg-attention);
+}
+.gg-status-icon--danger {
+  color: var(--gg-danger);
+}
+.gg-status-icon--done {
+  color: var(--gg-done);
+}
+.gg-status-icon--accent {
+  color: var(--gg-accent);
+}
+.gg-status-icon--subtle {
+  color: var(--gg-fg-subtle);
+}
+
 /* CiStatus */
 .gg-ci-bar {
   display: flex;

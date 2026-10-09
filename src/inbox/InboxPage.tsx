@@ -15,7 +15,7 @@ import { RelativeTime } from '../ui/RelativeTime';
 import { showToast, ToastHost } from '../ui/Toast';
 import { GraphiteImport } from './GraphiteImport';
 import { importViews } from './import-views';
-import { InboxSection } from './InboxSection';
+import { InboxSection, type SectionSort } from './InboxSection';
 import { RepoPicker } from './RepoPicker';
 import { SectionEditor } from './SectionEditor';
 import { SectionsSidebar } from './SectionsSidebar';
@@ -38,7 +38,20 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   const [answeredImport, setAnsweredImport] = useState<View[] | null>(null);
   const pendingImport = route.importViews !== answeredImport ? route.importViews : null;
 
-  const resultsByView = new Map(inbox.results?.map((result) => [result.view.id, result]));
+  // How each section orders its rows, as its column headers were last clicked (this visit only).
+  const [sorts, setSorts] = useState<Record<string, SectionSort>>({});
+  // Each section's rows in the order it shows them, which j / k follow too.
+  const resultsByView = new Map(
+    inbox.results?.map((result) => {
+      const { by, descending } = sorts[result.view.id] ?? LATEST_UPDATED_FIRST;
+      const prs = result.prs.toSorted((a, b) => {
+        const ascending =
+          by === 'title' ? a.title.localeCompare(b.title) : by === 'changes' ? a.additions + a.deletions - (b.additions + b.deletions) : Date.parse(a.updatedAt) - Date.parse(b.updatedAt);
+        return descending ? -ascending : ascending;
+      });
+      return [result.view.id, { ...result, prs }];
+    }),
+  );
   const firstResult = settings?.views[0] && resultsByView.get(settings.views[0].id);
   const toReview = firstResult && sectionCount(firstResult);
 
@@ -96,6 +109,14 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   function toggleCollapsed(viewId: string) {
     if (!settings) return;
     void inbox.saveSettings({ views: settings.views.map((view) => (view.id === viewId ? { ...view, collapsed: !view.collapsed } : view)) });
+  }
+
+  function sortSection(viewId: string, by: SectionSort['by']) {
+    // The same column again flips the order; another starts with the largest and latest first, titles from A.
+    setSorts((current) => {
+      const now = current[viewId] ?? LATEST_UPDATED_FIRST;
+      return { ...current, [viewId]: now.by === by ? { by, descending: !now.descending } : { by, descending: by !== 'title' } };
+    });
   }
 
   function goToSection(view: View) {
@@ -270,8 +291,10 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
                 view={view}
                 result={resultsByView.get(view.id)}
                 loading={inbox.error === null}
+                sort={sorts[view.id] ?? LATEST_UPDATED_FIRST}
                 selectedPrId={selected?.viewId === view.id ? selected.prId : null}
                 overdueAfterHours={view.id === 'graphite-needs-your-review' ? 48 : undefined}
+                onSort={(by) => sortSection(view.id, by)}
                 onToggleCollapsed={() => toggleCollapsed(view.id)}
                 onEdit={() => setEditing(view)}
                 onOpen={(pr, newTab) => {
@@ -441,6 +464,9 @@ function useSectionInView(views: View[] | undefined): [string | null, (viewId: s
     },
   ];
 }
+
+/** Graphite's default order for a section's rows. */
+const LATEST_UPDATED_FIRST: SectionSort = { by: 'updated', descending: true };
 
 /** Opens a PR the way a link would: the github.com page navigates (or opens a tab); the standalone harness opens a tab. */
 function openPullRequest(url: string, newTab: boolean) {
