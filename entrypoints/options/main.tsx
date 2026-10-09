@@ -1,0 +1,184 @@
+// Options page: GitHub token, inbox scope and views, PR page preferences, on/off switches.
+// Every change is saved as it is made (text fields 400 ms after the last keystroke).
+import { StrictMode, useEffect, useRef, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import { rpc } from '../../src/lib/rpc';
+import { getSettings, setSettings, type Settings } from '../../src/lib/settings';
+import '../../src/ui/tokens.css';
+import './options.css';
+import { ViewsEditor } from './ViewsEditor';
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <OptionsPage />
+  </StrictMode>,
+);
+
+function OptionsPage() {
+  const [settings, setLocalSettings] = useState<Settings | null>(null);
+  const [saved, setSaved] = useState(false);
+  const pending = useRef<Partial<Settings>>({});
+  const saveTimer = useRef<number | undefined>(undefined);
+  const savedTimer = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    void getSettings().then(setLocalSettings);
+  }, []);
+
+  const theme = settings?.theme;
+  useEffect(() => {
+    if (!theme) return;
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const apply = () => (document.documentElement.dataset.theme = theme === 'auto' ? (media.matches ? 'dark' : 'light') : theme);
+    apply();
+    media.addEventListener('change', apply);
+    return () => media.removeEventListener('change', apply);
+  }, [theme]);
+
+  if (!settings) return null;
+
+  async function save(patch: Partial<Settings>) {
+    await setSettings(patch);
+    setSaved(true);
+    window.clearTimeout(savedTimer.current);
+    savedTimer.current = window.setTimeout(() => setSaved(false), 1500);
+  }
+
+  /** Shows a change at once and saves it, batched with anything still waiting, after `debounceMs`. */
+  function update(patch: Partial<Settings>, debounceMs = 0) {
+    setLocalSettings((current) => current && { ...current, ...patch });
+    pending.current = { ...pending.current, ...patch };
+    window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      const batch = pending.current;
+      pending.current = {};
+      void save(batch);
+    }, debounceMs);
+  }
+
+  return (
+    <main className="options">
+      <header>
+        <h1>Graphite-style GitHub</h1>
+        <span className={saved ? 'saved visible' : 'saved'} aria-live="polite">
+          {saved ? 'Saved' : ''}
+        </span>
+      </header>
+
+      <TokenSection
+        savedToken={settings.token}
+        onSave={async (token) => {
+          setLocalSettings((current) => current && { ...current, token });
+          await save({ token });
+        }}
+      />
+
+      <section>
+        <h2>Inbox</h2>
+        <label className="field">
+          <span>Scope</span>
+          <input
+            type="text"
+            className="mono"
+            value={settings.inboxScope}
+            placeholder="org:acme"
+            spellCheck={false}
+            onChange={(event) => update({ inboxScope: event.target.value }, 400)}
+          />
+        </label>
+        <p className="hint">Prepended to every view, e.g. org:acme or repo:acme/widgets</p>
+        <ViewsEditor views={settings.views} onChange={(views, typing) => update({ views }, typing ? 400 : 0)} />
+      </section>
+
+      <section>
+        <h2>Pull request page</h2>
+        <label className="field">
+          <span>Diff layout</span>
+          <select value={settings.diffLayout} onChange={(event) => update({ diffLayout: event.target.value as Settings['diffLayout'] })}>
+            <option value="unified">Unified</option>
+            <option value="split">Split</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>Merge method</span>
+          <select value={settings.mergeMethod} onChange={(event) => update({ mergeMethod: event.target.value as Settings['mergeMethod'] })}>
+            <option value="MERGE">Create a merge commit</option>
+            <option value="SQUASH">Squash and merge</option>
+            <option value="REBASE">Rebase and merge</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>Theme</span>
+          <select value={settings.theme} onChange={(event) => update({ theme: event.target.value as Settings['theme'] })}>
+            <option value="auto">Match GitHub</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+      </section>
+
+      <section>
+        <h2>Enable</h2>
+        <label className="check">
+          <input type="checkbox" checked={settings.inboxEnabled} onChange={(event) => update({ inboxEnabled: event.target.checked })} />
+          Replace the pull request inbox at github.com/pulls
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={settings.prEnabled} onChange={(event) => update({ prEnabled: event.target.checked })} />
+          Replace pull request pages
+        </label>
+      </section>
+    </main>
+  );
+}
+
+function TokenSection({ savedToken, onSave }: { savedToken: string; onSave: (token: string) => Promise<void> }) {
+  const [draft, setDraft] = useState(savedToken);
+  const [status, setStatus] = useState<{ tone: 'ok' | 'error' | 'muted'; text: string } | null>(null);
+  const changed = draft.trim() !== savedToken;
+
+  async function testConnection() {
+    if (changed) await onSave(draft.trim());
+    setStatus({ tone: 'muted', text: 'Checking…' });
+    try {
+      const auth = await rpc('auth.status', undefined);
+      setStatus(auth.ok ? { tone: 'ok', text: `Connected as ${auth.login}` } : { tone: 'error', text: auth.error ?? 'Not connected' });
+    } catch (error) {
+      setStatus({ tone: 'error', text: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  return (
+    <section>
+      <h2>GitHub token</h2>
+      <div className="row">
+        <input
+          type="password"
+          className="mono grow"
+          value={draft}
+          placeholder="ghp_… or github_pat_…"
+          autoComplete="off"
+          spellCheck={false}
+          aria-label="GitHub personal access token"
+          onChange={(event) => setDraft(event.target.value)}
+        />
+        <button type="button" className="primary" disabled={!changed} onClick={() => void onSave(draft.trim())}>
+          Save
+        </button>
+        <button type="button" disabled={!draft.trim()} onClick={() => void testConnection()}>
+          Test connection
+        </button>
+      </div>
+      {status && <p className={`status ${status.tone}`}>{status.text}</p>}
+      <p className="hint">
+        Classic token: scopes <code>repo</code> and <code>read:org</code> (for team review requests). Fine-grained token: Pull requests read
+        and write, Contents read (write to merge), Metadata read, Commit statuses read, and organisation Members read for teams; a
+        fine-grained token covers a single organisation. Organisations with SAML SSO need the token authorised for them. Create one at{' '}
+        <a href="https://github.com/settings/tokens" target="_blank" rel="noreferrer">
+          github.com/settings/tokens
+        </a>
+        . The token stays in this browser and is only sent to api.github.com.
+      </p>
+    </section>
+  );
+}

@@ -1,0 +1,190 @@
+/* Options page: one dense column on the shared tokens. */
+body {
+  padding: var(--gg-space-5) var(--gg-space-4);
+}
+
+.options {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.options header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: var(--gg-space-2);
+  margin-bottom: var(--gg-space-4);
+  border-bottom: 1px solid var(--gg-border);
+}
+
+.options h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.options section {
+  margin-bottom: var(--gg-space-5);
+}
+
+.options h2 {
+  margin: 0 0 var(--gg-space-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.options p {
+  margin: var(--gg-space-1) 0 var(--gg-space-2);
+}
+
+.options input[type='text'],
+.options input[type='password'],
+.options input[type='number'],
+.options select {
+  min-width: 0;
+  padding: 3px 6px;
+  font: inherit;
+  color: var(--gg-fg);
+  background: var(--gg-bg);
+  border: 1px solid var(--gg-border);
+  border-radius: var(--gg-radius);
+}
+
+.options input:focus,
+.options select:focus,
+.options button:focus-visible {
+  outline: 2px solid var(--gg-accent);
+  outline-offset: -1px;
+}
+
+.options button {
+  padding: 3px 10px;
+  font: inherit;
+  color: var(--gg-fg);
+  white-space: nowrap;
+  cursor: pointer;
+  background: var(--gg-bg-subtle);
+  border: 1px solid var(--gg-border);
+  border-radius: var(--gg-radius);
+}
+
+.options button:hover:not(:disabled) {
+  background: var(--gg-bg-hover);
+}
+
+.options button.primary {
+  color: var(--gg-accent-fg);
+  background: var(--gg-accent);
+  border-color: transparent;
+}
+
+.options button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.options button.icon {
+  width: 24px;
+  padding: 3px 0;
+}
+
+.options code,
+.options .mono {
+  font-family: var(--gg-font-mono);
+  font-size: 12px;
+}
+
+.row {
+  display: flex;
+  gap: var(--gg-space-2);
+  align-items: center;
+  margin: var(--gg-space-2) 0;
+}
+
+.grow {
+  flex: 1;
+}
+
+.field {
+  display: flex;
+  gap: var(--gg-space-2);
+  align-items: center;
+  margin: var(--gg-space-1) 0;
+}
+
+.field > span {
+  width: 110px;
+  color: var(--gg-fg-muted);
+}
+
+.field > input {
+  flex: 1;
+}
+
+.check {
+  display: flex;
+  gap: var(--gg-space-2);
+  align-items: center;
+  margin: var(--gg-space-1) 0;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--gg-fg-muted);
+}
+
+.status.ok {
+  color: var(--gg-success);
+}
+
+.status.error {
+  color: var(--gg-danger);
+}
+
+.status.muted {
+  color: var(--gg-fg-muted);
+}
+
+.saved {
+  font-size: 12px;
+  color: var(--gg-success);
+  opacity: 0;
+  transition: opacity 150ms;
+}
+
+.saved.visible {
+  opacity: 1;
+}
+
+.views {
+  margin-top: var(--gg-space-3);
+}
+
+.views-head,
+.view-row {
+  display: grid;
+  grid-template-columns: 180px 1fr 60px auto;
+  gap: var(--gg-space-1);
+  align-items: center;
+}
+
+.views-head {
+  padding-bottom: 2px;
+  font-size: 12px;
+  color: var(--gg-fg-muted);
+}
+
+.view-row {
+  margin-bottom: var(--gg-space-1);
+}
+
+.row-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.problem {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--gg-danger);
+}
