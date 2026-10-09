@@ -1,10 +1,11 @@
-/* Page layout: the conversation (header, stack, description, activity) centred at 980px, the files below
-   it at the full column width, and the sidebar in its own sticky column beside both. One scroll: the
-   document's. Below 1100px everything stacks, sidebar between the conversation and the files. */
+/* Page layout: the page is centred at a max width; in it the conversation (header, stack, description,
+   activity) keeps to 980px, the files below it use the full column, and the sidebar has its own sticky
+   column beside both. Conversation and files share a left edge. One scroll: the document's. Below 1100px
+   everything stacks, sidebar between the conversation and the files. */
 
 .pr-page {
   box-sizing: border-box;
-  max-width: 1680px;
+  max-width: 1520px;
   margin: 0 auto;
   padding: 16px 20px 32px;
   display: grid;
@@ -22,7 +23,6 @@
   grid-area: conversation;
   width: 100%;
   max-width: 980px;
-  margin: 0 auto;
   min-width: 0;
 }
 .pr-sidebar {

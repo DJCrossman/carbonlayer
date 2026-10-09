@@ -106,7 +106,7 @@
   cursor: pointer;
 }
 .file-tree-row:hover { background: var(--gg-bg-hover); }
-.file-tree-row.is-current { background: var(--gg-bg-selected); }
+.file-tree-row.is-current { background: color-mix(in srgb, var(--gg-accent) 14%, transparent); }
 .file-tree-row.is-dir { color: var(--gg-fg-muted); }
 .file-tree-name {
   flex: 1;

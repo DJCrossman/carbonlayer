@@ -192,10 +192,13 @@ export function useFileReview(pr: PrDetail): FileReview {
     },
     revealThread,
     stepThread: (delta) => {
-      const position = (path: string) => order.findIndex((file) => file.path === path);
       const unresolved = pr.threads
         .filter((thread) => !thread.isResolved)
-        .sort((a, b) => position(a.path) - position(b.path) || (a.line ?? 0) - (b.line ?? 0));
+        .sort(
+          (a, b) =>
+            order.findIndex((file) => file.path === a.path) - order.findIndex((file) => file.path === b.path) ||
+            (a.line ?? 0) - (b.line ?? 0),
+        );
       if (unresolved.length === 0) return;
       const index = unresolved.findIndex((thread) => thread.id === currentThreadId);
       const next = index === -1 ? (delta === 1 ? unresolved[0] : unresolved.at(-1)) : unresolved[(index + delta + unresolved.length) % unresolved.length];

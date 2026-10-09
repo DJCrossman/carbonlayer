@@ -10,16 +10,6 @@ import type { ComposerAnchor, DiffNote } from './diff';
 import { CommentInput, Icon } from './primitives';
 import './threads.css';
 
-/** Everything a note can do; each returns whether it succeeded so the note can keep or clear its draft. */
-export interface NoteActions {
-  reply(threadId: string, body: string): Promise<boolean>;
-  resolve(threadId: string, resolved: boolean): Promise<boolean>;
-  addToReview(draft: ReviewThreadDraft): void;
-  commentNow(draft: ReviewThreadDraft): Promise<boolean>;
-  removePending(index: number): void;
-  closeComposer(): void;
-}
-
 export function DiffNoteView({
   note,
   anchor,
@@ -50,6 +40,16 @@ export function DiffNoteView({
     case 'composer':
       return anchor && <InlineComposer anchor={anchor} actions={actions} />;
   }
+}
+
+/** Everything a note can do; each returns whether it succeeded so the note can keep or clear its draft. */
+export interface NoteActions {
+  reply(threadId: string, body: string): Promise<boolean>;
+  resolve(threadId: string, resolved: boolean): Promise<boolean>;
+  addToReview(draft: ReviewThreadDraft): void;
+  commentNow(draft: ReviewThreadDraft): Promise<boolean>;
+  removePending(index: number): void;
+  closeComposer(): void;
 }
 
 function ThreadNote({ thread, current, actions }: { thread: ReviewThread; current: boolean; actions: NoteActions }) {

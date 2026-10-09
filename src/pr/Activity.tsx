@@ -10,8 +10,6 @@ import { Comment } from './Comment';
 import { CommentInput, Icon } from './primitives';
 import './activity.css';
 
-type CommitItem = Extract<TimelineItem, { kind: 'commit' }>;
-
 export function Activity({
   pr,
   onRevealThread,
@@ -160,3 +158,5 @@ function CommentComposer({ onComment }: { onComment: (body: string) => Promise<b
     </div>
   );
 }
+
+type CommitItem = Extract<TimelineItem, { kind: 'commit' }>;

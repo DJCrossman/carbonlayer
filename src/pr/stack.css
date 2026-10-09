@@ -45,7 +45,7 @@
   min-height: 28px;
   padding: 0 10px 0 12px;
 }
-.stack-row.is-current { background: var(--gg-bg-selected); }
+.stack-row.is-current { background: color-mix(in srgb, var(--gg-accent) 10%, transparent); }
 .stack-row.is-merged .stack-title { color: var(--gg-fg-muted); }
 
 .stack-dot {

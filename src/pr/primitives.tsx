@@ -1,8 +1,8 @@
 // PR-page pieces the shared primitives in src/ui/ do not cover: an icon set with the glyphs this page
 // needs (src/ui/Icon lacks eye, repo-push, link-external, sidebar, file-directory and git-commit), the
-// Open / Draft / Merged / Closed state pill, a per-check status icon, and the composer textarea.
+// Open / Draft / Merged / Closed state pill, and the composer textarea.
 import { useEffect, useRef, type KeyboardEvent } from 'react';
-import type { CheckState, PrSummary } from '../lib/model';
+import type { PrSummary } from '../lib/model';
 import { StatusPill } from '../ui/StatusPill';
 import './primitives.css';
 
@@ -20,21 +20,6 @@ export function StatePill({ pr }: { pr: Pick<PrSummary, 'state' | 'isDraft'> }) 
   if (pr.state === 'CLOSED') return <StatusPill tone="danger" icon="git-pull-request-closed">Closed</StatusPill>;
   if (pr.isDraft) return <StatusPill tone="neutral" icon="git-pull-request-draft">Draft</StatusPill>;
   return <StatusPill tone="success" icon="git-pull-request">Open</StatusPill>;
-}
-
-/** One check run's state. */
-export function CheckIcon({ state, size = 14 }: { state: CheckState; size?: number }) {
-  switch (state) {
-    case 'SUCCESS':
-      return <Icon name="check-circle" size={size} className="pr-fg-success" />;
-    case 'FAILURE':
-    case 'CANCELLED':
-      return <Icon name="x-circle" size={size} className="pr-fg-danger" />;
-    case 'PENDING':
-      return <Icon name="dot-fill" size={size} className="pr-fg-attention" />;
-    default:
-      return <Icon name="skip" size={size} className="pr-fg-muted" />;
-  }
 }
 
 /**

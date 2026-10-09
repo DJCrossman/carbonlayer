@@ -75,14 +75,6 @@ export function PrPage({ source, route }: { source: DataSource; route: Extract<A
   return <PrView key={key} fetched={loaded.pr} settings={settings} source={source} section={route.section} refetch={refetch} />;
 }
 
-/** Changes made on this page that the next fetch will confirm, applied over the fetched PR meanwhile. */
-interface PendingEdits {
-  viewed: Record<string, boolean>;
-  resolved: Record<string, boolean>;
-  isDraft: boolean | null;
-  autoMerge: MergeMethod | false | null;
-}
-
 function PrView({
   fetched,
   settings,
@@ -120,7 +112,23 @@ function PrView({
   }, [pr.title, pr.number]);
 
   useEffect(() => {
-    if (section === 'files') requestAnimationFrame(() => document.getElementById('pr-files')?.scrollIntoView({ block: 'start' }));
+    const files = document.getElementById('pr-files');
+    if (section !== 'files' || !files) return;
+    // The page may be too short to bring the files to the top until the diffs have rendered, so keep them
+    // pinned there while the page grows, until the reader takes over or it has settled.
+    const pin = () => files.scrollIntoView({ block: 'start' });
+    const observer = new ResizeObserver(pin);
+    const stop = () => observer.disconnect();
+    pin();
+    observer.observe(document.body);
+    const timer = setTimeout(stop, 3000);
+    const events = ['wheel', 'keydown', 'pointerdown'] as const;
+    for (const type of events) window.addEventListener(type, stop, { once: true, passive: true });
+    return () => {
+      stop();
+      clearTimeout(timer);
+      for (const type of events) window.removeEventListener(type, stop);
+    };
   }, [section]);
 
   useEffect(() => {
@@ -421,7 +429,7 @@ function PrHeader({
           <span className="pr-fg-success">+{pr.additions}</span> <span className="pr-fg-danger">−{pr.deletions}</span>
         </span>
         <span className="pr-muted">
-          Updated <RelativeTime date={pr.updatedAt} />
+          Updated <RelativeTime date={pr.updatedAt} ago />
         </span>
       </div>
     </header>
@@ -458,6 +466,14 @@ function PrError({ message }: { message: string }) {
       </div>
     </div>
   );
+}
+
+/** Changes made on this page that the next fetch will confirm, applied over the fetched PR meanwhile. */
+interface PendingEdits {
+  viewed: Record<string, boolean>;
+  resolved: Record<string, boolean>;
+  isDraft: boolean | null;
+  autoMerge: MergeMethod | false | null;
 }
 
 /** The fetched PR with this page's not-yet-confirmed changes applied. */

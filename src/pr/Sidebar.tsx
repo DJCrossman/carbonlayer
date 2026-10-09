@@ -1,8 +1,8 @@
 // The right sidebar: status (with Merge when ready), the one next step, checks, reviewers, labels and
 // assignees. Cards with nothing to show are left out.
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import type { MergeMethod } from '../lib/rpc';
-import type { PrDetail } from '../lib/model';
+import type { CheckState, PrDetail } from '../lib/model';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
@@ -11,7 +11,7 @@ import { RelativeTime } from '../ui/RelativeTime';
 import { ReviewStatus } from '../ui/ReviewStatus';
 import { goToPr } from './navigation';
 import { nextActionFor } from './next-action';
-import { CheckIcon, Icon, StatePill } from './primitives';
+import { Icon, StatePill } from './primitives';
 import './sidebar.css';
 
 export function Sidebar({
@@ -36,7 +36,8 @@ export function Sidebar({
       <ActionCard pr={pr} mergeMethod={mergeMethod} onMarkReady={onMarkReady} onMerge={onMerge} onViewThreads={onViewThreads} />
       {pr.ci.checks.length > 0 && <ChecksCard pr={pr} />}
       {pr.reviewers.length > 0 && (
-        <SideCard title="Reviewers">
+        <Card className="side-card">
+          <h3 className="side-card-title">Reviewers</h3>
           <ul className="side-list">
             {pr.reviewers.map((reviewer) => (
               <li key={reviewer.user.login} className="side-person">
@@ -48,25 +49,25 @@ export function Sidebar({
                   <Avatar user={reviewer.user} size={20} />
                 )}
                 <span className="side-person-name">{reviewer.user.login}</span>
-                <span title={REVIEWER_STATE_LABELS[reviewer.state]}>
-                  <ReviewStatus state={reviewer.state} />
-                </span>
+                <ReviewStatus state={reviewer.state} size={14} />
               </li>
             ))}
           </ul>
-        </SideCard>
+        </Card>
       )}
       {pr.labels.length > 0 && (
-        <SideCard title="Labels">
+        <Card className="side-card">
+          <h3 className="side-card-title">Labels</h3>
           <div className="side-labels">
             {pr.labels.map((label) => (
               <LabelChip key={label.name} label={label} />
             ))}
           </div>
-        </SideCard>
+        </Card>
       )}
       {pr.assignees.length > 0 && (
-        <SideCard title="Assignees">
+        <Card className="side-card">
+          <h3 className="side-card-title">Assignees</h3>
           <ul className="side-list">
             {pr.assignees.map((user) => (
               <li key={user.login} className="side-person">
@@ -75,7 +76,7 @@ export function Sidebar({
               </li>
             ))}
           </ul>
-        </SideCard>
+        </Card>
       )}
     </aside>
   );
@@ -98,7 +99,7 @@ function StatusCard({ pr, mergeMethod, onAutoMerge }: { pr: PrDetail; mergeMetho
         ) : (
           <span className="pr-muted">
             {endedBy && `by ${endedBy.login} `}
-            {endedAt && <RelativeTime date={endedAt} />}
+            {endedAt && <RelativeTime date={endedAt} ago />}
           </span>
         )}
       </div>
@@ -243,28 +244,25 @@ function ChecksCard({ pr }: { pr: PrDetail }) {
   const { checks } = pr.ci;
   const passed = checks.filter((check) => check.state === 'SUCCESS');
   // Failing first, then running, then everything else.
-  const rank = (state: string) => (state === 'FAILURE' || state === 'CANCELLED' ? 0 : state === 'PENDING' ? 1 : 2);
-  const sorted = [...checks].sort((a, b) => rank(a.state) - rank(b.state));
+  const urgency = (state: string) => (state === 'FAILURE' || state === 'CANCELLED' ? 0 : state === 'PENDING' ? 1 : 2);
+  const sorted = [...checks].sort((a, b) => urgency(a.state) - urgency(b.state));
   const hidePassed = checks.length > 8 && !showPassed;
   const visible = hidePassed ? sorted.filter((check) => check.state !== 'SUCCESS') : sorted;
   const segments = [
     ['success', passed.length],
-    ['danger', checks.filter((check) => rank(check.state) === 0).length],
+    ['danger', checks.filter((check) => urgency(check.state) === 0).length],
     ['attention', checks.filter((check) => check.state === 'PENDING').length],
   ] as const;
   const other = checks.length - segments.reduce((sum, [, count]) => sum + count, 0);
 
   return (
-    <SideCard
-      title={
-        <>
-          Checks{' '}
-          <span className="pr-muted">
-            · {passed.length}/{checks.length} passed
-          </span>
-        </>
-      }
-    >
+    <Card className="side-card">
+      <h3 className="side-card-title">
+        Checks{' '}
+        <span className="pr-muted">
+          · {passed.length}/{checks.length} passed
+        </span>
+      </h3>
       <div className="checks-bar" aria-hidden="true">
         {[...segments, ['neutral', other] as const].map(([tone, count]) =>
           count > 0 ? <span key={tone} className={`is-${tone}`} style={{ flexGrow: count }} /> : null,
@@ -294,26 +292,24 @@ function ChecksCard({ pr }: { pr: PrDetail }) {
           {showPassed ? 'Hide passed checks' : `Show ${passed.length} passed`}
         </button>
       )}
-    </SideCard>
-  );
-}
-
-function SideCard({ title, children }: { title: ReactNode; children: ReactNode }) {
-  return (
-    <Card className="side-card">
-      <h3 className="side-card-title">{title}</h3>
-      {children}
     </Card>
   );
 }
 
-const REVIEWER_STATE_LABELS = {
-  APPROVED: 'Approved',
-  CHANGES_REQUESTED: 'Requested changes',
-  COMMENTED: 'Commented',
-  PENDING: 'Review requested',
-  DISMISSED: 'Review dismissed',
-} as const;
+/** One check run's state. */
+function CheckIcon({ state, size = 14 }: { state: CheckState; size?: number }) {
+  switch (state) {
+    case 'SUCCESS':
+      return <Icon name="check-circle" size={size} className="pr-fg-success" />;
+    case 'FAILURE':
+    case 'CANCELLED':
+      return <Icon name="x-circle" size={size} className="pr-fg-danger" />;
+    case 'PENDING':
+      return <Icon name="dot-fill" size={size} className="pr-fg-attention" />;
+    default:
+      return <Icon name="skip" size={size} className="pr-fg-muted" />;
+  }
+}
 
 const MERGE_LABELS = {
   SQUASH: { short: 'Squash', verb: 'Squash and merge' },
