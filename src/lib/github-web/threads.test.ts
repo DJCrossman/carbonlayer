@@ -36,7 +36,6 @@ describe('reviewThreads', () => {
       id: '501',
       author: { login: 'ana', avatarUrl: 'https://a/ana', url: 'https://github.com/ana' },
       bodyHtml: '<p>nit</p>',
-      body: 'nit',
       createdAt: '2026-10-01T00:00:00Z',
       url: 'https://github.com/o/r/pull/1#discussion_r501',
     });

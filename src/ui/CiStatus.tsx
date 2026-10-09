@@ -1,16 +1,20 @@
-// CI at a glance from a CiSummary: a segmented bar (one segment per check) or a compact icon with passed/total; hover lists failing checks first.
-import type { CheckState, CiSummary } from '../lib/model';
+// CI at a glance from a CiSummary: a segmented bar (one segment per check) or a compact icon with passed/total; hover
+// lists failing checks first. The inbox only has GitHub's rollup (counts, no per-check detail), so segments come from
+// the counts when there is no check list.
+import type { CiSummary } from '../lib/model';
 import { Icon } from './Icon';
 import './ui.css';
 
 export function CiStatus({ ci, variant = 'bar' }: { ci: CiSummary; variant?: 'bar' | 'compact' }) {
-  if (ci.checks.length === 0) return null;
+  const { success, failure, pending, other } = ci.counts;
+  const total = ci.checks.length || success + failure + pending + other;
+  if (total === 0) return null;
   const failing = ci.checks.filter((check) => check.state === 'FAILURE' || check.state === 'CANCELLED');
-  const pending = ci.checks.filter((check) => check.state === 'PENDING');
+  const running = ci.checks.filter((check) => check.state === 'PENDING');
   const title = [
     failing.length > 0 && `Failing: ${failing.map((check) => check.name).join(', ')}`,
-    pending.length > 0 && `Pending: ${pending.map((check) => check.name).join(', ')}`,
-    `${ci.counts.success} of ${ci.checks.length} checks passed`,
+    running.length > 0 && `Pending: ${running.map((check) => check.name).join(', ')}`,
+    `${success} of ${total} checks passed`,
   ]
     .filter(Boolean)
     .join('\n');
@@ -27,23 +31,29 @@ export function CiStatus({ ci, variant = 'bar' }: { ci: CiSummary; variant?: 'ba
     return (
       <span className={`gg-ci-compact gg-ci-compact--${tone}`} title={title}>
         <Icon name={icon} size={14} />
-        {ci.counts.success}/{ci.checks.length}
+        {success}/{total}
       </span>
     );
   }
 
+  const segments: Array<'success' | 'danger' | 'attention' | 'neutral'> =
+    ci.checks.length > 0
+      ? ci.checks.map((check) =>
+          check.state === 'SUCCESS' ? 'success' : check.state === 'FAILURE' || check.state === 'CANCELLED' ? 'danger' : check.state === 'PENDING' ? 'attention' : 'neutral',
+        )
+      : [
+          ...Array<'success'>(success).fill('success'),
+          ...Array<'danger'>(failure).fill('danger'),
+          ...Array<'attention'>(pending).fill('attention'),
+          ...Array<'neutral'>(other).fill('neutral'),
+        ];
   // Read like a progress bar: passed checks fill from the left, then failures, then whatever is still running.
-  const order: Record<CheckState, number> = { SUCCESS: 0, FAILURE: 1, CANCELLED: 1, PENDING: 2, NEUTRAL: 3, SKIPPED: 3, NONE: 3 };
-  const segments = [...ci.checks].sort((a, b) => order[a.state] - order[b.state]);
+  const order = ['success', 'danger', 'attention', 'neutral'];
+  segments.sort((a, b) => order.indexOf(a) - order.indexOf(b));
   return (
     <span className={`gg-ci-bar${segments.length > 16 ? ' gg-ci-bar--dense' : ''}`} title={title} role="img" aria-label={title}>
-      {segments.map((check, index) => (
-        <span
-          key={index}
-          className={`gg-ci-bar__seg gg-ci-bar__seg--${
-            check.state === 'SUCCESS' ? 'success' : order[check.state] === 1 ? 'danger' : check.state === 'PENDING' ? 'attention' : 'neutral'
-          }`}
-        />
+      {segments.map((tone, index) => (
+        <span key={index} className={`gg-ci-bar__seg gg-ci-bar__seg--${tone}`} />
       ))}
     </span>
   );

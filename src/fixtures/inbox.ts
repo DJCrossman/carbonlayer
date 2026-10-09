@@ -1,7 +1,7 @@
 // Inbox fixtures for the dev harness (`app.html?fixtures=1#/inbox`): every default view, covering each review, CI and
 // merge state a row can show, native stack positions, unread rows, long titles, labels and team reviewers. The viewer is
-// octocat. Ages are relative to page load so the harness always looks current. The team-review rows look like what
-// GitHub's dashboard endpoints return: no line counts and no merge state.
+// octocat. Ages are relative to page load so the harness always looks current. CI is a rollup without per-check
+// detail, as GitHub's dashboard endpoints return it; the team-review rows also have no line counts and no merge state.
 import type { CheckState, CiSummary, PrSummary, UserRef, ViewResult } from '../lib/model';
 import { DEFAULT_VIEWS } from '../lib/views';
 
@@ -390,26 +390,9 @@ function pr(fields: Omit<Partial<PrSummary>, 'repo'> & { repo: string; number: n
   };
 }
 
-/** CI where `passed` checks succeeded and the named ones failed, are still running, or were skipped. */
+/** GitHub's CI rollup where `passed` checks succeeded and the named ones failed, are still running, or were skipped. */
 function ci({ passed = 0, failed = [], pending = [], skipped = [] }: { passed?: number; failed?: string[]; pending?: string[]; skipped?: string[] }): CiSummary {
-  const passing = ['build', 'lint', 'typecheck', 'unit (node 22)', 'e2e (chromium)', 'e2e (webkit)', 'integration (postgres-15)', 'codeql', 'bundle-size', 'license-check', 'deploy-preview', 'docs'];
-  const named: Array<[string, CheckState]> = [
-    ...failed.map((name): [string, CheckState] => [name, 'FAILURE']),
-    ...pending.map((name): [string, CheckState] => [name, 'PENDING']),
-    ...skipped.map((name): [string, CheckState] => [name, 'SKIPPED']),
-  ];
-  const taken = new Set(named.map(([name]) => name));
-  const succeeded = passing.filter((name) => !taken.has(name)).slice(0, passed).map((name): [string, CheckState] => [name, 'SUCCESS']);
-  const checks = [...succeeded, ...named].map(([name, state]) => ({
-    name,
-    state,
-    url: null,
-    description: null,
-    group: 'GitHub Actions',
-    startedAt: new Date(NOW - HOUR).toISOString(),
-    completedAt: state === 'PENDING' ? null : new Date(NOW - 50 * MINUTE).toISOString(),
-  }));
-  const counts = { success: succeeded.length, failure: failed.length, pending: pending.length, other: skipped.length };
+  const counts = { success: passed, failure: failed.length, pending: pending.length, other: skipped.length };
   const state: CheckState = counts.failure > 0 ? 'FAILURE' : counts.pending > 0 ? 'PENDING' : counts.success > 0 ? 'SUCCESS' : 'NONE';
-  return { state, checks, counts };
+  return { state, checks: [], counts };
 }

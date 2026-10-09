@@ -16,7 +16,6 @@ describe('fetchPullRequestPage', () => {
 
     expect(pr).toMatchObject({
       title: 'Fix the widget',
-      viewerLogin: 'ana',
       ci: { state: 'NONE', checks: [] },
       requiredCheckNames: [],
       reviewers: [],

@@ -424,5 +424,4 @@ const STATUS_LETTERS: Record<ChangedFile['status'], string> = {
   renamed: 'R',
   copied: 'C',
   changed: 'M',
-  unchanged: '·',
 };

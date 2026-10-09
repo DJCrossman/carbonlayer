@@ -56,12 +56,21 @@ export async function searchPulls(query: string): Promise<{ pulls: Pull[]; total
   return pullsIn(embeddedPayload(page, 'pullsDashboardSurfaceContentRoute')?.payload.pullsDashboardSurfaceContentRoute);
 }
 
-/** The deferred fields (review decision, CI rollup, review counts) of these rows, by PR id. */
+/**
+ * The deferred fields (review decision, CI rollup, review counts) of these rows, by PR id. The rows still show without
+ * them, so a failure is logged and yields none.
+ */
 export async function deferredFields(pulls: Pull[], search: { section: GitHubInboxFilter } | { query: string }): Promise<Map<string, Partial<Pull>>> {
   if (pulls.length === 0) return new Map();
   const params = new URLSearchParams('section' in search ? { page: '1' } : { q: search.query, page: '1' });
   for (const pull of pulls) params.append('ids[]', pull.id);
-  const data = await getJson<unknown>(`${'section' in search ? '/pulls/inbox/deferred' : '/pulls/deferred'}?${params}`);
+  let data: unknown;
+  try {
+    data = await getJson<unknown>(`${'section' in search ? '/pulls/inbox/deferred' : '/pulls/deferred'}?${params}`);
+  } catch (error) {
+    console.debug('[gg]', 'deferred fields failed; showing the rows without review and CI status:', error instanceof Error ? error.message : error);
+    return new Map();
+  }
   noteShape('deferred', data);
   // Expected an array of rows or { results | pulls: rows }; also accepts an object keyed by PR id.
   const record = (data ?? {}) as Record<string, unknown>;
@@ -74,7 +83,7 @@ export async function deferredFields(pulls: Pull[], search: { section: GitHubInb
 
 /** A dashboard row as the inbox shows it: the section or search fields plus its deferred fields. */
 export function summarisePull(pull: Pull, section: GitHubInboxFilter | null): PrSummary {
-  const [owner = '', name = ''] = pull.repoNameWithOwner.split('/');
+  const [owner = '', name = ''] = pull.repoNameWithOwner?.split('/') ?? [];
   const rollup = pull.statusCheckRollup;
   const rollupState = rollup?.state?.toUpperCase();
   const ciState: CheckState =
@@ -94,8 +103,8 @@ export function summarisePull(pull: Pull, section: GitHubInboxFilter | null): Pr
     id: pull.id,
     repo: { owner, name },
     number: pull.number,
-    title: pull.title,
-    url: pull.permalink,
+    title: pull.title ?? '',
+    url: pull.permalink ?? `https://github.com/${owner}/${name}/pull/${pull.number}`,
     author: githubUser(pull.author?.displayLogin ?? 'ghost'),
     state: pull.mergedAt || pull.state === 'MERGED' ? 'MERGED' : pull.closedAt || pull.state === 'CLOSED' ? 'CLOSED' : 'OPEN',
     isDraft,
@@ -138,9 +147,9 @@ export interface Pull {
   id: string;
   itemType?: string;
   number: number;
-  title: string;
-  permalink: string;
-  repoNameWithOwner: string;
+  title?: string;
+  permalink?: string;
+  repoNameWithOwner?: string;
   author?: { displayLogin: string } | null;
   state?: string;
   displayState?: string;

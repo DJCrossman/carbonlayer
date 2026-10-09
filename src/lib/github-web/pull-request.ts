@@ -33,7 +33,7 @@ export async function fetchPullRequestPage(repo: RepoRef, number: number, mergeM
     getJson<unknown>(`${data}/threads`),
     sideDetail<unknown>(`merge_box?merge_method=${mergeMethod}&bypass_requirements=false`),
     sideDetail<unknown>('status_checks'),
-    sideDetail<{ body?: string; bodyHtml?: string }>('description'),
+    sideDetail<{ bodyHtml?: string }>('description'),
     sideDetail<unknown>('review_requests'),
     sideDetail<{ labels?: Array<{ name: string; color: string }> }>('labels'),
     sideDetail<{ assignees?: Array<{ login?: string; displayLogin?: string; avatarUrl?: string }> }>('assignees'),
@@ -122,7 +122,6 @@ export async function fetchPullRequestPage(repo: RepoRef, number: number, mergeM
     ...summary,
     // Without page_data/description, the description as the conversation renders it.
     bodyHtml: description?.bodyHtml ?? page.querySelector('[id^="pullrequest-"] .comment-body')?.innerHTML.trim() ?? '',
-    body: description?.body ?? '',
     headOid: pr.headSha,
     baseOid: comparison.comparison?.fullDiff?.baseOid ?? '',
     assignees: (assignees?.assignees ?? []).flatMap((assignee): UserRef[] => {
@@ -131,7 +130,6 @@ export async function fetchPullRequestPage(repo: RepoRef, number: number, mergeM
     }),
     viewerCanUpdate: layout.user?.canEditTitle ?? false,
     viewerDidAuthor: viewerLogin === author.login,
-    viewerLogin,
     timeline,
     threads,
     files,

@@ -1,5 +1,5 @@
-// Normalised domain model shared by the background (producer) and the UIs (consumers).
-// Nothing here is GitHub-API-shaped; the background maps GraphQL/REST responses into these.
+// Normalised domain model shared by the content script (producer, src/lib/github-web/) and the UIs (consumers).
+// Nothing here is GitHub-shaped; github-web maps GitHub's page data and page_data routes into these.
 
 export interface RepoRef {
   owner: string;
@@ -100,14 +100,13 @@ export interface Stack {
   currentIndex: number;
   trunk: string;
   /** Where the ordering came from; 'none' means a single, unstacked PR. */
-  source: 'native' | 'branches' | 'graphite-comment' | 'none';
+  source: 'native' | 'graphite-comment' | 'none';
 }
 
 export interface ReviewThreadComment {
   id: string;
   author: UserRef;
   bodyHtml: string;
-  body: string;
   createdAt: string;
   url: string;
 }
@@ -146,10 +145,10 @@ export type TimelineItem =
 export interface ChangedFile {
   path: string;
   previousPath: string | null;
-  status: 'added' | 'removed' | 'modified' | 'renamed' | 'copied' | 'changed' | 'unchanged';
+  status: 'added' | 'removed' | 'modified' | 'renamed' | 'copied' | 'changed';
   additions: number;
   deletions: number;
-  /** Unified diff hunks for this file (GitHub REST `patch`), null for binary / too large. */
+  /** Unified diff hunks for this file, rebuilt from GitHub's diff lines; null for binary / too large. */
   patch: string | null;
   viewerViewedState: 'VIEWED' | 'UNVIEWED' | 'DISMISSED';
   blobUrl: string;
@@ -157,13 +156,11 @@ export interface ChangedFile {
 
 export interface PrDetail extends PrSummary {
   bodyHtml: string;
-  body: string;
   headOid: string;
   baseOid: string;
   assignees: UserRef[];
   viewerCanUpdate: boolean;
   viewerDidAuthor: boolean;
-  viewerLogin: string;
   timeline: TimelineItem[];
   threads: ReviewThread[];
   files: ChangedFile[];

@@ -63,10 +63,11 @@ function StackRow({ pr, current }: { pr: PrSummary; current: boolean }) {
             {pr.commentCount}
           </span>
         )}
-        <ReviewStatus state={pr.reviewDecision} size={14} />
+        {/* An entry known only from the stack's own listing has no review, CI or age data; leave those out. */}
+        {pr.reviewDecision !== 'NONE' && <ReviewStatus state={pr.reviewDecision} size={14} />}
         <CiStatus ci={pr.ci} variant="compact" />
         <MergeStatus status={pr.mergeStatus} state={pr.state} />
-        <RelativeTime date={pr.updatedAt} />
+        {pr.updatedAt && <RelativeTime date={pr.updatedAt} />}
       </span>
     </li>
   );

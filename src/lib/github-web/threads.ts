@@ -46,7 +46,6 @@ export function reviewThreads(data: unknown, comparison: BaseComparison, page: D
           id: String(comment.databaseId ?? comment.id),
           author: githubUser(comment.author?.login ?? 'ghost', comment.author?.avatarUrl),
           bodyHtml: comment.bodyHTML ?? '',
-          body: comment.body ?? '',
           createdAt: comment.publishedAt ?? comment.createdAt ?? '',
           url: comment.url ?? `https://github.com${comment.currentDiffResourcePath ?? ''}`,
         })),
@@ -93,7 +92,6 @@ interface RawThread {
       databaseId?: number;
       reviewId?: number | string;
       author?: { login?: string; avatarUrl?: string } | null;
-      body?: string;
       bodyHTML?: string;
       createdAt?: string;
       publishedAt?: string;

@@ -146,7 +146,6 @@ const threads42: ReviewThread[] = [
       {
         id: 'PRRC_fixture1',
         author: jlord,
-        body: "Should this throw instead? Callers can't tell a zone PARCS doesn't know from a lookup that failed.",
         bodyHtml: "<p>Should this throw instead? Callers can't tell a zone PARCS doesn't know from a lookup that failed.</p>",
         createdAt: '2026-10-08T10:14:00Z',
         url: 'https://github.com/acme/widgets/pull/42#discussion_r1',
@@ -154,7 +153,6 @@ const threads42: ReviewThread[] = [
       {
         id: 'PRRC_fixture2',
         author: mona,
-        body: '`listZones` already throws on transport errors, so `null` only ever means "unknown". I can add that to the doc comment.',
         bodyHtml:
           '<p><code>listZones</code> already throws on transport errors, so <code>null</code> only ever means "unknown". I can add that to the doc comment.</p>',
         createdAt: '2026-10-08T11:02:00Z',
@@ -175,7 +173,6 @@ const threads42: ReviewThread[] = [
       {
         id: 'PRRC_fixture3',
         author: jlord,
-        body: 'The operator console still calls `setZone`.',
         bodyHtml: '<p>The operator console still calls <code>setZone</code>.</p>',
         createdAt: '2026-10-08T10:16:00Z',
         url: 'https://github.com/acme/widgets/pull/42#discussion_r3',
@@ -183,7 +180,6 @@ const threads42: ReviewThread[] = [
       {
         id: 'PRRC_fixture4',
         author: mona,
-        body: 'Moved it to `changeZone` in #43.',
         bodyHtml: '<p>Moved it to <code>changeZone</code> in <a href="https://github.com/acme/widgets/pull/43">#43</a>.</p>',
         createdAt: '2026-10-08T11:05:00Z',
         url: 'https://github.com/acme/widgets/pull/42#discussion_r4',
@@ -209,7 +205,6 @@ const threads42: ReviewThread[] = [
       {
         id: 'PRRC_fixture5',
         author: hubot,
-        body: 'This TODO should be a ticket.',
         bodyHtml: '<p>This TODO should be a ticket.</p>',
         createdAt: '2026-10-07T15:40:00Z',
         url: 'https://github.com/acme/widgets/pull/42#discussion_r5',
@@ -301,23 +296,6 @@ const clientTs = [
 
 const detail42: PrDetail = {
   ...summary42,
-  body: [
-    'Lets the adapter move a facility between PARCS zones, refusing zones that are closed.',
-    '',
-    '## Changes',
-    '',
-    '- `zones.ts`: zone model, `findZone`, `isOpen` and `switchZone`',
-    '- `ParcsAdapter.changeZone` replaces `setZone`',
-    '- Drops the v1 `legacy.ts` toggle',
-    '',
-    '## Testing',
-    '',
-    '```ts',
-    "await adapter.changeZone('north' as ZoneId);",
-    '```',
-    '',
-    'Stacked on #41; the console change is #43.',
-  ].join('\n'),
   bodyHtml: [
     '<p>Lets the adapter move a facility between PARCS zones, refusing zones that are closed.</p>',
     '<h2>Changes</h2>',
@@ -335,7 +313,6 @@ const detail42: PrDetail = {
   assignees: [mona],
   viewerCanUpdate: true,
   viewerDidAuthor: false,
-  viewerLogin: octocat.login,
   timeline: [
     {
       kind: 'commit',
@@ -526,7 +503,7 @@ const detail42: PrDetail = {
       blobUrl: 'https://github.com/acme/widgets/blob/c0ffee4/docs/zones.png',
     },
   ],
-  stack: { entries: stackEntries, currentIndex: 1, trunk: 'main', source: 'branches' },
+  stack: { entries: stackEntries, currentIndex: 1, trunk: 'main', source: 'graphite-comment' },
   defaultMergeMethod: 'SQUASH',
   allowedMergeMethods: ['SQUASH', 'MERGE'],
   viewerCanMerge: true,
@@ -537,14 +514,12 @@ const detail42: PrDetail = {
 
 const detail41: PrDetail = {
   ...summary41,
-  body: 'A small typed wrapper around the PARCS REST API, so the adapter stops hand-rolling `fetch` calls.',
   bodyHtml: '<p>A small typed wrapper around the PARCS REST API, so the adapter stops hand-rolling <code>fetch</code> calls.</p>',
   headOid: 'bead4141bead4141bead4141bead4141bead4141',
   baseOid: '0000aaaa0000aaaa0000aaaa0000aaaa0000aaaa',
   assignees: [mona],
   viewerCanUpdate: true,
   viewerDidAuthor: false,
-  viewerLogin: octocat.login,
   timeline: [
     {
       kind: 'commit',
@@ -599,7 +574,7 @@ const detail41: PrDetail = {
       blobUrl: 'https://github.com/acme/widgets/blob/bead414/package.json',
     },
   ],
-  stack: { entries: stackEntries, currentIndex: 0, trunk: 'main', source: 'branches' },
+  stack: { entries: stackEntries, currentIndex: 0, trunk: 'main', source: 'graphite-comment' },
   defaultMergeMethod: 'SQUASH',
   allowedMergeMethods: ['SQUASH', 'MERGE', 'REBASE'],
   viewerCanMerge: true,

@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fetchInbox, summarisePull, type Pull } from './inbox';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe('summarisePull', () => {
   it('maps a dashboard row and its deferred fields', () => {
@@ -72,6 +75,17 @@ describe('fetchInbox', () => {
     );
     const [result] = await fetchInbox([{ id: 'a', name: 'Drafts', query: 'inbox:your-drafts' }], '');
     expect(result).toMatchObject({ totalCount: 1, prs: [{ number: 4 }] });
+  });
+
+  it('shows the rows without review and CI status when GitHub refuses their deferred fields', async () => {
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => (url.startsWith('/pulls/inbox/queries') ? Response.json([pull(5)]) : Response.json({ error: 'Not Found' }, { status: 404 }))),
+    );
+    const [result] = await fetchInbox([{ id: 'a', name: 'Drafts', query: 'inbox:your-drafts' }], '');
+    expect(result?.prs).toMatchObject([{ number: 5, reviewDecision: 'NONE', ci: { state: 'NONE' } }]);
+    expect(console.debug).toHaveBeenCalledWith('[gg]', expect.stringContaining('deferred fields failed'), 'GitHub answered 404 for /pulls/inbox/deferred');
   });
 });
 
