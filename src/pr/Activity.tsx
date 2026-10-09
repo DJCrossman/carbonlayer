@@ -2,8 +2,12 @@
 // the PR-level comment composer at the bottom.
 import { useState } from 'react';
 import type { PrDetail, TimelineItem } from '../lib/model';
+import { Avatar } from '../ui/Avatar';
+import { Button } from '../ui/Button';
+import { Kbd } from '../ui/Kbd';
+import { RelativeTime } from '../ui/RelativeTime';
 import { Comment } from './Comment';
-import { Avatar, CommentInput, Icon, Kbd, RelativeTime } from './primitives';
+import { CommentInput, Icon } from './primitives';
 import './activity.css';
 
 type CommitItem = Extract<TimelineItem, { kind: 'commit' }>;
@@ -33,7 +37,7 @@ export function Activity({
             case 'comment':
               return (
                 <li key={entry.id} className="timeline-card">
-                  <Comment author={entry.author} createdAt={entry.createdAt} bodyHtml={entry.bodyHtml} url={entry.url} action={<span className="gg-muted">commented</span>} />
+                  <Comment author={entry.author} createdAt={entry.createdAt} bodyHtml={entry.bodyHtml} url={entry.url} action={<span className="pr-muted">commented</span>} />
                 </li>
               );
             case 'review': {
@@ -62,15 +66,15 @@ export function Activity({
                 <li key={entry.id} className="timeline-commits">
                   {entry.commits.map((commit) => (
                     <div key={commit.id} className="timeline-commit">
-                      <Icon name="commit" size={14} className="gg-fg-muted" />
+                      <Icon name="commit" size={14} className="pr-fg-muted" />
                       {commit.author && <Avatar user={commit.author} size={16} />}
                       <a className="timeline-commit-message" href={commit.url} target="_blank" rel="noopener">
                         {commit.messageHeadline}
                       </a>
-                      <a className="gg-mono gg-muted" href={commit.url} target="_blank" rel="noopener">
+                      <a className="pr-mono pr-muted" href={commit.url} target="_blank" rel="noopener">
                         {commit.abbreviatedOid}
                       </a>
-                      <RelativeTime iso={commit.committedAt} />
+                      <RelativeTime date={commit.committedAt} />
                     </div>
                   ))}
                 </li>
@@ -80,8 +84,8 @@ export function Activity({
                 <li key={entry.id} className="timeline-event">
                   <Icon name="repo-push" size={14} />
                   <strong>{entry.actor?.login ?? 'Someone'}</strong> force-pushed{' '}
-                  <span className="gg-mono">{entry.beforeOid.slice(0, 7)}</span> → <span className="gg-mono">{entry.afterOid.slice(0, 7)}</span>
-                  <RelativeTime iso={entry.createdAt} />
+                  <span className="pr-mono">{entry.beforeOid.slice(0, 7)}</span> → <span className="pr-mono">{entry.afterOid.slice(0, 7)}</span>
+                  <RelativeTime date={entry.createdAt} />
                 </li>
               );
             case 'review-requested':
@@ -89,7 +93,7 @@ export function Activity({
                 <li key={entry.id} className="timeline-event">
                   <Icon name="eye" size={14} />
                   <strong>{entry.actor?.login ?? 'Someone'}</strong> requested review from <strong>{entry.requested}</strong>
-                  <RelativeTime iso={entry.createdAt} />
+                  <RelativeTime date={entry.createdAt} />
                 </li>
               );
             default: {
@@ -106,7 +110,7 @@ export function Activity({
                 <li key={entry.id} className={`timeline-event is-${entry.kind}`}>
                   <Icon name={icon} size={14} />
                   <strong>{entry.actor?.login ?? 'Someone'}</strong> {text}
-                  <RelativeTime iso={entry.createdAt} />
+                  <RelativeTime date={entry.createdAt} />
                 </li>
               );
             }
@@ -148,10 +152,10 @@ function CommentComposer({ onComment }: { onComment: (body: string) => Promise<b
     <div className="timeline-composer">
       <CommentInput value={body} onChange={setBody} onSubmit={submit} placeholder="Leave a comment" disabled={busy} minRows={3} />
       <div className="timeline-composer-actions">
-        <span className="gg-muted">Markdown supported</span>
-        <button className="gg-btn is-primary" onClick={submit} disabled={busy || body.trim() === ''}>
+        <span className="pr-muted">Markdown supported</span>
+        <Button variant="primary" onClick={submit} disabled={busy || body.trim() === ''}>
           Comment <Kbd>⌘↵</Kbd>
-        </button>
+        </Button>
       </div>
     </div>
   );

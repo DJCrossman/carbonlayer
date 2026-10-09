@@ -98,7 +98,7 @@
   gap: 6px;
   margin-top: 8px;
 }
-.merge-row .gg-select { flex: 1; min-width: 0; }
+.merge-row .pr-select { flex: 1; min-width: 0; }
 .merge-row .gg-btn { flex: none; }
 .merge-confirm {
   margin-top: 8px;

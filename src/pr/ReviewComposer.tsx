@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react';
 import type { ReviewThreadDraft } from '../app/data-source';
 import type { PrDetail } from '../lib/model';
-import { CommentInput, Icon, Kbd } from './primitives';
+import { Button } from '../ui/Button';
+import { Kbd } from '../ui/Kbd';
+import { CommentInput, Icon } from './primitives';
 import './review.css';
 
 export type ReviewEvent = 'COMMENT' | 'REQUEST_CHANGES' | 'APPROVE';
@@ -66,7 +68,7 @@ export function ReviewComposer({
               <input type="radio" name="review-event" value={value} checked={event === value} disabled={ownPr} onChange={() => onEventChange(value)} />
               <span>
                 <strong>{label}</strong>
-                <span className="gg-muted">{hint}</span>
+                <span className="pr-muted">{hint}</span>
               </span>
             </label>
           );
@@ -74,32 +76,32 @@ export function ReviewComposer({
       </div>
       {batch.length > 0 && (
         <div className="review-batch">
-          <div className="gg-muted">
+          <div className="pr-muted">
             {batch.length} inline {batch.length === 1 ? 'comment' : 'comments'} will be included
           </div>
           <ul>
             {batch.map((draft, index) => (
               <li key={`${draft.path}:${draft.side}:${draft.line}:${index}`}>
-                <span className="gg-mono review-batch-where">
+                <span className="pr-mono review-batch-where">
                   {draft.path.split('/').at(-1)}:{draft.side === 'LEFT' ? 'L' : 'R'}
                   {draft.line}
                 </span>
                 <span className="review-batch-body">{draft.body}</span>
-                <button className="gg-btn is-small is-quiet" onClick={() => onRemove(index)} title="Remove from review">
+                <Button variant="ghost" size="sm" onClick={() => onRemove(index)} title="Remove from review">
                   <Icon name="x" size={12} />
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
         </div>
       )}
       <div className="review-actions">
-        <button className="gg-btn" onClick={onClose}>
+        <Button onClick={onClose}>
           Cancel
-        </button>
-        <button className="gg-btn is-primary" onClick={submit} disabled={!canSubmit}>
+        </Button>
+        <Button variant="primary" onClick={submit} disabled={!canSubmit}>
           {busy ? 'Submitting…' : 'Submit review'} <Kbd>⌘↵</Kbd>
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -111,16 +113,16 @@ export function QuickApproveDialog({ pr, onConfirm, onClose }: { pr: PrDetail; o
     <div className="pr-overlay" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
       <div className="pr-dialog" role="alertdialog" aria-label={`Approve #${pr.number}?`}>
         <div className="pr-dialog-title">
-          <Icon name="check-circle" size={16} className="gg-fg-success" />
+          <Icon name="check-circle" size={16} className="pr-fg-success" />
           Approve #{pr.number}?
         </div>
-        <p className="gg-muted">{pr.title}</p>
+        <p className="pr-muted">{pr.title}</p>
         <div className="review-actions">
-          <button className="gg-btn" onClick={onClose} disabled={busy}>
+          <Button onClick={onClose} disabled={busy}>
             Cancel
-          </button>
-          <button
-            className="gg-btn is-primary"
+          </Button>
+          <Button
+            variant="primary"
             autoFocus
             disabled={busy}
             onClick={async () => {
@@ -130,7 +132,7 @@ export function QuickApproveDialog({ pr, onConfirm, onClose }: { pr: PrDetail; o
             }}
           >
             {busy ? 'Approving…' : 'Approve'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

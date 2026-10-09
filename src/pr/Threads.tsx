@@ -1,11 +1,13 @@
 // What renders inside a diff annotation: a review thread, a comment batched for the pending review, or
 // the inline composer opened from the gutter "+".
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReviewThreadDraft } from '../app/data-source';
 import type { ReviewThread } from '../lib/model';
+import { Button } from '../ui/Button';
+import { Kbd } from '../ui/Kbd';
 import { Comment } from './Comment';
 import type { ComposerAnchor, DiffNote } from './diff';
-import { CommentInput, Icon, Kbd } from './primitives';
+import { CommentInput, Icon } from './primitives';
 import './threads.css';
 
 /** Everything a note can do; each returns whether it succeeded so the note can keep or clear its draft. */
@@ -39,9 +41,9 @@ export function DiffNoteView({
           <div className="diff-note-row">
             <span className="diff-note-tag is-pending">Pending</span>
             <span className="diff-note-pending-body">{note.draft.body}</span>
-            <button className="gg-btn is-small is-quiet" onClick={() => actions.removePending(note.index)} title="Remove from review">
+            <Button variant="ghost" size="sm" onClick={() => actions.removePending(note.index)} title="Remove from review">
               <Icon name="x" size={14} />
-            </button>
+            </Button>
           </div>
         </div>
       );
@@ -56,11 +58,16 @@ function ThreadNote({ thread, current, actions }: { thread: ReviewThread; curren
   const [busy, setBusy] = useState(false);
   const count = thread.comments.length;
 
+  // Moving to a thread (n / p, a review's "inline comments" link) opens it even when resolved.
+  useEffect(() => {
+    if (current) setExpanded(true);
+  }, [current]);
+
   if (!expanded) {
     return (
       <div className={`diff-note is-collapsed ${current ? 'is-current' : ''}`} data-thread-id={thread.id}>
         <button className="diff-note-summary" onClick={() => setExpanded(true)}>
-          <Icon name="check-circle" size={14} className="gg-fg-success" />
+          <Icon name="check-circle" size={14} className="pr-fg-success" />
           {thread.isOutdated && <span className="diff-note-tag">Outdated</span>}
           <span>
             Resolved · {count} {count === 1 ? 'comment' : 'comments'} · <span className="diff-note-show">show</span>
@@ -97,17 +104,17 @@ function ThreadNote({ thread, current, actions }: { thread: ReviewThread; curren
         <CommentInput value={reply} onChange={setReply} onSubmit={sendReply} placeholder="Reply…" minRows={1} disabled={busy} />
         <div className="diff-note-actions">
           {thread.isResolved && (
-            <button className="gg-btn is-small is-quiet" onClick={() => setExpanded(false)}>
+            <Button variant="ghost" size="sm" onClick={() => setExpanded(false)}>
               Hide
-            </button>
+            </Button>
           )}
-          <button className="gg-btn is-small" onClick={toggleResolved} disabled={busy}>
+          <Button size="sm" onClick={toggleResolved} disabled={busy}>
             {thread.isResolved ? 'Unresolve' : 'Resolve'}
-          </button>
+          </Button>
           {reply.trim() !== '' && (
-            <button className="gg-btn is-small is-primary" onClick={sendReply} disabled={busy}>
+            <Button variant="primary" size="sm" onClick={sendReply} disabled={busy}>
               Reply <Kbd>⌘↵</Kbd>
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -137,11 +144,11 @@ function InlineComposer({ anchor, actions }: { anchor: ComposerAnchor; actions: 
         disabled={busy}
       />
       <div className="diff-note-actions">
-        <button className="gg-btn is-small is-quiet" onClick={actions.closeComposer}>
+        <Button variant="ghost" size="sm" onClick={actions.closeComposer}>
           Cancel
-        </button>
-        <button
-          className="gg-btn is-small"
+        </Button>
+        <Button
+          size="sm"
           disabled={busy || body.trim() === ''}
           onClick={() => {
             actions.addToReview(draft);
@@ -149,10 +156,10 @@ function InlineComposer({ anchor, actions }: { anchor: ComposerAnchor; actions: 
           }}
         >
           Add to review
-        </button>
-        <button className="gg-btn is-small is-primary" disabled={busy || body.trim() === ''} onClick={commentNow}>
+        </Button>
+        <Button variant="primary" size="sm" disabled={busy || body.trim() === ''} onClick={commentNow}>
           Comment now <Kbd>⌘↵</Kbd>
-        </button>
+        </Button>
       </div>
     </div>
   );

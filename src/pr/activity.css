@@ -104,10 +104,3 @@
   margin-top: 8px;
   font-size: 12px;
 }
-.timeline-composer-actions .gg-kbd,
-.gg-btn.is-primary .gg-kbd,
-.gg-btn.is-merge .gg-kbd {
-  border-color: rgba(255, 255, 255, 0.4);
-  background: transparent;
-  color: inherit;
-}

@@ -52,12 +52,14 @@
   gap: 3px;
 }
 
-.shortcut-help { width: 460px; }
+.shortcut-help { width: 640px; }
 .shortcut-list {
   margin: 10px 0 12px;
-  columns: 1;
+  columns: 2;
+  column-gap: 24px;
 }
 .shortcut-row {
+  break-inside: avoid;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -65,6 +67,5 @@
   min-height: 26px;
   border-bottom: 1px solid var(--gg-border-muted);
 }
-.shortcut-row:last-child { border-bottom: 0; }
 .shortcut-row dt { color: var(--gg-fg); }
 .shortcut-row dd { margin: 0; }

@@ -38,7 +38,7 @@
   display: flex;
   flex-direction: column;
 }
-.review-event .gg-muted { font-size: 12px; }
+.review-event .pr-muted { font-size: 12px; }
 .review-event.is-disabled { opacity: 0.5; cursor: not-allowed; }
 
 .review-batch {

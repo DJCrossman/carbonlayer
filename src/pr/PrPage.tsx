@@ -8,12 +8,17 @@ import type { AppRoute } from '../app/routes';
 import type { PrDetail } from '../lib/model';
 import type { MergeMethod } from '../lib/rpc';
 import type { Settings } from '../lib/settings';
+import { Avatar } from '../ui/Avatar';
+import { Button } from '../ui/Button';
+import { RelativeTime } from '../ui/RelativeTime';
+import { Skeleton } from '../ui/Skeleton';
+import { showToast, ToastHost } from '../ui/Toast';
 import { Activity } from './Activity';
 import { Markdown } from './Comment';
 import { FilesSection, useFileReview } from './Files';
 import { usePrKeybindings } from './keybindings';
 import { goToPr, openOnGitHub } from './navigation';
-import { Avatar, Icon, RelativeTime, StatePill } from './primitives';
+import { Icon, StatePill } from './primitives';
 import { QuickApproveDialog, ReviewComposer, type ReviewEvent } from './ReviewComposer';
 import { ShortcutHelp, ShortcutLegend } from './ShortcutHelp';
 import { Sidebar } from './Sidebar';
@@ -34,10 +39,14 @@ export function PrPage({ source, route }: { source: DataSource; route: Extract<A
 
   useEffect(() => {
     let cancelled = false;
-    void source.getSettings().then((value) => {
-      if (!cancelled) setSettings(value);
-    });
-    const unwatch = source.watchSettings(setSettings);
+    const fail = (reason: unknown) => !cancelled && setError(reason instanceof Error ? reason.message : String(reason));
+    source.getSettings().then((value) => !cancelled && setSettings(value), fail);
+    let unwatch = () => {};
+    try {
+      unwatch = source.watchSettings(setSettings);
+    } catch (reason) {
+      fail(reason);
+    }
     return () => {
       cancelled = true;
       unwatch();
@@ -102,7 +111,6 @@ function PrView({
       return false;
     }
   });
-  const [notice, setNotice] = useState<{ id: number; tone: 'success' | 'danger'; text: string } | null>(null);
   const mergeMethod: MergeMethod = pr.allowedMergeMethods.includes(settings.mergeMethod) ? settings.mergeMethod : pr.defaultMergeMethod;
 
   useEffect(() => {
@@ -114,12 +122,6 @@ function PrView({
   useEffect(() => {
     if (section === 'files') requestAnimationFrame(() => document.getElementById('pr-files')?.scrollIntoView({ block: 'start' }));
   }, [section]);
-
-  useEffect(() => {
-    if (!notice) return;
-    const timer = setTimeout(() => setNotice(null), notice.tone === 'danger' ? 8000 : 3000);
-    return () => clearTimeout(timer);
-  }, [notice]);
 
   useEffect(() => {
     try {
@@ -135,14 +137,14 @@ function PrView({
       await work();
     } catch (reason) {
       undo?.();
-      setNotice({ id: Date.now(), tone: 'danger', text: `${failure}: ${reason instanceof Error ? reason.message : String(reason)}` });
+      showToast(`${failure}: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger');
       return false;
     }
-    if (success) setNotice({ id: Date.now(), tone: 'success', text: success });
+    if (success) showToast(success);
     try {
       await refetch();
     } catch (reason) {
-      setNotice({ id: Date.now(), tone: 'danger', text: `Saved, but reloading the PR failed: ${reason instanceof Error ? reason.message : String(reason)}` });
+      showToast(`Saved, but reloading the PR failed: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger');
     }
     return true;
   }
@@ -246,7 +248,7 @@ function PrView({
           batchCount={batch.length}
           onFinishReview={() => (review.open ? closeReview() : openReview(review.event))}
           onSetDraft={setDraft}
-          onCopied={() => setNotice({ id: Date.now(), tone: 'success', text: 'Link copied' })}
+          onCopied={() => showToast('Link copied')}
           reviewPopover={
             review.open && (
               <ReviewComposer
@@ -275,7 +277,7 @@ function PrView({
           <StackCard stack={pr.stack} collapsed={stackCollapsed} onToggle={() => setStackCollapsed((collapsed) => !collapsed)} />
         )}
         <section className="pr-description" id="pr-description" aria-label="Description">
-          {pr.bodyHtml.trim() ? <Markdown html={pr.bodyHtml} /> : <p className="gg-muted pr-description-empty">No description provided.</p>}
+          {pr.bodyHtml.trim() ? <Markdown html={pr.bodyHtml} /> : <p className="pr-muted pr-description-empty">No description provided.</p>}
         </section>
         <Activity
           pr={pr}
@@ -314,12 +316,7 @@ function PrView({
           onConfirm={() => mutate(() => source.review(pr.id, 'APPROVE', ''), 'Could not approve', { success: `Approved #${pr.number}` })}
         />
       )}
-      {notice && (
-        <div key={notice.id} className={`pr-notice is-${notice.tone}`} role="status">
-          <Icon name={notice.tone === 'success' ? 'check-circle' : 'x-circle'} size={14} />
-          {notice.text}
-        </div>
-      )}
+      <ToastHost />
     </div>
   );
 }
@@ -358,25 +355,25 @@ function PrHeader({
   return (
     <header className="pr-header">
       <div className="pr-header-top">
-        <span className="gg-muted">
+        <span className="pr-muted">
           {pr.repo.owner}/{pr.repo.name} <span className="pr-header-number">#{pr.number}</span>
         </span>
         <span className="pr-header-spacer" />
-        <button className="gg-btn is-quiet" onClick={() => openOnGitHub(pr.url)} title="Open on GitHub (g h)">
+        <Button variant="ghost" onClick={() => openOnGitHub(pr.url)} title="Open on GitHub (g h)">
           <Icon name="link-external" size={14} />
           Open on GitHub
-        </button>
+        </Button>
         <div className="pr-review-anchor">
-          <button className="gg-btn is-primary" onClick={onFinishReview} aria-expanded={Boolean(reviewPopover)} title="Finish review (r c)">
+          <Button variant="primary" onClick={onFinishReview} aria-expanded={Boolean(reviewPopover)} title="Finish review (r c)">
             Finish review
-            {batchCount > 0 && <span className="gg-badge pr-review-badge">{batchCount}</span>}
-          </button>
+            {batchCount > 0 && <span className="pr-badge pr-review-badge">{batchCount}</span>}
+          </Button>
           {reviewPopover}
         </div>
         <div className="pr-menu">
-          <button className="gg-btn" onClick={() => setMenuOpen((open) => !open)} aria-haspopup="menu" aria-expanded={menuOpen} aria-label="More actions">
+          <Button onClick={() => setMenuOpen((open) => !open)} aria-haspopup="menu" aria-expanded={menuOpen} aria-label="More actions">
             <Icon name="kebab" size={14} />
-          </button>
+          </Button>
           {menuOpen && (
             <div className="pr-menu-list" role="menu">
               {pr.state === 'OPEN' && pr.viewerCanUpdate && (
@@ -412,19 +409,19 @@ function PrHeader({
           <Avatar user={pr.author} size={18} />
           <strong>{pr.author.login}</strong>
         </span>
-        <span className="pr-branches gg-mono" title={`${pr.headRefName} into ${pr.baseRefName}`}>
+        <span className="pr-branches pr-mono" title={`${pr.headRefName} into ${pr.baseRefName}`}>
           <span>{pr.headRefName}</span>
-          <span className="gg-muted">→</span>
+          <span className="pr-muted">→</span>
           <span>{pr.baseRefName}</span>
         </span>
-        <span className="gg-muted">
+        <span className="pr-muted">
           {pr.changedFiles} {pr.changedFiles === 1 ? 'file' : 'files'}
         </span>
         <span className="pr-diffstat">
-          <span className="gg-fg-success">+{pr.additions}</span> <span className="gg-fg-danger">−{pr.deletions}</span>
+          <span className="pr-fg-success">+{pr.additions}</span> <span className="pr-fg-danger">−{pr.deletions}</span>
         </span>
-        <span className="gg-muted">
-          Updated <RelativeTime iso={pr.updatedAt} />
+        <span className="pr-muted">
+          Updated <RelativeTime date={pr.updatedAt} />
         </span>
       </div>
     </header>
@@ -435,15 +432,16 @@ function PrSkeleton() {
   return (
     <div className="pr-page pr-skeleton" aria-busy="true" aria-label="Loading pull request">
       <div className="pr-conversation">
-        <div className="pr-skeleton-line is-short" />
-        <div className="pr-skeleton-line is-title" />
-        <div className="pr-skeleton-line is-meta" />
-        <div className="pr-skeleton-block is-stack" />
-        <div className="pr-skeleton-block" />
+        <Skeleton width={160} height={12} />
+        <Skeleton width="60%" height={26} />
+        <Skeleton width="45%" height={14} />
+        <Skeleton width="100%" height={110} />
+        <Skeleton width="100%" height={220} />
       </div>
       <div className="pr-sidebar">
-        <div className="pr-skeleton-block is-card" />
-        <div className="pr-skeleton-block is-card" />
+        <Skeleton width="100%" height={70} />
+        <Skeleton width="100%" height={90} />
+        <Skeleton width="100%" height={180} />
       </div>
     </div>
   );
@@ -452,11 +450,11 @@ function PrSkeleton() {
 function PrError({ message }: { message: string }) {
   return (
     <div className="pr-error" role="alert">
-      <Icon name="x-circle" size={20} className="gg-fg-danger" />
+      <Icon name="x-circle" size={20} className="pr-fg-danger" />
       <div>
         <strong>Could not load this pull request</strong>
         <p>{message}</p>
-        {/token/i.test(message) && <p className="gg-muted">Add a token in the extension options.</p>}
+        {/token/i.test(message) && <p className="pr-muted">Add a token in the extension options.</p>}
       </div>
     </div>
   );

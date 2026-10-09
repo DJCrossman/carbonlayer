@@ -1,8 +1,9 @@
-// Small presentational pieces the PR page needs. src/ui/ is meant to hold the shared versions (Icon,
-// Avatar, RelativeTime, StatusPill, CiStatus, ReviewStatus, LabelChip); these stand in until it does
-// and should be reconciled with it.
-import { useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
-import type { CheckState, LabelSummary, PrSummary, ReviewerSummary, UserRef } from '../lib/model';
+// PR-page pieces the shared primitives in src/ui/ do not cover: an icon set with the glyphs this page
+// needs (src/ui/Icon lacks eye, repo-push, link-external, sidebar, file-directory and git-commit), the
+// Open / Draft / Merged / Closed state pill, a per-check status icon, and the composer textarea.
+import { useEffect, useRef, type KeyboardEvent } from 'react';
+import type { CheckState, PrSummary } from '../lib/model';
+import { StatusPill } from '../ui/StatusPill';
 import './primitives.css';
 
 export function Icon({ name, size = 16, className }: { name: keyof typeof OCTICONS; size?: number; className?: string }) {
@@ -13,103 +14,27 @@ export function Icon({ name, size = 16, className }: { name: keyof typeof OCTICO
   );
 }
 
-export function Avatar({ user, size = 20 }: { user: UserRef; size?: number }) {
-  const [failed, setFailed] = useState(false);
-  if (!user.avatarUrl || failed) {
-    return (
-      <span className="gg-avatar gg-avatar-fallback" style={{ width: size, height: size, fontSize: size * 0.5 }} title={user.login}>
-        {user.login.slice(0, 1).toUpperCase()}
-      </span>
-    );
-  }
-  return (
-    <img className="gg-avatar" src={user.avatarUrl} alt="" title={user.login} width={size} height={size} loading="lazy" onError={() => setFailed(true)} />
-  );
+/** Open / Draft / Merged / Closed. */
+export function StatePill({ pr }: { pr: Pick<PrSummary, 'state' | 'isDraft'> }) {
+  if (pr.state === 'MERGED') return <StatusPill tone="done" icon="git-merge">Merged</StatusPill>;
+  if (pr.state === 'CLOSED') return <StatusPill tone="danger" icon="git-pull-request-closed">Closed</StatusPill>;
+  if (pr.isDraft) return <StatusPill tone="neutral" icon="git-pull-request-draft">Draft</StatusPill>;
+  return <StatusPill tone="success" icon="git-pull-request">Open</StatusPill>;
 }
 
-export function RelativeTime({ iso }: { iso: string }) {
-  const date = new Date(iso);
-  const seconds = Math.round((date.getTime() - Date.now()) / 1000);
-  const format = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto', style: 'narrow' });
-  const steps: Array<[Intl.RelativeTimeFormatUnit, number]> = [
-    ['second', 60],
-    ['minute', 60],
-    ['hour', 24],
-    ['day', 30],
-    ['month', 12],
-    ['year', Number.POSITIVE_INFINITY],
-  ];
-  let value = seconds;
-  let text = '';
-  for (const [unit, size] of steps) {
-    if (Math.abs(value) < size) {
-      text = unit === 'second' && Math.abs(value) < 45 ? 'just now' : format.format(Math.round(value), unit);
-      break;
-    }
-    value /= size;
-  }
-  return (
-    <time className="gg-time" dateTime={iso} title={date.toLocaleString()}>
-      {text}
-    </time>
-  );
-}
-
-/** Open / Draft / Merged / Closed, coloured like GitHub's state badges. */
-export function StatePill({ pr, compact = false }: { pr: Pick<PrSummary, 'state' | 'isDraft'>; compact?: boolean }) {
-  const [label, tone, icon] =
-    pr.state === 'MERGED'
-      ? (['Merged', 'done', 'merge'] as const)
-      : pr.state === 'CLOSED'
-        ? (['Closed', 'danger', 'pr-closed'] as const)
-        : pr.isDraft
-          ? (['Draft', 'neutral', 'pr-draft'] as const)
-          : (['Open', 'success', 'pr'] as const);
-  return (
-    <span className={`gg-state gg-tone-${tone} ${compact ? 'is-compact' : ''}`}>
-      <Icon name={icon} size={compact ? 12 : 14} />
-      {label}
-    </span>
-  );
-}
-
+/** One check run's state. */
 export function CheckIcon({ state, size = 14 }: { state: CheckState; size?: number }) {
   switch (state) {
     case 'SUCCESS':
-      return <Icon name="check-circle" size={size} className="gg-fg-success" />;
+      return <Icon name="check-circle" size={size} className="pr-fg-success" />;
     case 'FAILURE':
     case 'CANCELLED':
-      return <Icon name="x-circle" size={size} className="gg-fg-danger" />;
+      return <Icon name="x-circle" size={size} className="pr-fg-danger" />;
     case 'PENDING':
-      return <Icon name="dot-fill" size={size} className="gg-fg-attention" />;
+      return <Icon name="dot-fill" size={size} className="pr-fg-attention" />;
     default:
-      return <Icon name="skip" size={size} className="gg-fg-muted" />;
+      return <Icon name="skip" size={size} className="pr-fg-muted" />;
   }
-}
-
-export function ReviewStateIcon({ state, size = 14 }: { state: ReviewerSummary['state']; size?: number }) {
-  switch (state) {
-    case 'APPROVED':
-      return <Icon name="check" size={size} className="gg-fg-success" />;
-    case 'CHANGES_REQUESTED':
-      return <Icon name="file-diff" size={size} className="gg-fg-danger" />;
-    case 'COMMENTED':
-      return <Icon name="comment" size={size} className="gg-fg-muted" />;
-    case 'DISMISSED':
-      return <Icon name="skip" size={size} className="gg-fg-muted" />;
-    default:
-      return <Icon name="clock" size={size} className="gg-fg-attention" />;
-  }
-}
-
-export function LabelChip({ label }: { label: LabelSummary }) {
-  const rgb = Number.parseInt(label.color.replace('#', ''), 16);
-  const style = { '--label-rgb': `${(rgb >> 16) & 255}, ${(rgb >> 8) & 255}, ${rgb & 255}` } as CSSProperties;
-  return (
-    <span className="gg-label" style={style}>
-      {label.name}
-    </span>
-  );
 }
 
 /**
@@ -135,6 +60,18 @@ export function CommentInput({
   disabled?: boolean;
   minRows?: number;
 }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  // `autoFocus` alone is not enough inside a diff: the annotation is mounted before the library slots it
+  // into a rendered line, and an unrendered element cannot take focus. Retry for a few frames.
+  useEffect(() => {
+    if (!autoFocus) return;
+    let frames = 0;
+    let frame = requestAnimationFrame(function focus() {
+      ref.current?.focus();
+      if (document.activeElement !== ref.current && frames++ < 30) frame = requestAnimationFrame(focus);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [autoFocus]);
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
@@ -146,20 +83,16 @@ export function CommentInput({
   };
   return (
     <textarea
-      className="gg-textarea"
+      ref={ref}
+      className="pr-textarea"
       value={value}
       placeholder={placeholder}
       rows={Math.max(minRows, Math.min(12, value.split('\n').length))}
-      autoFocus={autoFocus}
       disabled={disabled}
       onChange={(event) => onChange(event.target.value)}
       onKeyDown={onKeyDown}
     />
   );
-}
-
-export function Kbd({ children }: { children: ReactNode }) {
-  return <kbd className="gg-kbd">{children}</kbd>;
 }
 
 // Octicons (MIT, github.com/primer/octicons), 16px paths.

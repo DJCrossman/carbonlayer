@@ -2,8 +2,9 @@
 // Markdown HTML GitHub renders for it.
 import type { MouseEvent, ReactNode } from 'react';
 import type { UserRef } from '../lib/model';
+import { Avatar } from '../ui/Avatar';
+import { RelativeTime } from '../ui/RelativeTime';
 import { followLink } from './navigation';
-import { Avatar, RelativeTime } from './primitives';
 import './comment.css';
 import './markdown.css';
 
@@ -24,10 +25,10 @@ export function Comment({ author, createdAt, bodyHtml, url, action, compact }: {
         {action}
         {url ? (
           <a className="pr-comment-time" href={url} target="_blank" rel="noopener">
-            <RelativeTime iso={createdAt} />
+            <RelativeTime date={createdAt} />
           </a>
         ) : (
-          <RelativeTime iso={createdAt} />
+          <RelativeTime date={createdAt} />
         )}
       </div>
       {bodyHtml.trim() !== '' && <Markdown html={bodyHtml} />}

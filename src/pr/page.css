@@ -147,46 +147,15 @@
   font-weight: 600;
 }
 
-/* Notice (toast) */
-.pr-notice {
-  position: fixed;
-  right: 16px;
-  bottom: 40px;
-  z-index: 60;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 420px;
-  padding: 8px 12px;
-  border: 1px solid var(--gg-border);
-  border-radius: 8px;
-  background: var(--gg-bg);
-  box-shadow: var(--gg-shadow-overlay);
-  animation: pr-notice-in 0.15s ease-out;
-}
-.pr-notice.is-success .gg-icon { color: var(--gg-success); }
-.pr-notice.is-danger { border-color: var(--gg-danger); }
-.pr-notice.is-danger .gg-icon { color: var(--gg-danger); }
-@keyframes pr-notice-in {
-  from { opacity: 0; transform: translateY(6px); }
-}
+/* The shared toast sits above the shortcut legend. */
+.pr-page.has-legend .gg-toast-host { bottom: 40px; }
 
 /* Loading and error */
-.pr-skeleton-line,
-.pr-skeleton-block {
-  border-radius: var(--gg-radius);
-  background: linear-gradient(90deg, var(--gg-bg-inset) 0%, var(--gg-bg-subtle) 50%, var(--gg-bg-inset) 100%) 0 0 / 200% 100%;
-  animation: pr-shimmer 1.2s linear infinite;
-}
-.pr-skeleton-line { height: 14px; margin-bottom: 10px; }
-.pr-skeleton-line.is-short { width: 160px; }
-.pr-skeleton-line.is-title { width: 60%; height: 26px; }
-.pr-skeleton-line.is-meta { width: 45%; }
-.pr-skeleton-block { height: 220px; margin-top: 16px; }
-.pr-skeleton-block.is-stack { height: 110px; }
-.pr-skeleton-block.is-card { height: 120px; margin: 0 0 8px; }
-@keyframes pr-shimmer {
-  to { background-position: -200% 0; }
+.pr-skeleton .pr-conversation,
+.pr-skeleton .pr-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .pr-error {

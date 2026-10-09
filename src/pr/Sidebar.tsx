@@ -3,9 +3,15 @@
 import { useState, type ReactNode } from 'react';
 import type { MergeMethod } from '../lib/rpc';
 import type { PrDetail } from '../lib/model';
+import { Avatar } from '../ui/Avatar';
+import { Button } from '../ui/Button';
+import { Card } from '../ui/Card';
+import { LabelChip } from '../ui/LabelChip';
+import { RelativeTime } from '../ui/RelativeTime';
+import { ReviewStatus } from '../ui/ReviewStatus';
 import { goToPr } from './navigation';
 import { nextActionFor } from './next-action';
-import { Avatar, CheckIcon, Icon, LabelChip, RelativeTime, ReviewStateIcon, StatePill } from './primitives';
+import { CheckIcon, Icon, StatePill } from './primitives';
 import './sidebar.css';
 
 export function Sidebar({
@@ -43,7 +49,7 @@ export function Sidebar({
                 )}
                 <span className="side-person-name">{reviewer.user.login}</span>
                 <span title={REVIEWER_STATE_LABELS[reviewer.state]}>
-                  <ReviewStateIcon state={reviewer.state} />
+                  <ReviewStatus state={reviewer.state} />
                 </span>
               </li>
             ))}
@@ -82,17 +88,17 @@ function StatusCard({ pr, mergeMethod, onAutoMerge }: { pr: PrDetail; mergeMetho
   const endedBy = ending && 'actor' in ending ? ending.actor : null;
   const endedAt = pr.mergedAt ?? (ending && 'createdAt' in ending ? ending.createdAt : null);
   return (
-    <div className="gg-card side-card side-status">
+    <Card className="side-card side-status">
       <div className="side-status-line">
         <StatePill pr={pr} />
         {pr.state === 'OPEN' ? (
-          <span className="gg-muted side-status-into">
-            into <span className="gg-mono">{pr.baseRefName}</span>
+          <span className="pr-muted side-status-into">
+            into <span className="pr-mono">{pr.baseRefName}</span>
           </span>
         ) : (
-          <span className="gg-muted">
+          <span className="pr-muted">
             {endedBy && `by ${endedBy.login} `}
-            {endedAt && <RelativeTime iso={endedAt} />}
+            {endedAt && <RelativeTime date={endedAt} />}
           </span>
         )}
       </div>
@@ -111,10 +117,10 @@ function StatusCard({ pr, mergeMethod, onAutoMerge }: { pr: PrDetail; mergeMetho
           />
           <span className="side-switch-track" aria-hidden="true" />
           <span>Merge when ready</span>
-          <span className="gg-muted side-switch-method">{MERGE_LABELS[pr.autoMerge?.method ?? mergeMethod].short}</span>
+          <span className="pr-muted side-switch-method">{MERGE_LABELS[pr.autoMerge?.method ?? mergeMethod].short}</span>
         </label>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -136,15 +142,15 @@ function ActionCard({
   const failingCheck = pr.ci.checks.find((check) => check.state === 'FAILURE');
   const icon = ({ success: 'check-circle', danger: 'x-circle', attention: 'clock', neutral: 'pr-draft', done: 'merge' } as const)[action.tone];
   return (
-    <div className={`gg-card side-card side-action is-${action.tone}`}>
+    <Card className={`side-card side-action is-${action.tone}`}>
       <div className="side-action-title">
         <Icon name={icon} size={16} />
         <span>{action.title}</span>
       </div>
       {action.detail && <div className="side-action-detail">{action.detail}</div>}
       {action.kind === 'draft' && pr.viewerCanUpdate && (
-        <button
-          className="gg-btn side-action-button"
+        <Button
+          className="side-action-button"
           disabled={busy}
           onClick={async () => {
             setBusy(true);
@@ -153,25 +159,25 @@ function ActionCard({
           }}
         >
           Ready for review
-        </button>
+        </Button>
       )}
       {action.kind === 'downstack' && (
-        <button className="gg-btn side-action-button" onClick={() => goToPr(action.pr)}>
+        <Button className="side-action-button" onClick={() => goToPr(action.pr)}>
           Go to #{action.pr.number}
-        </button>
+        </Button>
       )}
       {action.kind === 'unresolved' && (
-        <button className="gg-btn side-action-button" onClick={onViewThreads} title="Next unresolved thread (n)">
+        <Button className="side-action-button" onClick={onViewThreads} title="Next unresolved thread (n)">
           View comments
-        </button>
+        </Button>
       )}
       {action.kind === 'checks-failed' && failingCheck?.url && (
-        <a className="gg-btn side-action-button" href={failingCheck.url} target="_blank" rel="noopener">
+        <a className="gg-btn gg-btn--default gg-btn--md side-action-button" href={failingCheck.url} target="_blank" rel="noopener">
           View check
         </a>
       )}
       {action.kind === 'ready' && <MergeControls pr={pr} mergeMethod={mergeMethod} onMerge={onMerge} />}
-    </div>
+    </Card>
   );
 }
 
@@ -184,14 +190,15 @@ function MergeControls({ pr, mergeMethod, onMerge }: { pr: PrDetail; mergeMethod
     return (
       <div className="merge-confirm">
         <div>
-          {MERGE_LABELS[method].verb} <strong>#{pr.number}</strong> into <span className="gg-mono">{pr.baseRefName}</span>?
+          {MERGE_LABELS[method].verb} <strong>#{pr.number}</strong> into <span className="pr-mono">{pr.baseRefName}</span>?
         </div>
         <div className="merge-row">
-          <button className="gg-btn" onClick={() => setConfirming(false)} disabled={busy}>
+          <Button onClick={() => setConfirming(false)} disabled={busy}>
             Cancel
-          </button>
-          <button
-            className="gg-btn is-merge"
+          </Button>
+          <Button
+            variant="primary"
+            className="pr-merge-button"
             autoFocus
             disabled={busy}
             onClick={async () => {
@@ -202,7 +209,7 @@ function MergeControls({ pr, mergeMethod, onMerge }: { pr: PrDetail; mergeMethod
             }}
           >
             {busy ? 'Merging…' : 'Confirm merge'}
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -210,22 +217,23 @@ function MergeControls({ pr, mergeMethod, onMerge }: { pr: PrDetail; mergeMethod
 
   return (
     <div className="merge-row">
-      <select className="gg-select" value={method} onChange={(event) => setMethod(event.target.value as MergeMethod)} aria-label="Merge method">
+      <select className="pr-select" value={method} onChange={(event) => setMethod(event.target.value as MergeMethod)} aria-label="Merge method">
         {pr.allowedMergeMethods.map((allowed) => (
           <option key={allowed} value={allowed}>
             {MERGE_LABELS[allowed].short}
           </option>
         ))}
       </select>
-      <button
-        className="gg-btn is-merge merge-button"
+      <Button
+        variant="primary"
+        className="pr-merge-button"
         disabled={!pr.viewerCanMerge}
         title={pr.viewerCanMerge ? undefined : 'You do not have permission to merge this pull request'}
         onClick={() => setConfirming(true)}
       >
         <Icon name="merge" size={14} />
         Merge
-      </button>
+      </Button>
     </div>
   );
 }
@@ -251,7 +259,7 @@ function ChecksCard({ pr }: { pr: PrDetail }) {
       title={
         <>
           Checks{' '}
-          <span className="gg-muted">
+          <span className="pr-muted">
             · {passed.length}/{checks.length} passed
           </span>
         </>
@@ -271,10 +279,10 @@ function ChecksCard({ pr }: { pr: PrDetail }) {
               <a className="check-row" href={check.url ?? undefined} target="_blank" rel="noopener" title={check.description ?? undefined}>
                 <CheckIcon state={check.state} />
                 <span className="check-name">{check.name}</span>
-                {check.group && <span className="check-group gg-muted">{check.group}</span>}
+                {check.group && <span className="check-group pr-muted">{check.group}</span>}
                 {pr.requiredCheckNames.includes(check.name) && <span className="check-required">Required</span>}
                 {seconds !== null && (
-                  <span className="check-duration gg-muted">{seconds >= 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${seconds}s`}</span>
+                  <span className="check-duration pr-muted">{seconds >= 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${seconds}s`}</span>
                 )}
               </a>
             </li>
@@ -292,10 +300,10 @@ function ChecksCard({ pr }: { pr: PrDetail }) {
 
 function SideCard({ title, children }: { title: ReactNode; children: ReactNode }) {
   return (
-    <section className="gg-card side-card">
+    <Card className="side-card">
       <h3 className="side-card-title">{title}</h3>
       {children}
-    </section>
+    </Card>
   );
 }
 

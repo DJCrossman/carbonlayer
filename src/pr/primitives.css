@@ -1,149 +1,39 @@
-/* Primitives used across the PR page: icons, avatars, pills, buttons, cards, inputs. */
+/* PR-page helpers. Everything shared (buttons, cards, avatars, pills, keys, ages) is styled by src/ui/ui.css;
+   classes here are prefixed pr- so they never restyle the inbox. */
 
-.gg-icon {
-  flex: none;
-  vertical-align: text-bottom;
-}
+.pr-fg-success { color: var(--gg-success); }
+.pr-fg-danger { color: var(--gg-danger); }
+.pr-fg-attention { color: var(--gg-attention); }
+.pr-fg-done { color: var(--gg-done); }
+.pr-fg-muted { color: var(--gg-fg-muted); }
 
-.gg-fg-success { color: var(--gg-success); }
-.gg-fg-danger { color: var(--gg-danger); }
-.gg-fg-attention { color: var(--gg-attention); }
-.gg-fg-done { color: var(--gg-done); }
-.gg-fg-muted { color: var(--gg-fg-muted); }
+.pr-muted { color: var(--gg-fg-muted); }
+.pr-mono { font-family: var(--gg-font-mono); font-size: 12px; }
 
-.gg-muted { color: var(--gg-fg-muted); }
-.gg-mono { font-family: var(--gg-font-mono); font-size: 12px; }
-
-.gg-avatar {
-  flex: none;
-  display: inline-block;
-  border-radius: 50%;
-  vertical-align: middle;
-  background: var(--gg-bg-inset);
-  box-shadow: 0 0 0 1px var(--gg-border-muted);
-}
-.gg-avatar-fallback {
-  display: inline-grid;
-  place-items: center;
-  color: var(--gg-fg-muted);
-  font-weight: 600;
-}
-
-.gg-time {
-  color: var(--gg-fg-muted);
-  white-space: nowrap;
-}
-
-.gg-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-  color: #fff;
-}
-.gg-state.is-compact {
-  height: 18px;
-  padding: 0 6px;
-  font-size: 11px;
-  gap: 3px;
-}
-.gg-state.gg-tone-success { background: var(--gg-success); }
-.gg-state.gg-tone-done { background: var(--gg-done); }
-.gg-state.gg-tone-danger { background: var(--gg-danger); }
-.gg-state.gg-tone-neutral { background: var(--gg-neutral); }
-:root[data-theme='dark'] .gg-state { color: var(--gg-bg); }
-:root[data-theme='dark'] .gg-state.gg-tone-neutral { color: var(--gg-fg); background: var(--gg-neutral-bg); box-shadow: inset 0 0 0 1px var(--gg-border); }
-
-.gg-label {
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
-  padding: 0 7px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-  color: rgb(var(--label-rgb));
-  background: rgba(var(--label-rgb), 0.14);
-  box-shadow: inset 0 0 0 1px rgba(var(--label-rgb), 0.35);
-  filter: brightness(0.75) saturate(1.3);
-}
-:root[data-theme='dark'] .gg-label { filter: brightness(1.35); }
-
-.gg-kbd {
-  display: inline-block;
-  min-width: 16px;
-  padding: 0 4px;
-  border: 1px solid var(--gg-border);
-  border-bottom-width: 2px;
-  border-radius: 4px;
-  background: var(--gg-bg);
-  color: var(--gg-fg);
-  font: 11px/16px var(--gg-font-mono);
-  text-align: center;
-}
-
-.gg-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--gg-border);
-  border-radius: var(--gg-radius);
-  background: var(--gg-bg-subtle);
-  color: var(--gg-fg);
-  font: 500 12px/1 var(--gg-font);
-  white-space: nowrap;
-  cursor: pointer;
-}
-.gg-btn:hover:not(:disabled) { background: var(--gg-bg-hover); border-color: var(--gg-fg-subtle); }
-.gg-btn:disabled { opacity: 0.55; cursor: not-allowed; }
-.gg-btn:focus-visible { outline: 2px solid var(--gg-accent); outline-offset: 1px; }
-.gg-btn.is-small { height: 24px; padding: 0 8px; }
-.gg-btn.is-quiet { background: transparent; border-color: transparent; color: var(--gg-fg-muted); }
-.gg-btn.is-quiet:hover:not(:disabled) { background: var(--gg-bg-hover); border-color: transparent; color: var(--gg-fg); }
-.gg-btn.is-primary { background: var(--gg-accent); border-color: var(--gg-accent); color: var(--gg-accent-fg); }
-.gg-btn.is-primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--gg-accent); border-color: var(--gg-accent); }
-.gg-btn.is-merge { background: var(--gg-done); border-color: var(--gg-done); color: #fff; }
-.gg-btn.is-merge:hover:not(:disabled) { filter: brightness(1.08); background: var(--gg-done); border-color: var(--gg-done); }
-.gg-btn.is-danger { color: var(--gg-danger); }
-
-.gg-badge {
+.pr-badge {
   display: inline-grid;
   place-items: center;
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
   border-radius: 999px;
-  background: var(--gg-accent);
-  color: var(--gg-accent-fg);
   font-size: 11px;
   font-weight: 600;
+  box-sizing: border-box;
 }
 
-.gg-card {
-  border: 1px solid var(--gg-border);
-  border-radius: var(--gg-radius);
-  background: var(--gg-bg);
-}
-.gg-card-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  padding: 0 10px;
-  border-bottom: 1px solid var(--gg-border-muted);
-  font-weight: 600;
+/* Graphite's merge button is purple. */
+.gg-btn.pr-merge-button { background: var(--gg-done); color: #fff; }
+.gg-btn.pr-merge-button:hover:not(:disabled) { background: color-mix(in srgb, var(--gg-done) 88%, #000); }
+
+/* Key caps inside filled buttons take the button's colours. */
+.gg-btn--primary .gg-kbd {
+  border-color: rgba(255, 255, 255, 0.45);
+  background: transparent;
+  color: inherit;
 }
 
-.gg-textarea {
+.pr-textarea {
   display: block;
   width: 100%;
   box-sizing: border-box;
@@ -155,10 +45,10 @@
   font: 13px/1.45 var(--gg-font);
   resize: vertical;
 }
-.gg-textarea:focus { outline: none; border-color: var(--gg-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gg-accent) 25%, transparent); }
-.gg-textarea::placeholder { color: var(--gg-fg-subtle); }
+.pr-textarea:focus { outline: none; border-color: var(--gg-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gg-accent) 25%, transparent); }
+.pr-textarea::placeholder { color: var(--gg-fg-subtle); }
 
-.gg-select {
+.pr-select {
   height: 28px;
   padding: 0 6px;
   border: 1px solid var(--gg-border);

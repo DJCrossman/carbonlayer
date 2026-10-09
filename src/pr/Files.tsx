@@ -6,6 +6,7 @@ import { FileDiff, type FileDiffOptions } from '@pierre/diffs/react';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReviewThreadDraft } from '../app/data-source';
 import type { ChangedFile, PrDetail } from '../lib/model';
+import { Button } from '../ui/Button';
 import { fileNotes, filesInTreeOrder, fileTree, renderableDiff, type ComposerAnchor, type DiffNote, type FileTreeNode } from './diff';
 import { Icon } from './primitives';
 import { DiffNoteView, type NoteActions } from './Threads';
@@ -35,14 +36,16 @@ export function FilesSection({
   return (
     <section className="pr-files" id="pr-files" aria-label="Files changed">
       <div className="files-toolbar">
-        <button
-          className={`gg-btn is-small is-quiet files-tree-toggle ${review.treeOpen ? 'is-active' : ''}`}
+        <Button
+          variant="ghost"
+          size="sm"
+          className={`files-tree-toggle ${review.treeOpen ? 'is-active' : ''}`}
           onClick={review.toggleTree}
           title="Toggle file tree (f)"
           aria-pressed={review.treeOpen}
         >
           <Icon name="sidebar" size={14} />
-        </button>
+        </Button>
         <strong>
           {pr.files.length} {pr.files.length === 1 ? 'file' : 'files'} changed
         </strong>
@@ -60,9 +63,9 @@ export function FilesSection({
             </button>
           ))}
         </div>
-        <button className="gg-btn is-small" onClick={() => review.setAllCollapsed(!allCollapsed)}>
+        <Button size="sm" onClick={() => review.setAllCollapsed(!allCollapsed)}>
           {allCollapsed ? 'Expand all' : 'Collapse all'}
-        </button>
+        </Button>
       </div>
       <div className={`files-body ${review.treeOpen ? 'has-tree' : ''}`}>
         {review.treeOpen && <FileTree pr={pr} review={review} />}
@@ -230,7 +233,7 @@ function FileTree({ pr, review }: { pr: PrDetail; review: FileReview }) {
               }
             >
               <Icon name={open ? 'chevron-down' : 'chevron-right'} size={12} />
-              <Icon name="file-directory" size={14} className="gg-fg-muted" />
+              <Icon name="file-directory" size={14} className="pr-fg-muted" />
               <span className="file-tree-name">{node.name}</span>
             </button>
             {open && <ul>{renderNodes(node.children, depth + 1)}</ul>}
@@ -247,7 +250,7 @@ function FileTree({ pr, review }: { pr: PrDetail; review: FileReview }) {
             onClick={() => review.goToFile(file.path)}
             title={file.previousPath ? `${file.previousPath} → ${file.path}` : file.path}
           >
-            <span className={`file-status is-${file.status}`}>{file.status.slice(0, 1).toUpperCase()}</span>
+            <span className={`file-status is-${file.status}`}>{STATUS_LETTERS[file.status]}</span>
             <span className="file-tree-name">{node.name}</span>
             {unresolved > 0 && (
               <span className="file-tree-threads" title={`${unresolved} unresolved`}>
@@ -256,8 +259,8 @@ function FileTree({ pr, review }: { pr: PrDetail; review: FileReview }) {
               </span>
             )}
             <span className="file-tree-stat">
-              {file.additions > 0 && <span className="gg-fg-success">+{file.additions}</span>}
-              {file.deletions > 0 && <span className="gg-fg-danger">−{file.deletions}</span>}
+              {file.additions > 0 && <span className="pr-fg-success">+{file.additions}</span>}
+              {file.deletions > 0 && <span className="pr-fg-danger">−{file.deletions}</span>}
             </span>
             <span className={`file-tree-viewed ${file.viewerViewedState === 'VIEWED' ? 'is-viewed' : ''}`} aria-label={file.viewerViewedState === 'VIEWED' ? 'Viewed' : undefined}>
               <Icon name="check" size={12} />
@@ -297,6 +300,8 @@ function FileCard({
   const fileDiff = useMemo(() => renderableDiff(file), [file.path, file.previousPath, file.status, file.patch]);
   const composer = review.composer?.path === file.path ? review.composer : null;
   const notes = useMemo(() => fileNotes(file.path, pr.threads, batch, composer), [file.path, pr.threads, batch, composer]);
+  // The commented line stays highlighted while the composer is open, and only then.
+  const selectedLines = useMemo(() => (composer ? { start: composer.line, end: composer.line, side: composer.side } : null), [composer]);
   const collapsed = review.isCollapsed(file);
   const viewed = file.viewerViewedState === 'VIEWED';
   const threadCount = pr.threads.filter((thread) => thread.path === file.path).length;
@@ -337,7 +342,7 @@ function FileCard({
     return (
       <div className={`file-card is-stub ${current ? 'is-current' : ''}`} id={`gg-file:${file.path}`}>
         <div className="file-stub-header">
-          <span className={`file-status is-${file.status}`}>{file.status.slice(0, 1).toUpperCase()}</span>
+          <span className={`file-status is-${file.status}`}>{STATUS_LETTERS[file.status]}</span>
           <span className="file-stub-name">{file.path}</span>
           <span className="files-toolbar-spacer" />
           {viewedToggle}
@@ -358,6 +363,7 @@ function FileCard({
         fileDiff={fileDiff}
         options={options}
         lineAnnotations={notes}
+        selectedLines={selectedLines}
         renderAnnotation={(annotation) => (
           <DiffNoteView
             note={annotation.metadata}
@@ -406,3 +412,14 @@ function subscribeToThemeChanges(onChange: () => void): () => void {
 
 /** Height of the sticky Files toolbar; file headers and the tree stick below it. Mirrors files.css. */
 const STICKY_TOP = 40;
+
+/** Git's one-letter status codes. */
+const STATUS_LETTERS: Record<ChangedFile['status'], string> = {
+  added: 'A',
+  removed: 'D',
+  modified: 'M',
+  renamed: 'R',
+  copied: 'C',
+  changed: 'M',
+  unchanged: '·',
+};
