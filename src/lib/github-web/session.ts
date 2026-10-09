@@ -1,10 +1,11 @@
 // Same-origin requests to github.com with the user's session, made from the content script. These are the
 // endpoints GitHub's own React UI calls (docs/research/github-web-endpoints.md); cookies ride along.
-// A signed-out session gets a redirect to /login, or a JSON 404 from the session-only endpoints.
+// A signed-out session gets a redirect to /login, a JSON 404 from the session-only endpoints, and pages whose
+// `meta[name="user-login"]` is empty; the PR page decides from that meta (pull-request.ts).
 
 import type { UserRef } from '../model';
 
-export const SIGNED_OUT = 'Sign in to GitHub in this tab first';
+export const SIGNED_OUT = 'Sign in to github.com in this tab, then reload.';
 
 /**
  * The one place a request leaves for GitHub: sends only the headers GitHub's UI sends, and turns a
@@ -21,11 +22,9 @@ export async function request(path: string, accept: 'application/json' | 'text/h
   if (response.redirected && new URL(response.url).pathname === '/login') throw new Error(SIGNED_OUT);
   if (response.ok) return response;
   if (response.status === 404 && response.headers.get('content-type')?.includes('json')) {
+    // Only "Couldn’t authenticate you" names the session; a plain {"error":"Not Found"} may be a missing feature.
     const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
-    // Session-only endpoints answer a missing session with 404 {"error":"Not Found" | "Couldn’t authenticate you"};
-    // a page_data 404 while this tab is signed in is a real "not found".
-    const tabSignedIn = !!document.querySelector('meta[name="user-login"]')?.getAttribute('content');
-    if (/authenticate/i.test(String(body?.error)) || (path.includes('/page_data/') && !tabSignedIn)) throw new Error(SIGNED_OUT);
+    if (/authenticate/i.test(String(body?.error))) throw new Error(SIGNED_OUT);
   }
   throw new Error(`GitHub answered ${response.status} for ${path.split('?')[0]}`);
 }

@@ -7,16 +7,16 @@ import { findInPayload, noteShape } from './session';
 export async function resolveStack(
   subject: { current: PrSummary; nativeStack: NativeStack | null; page: Document },
   lookups: {
-    /** page_data/stack_mergeability: each stack entry's merge status. */
+    /** page_data/stack_mergeability: each stack entry's merge status; null when GitHub did not answer. */
     mergeability(): Promise<unknown>;
-    /** The author's open PRs in this repository, for the Graphite comment's entries. */
+    /** The author's open PRs in this repository, for the Graphite comment's entries; empty when GitHub did not answer. */
     authorsOpenPulls(): Promise<PrSummary[]>;
   },
 ): Promise<Stack> {
   const { current, nativeStack } = subject;
 
   if (nativeStack && nativeStack.pulls.length > 0) {
-    const statuses = await lookups.mergeability().catch(() => null);
+    const statuses = await lookups.mergeability();
     noteShape('page_data/stack_mergeability', statuses);
     const rows = (Array.isArray(statuses) ? statuses : findInPayload(statuses, (_, value) => Array.isArray(value) && value.some((row) => !!row?.pull))) as
       | Array<{ pull?: { number?: number }; status?: string }>
@@ -44,7 +44,7 @@ export async function resolveStack(
 
   const comment = graphiteStackComment(subject.page);
   if (comment && comment.entries.length > 1 && comment.entries.some((entry) => entry.number === current.number)) {
-    const open = new Map((await lookups.authorsOpenPulls().catch(() => [])).map((pull) => [pull.number, pull]));
+    const open = new Map((await lookups.authorsOpenPulls()).map((pull) => [pull.number, pull]));
     // At most 25 entries, centred on the PR being viewed.
     const index = comment.entries.findIndex((entry) => entry.number === current.number);
     const start = Math.max(0, Math.min(index - 12, comment.entries.length - 25));

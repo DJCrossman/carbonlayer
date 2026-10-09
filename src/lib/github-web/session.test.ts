@@ -33,19 +33,18 @@ describe('reading with the session', () => {
     });
   });
 
-  it('recognises a signed-out session by the login redirect or the session-only 404', async () => {
+  it('recognises a signed-out session by the login redirect or GitHub saying it cannot authenticate', async () => {
     const redirected = { ok: true, status: 200, redirected: true, url: 'https://github.com/login?return_to=x', headers: new Headers() } as Response;
     vi.stubGlobal('fetch', vi.fn(async () => redirected));
     await expect(request('/pulls/inbox', 'text/html')).rejects.toThrow(SIGNED_OUT);
 
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'Couldn’t authenticate you' }, { status: 404 })));
     await expect(getJson('/pulls/search?q=x')).rejects.toThrow(SIGNED_OUT);
+  });
 
+  it('reports any other 404 as such, without its query', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'Not Found' }, { status: 404 })));
-    await expect(getJson('/o/r/pull/1/page_data/merge_box')).rejects.toThrow(SIGNED_OUT);
-    // In a signed-in tab a page_data 404 is a real "not found".
-    document.head.innerHTML = '<meta name="user-login" content="ana">';
-    await expect(getJson('/o/r/pull/1/page_data/merge_box')).rejects.toThrow('GitHub answered 404 for /o/r/pull/1/page_data/merge_box');
+    await expect(getJson('/o/r/pull/1/page_data/merge_box?merge_method=MERGE')).rejects.toThrow('GitHub answered 404 for /o/r/pull/1/page_data/merge_box');
   });
 });
 

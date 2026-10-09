@@ -93,7 +93,6 @@ export interface BaseComparison {
   diffContents?: DiffEntry[];
   comparison?: { fullDiff?: { baseOid: string; headOid: string } };
   commits?: Array<{ oid: string; createdAt: string; actorLogin?: string | null; messageHeadline?: string }>;
-  user?: { currentUserLogin?: string | null };
 }
 
 export interface DiffEntry {

@@ -463,9 +463,6 @@ function PrError({ message }: { message: string }) {
       <div>
         <strong>Could not load this pull request</strong>
         <p>{message}</p>
-        {/sign in|session/i.test(message) || /\b404\b.*\/page_data\//.test(message) ? (
-          <p className="pr-muted">Sign in to github.com in this tab, then reload.</p>
-        ) : null}
       </div>
     </div>
   );
