@@ -4,7 +4,6 @@
 
 import type { RpcMethod, RpcMethods, RpcRequest, RpcResponse } from '../rpc';
 import { getSettings } from '../settings';
-import { resolveViewQuery } from '../views';
 import { fetchInbox } from './inbox';
 import { mutations, pullRequestFor, rememberPullRequest } from './mutations';
 import { fetchPullRequestPage } from './pull-request';
@@ -27,7 +26,8 @@ export async function handleRpc(request: RpcRequest): Promise<RpcResponse> {
 const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<RpcMethods[M]['result']> } = {
   'inbox.fetch': async ({ views, force }) => {
     const { inboxScope } = await getSettings();
-    const key = `inbox:${JSON.stringify(views.map((view) => [resolveViewQuery(view, inboxScope), view.limit]))}`;
+    // Keyed by the queries as saved: resolved, their relative times change every second.
+    const key = `inbox:${JSON.stringify([inboxScope, views.map((view) => [view.query, view.limit])])}`;
     const results = await cached(key, 60_000, force, () => fetchInbox(views, inboxScope));
     // Results are index-aligned with `views`; the views themselves are not cached so renames show at once.
     return results.map((result, i) => ({ ...result, view: views[i]! }));

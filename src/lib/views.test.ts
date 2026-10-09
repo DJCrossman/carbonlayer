@@ -24,9 +24,17 @@ describe('share links', () => {
 });
 
 describe('resolveViewQuery', () => {
-  it('expands relative dates and prepends the scope', () => {
+  it('resolves relative times to the moment, not the day, and prepends the scope', () => {
     const view = { id: 'm', name: 'Merged', query: 'is:merged merged:>={{7d}}' };
-    expect(resolveViewQuery(view, 'org:acme', new Date('2026-10-09T12:00:00Z'))).toBe('is:merged merged:>=2026-10-02 org:acme'.replace('org:acme', '').trim().replace(/^/, 'org:acme '));
+    expect(resolveViewQuery(view, 'org:acme', new Date('2026-10-09T14:40:00Z'))).toBe('org:acme is:merged merged:>=2026-10-02T14:40:00Z');
+  });
+
+  it('ORs repeated repo: terms in the scope and the query, which GitHub would AND', () => {
+    const view = { id: 'r', name: 'Repos', query: 'is:pr repo:acme/web repo:acme/api author:@me' };
+    expect(resolveViewQuery(view, 'repo:acme/web repo:acme/api repo:acme/ios')).toBe(
+      '(repo:acme/web OR repo:acme/api OR repo:acme/ios) is:pr (repo:acme/web OR repo:acme/api) author:@me',
+    );
+    expect(resolveViewQuery({ ...view, query: 'is:pr repo:acme/web' }, '(repo:acme/web OR repo:acme/api)')).toBe('(repo:acme/web OR repo:acme/api) is:pr repo:acme/web');
   });
 
   it('leaves plain queries alone when there is no scope', () => {

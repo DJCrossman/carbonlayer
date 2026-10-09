@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { importGraphiteSections, inboxSnapshotOf, type GraphiteInboxSnapshot } from './graphite';
+// The user's nine Graphite sections as their inbox page holds them (2026-10-09); the repositories are placeholders.
+import userInbox from './graphite-inbox.fixture.json';
 
 // Graphite's "Share section" link for: status OPEN; NOT (author dependabot OR DJCrossman); review REVIEW_REQUIRED_GITHUB.
 const EXAMPLE_LINK =
   'https://app.graphite.com/?new-section=JTdCJTIyZ3JvdXBzJTIyJTNBJTVCJTdCJTIycnVsZXMlMjIlM0ElNUIlN0IlMjJpc05lZ2F0ZWQlMjIlM0FmYWxzZSUyQyUyMmNvbmRpdGlvbnMlMjIlM0ElNUIlN0IlMjJraW5kJTIyJTNBJTIyQ09OU09MSURBVEVEX1BSX1NUQVRVU19JUyUyMiUyQyUyMnN0YXR1cyUyMiUzQSUyMk9QRU4lMjIlN0QlNUQlN0QlMkMlN0IlMjJpc05lZ2F0ZWQlMjIlM0F0cnVlJTJDJTIyY29uZGl0aW9ucyUyMiUzQSU1QiU3QiUyMmtpbmQlMjIlM0ElMjJBVVRIT1JfSVMlMjIlMkMlMjJ1c2VybmFtZSUyMiUzQSUyMmRlcGVuZGFib3QlMjIlN0QlMkMlN0IlMjJraW5kJTIyJTNBJTIyQVVUSE9SX0lTJTIyJTJDJTIydXNlcm5hbWUlMjIlM0ElMjJESkNyb3NzbWFuJTIyJTdEJTVEJTdEJTJDJTdCJTIyaXNOZWdhdGVkJTIyJTNBZmFsc2UlMkMlMjJjb25kaXRpb25zJTIyJTNBJTVCJTdCJTIya2luZCUyMiUzQSUyMlJFVklFV19TVEFUVVNfSVMlMjIlMkMlMjJzdGF0ZSUyMiUzQSUyMlJFVklFV19SRVFVSVJFRF9HSVRIVUIlMjIlN0QlNUQlN0QlNUQlN0QlNUQlN0Q%3D';
-const EXAMPLE_QUERY = 'is:pr is:open draft:false -author:dependabot -author:DJCrossman review:required sort:updated-desc';
+const EXAMPLE_QUERY = 'is:pr is:open -author:dependabot -author:app/dependabot -author:DJCrossman review:none draft:false sort:updated-desc';
 // The same filter as Graphite's signed-in inbox page holds it (section "Needs anyone's review").
 const EXAMPLE_TREE = {
   kind: 'OR',
@@ -50,7 +52,7 @@ describe('importGraphiteSections', () => {
     // As Graphite writes it: standard base64, form-encoded into the query string.
     const link = `https://app.graphite.com/?shared-sections=${encodeURIComponent(btoa(encodeURIComponent(JSON.stringify([NEEDS_REVIEW, MERGED]))))}`;
     expect(importGraphiteSections(link).views.map(({ view }) => [view.name, view.query])).toEqual([
-      ['Needs my review', 'is:pr repo:acme/web repo:acme/api review-requested:@me sort:updated-desc'],
+      ['Needs my review', 'is:pr (repo:acme/web OR repo:acme/api) review-requested:@me sort:updated-desc'],
       ['Merged', 'is:pr is:merged sort:updated-desc'],
     ]);
   });
@@ -95,22 +97,22 @@ describe('importGraphiteSections', () => {
     };
     const [imported] = importGraphiteSections(JSON.stringify(filter)).views;
     expect(imported?.view.query).toBe(
-      'is:pr is:open author:alice author:bob label:"bug","needs review" -label:"wip" review:approved updated:>={{3d}} base:main in:title NOT "revert" sort:updated-desc',
+      'is:pr is:open (author:alice OR author:bob) label:"bug","needs review" -label:"wip" review:approved updated:>={{3d}} base:main in:title NOT "revert" sort:updated-desc',
     );
     expect(imported?.notes).toEqual([]);
   });
 
   it.each([
-    [['OPEN'], false, 'is:pr is:open draft:false sort:updated-desc'],
+    [['OPEN'], false, 'is:pr is:open sort:updated-desc'],
     [['DRAFT'], false, 'is:pr is:open draft:true sort:updated-desc'],
     [['MERGED'], false, 'is:pr is:merged sort:updated-desc'],
-    [['CLOSED'], false, 'is:pr is:closed is:unmerged sort:updated-desc'],
-    [['MERGING'], false, 'is:pr is:open sort:updated-desc'],
+    [['CLOSED'], false, 'is:pr is:closed -is:merged sort:updated-desc'],
+    [['OPEN', 'MERGING'], false, 'is:pr is:open sort:updated-desc'],
     [['DRAFT'], true, 'is:pr draft:false sort:updated-desc'],
     [['MERGED'], true, 'is:pr -is:merged sort:updated-desc'],
     [['CLOSED'], true, 'is:pr is:open sort:updated-desc'],
     [['MERGING'], true, 'is:pr sort:updated-desc'],
-    [['OPEN'], true, 'is:pr sort:updated-desc'],
+    [['OPEN'], true, 'is:pr is:closed sort:updated-desc'],
     [['DRAFT', 'MERGED'], true, 'is:pr draft:false -is:merged sort:updated-desc'],
     [['CLOSED', 'MERGED'], true, 'is:pr is:open sort:updated-desc'],
   ])('searches PR status %j (negated: %s) as %s', (statuses, isNegated, query) => {
@@ -133,7 +135,7 @@ describe('importGraphiteSections', () => {
     };
     const [imported] = importGraphiteSections(JSON.stringify(filter)).views;
     expect(imported?.view.query).toBe('is:pr is:open draft:false review:changes_requested sort:updated-desc');
-    expect(imported?.notes).toEqual([expect.stringMatching(/merge queue cannot be excluded/)]);
+    expect(imported?.notes).toEqual([]);
   });
 
   it('maps <REPLACE_USERNAME> to @me and team slugs to team qualifiers', () => {
@@ -172,27 +174,11 @@ describe('importGraphiteSections', () => {
       defaultRepos: [],
       viewerLogin: 'DJCrossman',
     });
-    expect(copied.views[0]?.view.query).toBe('is:pr -author:dependabot -author:@me review-requested:@me sort:updated-desc');
+    expect(copied.views[0]?.view.query).toBe('is:pr -author:dependabot -author:app/dependabot -author:@me review-requested:@me sort:updated-desc');
     expect(importGraphiteSections(JSON.stringify(filter), { viewerLogin: 'DJCrossman' }).views[0]?.view.query).toBe(copied.views[0]?.view.query);
-    expect(importGraphiteSections(JSON.stringify(filter)).views[0]?.view.query).toBe('is:pr -author:dependabot -author:djcrossman review-requested:DJCrossman sort:updated-desc');
-  });
-
-  it('collapses a section whose groups repeat or only narrow one another into one query', () => {
-    // Graphite's default "Needs your review": requested or re-requested, not yet approved, and requested at all.
-    const rules = (requested: string, approvedToo: boolean) => [
-      { isNegated: true, conditions: [{ kind: 'AUTHOR_IS', username: 'DJCrossman' }] },
-      { isNegated: false, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'OPEN' }] },
-      { isNegated: false, conditions: [{ kind: requested, username: 'DJCrossman' }] },
-      { isNegated: true, conditions: [{ kind: 'REVIEW_STATUS_IS', state: 'HAS_CHANGES_REQUESTED' }] },
-      ...(approvedToo ? [{ isNegated: true, conditions: [{ kind: 'REVIEW_STATUS_IS', state: 'ONE_OR_MORE_APPROVALS' }] }] : []),
-    ];
-    const filter = {
-      groups: [{ rules: rules('OPEN_REVIEW_REQUEST_FOR', true) }, { rules: rules('REOPENED_REVIEW_REQUEST_FOR', true) }, { rules: rules('OPEN_REVIEW_REQUEST_FOR', false) }],
-    };
-    const { views } = importGraphiteSections(JSON.stringify([{ name: 'Needs your review', filter, repos: [] }]), { viewerLogin: 'DJCrossman' });
-    expect(views.map(({ view }) => [view.name, view.query])).toEqual([
-      ['Needs your review', 'is:pr -author:@me is:open draft:false review-requested:@me -review:changes_requested sort:updated-desc'],
-    ]);
+    expect(importGraphiteSections(JSON.stringify(filter)).views[0]?.view.query).toBe(
+      'is:pr -author:dependabot -author:app/dependabot -author:djcrossman review-requested:DJCrossman sort:updated-desc',
+    );
   });
 
   it('ORs the groups that remain, each in parentheses, with the terms they share in front', () => {
@@ -226,7 +212,7 @@ describe('importGraphiteSections', () => {
       repos: [{ owner: 'acme', name: 'web' }],
     };
     expect(importGraphiteSections(JSON.stringify([section])).views.map(({ view }) => [view.name, view.query])).toEqual([
-      ['Mine', 'is:pr repo:acme/web is:open ((draft:true author:@me) OR (draft:false review-requested:@me -author:@me)) sort:updated-desc'],
+      ['Mine', 'is:pr repo:acme/web is:open ((draft:true author:@me) OR (review-requested:@me -author:@me)) sort:updated-desc'],
     ]);
   });
 
@@ -264,7 +250,7 @@ describe('importGraphiteSections', () => {
       ["Needs anyone's review", EXAMPLE_QUERY],
       ['Merged', 'is:pr repo:acme/web is:merged sort:updated-desc'],
     ]);
-    expect([sectionCount, inboxScope]).toEqual([2, 'repo:acme/web repo:acme/api']);
+    expect([sectionCount, inboxScope]).toEqual([2, '(repo:acme/web OR repo:acme/api)']);
   });
 
   it('leaves out, with a note, a copied section whose filter it cannot read', () => {
@@ -279,42 +265,38 @@ describe('importGraphiteSections', () => {
     expect([notes, sectionCount]).toEqual([[expect.stringMatching(/^Odd: .*left out/)], 2]);
   });
 
-  it("notes, under each view, what GitHub's search approximates or cannot express", () => {
+  it('leaves out a group that needs what GitHub cannot search for, but only the rule when it is negated', () => {
     const section = {
       name: 'Hard',
       filter: {
         groups: [
+          { rules: [{ isNegated: false, conditions: [{ kind: 'NUM_FILES_CHANGED', numFiles: 10 }] }] },
+          { rules: [{ isNegated: false, conditions: [{ kind: 'AUTHOR_IS', username: 'A bot' }, { kind: 'AUTHOR_IS', username: 'alice' }] }] },
           {
             rules: [
-              { isNegated: false, conditions: [{ kind: 'NUM_FILES_CHANGED', numFiles: 10 }] },
-              { isNegated: false, conditions: [{ kind: 'REVIEW_STATUS_IS', state: 'HAS_ACTIVE_REVIEW' }] },
-              { isNegated: true, conditions: [{ kind: 'AUTHOR_IS', username: 'A bot' }] },
-              { isNegated: false, conditions: [{ kind: 'APPROVED_BY', username: 'alice' }] },
-              { isNegated: true, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'OPEN' }] },
-              { isNegated: false, conditions: [{ kind: 'IS_EXTERNAL_REPOSITORY' }] },
+              { isNegated: false, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'MERGED' }] },
+              { isNegated: true, conditions: [{ kind: 'IS_EXTERNAL_REPOSITORY' }] },
+              { isNegated: true, conditions: [{ kind: 'AUTHOR_IS', username: 'A bot' }, { kind: 'AUTHOR_IS', username: 'acme/bots' }] },
             ],
           },
         ],
       },
       repos: [],
     };
-    const [imported] = importGraphiteSections(JSON.stringify([section])).views;
-    expect(imported?.view.query).toBe('is:pr -author:app/dependabot -author:app/github-actions reviewed-by:alice sort:updated-desc');
-    const notes = imported?.notes.join('\n');
-    expect(imported?.notes).toHaveLength(6);
-    expect(notes).toMatch(/Number of files changed.*left out/);
-    expect(notes).toMatch(/HAS_ACTIVE_REVIEW.*left out/);
-    expect(notes).toMatch(/A bot/);
-    expect(notes).toMatch(/reviewed-by/);
-    expect(notes).toMatch(/PR status is not OPEN.*left out/);
-    expect(notes).toMatch(/PR origin.*left out/);
-  });
+    const [imported, ...others] = importGraphiteSections(JSON.stringify([section])).views;
+    expect(others).toEqual([]);
+    expect(imported?.view.query).toBe('is:pr is:merged -author:app/dependabot -author:app/github-actions sort:updated-desc');
+    expect(imported?.notes).toEqual([
+      expect.stringMatching(/^“Number of files changed” .*filter group was left out/),
+      expect.stringMatching(/^“Author is A bot or alice” .*filter group was left out/),
+      expect.stringMatching(/^“PR origin” .*rule was left out/),
+      expect.stringMatching(/“A bot” is searched as/),
+      expect.stringMatching(/acme\/bots has no GitHub search equivalent/),
+    ]);
 
-  it('leaves out a positive "A bot" author rule rather than narrowing it', () => {
-    const filter = { groups: [{ rules: [{ isNegated: false, conditions: [{ kind: 'AUTHOR_IS', username: 'A bot' }, { kind: 'AUTHOR_IS', username: 'alice' }] }] }] };
-    const [imported] = importGraphiteSections(JSON.stringify(filter)).views;
-    expect(imported?.view.query).toBe('is:pr sort:updated-desc');
-    expect(imported?.notes).toEqual([expect.stringContaining('left out')]);
+    const { views, notes } = importGraphiteSections(JSON.stringify([{ ...section, filter: { groups: section.filter.groups.slice(0, 2) } }]));
+    expect(views).toEqual([]);
+    expect(notes.at(-1)).toMatch(/^Hard: .*section was left out/);
   });
 
   it.each([
@@ -331,6 +313,35 @@ describe('importGraphiteSections', () => {
     ['a rule mixing kinds', '{"groups":[{"rules":[{"isNegated":false,"conditions":[{"kind":"AUTHOR_IS","username":"a"},{"kind":"MENTIONS","username":"a"}]}]}]}'],
   ])('rejects %s with a message', (_, input) => {
     expect(() => importGraphiteSections(input)).toThrow(/\S/);
+  });
+});
+
+describe("the user's Graphite inbox", () => {
+  const { views, notes, inboxScope } = importGraphiteSections(userInbox as GraphiteInboxSnapshot);
+
+  // Each verified against GitHub's dashboard search, signed in (docs/research/graphite-sections.md, "Verified mapping").
+  it.each([
+    ['Needs your review', 'is:pr -author:@me is:open draft:false review-requested:@me -review:changes_requested sort:updated-desc'],
+    ['Returned to you', 'is:pr is:open draft:false author:@me review:changes_requested sort:updated-desc'],
+    ['Approved', 'is:pr is:open draft:false author:@me review:approved -review:changes_requested sort:updated-desc'],
+    ['Waiting for reviewers', 'is:pr is:open draft:false author:@me -review:approved -review:changes_requested sort:updated-desc'],
+    ['Drafts', 'is:pr is:open draft:true author:@me sort:updated-desc'],
+    ['Waiting for POMS reviewers', 'is:pr is:open draft:false (author:reid112 OR author:KBaldwin2 OR author:Patrick-Ullrich OR author:puttputt) -review:approved sort:updated-desc'],
+    ["Needs anyone's review", 'is:pr is:open draft:false -author:dependabot -author:app/dependabot -author:@me review:none sort:updated-desc'],
+    ['Merging and recently merged', 'is:pr is:merged merged:>={{7d}} sort:updated-desc'],
+    ['Waiting for author', 'is:pr is:open draft:false reviewed-by:@me -review-requested:@me -author:@me sort:updated-desc'],
+  ])('searches %s as %s', (name, query) => {
+    // Term order does not matter to GitHub.
+    expect(views.find(({ view }) => view.name === name)?.view.query.split(' ').sort()).toEqual(query.split(' ').sort());
+  });
+
+  it('makes one view per section, noting only the merge-queue group it leaves out, and ORs the inbox repositories', () => {
+    expect(views).toHaveLength(9);
+    expect(notes).toEqual([]);
+    expect(views.filter((imported) => imported.notes.length > 0).map(({ view, notes }) => [view.name, notes])).toEqual([
+      ['Merging and recently merged', ['“PR status is MERGING” has no GitHub search equivalent; that filter group was left out.']],
+    ]);
+    expect(inboxScope).toBe('(repo:acme/web OR repo:acme/api)');
   });
 });
 

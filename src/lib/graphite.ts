@@ -7,6 +7,7 @@
 // See docs/research/graphite-sections.md.
 
 import type { View } from './model';
+import { repositoryScope } from './views';
 
 /**
  * The views that pasted Graphite section links (one per line), their decoded JSON, or the sections copied from
@@ -29,42 +30,68 @@ export function importGraphiteSections(
       notes.push(...section.notes.map((note) => `${name}: ${note}`));
       continue;
     }
-    // A filter with no groups matches every pull request.
-    const translated = (section.filter.groups.length > 0 ? section.filter.groups : [{ rules: [] }]).map((group) => translateGroup(group.rules, viewer));
-    // An OR gains nothing from a group twice, or from a group with every term of another: it only narrows that one.
-    const groups = translated.filter(
-      (group, index) =>
-        !translated.some(
-          (other, otherIndex) =>
-            otherIndex !== index && other.terms.every((term) => group.terms.includes(term)) && (other.terms.length < group.terms.length || otherIndex < index),
-        ),
-    );
-    // GitHub ORs repeated repo: qualifiers.
-    const scope = ['is:pr', ...section.repos.map((repo) => `repo:${repo.owner}/${repo.name}`)];
-    // One search holds at most five AND / OR / NOT operators.
-    const operators = groups.length - 1 + groups.flatMap((group) => group.terms).filter((term) => term.startsWith('NOT ')).length;
-    if (operators <= 5) {
-      // Terms every group has are searched once, before the alternatives; the outer parentheses keep an inbox scope
-      // written in front of the query applying to every alternative.
-      const common = groups[0]!.terms.filter((term) => groups.every((group) => group.terms.includes(term)));
-      const alternatives = groups.map((group) => `(${group.terms.filter((term) => !common.includes(term)).join(' ')})`);
-      const query = [...scope, ...common, ...(groups.length > 1 ? [`(${alternatives.join(' OR ')})`] : []), 'sort:updated-desc'];
-      views.push({ view: { id: crypto.randomUUID(), name, query: [...new Set(query)].join(' ') }, notes: [...new Set([...section.notes, ...groups.flatMap((group) => group.notes)])] });
-    } else {
-      const split = `Graphite matches any of its ${groups.length} filter groups, more than one GitHub search can OR; each group is a view of its own.`;
-      groups.forEach((group, index) =>
-        views.push({
-          view: { id: crypto.randomUUID(), name: `${name} (${index + 1})`, query: [...new Set([...scope, ...group.terms, 'sort:updated-desc'])].join(' ') },
-          notes: [...new Set([...section.notes, split, ...group.notes])],
-        }),
-      );
+    const search = searchForFilter(section.filter, section.repos, viewer);
+    if (search.query === null) {
+      const leftOut = "GitHub's search can express none of its filter groups; that section was left out.";
+      notes.push(...[...section.notes, ...search.notes, leftOut].map((note) => `${name}: ${note}`));
+      continue;
     }
+    // One search holds at most five AND / OR / NOT operators.
+    if (search.operators <= 5 || search.groupsKept.length < 2) {
+      views.push({ view: { id: crypto.randomUUID(), name, query: search.query }, notes: [...new Set([...section.notes, ...search.notes])] });
+      continue;
+    }
+    const split = `Graphite matches any of its ${search.groupsKept.length} filter groups, more than one GitHub search can OR; each group is a view of its own.`;
+    search.groupsKept.forEach((groupIndex, index) => {
+      const group = searchForFilter({ groups: [section.filter!.groups[groupIndex]!] }, section.repos, viewer);
+      views.push({
+        view: { id: crypto.randomUUID(), name: `${name} (${index + 1})`, query: group.query! },
+        notes: [...new Set([...section.notes, split, ...group.notes])],
+      });
+    });
   }
   const inboxScope =
-    typeof input !== 'string' && sections.some((section) => section.usesInboxRepos) && input.defaultRepos.length > 0
-      ? input.defaultRepos.map((repo) => `repo:${repo.owner}/${repo.name}`).join(' ')
-      : null;
+    typeof input !== 'string' && sections.some((section) => section.usesInboxRepos) && input.defaultRepos.length > 0 ? repositoryScope(input.defaultRepos) : null;
   return { views, notes, sectionCount: sections.length, inboxScope };
+}
+
+/**
+ * The GitHub search selecting what a Graphite filter selects in `repos` (none: wherever the search runs), with notes on
+ * what it approximates or leaves out, how many AND / OR / NOT operators it takes (GitHub allows five) and which of the
+ * filter's groups it still needs. `query` is null when GitHub's search can express none of the groups. `viewer`, the
+ * signed-in user's login, is searched as `@me`, as are Graphite's `<REPLACE_USERNAME>` and a stored `@me`.
+ *
+ * Each group comes to one or more alternatives (see translateGroup); GitHub's search ORs them as `is:pr <terms every
+ * alternative has> ((a1) OR (a2))`, the outer parentheses keeping an inbox scope written in front applying to all.
+ */
+export function searchForFilter(
+  filter: GraphiteFilter,
+  repos: Array<{ owner: string; name: string }>,
+  viewer: string | null = null,
+): { query: string | null; notes: string[]; operators: number; groupsKept: number[] } {
+  const notes: string[] = [];
+  // A filter with no groups matches every pull request.
+  const alternatives = (filter.groups.length > 0 ? filter.groups : [{ rules: [] }]).flatMap((group, index) => {
+    const translated = translateGroup(group.rules, viewer?.toLowerCase() ?? null);
+    notes.push(...translated.notes);
+    return translated.alternatives.map((terms) => ({ terms, group: index }));
+  });
+  // An OR gains nothing from an alternative twice, or from one with every term of another: it only narrows that one.
+  const kept = alternatives.filter(
+    ({ terms }, index) =>
+      !alternatives.some(
+        (other, otherIndex) => otherIndex !== index && other.terms.every((term) => terms.includes(term)) && (other.terms.length < terms.length || otherIndex < index),
+      ),
+  );
+  if (kept.length === 0) return { query: null, notes: [...new Set(notes)], operators: 0, groupsKept: [] };
+  const common = kept[0]!.terms.filter((term) => kept.every(({ terms }) => terms.includes(term)));
+  const ored = kept.map(({ terms }) => `(${terms.filter((term) => !common.includes(term)).join(' ')})`);
+  const query = [
+    ...new Set(['is:pr', ...(repos.length > 0 ? [repositoryScope(repos)] : []), ...common, ...(kept.length > 1 ? [`(${ored.join(' OR ')})`] : []), 'sort:updated-desc']),
+  ].join(' ');
+  // Quoted text holds no operators.
+  const operators = query.replace(/"[^"]*"/g, '""').match(/(?<![^\s(])(?:AND|OR|NOT)(?![^\s)])/g)?.length ?? 0;
+  return { query, notes: [...new Set(notes)], operators, groupsKept: [...new Set(kept.map(({ group }) => group))] };
 }
 
 /**
@@ -179,45 +206,71 @@ function readSections(input: string): GraphiteSection[] {
 }
 
 /**
- * The GitHub search terms one group of a filter comes to (its rules ANDed, no term twice), and notes on what they
- * approximate or leave out. `viewer` is the signed-in user's login in lower case.
+ * The alternatives (each a list of GitHub search terms, ANDed) one group of a filter comes to: its rules ANDed, a rule
+ * that only several alternatives express spreading over the group, and alternatives that contradict themselves left
+ * out. None when the group needs something GitHub cannot search for, or can match nothing. Also notes on what the
+ * alternatives approximate or leave out. `viewer` is the signed-in user's login in lower case.
  */
-function translateGroup(rules: GraphiteRule[], viewer: string | null): { terms: string[]; notes: string[] } {
-  const terms: string[] = [];
+function translateGroup(rules: GraphiteRule[], viewer: string | null): { alternatives: string[][]; notes: string[] } {
   const notes: string[] = [];
-  // The PR-status rules together allow one set of GitHub's states, searched where the first of them was.
+  // The PR-status rules together allow one set of GitHub's states (see PR_STATES), searched where the first of them was.
   let states = 0b1111;
-  let statusAt: number | null = null;
   const statusRules: string[] = [];
+  for (const { isNegated, conditions } of rules) {
+    if (conditions[0]!.kind !== 'CONSOLIDATED_PR_STATUS_IS') continue;
+    const statuses = conditions.map((condition) => String(condition.status));
+    const quoted = `“PR status ${isNegated ? 'is not' : 'is'} ${statuses.join(' or ')}”`;
+    // Merging (Graphite's merge queue) has no search qualifier: only Open, which holds it, selects it, and excluding it
+    // excludes nothing.
+    const unsearchable = statuses.filter((status) => !Object.hasOwn(PR_STATES, status) && !(status === 'MERGING' && (isNegated || statuses.includes('OPEN'))));
+    if (unsearchable.length > 0) {
+      if (!isNegated) return { alternatives: [], notes: [...notes, `${quoted} has no GitHub search equivalent; that filter group was left out.`] };
+      notes.push(`${quoted}: ${unsearchable.join(', ')} has no GitHub search equivalent and was left out, so more pull requests show.`);
+    }
+    let allowed = 0;
+    for (const status of statuses) allowed |= PR_STATES[status] ?? 0;
+    states &= isNegated ? 0b1111 & ~allowed : allowed;
+    statusRules.push(quoted);
+  }
+  // No pull request has two states, in Graphite as on GitHub.
+  if (states === 0) return { alternatives: [], notes };
+  const stateTerms = STATE_TERMS[states];
+  const wording = statusRules.join(' and ');
+  if (!stateTerms) {
+    notes.push(statusRules.length > 1 ? `${wording} have no GitHub search equivalent together; those rules were left out.` : `${wording} has no GitHub search equivalent; that rule was left out.`);
+  } else if (states === 0b0111) {
+    notes.push(`${wording} is searched as is:open, which leaves out merged pull requests.`);
+  }
+
+  let alternatives: string[][] = [[]];
+  let statusSearched = false;
   for (const rule of rules) {
-    const translated = translateRule(rule, viewer);
-    notes.push(...translated.notes);
-    if (!translated.status) {
-      terms.push(...translated.terms);
-      continue;
-    }
-    states &= translated.status.states;
-    statusAt ??= terms.length;
-    statusRules.push(translated.status.wording);
-  }
-  if (statusAt !== null) {
-    const stateTerms = STATE_TERMS[states];
-    const wording = statusRules.join(' and ');
-    if (!stateTerms) {
-      notes.push(statusRules.length > 1 ? `${wording} have no GitHub search equivalent together; those rules were left out.` : `${wording} has no GitHub search equivalent; that rule was left out.`);
+    let ruleAlternatives: string[][];
+    if (rule.conditions[0]!.kind === 'CONSOLIDATED_PR_STATUS_IS') {
+      if (statusSearched) continue;
+      statusSearched = true;
+      ruleAlternatives = [stateTerms ?? []];
     } else {
-      terms.splice(statusAt, 0, ...stateTerms);
-      if (states === 0b0111) notes.push(`${wording} is searched as is:open, which leaves out merged pull requests.`);
+      const translated = translateRule(rule, viewer, states === PR_STATES.MERGED);
+      notes.push(...translated.notes);
+      if (!translated.alternatives) return { alternatives: [], notes };
+      ruleAlternatives = translated.alternatives;
     }
+    alternatives = alternatives.flatMap((terms) => ruleAlternatives.map((more) => [...terms, ...more]));
   }
-  return { terms: [...new Set(terms)], notes: [...new Set(notes)] };
+  return {
+    // `x` and `-x` together match nothing.
+    alternatives: alternatives.map((terms) => [...new Set(terms)]).filter((terms) => !terms.some((term) => term.startsWith('-') && terms.includes(term.slice(1)))),
+    notes: [...new Set(notes)],
+  };
 }
 
 /**
- * The GitHub search terms that select what one Graphite rule selects, and notes on what they approximate or leave out.
- * A PR-status rule instead gives the set of GitHub's states it allows (see PR_STATES), for its group to combine.
+ * The alternatives (each a list of search terms, ANDed) that select what one Graphite rule other than PR status
+ * selects, or null when GitHub cannot search for it, with notes on what they approximate or leave out. `mergedOnly`:
+ * the rule's group selects merged pull requests only, whose latest activity is their merge.
  */
-function translateRule({ isNegated, conditions }: GraphiteRule, viewer: string | null): { terms: string[]; notes: string[]; status?: { states: number; wording: string } } {
+function translateRule({ isNegated, conditions }: GraphiteRule, viewer: string | null, mergedOnly: boolean): { alternatives: string[][] | null; notes: string[] } {
   const kind = conditions[0]!.kind;
   const { label, field, verbs = ['is', 'is not'] } = Object.hasOwn(RULE_KINDS, kind) ? RULE_KINDS[kind]! : { label: kind };
   // A link shared "for the recipient" carries <REPLACE_USERNAME> where the sharer's login was, and Graphite's own copy
@@ -227,95 +280,113 @@ function translateRule({ isNegated, conditions }: GraphiteRule, viewer: string |
     : [];
   // The rule as Graphite's filter editor words it.
   const quoted = values.length > 0 ? `“${label} ${verbs[isNegated ? 1 : 0]} ${values.join(' or ')}${kind === 'LAST_UPDATED' ? ' hours ago' : ''}”` : `“${label}”`;
-  const leftOut = `${quoted} has no GitHub search equivalent; that rule was left out.`;
-  if (!field) return { terms: [], notes: [leftOut] };
-
-  if (kind === 'CONSOLIDATED_PR_STATUS_IS') {
-    if (!values.every((status) => Object.hasOwn(PR_STATES, status))) return { terms: [], notes: [leftOut] };
-    // Merging (Graphite's merge queue) is part of open: searched as open, and impossible to exclude.
-    let states = 0;
-    for (const status of values) states |= isNegated && status === 'MERGING' ? 0 : PR_STATES[status]!;
-    const notes = !values.includes('MERGING')
-      ? []
-      : [isNegated ? `${quoted}: pull requests in Graphite's merge queue cannot be excluded, so they still show.` : `${quoted}: Merging (Graphite's merge queue) is searched as open.`];
-    return { terms: [], notes, status: { states: isNegated ? 0b1111 & ~states : states, wording: quoted } };
-  }
 
   if (kind === 'LAST_UPDATED') {
-    // "Less than N hours" is updated since then; "greater than" (negated) is older. ORed windows widen to the longest.
+    // "Less than N hours" is active since then; "greater than" (negated) is older. ORed windows widen to the longest.
     const hours = Math.max(...values.map(Number));
     const days = Math.max(1, Math.round(hours / 24));
     return {
-      terms: [`updated:${isNegated ? '<' : '>='}{{${days}d}}`],
+      alternatives: [[`${mergedOnly ? 'merged' : 'updated'}:${isNegated ? '<' : '>='}{{${days}d}}`]],
       notes: hours === days * 24 ? [] : [`${quoted} is rounded to ${days} ${days === 1 ? 'day' : 'days'}.`],
     };
   }
 
-  const notes: string[] = [];
-  const not = isNegated ? '-' : '';
-  // Each condition's terms, or null where GitHub has no qualifier for it.
-  const perCondition = values.map((value): string[] | null => {
-    const team = value.includes('/');
-    switch (kind) {
-      case 'AUTHOR_IS':
-        if (value === 'A bot') {
-          if (!isNegated) return null;
-          notes.push(`${quoted}: “A bot” is searched as -author:app/dependabot -author:app/github-actions, so other bots still show.`);
-          return ['-author:app/dependabot', '-author:app/github-actions'];
-        }
-        return team ? null : [`${not}author:${value}`];
-      case 'REVIEW_STATUS_IS':
-        if (value === 'HAS_ONE_OR_MORE_REQUESTED_REVIEWERS') notes.push(`${quoted}: requested reviewers are searched as review:required.`);
-        return Object.hasOwn(REVIEW_TERMS, value) ? [`${not}${REVIEW_TERMS[value]}`] : null;
-      case 'APPROVED_BY':
-      case 'INCLUDES_PAST_REVIEWER':
-      case 'CLOSED_REVIEW_REQUEST_FROM':
-        notes.push(`${quoted} is searched as reviewed-by:, which counts any review.`);
-        return team ? null : [`${not}reviewed-by:${value}`];
-      case 'REOPENED_REVIEW_REQUEST_FOR':
-        notes.push(`${quoted} is searched as an open review request, re-requested or not.`);
-        return [team ? `${not}team-review-requested:${value}` : `${not}review-requested:${value}`];
-      case 'OPEN_REVIEW_REQUEST_FOR':
-        return [team ? `${not}team-review-requested:${value}` : `${not}review-requested:${value}`];
-      case 'INCLUDES_DIRECT_REVIEWER':
-        return team ? null : [`${not}user-review-requested:${value}`];
-      case 'INCLUDES_DIRECT_TEAM_REVIEWER':
-        return [`${not}team-review-requested:${value}`];
-      case 'INCLUDES_ASSIGNEE':
-        return team ? null : [`${not}assignee:${value}`];
-      case 'MENTIONS':
-        return [team ? `${not}team:${value}` : `${not}mentions:${value}`];
-      case 'HAS_LABEL':
-        return [`${not}label:"${value}"`];
-      case 'TITLE_CONTAINS':
-        return ['in:title', `${isNegated ? 'NOT ' : ''}"${value}"`];
-      case 'DESCRIPTION_CONTAINS':
-        return ['in:body', `${isNegated ? 'NOT ' : ''}"${value}"`];
-      case 'MERGE_BASE_IS':
-        return [`${not}base:${value}`];
-      default:
-        return null;
-    }
-  });
-  const known = perCondition.filter((terms) => terms !== null);
+  const notes = isNegated && kind === 'AUTHOR_IS' && values.includes('A bot') ? [`${quoted}: “A bot” is searched as -author:app/dependabot -author:app/github-actions, so other bots still show.`] : [];
+  const perCondition = values.map((value) => searchForCondition(kind, value, isNegated));
 
   if (isNegated) {
     // NOT (a OR b) is (NOT a) AND (NOT b): every exclusion GitHub can search for, so leaving one out only widens.
+    if (!field) return { alternatives: [[]], notes: [`${quoted} has no GitHub search equivalent; that rule was left out, so more pull requests show.`] };
     const missing = values.filter((_, index) => perCondition[index] === null);
     if (missing.length > 0) notes.push(`${quoted}: ${missing.join(', ')} has no GitHub search equivalent and was left out, so more pull requests show.`);
-    return { terms: known.flat(), notes };
+    let alternatives: string[][] = [[]];
+    for (const excluded of perCondition) {
+      if (excluded) alternatives = alternatives.flatMap((terms) => excluded.map((more) => [...terms, ...more]));
+    }
+    return { alternatives, notes };
   }
-  // (a OR something GitHub cannot search for) cannot be narrowed at all.
-  if (known.length < perCondition.length) return { terms: [], notes: [...notes, leftOut] };
-  if (new Set(known.map((terms) => terms.join(' '))).size === 1) return { terms: known[0]!, notes };
-  // Several values, any one of which will do.
-  if (kind === 'HAS_LABEL') return { terms: [`label:${values.map((value) => `"${value}"`).join(',')}`], notes };
-  // GitHub ORs repeated author: qualifiers.
-  if (kind === 'AUTHOR_IS') return { terms: known.flat(), notes };
-  if (field === 'username' || field === 'slug') {
-    return { terms: known.flat(), notes: [...notes, `${quoted}: Graphite matches any one of them; GitHub may match only pull requests with all of them.`] };
+  // (a OR something GitHub cannot search for) cannot be narrowed at all, and searching the group without it would widen
+  // it, so the group goes.
+  if (!field || perCondition.some((alternatives) => alternatives === null)) {
+    return { alternatives: null, notes: [`${quoted} has no GitHub search equivalent; that filter group was left out.`] };
   }
-  return { terms: [], notes: [...notes, `${quoted}: GitHub's search cannot match any one of several values; that rule was left out.`] };
+  const alternatives = perCondition.flatMap((selected) => selected!);
+  // Several labels, any one of which will do: GitHub's comma list.
+  if (kind === 'HAS_LABEL' && values.length > 1) return { alternatives: [[`label:${values.map((value) => `"${value}"`).join(',')}`]], notes };
+  // GitHub's review: qualifier holds one decision per pull request, so review alternatives spread over the group, where a
+  // rule excluding one of them leaves the others. Other values, any one of which will do, are one (a OR b) term.
+  if (kind !== 'REVIEW_STATUS_IS' && alternatives.every((terms) => terms.length === 1)) {
+    const any = [...new Set(alternatives.flat())];
+    return { alternatives: [[any.length === 1 ? any[0]! : `(${any.join(' OR ')})`]], notes };
+  }
+  return { alternatives, notes };
+}
+
+/**
+ * The alternatives (each a list of search terms, ANDed) that select the pull requests meeting one Graphite condition,
+ * or with `negated` those that do not, or null where GitHub's search has no qualifier for it. Verified against the
+ * user's live Graphite inbox (docs/research/graphite-sections.md, "Verified mapping").
+ */
+function searchForCondition(kind: string, value: string, negated: boolean): string[][] | null {
+  const not = negated ? '-' : '';
+  const team = value.includes('/');
+  switch (kind) {
+    case 'AUTHOR_IS':
+      if (value === 'A bot') return negated ? [['-author:app/dependabot', '-author:app/github-actions']] : null;
+      if (team) return null;
+      // Dependabot opens its pull requests as the app/dependabot bot.
+      if (value.toLowerCase() === 'dependabot') return negated ? [['-author:dependabot', '-author:app/dependabot']] : [['author:dependabot'], ['author:app/dependabot']];
+      return [[`${not}author:${value}`]];
+    case 'REVIEW_STATUS_IS':
+      switch (value) {
+        case 'ONE_OR_MORE_APPROVALS':
+        case 'IS_FULLY_APPROVED':
+        case 'APPROVED_GITHUB':
+          return [[`${not}review:approved`]];
+        case 'HAS_CHANGES_REQUESTED':
+        case 'HAS_UNADDRESSED_CHANGES_REQUESTED':
+          return [[`${not}review:changes_requested`]];
+        case 'REVIEW_REQUIRED_GITHUB':
+          // review:required misses a third of them; review:none matches only ready pull requests, and only says so with
+          // draft:false.
+          return negated ? [['-review:none']] : [['review:none', 'draft:false']];
+        case 'HAS_ACTIVE_REVIEW':
+          return negated ? [['-review:approved', '-review:changes_requested']] : [['review:approved'], ['review:changes_requested']];
+        default:
+          return null;
+      }
+    case 'APPROVED_BY':
+      // Nobody approves their own pull request, but reviewed-by: counts their replies.
+      if (team) return null;
+      return negated ? [[`-reviewed-by:${value}`], [`author:${value}`]] : [[`reviewed-by:${value}`, `-author:${value}`]];
+    case 'CLOSED_REVIEW_REQUEST_FROM':
+      // Reviewed, and not asked again.
+      if (team) return null;
+      return negated ? [[`-reviewed-by:${value}`], [`review-requested:${value}`]] : [[`reviewed-by:${value}`, `-review-requested:${value}`]];
+    case 'INCLUDES_PAST_REVIEWER':
+      return team ? null : [[`${not}reviewed-by:${value}`]];
+    case 'OPEN_REVIEW_REQUEST_FOR':
+    case 'REOPENED_REVIEW_REQUEST_FOR':
+      return [[team ? `${not}team-review-requested:${value}` : `${not}review-requested:${value}`]];
+    case 'INCLUDES_DIRECT_REVIEWER':
+      return team ? null : [[`${not}user-review-requested:${value}`]];
+    case 'INCLUDES_DIRECT_TEAM_REVIEWER':
+      return [[`${not}team-review-requested:${value}`]];
+    case 'INCLUDES_ASSIGNEE':
+      return team ? null : [[`${not}assignee:${value}`]];
+    case 'MENTIONS':
+      return [[team ? `${not}team:${value}` : `${not}mentions:${value}`]];
+    case 'HAS_LABEL':
+      return [[`${not}label:"${value}"`]];
+    case 'TITLE_CONTAINS':
+      return [['in:title', `${negated ? 'NOT ' : ''}"${value}"`]];
+    case 'DESCRIPTION_CONTAINS':
+      return [['in:body', `${negated ? 'NOT ' : ''}"${value}"`]];
+    case 'MERGE_BASE_IS':
+      return [[`${not}base:${value}`]];
+    default:
+      return null;
+  }
 }
 
 /**
@@ -325,7 +396,7 @@ function translateRule({ isNegated, conditions }: GraphiteRule, viewer: string |
 const RULE_KINDS: Record<string, { label: string; field?: string; verbs?: [string, string] }> = {
   CONSOLIDATED_PR_STATUS_IS: { label: 'PR status', field: 'status' },
   AUTHOR_IS: { label: 'Author', field: 'username' },
-  REVIEW_STATUS_IS: { label: 'Review status', field: 'state' },
+  REVIEW_STATUS_IS: { label: 'Review status', field: 'state', verbs: ['equals', 'does not equal'] },
   APPROVED_BY: { label: 'Approvers', field: 'username', verbs: ['include', 'do not include'] },
   INCLUDES_ASSIGNEE: { label: 'Assignees', field: 'username', verbs: ['include', 'do not include'] },
   INCLUDES_PAST_REVIEWER: { label: 'Previous reviewers', field: 'username', verbs: ['include', 'do not include'] },
@@ -346,8 +417,11 @@ const RULE_KINDS: Record<string, { label: string; field?: string; verbs?: [strin
   PR_OPENING_SOURCE_IS: { label: 'Source' },
 };
 
-/** Graphite's PR statuses as GitHub's states: 1 open and ready, 2 open draft, 4 merged, 8 closed unmerged. */
-const PR_STATES: Record<string, number> = { OPEN: 0b0001, DRAFT: 0b0010, MERGING: 0b0011, MERGED: 0b0100, CLOSED: 0b1000 };
+/**
+ * Graphite's PR statuses as GitHub's states: 1 open and ready, 2 open draft, 4 merged, 8 closed unmerged. Open holds
+ * drafts (Graphite's Drafts section is "Open and Draft"); Merging, Graphite's merge queue, has no state of its own.
+ */
+const PR_STATES: Record<string, number> = { OPEN: 0b0011, DRAFT: 0b0010, MERGED: 0b0100, CLOSED: 0b1000 };
 
 /** The search terms selecting each set of states that one GitHub search can select (open-or-merged only roughly). */
 const STATE_TERMS: Record<number, string[]> = {
@@ -356,22 +430,12 @@ const STATE_TERMS: Record<number, string[]> = {
   0b0010: ['is:open', 'draft:true'],
   0b0011: ['is:open'],
   0b0100: ['is:merged'],
-  0b1000: ['is:closed', 'is:unmerged'],
+  0b1000: ['is:closed', '-is:merged'],
   0b1100: ['is:closed'],
   0b1011: ['-is:merged'],
   0b1101: ['draft:false'],
   0b0111: ['is:open'],
   0b1111: [],
-};
-
-const REVIEW_TERMS: Record<string, string> = {
-  ONE_OR_MORE_APPROVALS: 'review:approved',
-  IS_FULLY_APPROVED: 'review:approved',
-  APPROVED_GITHUB: 'review:approved',
-  HAS_CHANGES_REQUESTED: 'review:changes_requested',
-  HAS_UNADDRESSED_CHANGES_REQUESTED: 'review:changes_requested',
-  REVIEW_REQUIRED_GITHUB: 'review:required',
-  HAS_ONE_OR_MORE_REQUESTED_REVIEWERS: 'review:required',
 };
 
 /**

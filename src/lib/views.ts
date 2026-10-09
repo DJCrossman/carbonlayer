@@ -58,15 +58,34 @@ export function decodeViewsShareHash(hash: string): View[] | null {
   }
 }
 
-/** Resolves `{{7d}}`-style relative dates and prepends the global scope, producing the query GitHub sees.
- *  `inbox:<filter>` views are returned unchanged (GitHub scopes them with its own repo picker). */
+/**
+ * The query GitHub sees: `{{7d}}`-style relative times resolved to the moment that long before `now`, and the inbox
+ * scope prepended. `inbox:<filter>` views are returned unchanged (GitHub scopes them with its own repo picker).
+ */
 export function resolveViewQuery(view: View, scope: string, now = new Date()): string {
   if (inboxFilterOf(view)) return view.query.trim();
-  const resolved = view.query.replace(/\{\{(\d+)d\}\}/g, (_, days: string) => {
-    const date = new Date(now.getTime() - Number(days) * 86_400_000);
-    return date.toISOString().slice(0, 10);
-  });
-  return [scope.trim(), resolved.trim()].filter(Boolean).join(' ');
+  // GitHub's dashboard search ANDs repeated repo: terms (no pull request is in two repositories), so bare ones, as
+  // earlier imports and hand-written scopes have them, mean any of them.
+  const anyRepository = (text: string) => {
+    const terms = text.trim().split(/\s+/);
+    const repos = terms.filter((term) => /^repo:[^\s()]+$/.test(term));
+    if (repos.length < 2) return text.trim();
+    const rest = terms.filter((term) => !repos.includes(term));
+    rest.splice(terms.indexOf(repos[0]!), 0, `(${repos.join(' OR ')})`);
+    return rest.join(' ');
+  };
+  // A date alone counts the whole day: "merged in the last 7 days" needs the time too.
+  const resolved = view.query.replace(/\{\{(\d+)d\}\}/g, (_, days: string) => `${new Date(now.getTime() - Number(days) * 86_400_000).toISOString().slice(0, 19)}Z`);
+  return [anyRepository(scope), anyRepository(resolved)].filter(Boolean).join(' ');
+}
+
+/**
+ * The search scope selecting pull requests in any of these repositories. GitHub's dashboard search ANDs repeated
+ * `repo:` terms, so several are one `(repo:a OR repo:b)`.
+ */
+export function repositoryScope(repos: Array<{ owner: string; name: string }>): string {
+  const terms = repos.map((repo) => `repo:${repo.owner}/${repo.name}`);
+  return terms.length > 1 ? `(${terms.join(' OR ')})` : (terms[0] ?? '');
 }
 
 export function isView(value: unknown): value is View {

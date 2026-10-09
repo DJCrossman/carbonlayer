@@ -66,13 +66,17 @@ extension installed offers to import (replace or append).
 Importing from Graphite (`src/lib/graphite.ts`, UI in `src/inbox/GraphiteImport.tsx` on the inbox's "Import from
 Graphite…" dialog and the options page): "Copy my sections from Graphite" reads every section straight out of the
 signed-in Graphite inbox (flow above), and pasted `?new-section=` / `?shared-sections=` links or their JSON work too.
-Each section becomes one view: a rule's conditions are ORed (repeated `author:`, comma-separated `label:`, a set of PR
-states), rules are ANDed, `isNegated` negates a rule, the viewer's own login and `<REPLACE_USERNAME>` become `@me`, and
-groups that repeat or only narrow another are dropped before the rest are ORed as `((g1) OR (g2))` (GitHub's dashboard
-search accepts that; above five operators the section splits into numbered views). Sections on the inbox's default
-repositories carry no `repo:` terms; the dialog offers to set the inbox scope to those repositories instead. What the
-search only approximates (`reviewed-by:` for approvers, `is:open` for Merging) or cannot express (file and line counts,
-forks, source, some review states) is listed as notes under each view. See `docs/research/graphite-sections.md`.
+Each section becomes one view, mapped as the "Verified mapping" in `docs/research/graphite-sections.md` says (checked
+section by section against the user's live Graphite inbox): rules are ANDed, a rule's conditions ORed (`(author:a OR
+author:b)`, a comma-separated `label:`), `isNegated` negates a rule, a rule only several alternatives express (Review
+status "has an active review") spreads over its group, alternatives that contradict themselves go, and the viewer's own
+login and `<REPLACE_USERNAME>` become `@me`. Groups and alternatives that repeat or only narrow another are dropped before
+the rest are ORed as `((g1) OR (g2))` (GitHub's dashboard search accepts that; above five operators the section splits
+into numbered views). A positive rule GitHub cannot search for (Merging, counts, forks, source, some review states)
+drops its group, a negated one only itself, each with a note under the view. Several repositories are always one
+`(repo:a OR repo:b)`: the dashboard search ANDs repeated `repo:` terms. Sections on the inbox's default repositories
+carry no `repo:` terms; the dialog offers to set the inbox scope to those repositories instead. Relative times
+(`{{7d}}`) resolve to an ISO timestamp, not a date. See `docs/research/graphite-sections.md`.
 
 ## Verification
 

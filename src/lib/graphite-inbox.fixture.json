@@ -1,0 +1,259 @@
+{
+  "sections": [
+    {
+      "name": "Needs your review",
+      "filter": {
+        "kind": "OR",
+        "exprs": [
+          {
+            "kind": "AND",
+            "exprs": [
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "AUTHOR_IS", "username": "DJCrossman"}]}},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "DRAFT"}, {"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "MERGING"}]}},
+              {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "OPEN"}]},
+              {"kind": "OR", "exprs": [{"kind": "OPEN_REVIEW_REQUEST_FOR", "username": "DJCrossman"}]},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "REVIEW_STATUS_IS", "state": "HAS_UNADDRESSED_CHANGES_REQUESTED"}]}},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "REVIEW_STATUS_IS", "state": "IS_FULLY_APPROVED"}]}}
+            ]
+          },
+          {
+            "kind": "AND",
+            "exprs": [
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "AUTHOR_IS", "username": "DJCrossman"}]}},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "DRAFT"}, {"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "MERGING"}]}},
+              {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "OPEN"}]},
+              {"kind": "OR", "exprs": [{"kind": "OPEN_REVIEW_REQUEST_FOR", "username": "DJCrossman"}]},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "REVIEW_STATUS_IS", "state": "HAS_UNADDRESSED_CHANGES_REQUESTED"}]}},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "REVIEW_STATUS_IS", "state": "ONE_OR_MORE_APPROVALS"}]}}
+            ]
+          },
+          {
+            "kind": "AND",
+            "exprs": [
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "AUTHOR_IS", "username": "DJCrossman"}]}},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "DRAFT"}, {"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "MERGING"}]}},
+              {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "OPEN"}]},
+              {"kind": "OR", "exprs": [{"kind": "REOPENED_REVIEW_REQUEST_FOR", "username": "DJCrossman"}]},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "REVIEW_STATUS_IS", "state": "HAS_UNADDRESSED_CHANGES_REQUESTED"}]}}
+            ]
+          }
+        ]
+      },
+      "repos": [],
+      "usesDefaultRepos": true,
+      "includeInTotalCount": true
+    },
+    {
+      "name": "Returned to you",
+      "filter": {
+        "kind": "OR",
+        "exprs": [
+          {
+            "kind": "AND",
+            "exprs": [
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "DRAFT"}, {"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "MERGING"}]}},
+              {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "OPEN"}]},
+              {"kind": "OR", "exprs": [{"kind": "AUTHOR_IS", "username": "DJCrossman"}]},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "REVIEW_STATUS_IS", "state": "IS_FULLY_APPROVED"}]}},
+              {"kind": "OR", "exprs": [{"kind": "REVIEW_STATUS_IS", "state": "HAS_ACTIVE_REVIEW"}]}
+            ]
+          },
+          {
+            "kind": "AND",
+            "exprs": [
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "DRAFT"}, {"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "MERGING"}]}},
+              {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "OPEN"}]},
+              {"kind": "OR", "exprs": [{"kind": "AUTHOR_IS", "username": "DJCrossman"}]},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "REVIEW_STATUS_IS", "state": "ONE_OR_MORE_APPROVALS"}]}},
+              {"kind": "OR", "exprs": [{"kind": "REVIEW_STATUS_IS", "state": "HAS_ACTIVE_REVIEW"}]}
+            ]
+          },
+          {
+            "kind": "AND",
+            "exprs": [
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "DRAFT"}, {"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "MERGING"}]}},
+              {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "OPEN"}]},
+              {"kind": "OR", "exprs": [{"kind": "AUTHOR_IS", "username": "DJCrossman"}]},
+              {"kind": "OR", "exprs": [{"kind": "REVIEW_STATUS_IS", "state": "HAS_UNADDRESSED_CHANGES_REQUESTED"}]}
+            ]
+          }
+        ]
+      },
+      "repos": [],
+      "usesDefaultRepos": true,
+      "includeInTotalCount": true
+    },
+    {
+      "name": "Approved",
+      "filter": {
+        "kind": "OR",
+        "exprs": [
+          {
+            "kind": "AND",
+            "exprs": [
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "DRAFT"}, {"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "MERGING"}]}},
+              {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "OPEN"}]},
+              {"kind": "OR", "exprs": [{"kind": "AUTHOR_IS", "username": "DJCrossman"}]},
+              {"kind": "OR", "exprs": [{"kind": "REVIEW_STATUS_IS", "state": "ONE_OR_MORE_APPROVALS"}]},
+              {"kind": "OR", "exprs": [{"kind": "REVIEW_STATUS_IS", "state": "IS_FULLY_APPROVED"}]},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "REVIEW_STATUS_IS", "state": "HAS_UNADDRESSED_CHANGES_REQUESTED"}]}}
+            ]
+          }
+        ]
+      },
+      "repos": [],
+      "usesDefaultRepos": true,
+      "includeInTotalCount": true
+    },
+    {
+      "name": "Waiting for reviewers",
+      "filter": {
+        "kind": "OR",
+        "exprs": [
+          {
+            "kind": "AND",
+            "exprs": [
+              {"kind": "OR", "exprs": [{"kind": "AUTHOR_IS", "username": "DJCrossman"}]},
+              {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "OPEN"}]},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "DRAFT"}, {"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "MERGING"}]}},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "REVIEW_STATUS_IS", "state": "HAS_ACTIVE_REVIEW"}]}},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "REVIEW_STATUS_IS", "state": "IS_FULLY_APPROVED"}]}}
+            ]
+          },
+          {
+            "kind": "AND",
+            "exprs": [
+              {"kind": "OR", "exprs": [{"kind": "AUTHOR_IS", "username": "DJCrossman"}]},
+              {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "OPEN"}]},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "DRAFT"}, {"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "MERGING"}]}},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "REVIEW_STATUS_IS", "state": "HAS_ACTIVE_REVIEW"}]}},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "REVIEW_STATUS_IS", "state": "ONE_OR_MORE_APPROVALS"}]}}
+            ]
+          }
+        ]
+      },
+      "repos": [],
+      "usesDefaultRepos": true,
+      "includeInTotalCount": true
+    },
+    {
+      "name": "Drafts",
+      "filter": {
+        "kind": "OR",
+        "exprs": [
+          {
+            "kind": "AND",
+            "exprs": [
+              {"kind": "OR", "exprs": [{"kind": "AUTHOR_IS", "username": "DJCrossman"}]},
+              {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "OPEN"}]},
+              {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "DRAFT"}]},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "MERGING"}]}}
+            ]
+          }
+        ]
+      },
+      "repos": [],
+      "usesDefaultRepos": true,
+      "includeInTotalCount": true
+    },
+    {
+      "name": "Waiting for POMS reviewers",
+      "filter": {
+        "kind": "OR",
+        "exprs": [
+          {
+            "kind": "AND",
+            "exprs": [
+              {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "OPEN"}]},
+              {"kind": "OR", "exprs": [{"kind": "AUTHOR_IS", "username": "reid112"}, {"kind": "AUTHOR_IS", "username": "KBaldwin2"}, {"kind": "AUTHOR_IS", "username": "Patrick-Ullrich"}, {"kind": "AUTHOR_IS", "username": "puttputt"}]},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "REVIEW_STATUS_IS", "state": "ONE_OR_MORE_APPROVALS"}]}},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "DRAFT"}]}}
+            ]
+          }
+        ]
+      },
+      "repos": [],
+      "usesDefaultRepos": true,
+      "includeInTotalCount": true
+    },
+    {
+      "name": "Needs anyone's review",
+      "filter": {
+        "kind": "OR",
+        "exprs": [
+          {
+            "kind": "AND",
+            "exprs": [
+              {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "OPEN"}]},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "AUTHOR_IS", "username": "dependabot"}, {"kind": "AUTHOR_IS", "username": "DJCrossman"}]}},
+              {"kind": "OR", "exprs": [{"kind": "REVIEW_STATUS_IS", "state": "REVIEW_REQUIRED_GITHUB"}]}
+            ]
+          }
+        ]
+      },
+      "repos": [],
+      "usesDefaultRepos": true,
+      "includeInTotalCount": true
+    },
+    {
+      "name": "Merging and recently merged",
+      "filter": {
+        "kind": "OR",
+        "exprs": [
+          {
+            "kind": "AND",
+            "exprs": [
+              {"kind": "OR", "exprs": [{"kind": "AUTHOR_IS", "username": "DJCrossman"}]},
+              {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "MERGING"}]},
+              {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "OPEN"}]}
+            ]
+          },
+          {
+            "kind": "AND",
+            "exprs": [
+              {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "MERGED"}]},
+              {"kind": "OR", "exprs": [{"kind": "LAST_UPDATED", "hours": 168}]}
+            ]
+          }
+        ]
+      },
+      "repos": [],
+      "usesDefaultRepos": true,
+      "includeInTotalCount": true
+    },
+    {
+      "name": "Waiting for author",
+      "filter": {
+        "kind": "OR",
+        "exprs": [
+          {
+            "kind": "AND",
+            "exprs": [
+              {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "OPEN"}]},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "DRAFT"}, {"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "MERGING"}]}},
+              {"kind": "OR", "exprs": [{"kind": "CLOSED_REVIEW_REQUEST_FROM", "username": "DJCrossman"}]},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "AUTHOR_IS", "username": "DJCrossman"}]}}
+            ]
+          },
+          {
+            "kind": "AND",
+            "exprs": [
+              {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "OPEN"}]},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "DRAFT"}, {"kind": "CONSOLIDATED_PR_STATUS_IS", "status": "MERGING"}]}},
+              {"kind": "OR", "exprs": [{"kind": "APPROVED_BY", "username": "DJCrossman"}]},
+              {"kind": "NOT", "expr": {"kind": "OR", "exprs": [{"kind": "REOPENED_REVIEW_REQUEST_FOR", "username": "DJCrossman"}]}}
+            ]
+          }
+        ]
+      },
+      "repos": [],
+      "usesDefaultRepos": true,
+      "includeInTotalCount": true
+    }
+  ],
+  "defaultRepos": [
+    {"owner": "acme", "name": "web"},
+    {"owner": "acme", "name": "api"}
+  ],
+  "viewerLogin": "DJCrossman"
+}
