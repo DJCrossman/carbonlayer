@@ -113,3 +113,35 @@ is prepended as plain text. Groups that repeat or only add terms to another grou
 most five AND / OR / NOT operators in a query; past that a section is split into one view per group. A group's PR-status
 rules are intersected as one set of states (so `is:open` and `is:closed` never meet), and "is not Merging" excludes
 nothing: Graphite's merge queue is part of GitHub's open.
+
+## Verified mapping (2026-10-09, compared section by section against the user's live Graphite inbox and GitHub's dashboard search)
+
+GitHub's dashboard search (`/pulls/search?q=`) uses the advanced syntax: repeated `repo:` terms are ANDed (→ 0
+results), so several repositories must be written `(repo:a OR repo:b OR repo:c)`; parentheses and `OR` work.
+
+| Graphite | GitHub search | Evidence |
+|---|---|---|
+| `CONSOLIDATED_PR_STATUS_IS: OPEN` | `is:open` (**includes drafts**: Graphite's Drafts section is "Open AND Draft") | Drafts section 9/9 with `is:open draft:true author:@me` |
+| `DRAFT` / NOT DRAFT | `draft:true` / `draft:false` | same |
+| `MERGING` | no equivalent: positive → drop the whole group (note); negated → nothing | "Merging and recently merged" group 1 |
+| `MERGED` | `is:merged` | |
+| `CLOSED` | `is:closed -is:merged` | |
+| `AUTHOR_IS` a \| b (one rule) | `(author:a OR author:b)`; negated: `-author:a -author:b`; `dependabot` → also `-author:app/dependabot` | "Waiting for POMS reviewers" 1/1 |
+| `OPEN_REVIEW_REQUEST_FOR` me, `REOPENED_REVIEW_REQUEST_FOR` me | `review-requested:@me` (negated `-review-requested:@me`) | |
+| `CLOSED_REVIEW_REQUEST_FROM` me | `reviewed-by:@me -review-requested:@me` | |
+| `APPROVED_BY` me | `reviewed-by:@me -author:@me` | "Waiting for author" 5/5 once `-author:@me` is added |
+| `REVIEW_STATUS_IS: IS_FULLY_APPROVED` / `ONE_OR_MORE_APPROVALS` / `APPROVED_GITHUB` | `review:approved` | "Approved" 4/4 |
+| `HAS_UNADDRESSED_CHANGES_REQUESTED` / `HAS_CHANGES_REQUESTED` | `review:changes_requested` | |
+| `REVIEW_REQUIRED_GITHUB` | **`review:none`** (not `review:required`: 18/18 vs 12/18) with `draft:false` | "Needs anyone's review" |
+| `HAS_ACTIVE_REVIEW` | positive: `(review:approved OR review:changes_requested)` (an alternative, distributed over the group); negated: `-review:approved -review:changes_requested` | "Waiting for reviewers" 2/2 |
+| `HAS_ONE_OR_MORE_REQUESTED_REVIEWERS`, `HAS_REREQUESTED_REVIEW` | unsupported | |
+| `LAST_UPDATED: h` (less than) | with `MERGED` in the group: `merged:>={{Nd}}`; else `updated:>={{Nd}}`; `{{Nd}}` must resolve to an ISO timestamp (`2026-10-02T14:40:00Z`), not a date — a date-only window over-counts (161 vs 141) | "Merging and recently merged" |
+
+The user's 9 sections (their server-form filters) are the fixture to keep green: Needs your review (3 groups → one query
+`-author:@me is:open draft:false review-requested:@me -review:changes_requested`), Returned to you, Approved, Waiting for
+reviewers, Drafts, Waiting for POMS reviewers, Needs anyone's review, Merging and recently merged, Waiting for author.
+
+## GitHub's repository picker
+`GET /repositories/picker/search?q=<text>` (same-origin, signed in; the dashboard sends `q=contributed-by:@me` on open)
+returns the repositories the picker lists; each item is `{ id, nodeId, name, ownerLogin, visibility }`. Shape of the
+envelope unconfirmed (parse tolerantly: an array, or `{ repositories }`/`{ items }`).
