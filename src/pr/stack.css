@@ -1,0 +1,92 @@
+/* Stack card: a rail with one dot per PR; the current PR's dot is filled. */
+
+.stack-card { margin-bottom: 16px; }
+
+.stack-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--gg-radius);
+  background: none;
+  color: var(--gg-fg);
+  font: 600 13px var(--gg-font);
+  text-align: left;
+  cursor: pointer;
+}
+.stack-header:hover { background: var(--gg-bg-hover); }
+
+.stack-rail {
+  position: relative;
+  margin: 0;
+  padding: 2px 0 6px;
+  list-style: none;
+  border-top: 1px solid var(--gg-border-muted);
+}
+/* The rail runs through the dots, from the tip down to trunk. */
+.stack-rail::before {
+  content: '';
+  position: absolute;
+  left: 17px;
+  top: 16px;
+  bottom: 18px;
+  width: 2px;
+  background: var(--gg-border);
+}
+
+.stack-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 10px 0 12px;
+}
+.stack-row.is-current { background: var(--gg-bg-selected); }
+.stack-row.is-merged .stack-title { color: var(--gg-fg-muted); }
+
+.stack-dot {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--gg-fg-subtle);
+  border-radius: 50%;
+  background: var(--gg-bg);
+}
+.stack-row.is-current .stack-dot { border-color: var(--gg-accent); background: var(--gg-accent); }
+.stack-row.is-merged .stack-dot { border-color: var(--gg-done); background: var(--gg-done); }
+.stack-row.is-trunk .stack-dot { border-radius: 3px; border-color: var(--gg-fg-muted); background: var(--gg-fg-muted); }
+.stack-row.is-trunk { color: var(--gg-fg-muted); gap: 8px; }
+
+.stack-number {
+  flex: none;
+  min-width: 28px;
+  font-variant-numeric: tabular-nums;
+}
+.stack-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--gg-fg);
+}
+a.stack-title:hover { color: var(--gg-accent); }
+.stack-row.is-current .stack-title { font-weight: 600; }
+
+.stack-status {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.stack-status > span { display: inline-flex; }
+.stack-comments { align-items: center; gap: 3px; }
+.stack-status .gg-time { min-width: 52px; text-align: right; }

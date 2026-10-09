@@ -1,0 +1,113 @@
+/* Activity timeline. Cards for comments and reviews, one grey line per event, a thin rail behind them. */
+
+.pr-activity { margin-top: 24px; }
+
+.timeline {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 15px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--gg-border-muted);
+}
+.timeline > li { position: relative; }
+.timeline > li + li { margin-top: 8px; }
+
+.timeline-card {
+  padding: 8px 12px;
+  border: 1px solid var(--gg-border);
+  border-radius: var(--gg-radius);
+  background: var(--gg-bg);
+}
+.timeline-card.is-review.is-approved { border-left: 3px solid var(--gg-success); }
+.timeline-card.is-review.is-changes-requested { border-left: 3px solid var(--gg-danger); }
+
+.review-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.review-badge.is-success { background: var(--gg-success-bg); color: var(--gg-success); }
+.review-badge.is-danger { background: var(--gg-danger-bg); color: var(--gg-danger); }
+.review-badge.is-neutral { background: var(--gg-neutral-bg); color: var(--gg-fg-muted); }
+.review-badge.is-attention { background: var(--gg-attention-bg); color: var(--gg-attention); }
+
+.timeline-threads {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--gg-accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.timeline-threads:hover { text-decoration: underline; }
+
+.timeline-commits {
+  padding: 2px 0 2px 9px;
+}
+.timeline-commit,
+.timeline-event {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  color: var(--gg-fg-muted);
+}
+.timeline-commit > .gg-icon,
+.timeline-event > .gg-icon {
+  position: relative;
+  z-index: 1;
+  padding: 2px;
+  border-radius: 50%;
+  background: var(--gg-bg);
+}
+.timeline-commit-message {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--gg-fg);
+}
+.timeline-event { padding-left: 7px; }
+.timeline-event strong { color: var(--gg-fg); font-weight: 600; }
+.timeline-event .gg-time::before,
+.timeline-commit .gg-time::before { content: '· '; }
+
+.timeline-composer {
+  margin-top: 16px;
+  padding: 10px;
+  border: 1px solid var(--gg-border);
+  border-radius: var(--gg-radius);
+  background: var(--gg-bg-subtle);
+}
+.timeline-composer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 12px;
+}
+.timeline-composer-actions .gg-kbd,
+.gg-btn.is-primary .gg-kbd,
+.gg-btn.is-merge .gg-kbd {
+  border-color: rgba(255, 255, 255, 0.4);
+  background: transparent;
+  color: inherit;
+}

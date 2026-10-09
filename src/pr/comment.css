@@ -1,0 +1,13 @@
+/* A GitHub comment: author line, then GitHub's Markdown. */
+
+.pr-comment-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  flex-wrap: wrap;
+}
+.pr-comment-header + .markdown-body { margin-top: 6px; }
+.pr-comment.is-compact .pr-comment-header + .markdown-body { margin-top: 4px; }
+.pr-comment-time { color: inherit; }
+.pr-comment-time:hover .gg-time { text-decoration: underline; }

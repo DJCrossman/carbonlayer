@@ -1,0 +1,237 @@
+/* Files section. The toolbar is 40px tall and sticky at the top; the tree and the diff file headers stick
+   just below it (STICKY_TOP in Files.tsx). */
+
+.pr-files {
+  min-width: 0;
+  margin-top: 8px;
+  scroll-margin-top: 0;
+}
+
+.files-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  box-sizing: border-box;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 2px;
+  border-bottom: 1px solid var(--gg-border);
+  background: var(--gg-bg);
+}
+.files-toolbar-spacer { flex: 1; }
+.files-tree-toggle.is-active { color: var(--gg-fg); background: var(--gg-bg-hover); }
+
+.files-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--gg-fg-muted);
+  font-size: 12px;
+}
+.files-progress-bar {
+  position: relative;
+  width: 72px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--gg-bg-inset);
+  overflow: hidden;
+}
+.files-progress-bar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--gg-success);
+  transition: width 0.2s ease;
+}
+
+.files-segmented {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--gg-border);
+  border-radius: var(--gg-radius);
+  background: var(--gg-bg-subtle);
+}
+.files-segmented button {
+  height: 20px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--gg-fg-muted);
+  font: 500 12px var(--gg-font);
+  cursor: pointer;
+}
+.files-segmented button.is-active {
+  background: var(--gg-bg);
+  color: var(--gg-fg);
+  box-shadow: 0 0 0 1px var(--gg-border);
+}
+
+.files-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding-top: 10px;
+}
+.files-body.has-tree { grid-template-columns: 240px minmax(0, 1fr); }
+
+/* File tree */
+.file-tree {
+  position: sticky;
+  top: 50px;
+  max-height: calc(100vh - 60px);
+  overflow: auto;
+  font-size: 12.5px;
+}
+.file-tree ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.file-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  height: 24px;
+  padding-right: 6px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--gg-fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.file-tree-row:hover { background: var(--gg-bg-hover); }
+.file-tree-row.is-current { background: var(--gg-bg-selected); }
+.file-tree-row.is-dir { color: var(--gg-fg-muted); }
+.file-tree-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-tree-threads {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--gg-attention);
+  font-size: 11px;
+}
+.file-tree-stat {
+  display: inline-flex;
+  gap: 4px;
+  font: 11px var(--gg-font-mono);
+}
+.file-tree-viewed { width: 12px; color: transparent; }
+.file-tree-viewed.is-viewed { color: var(--gg-success); }
+
+.file-status {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  font: 700 9px/1 var(--gg-font-mono);
+  color: #fff;
+  background: var(--gg-attention);
+}
+.file-status.is-added { background: var(--gg-success); }
+.file-status.is-removed { background: var(--gg-danger); }
+.file-status.is-renamed,
+.file-status.is-copied { background: var(--gg-accent); }
+:root[data-theme='dark'] .file-status { color: var(--gg-bg); }
+
+/* Diff cards */
+.files-diffs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.file-card {
+  /* No overflow clipping here: it would break the sticky file header inside the diff. */
+  border: 1px solid var(--gg-border);
+  border-radius: var(--gg-radius);
+  background: var(--gg-bg);
+  scroll-margin-top: 50px;
+  --diffs-font-family: var(--gg-font-mono);
+  --diffs-header-font-family: var(--gg-font);
+  --diffs-font-size: 12px;
+  --diffs-line-height: 20px;
+}
+.file-card.is-current { border-color: var(--gg-accent); box-shadow: 0 0 0 1px var(--gg-accent); }
+.file-card diffs-container { display: block; border-radius: var(--gg-radius); }
+
+.file-collapse {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--gg-fg-muted);
+  cursor: pointer;
+}
+.file-collapse:hover { background: var(--gg-bg-hover); color: var(--gg-fg); }
+
+.file-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--gg-font);
+  font-size: 12px;
+}
+.file-comments {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--gg-fg-muted);
+}
+.file-viewed {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px 0 6px;
+  border: 1px solid var(--gg-border);
+  border-radius: var(--gg-radius);
+  color: var(--gg-fg-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+}
+.file-viewed input { margin: 0; accent-color: var(--gg-success); }
+.file-viewed.is-checked { border-color: color-mix(in srgb, var(--gg-success) 45%, var(--gg-border)); background: var(--gg-success-bg); color: var(--gg-success); }
+
+.file-stub-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--gg-border-muted);
+  background: var(--gg-bg-subtle);
+  border-radius: var(--gg-radius) var(--gg-radius) 0 0;
+}
+.file-stub-name { font: 600 12.5px var(--gg-font); }
+.file-stub-body {
+  padding: 18px 12px;
+  color: var(--gg-fg-muted);
+  text-align: center;
+}
+
+@media (max-width: 1100px) {
+  .files-body.has-tree { grid-template-columns: minmax(0, 1fr); }
+  .file-tree,
+  .files-tree-toggle { display: none; }
+}

@@ -1,0 +1,101 @@
+/* Notes rendered inside the diff: threads, pending comments, the inline composer. They are slotted into
+   the diff's shadow root as light-DOM children, so page styles and tokens apply. */
+
+.diff-note {
+  margin: 6px 10px 6px 12px;
+  padding: 8px 10px;
+  max-width: 760px;
+  border: 1px solid var(--gg-border);
+  border-radius: var(--gg-radius);
+  background: var(--gg-bg);
+  box-shadow: var(--gg-shadow);
+  font-family: var(--gg-font);
+  font-size: var(--gg-font-size);
+  line-height: var(--gg-line-height);
+  color: var(--gg-fg);
+  white-space: normal;
+}
+.diff-note.is-collapsed {
+  padding: 0;
+  border-style: dashed;
+  background: var(--gg-bg-subtle);
+}
+.diff-note.is-resolved { background: var(--gg-bg-subtle); }
+.diff-note.is-pending { border-color: color-mix(in srgb, var(--gg-attention) 50%, var(--gg-border)); background: var(--gg-attention-bg); }
+.diff-note.is-composer { border-color: var(--gg-accent); }
+.diff-note.is-current { box-shadow: 0 0 0 2px color-mix(in srgb, var(--gg-accent) 45%, transparent); }
+
+.diff-note-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 10px;
+  border: 0;
+  background: none;
+  color: var(--gg-fg-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.diff-note-show { color: var(--gg-accent); }
+.diff-note-summary:hover .diff-note-show { text-decoration: underline; }
+
+.diff-note-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--gg-attention-bg);
+  color: var(--gg-attention);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gg-attention) 40%, transparent);
+  font-size: 11px;
+  font-weight: 600;
+}
+.diff-note-tag.is-pending { background: var(--gg-bg); }
+
+.diff-note-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.diff-note-pending-body {
+  flex: 1;
+  white-space: pre-wrap;
+  padding-top: 1px;
+}
+
+.diff-note-outdated {
+  margin-bottom: 8px;
+}
+.diff-note-outdated pre {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  overflow-x: auto;
+  border-radius: 4px;
+  background: var(--gg-bg-inset);
+  color: var(--gg-fg-muted);
+  font: 11.5px/1.45 var(--gg-font-mono);
+}
+
+.diff-note .pr-comment + .pr-comment {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--gg-border-muted);
+}
+
+.diff-note-reply {
+  margin-top: 8px;
+}
+.diff-note-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 6px;
+}
+.diff-note-actions .gg-kbd {
+  border-color: rgba(255, 255, 255, 0.4);
+  background: transparent;
+  color: inherit;
+}

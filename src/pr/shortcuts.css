@@ -1,0 +1,70 @@
+/* Shortcut legend (fixed to the bottom of the viewport) and the help overlay. */
+
+.shortcut-legend {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 28px;
+  padding: 0 12px;
+  border-top: 1px solid var(--gg-border);
+  background: var(--gg-bg-subtle);
+  color: var(--gg-fg-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.shortcut-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.shortcut-legend-item.is-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.shortcut-legend-item.is-button:hover { color: var(--gg-fg); }
+.shortcut-legend-hide {
+  margin-left: auto;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--gg-fg-muted);
+  cursor: pointer;
+}
+.shortcut-legend-hide:hover { background: var(--gg-bg-hover); color: var(--gg-fg); }
+
+.chord-keys {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.shortcut-help { width: 460px; }
+.shortcut-list {
+  margin: 10px 0 12px;
+  columns: 1;
+}
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 26px;
+  border-bottom: 1px solid var(--gg-border-muted);
+}
+.shortcut-row:last-child { border-bottom: 0; }
+.shortcut-row dt { color: var(--gg-fg); }
+.shortcut-row dd { margin: 0; }
