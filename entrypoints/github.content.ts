@@ -1,7 +1,7 @@
 // Content script on github.com: recognises the inbox and PR routes, hides GitHub's page content below its header,
 // shows app.html there in an iframe, and bridges theme, keystrokes, titles and navigation (src/app/bridge.ts). It also
-// answers the app's data requests (src/lib/rpc.ts) with the user's github.com session. `?gh=1` or a disabled setting
-// leaves GitHub untouched.
+// answers the app's data requests (src/lib/rpc.ts) with the user's github.com session. `?gh=1` leaves GitHub untouched
+// for one visit; a disabled setting leaves it untouched and offers a "Graphite view" button that switches back.
 import { browser } from 'wxt/browser';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { createIframeUi } from 'wxt/utils/content-script-ui/iframe';
@@ -10,7 +10,7 @@ import { isBridgeMessage, type AppToParentMessage, type ParentToAppMessage } fro
 import { parseGitHubLocation, toAppHash, type AppRoute } from '../src/app/routes';
 import { handleRpc } from '../src/lib/github-web';
 import { isRpcRequest, type RpcResponse } from '../src/lib/rpc';
-import { getSettings, watchSettings } from '../src/lib/settings';
+import { getSettings, setSettings, watchSettings } from '../src/lib/settings';
 
 export default defineContentScript({
   matches: ['https://github.com/*'],
@@ -19,6 +19,7 @@ export default defineContentScript({
   async main(ctx) {
     let settings = await getSettings();
     let takeover: ReturnType<typeof takeOverPage> | null = null;
+    let graphiteViewButton: HTMLElement | null = null;
 
     // WXT reports navigations through the Navigation API before they commit, and none to the URL already shown, so
     // the destination comes from the event; settings changes use the committed location.
@@ -34,6 +35,14 @@ export default defineContentScript({
       } else {
         takeover = takeOverPage(ctx, route);
       }
+      // GitHub's own page by choice: offer the way back, on this surface only.
+      const switchedOff = (route.page === 'inbox' && !settings.inboxEnabled) || (route.page === 'pr' && !settings.prEnabled);
+      if (!switchedOff) {
+        graphiteViewButton?.remove();
+        graphiteViewButton = null;
+      } else {
+        graphiteViewButton ??= offerGraphiteView();
+      }
     };
 
     sync(new URL(location.href));
@@ -46,6 +55,8 @@ export default defineContentScript({
       unwatchSettings();
       takeover?.release();
       takeover = null;
+      graphiteViewButton?.remove();
+      graphiteViewButton = null;
     });
   },
 });
@@ -253,3 +264,56 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
 
 /** Keys the app binds, chord strokes included (inbox and PR page); GitHub keeps every other shortcut. */
 const APP_KEYS = new Set(['j', 'k', 'o', 'enter', 'r', '?', 'n', 'p', 'f', 's', 'v', 'e', 'g', 'c', 'a', 'y', 'd', 'h']);
+
+/**
+ * The way back from GitHub's own page, once the user chose it: a small "Graphite view" pill at the bottom right that
+ * switches this surface's takeover on again, which mounts the app in place. GitHub's colour variables make it fit
+ * either theme; a shadow root keeps GitHub's styles off it. Like the app, it sits on <html>, outside the <body> Turbo
+ * replaces.
+ */
+function offerGraphiteView(): HTMLElement {
+  const host = document.createElement('gg-graphite-view');
+  const shadow = host.attachShadow({ mode: 'closed' });
+  const style = document.createElement('style');
+  // Below GitHub's menus and dialogs (z-index 100+), like the app.
+  style.textContent = `
+    :host { position: fixed; right: 16px; bottom: 16px; z-index: 30; }
+    button {
+      display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px 0 10px; box-sizing: border-box;
+      border: 1px solid var(--borderColor-default, #d1d9e0); border-radius: 999px;
+      background: var(--bgColor-default, #ffffff); color: var(--fgColor-default, #1f2328);
+      box-shadow: var(--shadow-resting-medium, 0 1px 3px rgba(31, 35, 40, 0.12));
+      font: 500 12px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+      cursor: pointer;
+    }
+    button:hover { background: var(--bgColor-muted, #f6f8fa); }
+    button:focus-visible { outline: 2px solid var(--focus-outlineColor, #0969da); outline-offset: 2px; }
+    svg { flex: none; color: var(--fgColor-muted, #59636e); }
+  `;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.title = 'Show this page in Graphite-style GitHub';
+  // Octicons' stack (MIT), the app's own glyph for stacks.
+  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  icon.setAttribute('width', '14');
+  icon.setAttribute('height', '14');
+  icon.setAttribute('viewBox', '0 0 16 16');
+  icon.setAttribute('fill', 'currentColor');
+  icon.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute(
+    'd',
+    'M7.122.392a1.75 1.75 0 0 1 1.756 0l5.003 2.902c.83.481.83 1.68 0 2.162L8.878 8.358a1.75 1.75 0 0 1-1.756 0L2.119 5.456a1.251 1.251 0 0 1 0-2.162ZM8.125 1.69a.248.248 0 0 0-.25 0l-4.63 2.685 4.63 2.685a.248.248 0 0 0 .25 0l4.63-2.685ZM1.601 7.789a.75.75 0 0 1 1.025-.273l5.249 3.044a.248.248 0 0 0 .25 0l5.249-3.044a.75.75 0 0 1 .752 1.298l-5.248 3.044a1.75 1.75 0 0 1-1.756 0L1.874 8.814A.75.75 0 0 1 1.6 7.789Zm0 3.5a.75.75 0 0 1 1.025-.273l5.249 3.044a.248.248 0 0 0 .25 0l5.249-3.044a.75.75 0 0 1 .752 1.298l-5.248 3.044a1.75 1.75 0 0 1-1.756 0l-5.248-3.044a.75.75 0 0 1-.273-1.025Z',
+  );
+  icon.append(path);
+  button.append(icon, 'Graphite view');
+  button.addEventListener('click', () => {
+    // The settings watcher then mounts the app and removes this button.
+    const route = parseGitHubLocation(new URL(location.href));
+    if (route.page === 'inbox') void setSettings({ inboxEnabled: true });
+    if (route.page === 'pr') void setSettings({ prEnabled: true });
+  });
+  shadow.append(style, button);
+  document.documentElement.append(host);
+  return host;
+}

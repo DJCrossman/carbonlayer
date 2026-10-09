@@ -15,7 +15,7 @@ export type AppToParentMessage =
   /** Replace the top window's URL without reloading (stack navigation that the app handled itself). */
   | { type: 'gg:replace-url'; url: string }
   | { type: 'gg:title'; title: string }
-  /** Hand the page back to GitHub (the "GitHub view" escape hatch). */
+  /** Hand this visit back to GitHub (`?gh=1`, the PR page's `g h`); "Use GitHub's view" switches the setting off instead. */
   | { type: 'gg:open-native' };
 
 export const GITHUB_ORIGIN = 'https://github.com';

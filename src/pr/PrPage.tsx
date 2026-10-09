@@ -258,6 +258,11 @@ function PrView({
           onFinishReview={() => (review.open ? closeReview() : openReview(review.event))}
           onSetDraft={setDraft}
           onCopied={() => showToast('Link copied')}
+          onUseGitHubView={() =>
+            void source
+              .setSettings({ prEnabled: false })
+              .catch((reason: unknown) => showToast(`Could not switch to GitHub's view: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger'))
+          }
           reviewPopover={
             review.open && (
               <ReviewComposer
@@ -336,6 +341,7 @@ function PrHeader({
   onFinishReview,
   onSetDraft,
   onCopied,
+  onUseGitHubView,
   reviewPopover,
 }: {
   pr: PrDetail;
@@ -343,6 +349,7 @@ function PrHeader({
   onFinishReview: () => void;
   onSetDraft: (draft: boolean) => Promise<boolean>;
   onCopied: () => void;
+  onUseGitHubView: () => void;
   reviewPopover: ReactNode;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -368,10 +375,12 @@ function PrHeader({
           {pr.repo.owner}/{pr.repo.name} <span className="pr-header-number">#{pr.number}</span>
         </span>
         <span className="pr-header-spacer" />
-        <Button variant="ghost" onClick={() => openOnGitHub(pr.url)} title="Open on GitHub (g h)">
-          <Icon name="link-external" size={14} />
-          Open on GitHub
-        </Button>
+        {window.parent !== window && (
+          <Button variant="ghost" onClick={onUseGitHubView} title="Show GitHub's own page from now on; the Graphite view button at its bottom right switches back">
+            <Icon name="mark-github" size={14} />
+            Use GitHub's view
+          </Button>
+        )}
         <div className="pr-review-anchor">
           <Button variant="primary" onClick={onFinishReview} aria-expanded={Boolean(reviewPopover)} title="Finish review (r c)">
             Finish review

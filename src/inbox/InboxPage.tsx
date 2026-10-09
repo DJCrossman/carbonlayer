@@ -135,8 +135,14 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
               Configure
             </Button>
             {window.parent !== window && (
-              <Button variant="ghost" size="sm" icon="mark-github" title="Show GitHub's own page" onClick={() => postToParent({ type: 'gg:open-native' })}>
-                GitHub view
+              <Button
+                variant="ghost"
+                size="sm"
+                icon="mark-github"
+                title="Show GitHub's own page from now on; the Graphite view button at its bottom right switches back"
+                onClick={() => void inbox.saveSettings({ inboxEnabled: false })}
+              >
+                Use GitHub's view
               </Button>
             )}
             <Button variant="ghost" size="sm" icon="question" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)" onClick={() => setHelpOpen((open) => !open)} />
