@@ -26,7 +26,7 @@ describe('handleRpc', () => {
     expect(fetchInbox).toHaveBeenCalledTimes(2);
   });
 
-  it('forgets cached pages after a successful write, and reports failures as errors', async () => {
+  it('forgets cached pages after a successful write, reloads a forced read, and reports failures as errors', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({})));
     await call('pr.fetch', { repo: { owner: 'o', name: 'r' }, number: 1 });
     await call('pr.fetch', { repo: { owner: 'o', name: 'r' }, number: 1 });
@@ -34,6 +34,8 @@ describe('handleRpc', () => {
     expect(await call('pr.comment', { prId: 'PR_1', body: 'hi' })).toMatchObject({ ok: true });
     await call('pr.fetch', { repo: { owner: 'o', name: 'r' }, number: 1 });
     expect(fetchPullRequestPage).toHaveBeenCalledTimes(2);
+    await call('pr.fetch', { repo: { owner: 'o', name: 'r' }, number: 1, force: true });
+    expect(fetchPullRequestPage).toHaveBeenCalledTimes(3);
 
     expect(await call('pr.comment', { prId: 'PR_unknown', body: 'hi' })).toEqual({ kind: 'gg-rpc-result', id: 'req-1', ok: false, error: 'Open the pull request first' });
     expect(await call('nope' as RpcRequest['method'], {})).toMatchObject({ ok: false, error: 'Unknown request: nope' });

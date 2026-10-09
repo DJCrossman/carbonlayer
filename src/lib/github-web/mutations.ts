@@ -7,9 +7,7 @@ import type { MergeMethod, RpcMethods } from '../rpc';
 import type { MergeBox } from './merge-box';
 import { getJson, send } from './session';
 
-export type MutationMethod = Exclude<keyof RpcMethods, 'auth.status' | 'inbox.fetch' | 'pr.fetch'>;
-
-export const mutations: { [M in MutationMethod]: (args: RpcMethods[M]['args']) => Promise<undefined> } = {
+export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'pr.fetch'>]: (args: RpcMethods[M]['args']) => Promise<undefined> } = {
   'pr.review': async ({ prId, event, body, threads }) => {
     const pull = pullRequestFor(prId);
     // Batched inline comments join the viewer's pending review; submitting the review publishes them.
@@ -41,6 +39,8 @@ export const mutations: { [M in MutationMethod]: (args: RpcMethods[M]['args']) =
     await send(`${pull.path}/page_data/${resolved ? 'resolve_thread' : 'unresolve_thread'}`, 'POST', { threadId });
   },
   'pr.merge': async ({ prId, method, expectedHeadOid }) => {
+    // The app gives up on an answer after 60 s; stop waiting for a stack merge well before that.
+    const giveUpAt = Date.now() + 45_000;
     const pull = pullRequestFor(prId);
     // GitHub's merge request has no head guard, so check that nobody pushed since the page was loaded.
     const header = await getJson<{ pullRequest?: { headSha?: string } }>(`${pull.path}/page_data/header`);
@@ -60,7 +60,7 @@ export const mutations: { [M in MutationMethod]: (args: RpcMethods[M]['args']) =
       ...commit,
       bypassRules: 'false',
     });
-    if (queued.uuid) await stackMergeSettled(pull, queued.uuid, queued.status);
+    if (queued.uuid) await stackMergeSettled(pull, queued.uuid, queued.status, giveUpAt);
   },
   'pr.setAutoMerge': async ({ prId, enabled, method }) => {
     const pull = pullRequestFor(prId);
@@ -134,13 +134,12 @@ async function proposedMergeCommit(pull: KnownPullRequest, method: MergeMethod):
 }
 
 /**
- * Waits for a stack merge to be merged or queued, polling as GitHub's page does (1 s, backing off ×1.5). Gives up
- * waiting after 45 s, inside the app's 60 s request timeout; GitHub carries on merging regardless.
+ * Waits for a stack merge to be merged or queued, polling as GitHub's page does (1 s, backing off ×1.5), until
+ * `giveUpAt`; GitHub carries on merging regardless, and the refetch that follows shows where it got to.
  */
-async function stackMergeSettled(pull: KnownPullRequest, uuid: string, initialStatus: string | undefined): Promise<void> {
+async function stackMergeSettled(pull: KnownPullRequest, uuid: string, initialStatus: string | undefined, giveUpAt: number): Promise<void> {
   let status = initialStatus?.toLowerCase();
   let delay = 1000;
-  const giveUpAt = Date.now() + 45_000;
   while (status !== 'merged' && status !== 'enqueued') {
     if (Date.now() + delay > giveUpAt) return;
     await new Promise((resolve) => setTimeout(resolve, delay));

@@ -8,7 +8,6 @@ import { resolveViewQuery } from '../views';
 import { fetchInbox } from './inbox';
 import { mutations, rememberPullRequest } from './mutations';
 import { fetchPullRequestPage } from './pull-request';
-import { SIGNED_OUT, embeddedPayload, getPage, noteShape } from './session';
 
 export async function handleRpc(request: RpcRequest): Promise<RpcResponse> {
   try {
@@ -24,7 +23,6 @@ export async function handleRpc(request: RpcRequest): Promise<RpcResponse> {
 }
 
 const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<RpcMethods[M]['result']> } = {
-  'auth.status': () => authStatus(),
   'inbox.fetch': async ({ views, force }) => {
     const { inboxScope } = await getSettings();
     const key = `inbox:${JSON.stringify(views.map((view) => [resolveViewQuery(view, inboxScope), view.limit]))}`;
@@ -42,21 +40,6 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
   ...mutations,
 };
 
-/** Who is signed in to github.com, read from the inbox page (a signed-out session is redirected to /login). */
-async function authStatus(): Promise<RpcMethods['auth.status']['result']> {
-  try {
-    const page = await getPage('/pulls/inbox');
-    const currentUser = embeddedPayload(page, 'pullsDashboardSurfaceLayoutRoute')?.appPayload.current_user;
-    noteShape('appPayload.current_user', currentUser);
-    const login =
-      page.querySelector('meta[name="user-login"]')?.getAttribute('content') ||
-      (typeof currentUser === 'string' ? currentUser : (currentUser as { login?: string } | undefined)?.login) ||
-      null;
-    return login ? { ok: true, login, error: null } : { ok: false, login: null, error: SIGNED_OUT };
-  } catch (error) {
-    return { ok: false, login: null, error: error instanceof Error ? error.message : String(error) };
-  }
-}
 
 /** Shares one in-flight or fresh load per key for `ttlMs`; `force` reloads; failures are not kept. */
 function cached<T>(key: string, ttlMs: number, force: boolean | undefined, load: () => Promise<T>): Promise<T> {

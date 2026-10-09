@@ -1,5 +1,5 @@
 // Everything the UI needs from the outside world, behind one interface so the same pages render
-// from the background RPC in the extension and from fixtures in the dev harness (`?fixtures=1`).
+// from the content script's RPC in the extension and from fixtures in the dev harness (`?fixtures=1`).
 
 import type { PrDetail, RepoRef, View, ViewResult } from '../lib/model';
 import { rpc, type MergeMethod } from '../lib/rpc';
@@ -13,7 +13,6 @@ export interface ReviewThreadDraft {
 }
 
 export interface DataSource {
-  authStatus(): Promise<{ ok: boolean; login: string | null; error: string | null }>;
   fetchInbox(views: View[], force?: boolean): Promise<ViewResult[]>;
   fetchPr(repo: RepoRef, number: number, force?: boolean): Promise<PrDetail>;
   review(prId: string, event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT', body: string, threads?: ReviewThreadDraft[]): Promise<void>;
@@ -32,7 +31,6 @@ export interface DataSource {
 
 export function createRpcDataSource(): DataSource {
   return {
-    authStatus: () => rpc('auth.status', undefined),
     fetchInbox: (views, force) => rpc('inbox.fetch', { views, force }),
     fetchPr: (repo, number, force) => rpc('pr.fetch', { repo, number, force }),
     review: (prId, event, body, threads) => rpc('pr.review', { prId, event, body, threads }),
@@ -53,7 +51,6 @@ export function createRpcDataSource(): DataSource {
 export interface Fixtures {
   inbox: ViewResult[];
   prs: PrDetail[];
-  login: string;
 }
 
 /** Serves fixture data and logs mutations; settings live in memory. */
@@ -64,7 +61,6 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     console.info('[fixtures] mutation', ...args);
   };
   return {
-    authStatus: async () => ({ ok: true, login: fixtures.login, error: null }),
     fetchInbox: async (views) =>
       views.map((view) => fixtures.inbox.find((r) => r.view.id === view.id) ?? { view, prs: [], totalCount: 0, fetchedAt: new Date().toISOString() }),
     fetchPr: async (repo, number) => {

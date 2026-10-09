@@ -7,8 +7,6 @@ import type { PrDetail, RepoRef, View, ViewResult } from './model';
 export type MergeMethod = 'MERGE' | 'SQUASH' | 'REBASE';
 
 export interface RpcMethods {
-  /** Whether github.com has a signed-in session, and who. */
-  'auth.status': { args: undefined; result: { ok: boolean; login: string | null; error: string | null } };
   'inbox.fetch': { args: { views: View[]; force?: boolean }; result: ViewResult[] };
   'pr.fetch': { args: { repo: RepoRef; number: number; force?: boolean }; result: PrDetail };
   'pr.review': {
@@ -52,14 +50,13 @@ export function isRpcRequest(data: unknown): data is RpcRequest {
   return typeof data === 'object' && data !== null && (data as { kind?: unknown }).kind === 'gg-rpc';
 }
 
-export function isRpcResponse(data: unknown): data is RpcResponse {
-  return typeof data === 'object' && data !== null && (data as { kind?: unknown }).kind === 'gg-rpc-result';
-}
-
 const pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
 let listening = false;
 
-/** Calls the content script on github.com through the parent window. Rejects when the app is not embedded. */
+/**
+ * Calls the content script on github.com through the parent window. Rejects when the app is not embedded, and after
+ * 60 s without an answer (a stack merge stops waiting for GitHub before that; see github-web/mutations.ts).
+ */
 export function rpc<M extends RpcMethod>(method: M, args: RpcMethods[M]['args']): Promise<RpcMethods[M]['result']> {
   if (window.parent === window) {
     return Promise.reject(new Error('Open this page from github.com; it needs your GitHub session.'));
@@ -67,7 +64,7 @@ export function rpc<M extends RpcMethod>(method: M, args: RpcMethods[M]['args'])
   if (!listening) {
     listening = true;
     window.addEventListener('message', (event: MessageEvent) => {
-      if (event.origin !== 'https://github.com' || !isRpcResponse(event.data)) return;
+      if (event.origin !== 'https://github.com' || event.source !== window.parent || !isRpcResponse(event.data)) return;
       const waiter = pending.get(event.data.id);
       if (!waiter) return;
       pending.delete(event.data.id);
@@ -85,4 +82,8 @@ export function rpc<M extends RpcMethod>(method: M, args: RpcMethods[M]['args'])
       reject(new Error(`GitHub did not answer ${method} within 60 s`));
     }, 60_000);
   });
+}
+
+function isRpcResponse(data: unknown): data is RpcResponse {
+  return typeof data === 'object' && data !== null && (data as { kind?: unknown }).kind === 'gg-rpc-result';
 }
