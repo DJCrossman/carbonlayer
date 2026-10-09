@@ -60,7 +60,6 @@ the inbox scope prepended. Sharing: "Share" encodes
 the view list into `https://github.com/pulls#views=<base64url json>`; opening such a link with the
 extension installed offers to import (replace or append).
 
-## Verification
 Importing from Graphite (`src/lib/graphite.ts`, UI in `src/inbox/GraphiteImport.tsx` on the inbox's "Import from
 Graphite…" dialog and the options page): Graphite's `?new-section=` (one unnamed filter) and `?shared-sections=`
 (named sections with repositories) links, or the JSON they carry, become views. A rule's conditions are ORed (repeated
@@ -70,6 +69,7 @@ group is a view of its own. What it only approximates (`reviewed-by:` for approv
 express (file and line counts, forks, source, some review states) is listed as notes in the preview, per section. See
 `docs/research/graphite-sections.md`.
 
+## Verification
 
 - `pnpm typecheck` (tsc) and `pnpm build` must pass.
 - `pnpm test` (vitest) covers pure logic: the github-web mappers and session handling, stack inference,
