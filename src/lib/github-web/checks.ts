@@ -21,7 +21,21 @@ export function checksFrom(data: unknown): { ci: CiSummary; requiredCheckNames: 
   noteShape('page_data/status_checks row', rows);
 
   const checks = rows.map((row): CheckRunSummary => {
-    const state = checkState(row);
+    // Anything not yet finished is PENDING.
+    const status = row.status?.toUpperCase();
+    const outcome = (row.state ?? row.conclusion ?? row.status ?? '').toUpperCase();
+    const state: CheckState =
+      status && status !== 'COMPLETED' && !row.conclusion && !row.state
+        ? 'PENDING'
+        : outcome === 'SUCCESS' || outcome === 'PASSED'
+          ? 'SUCCESS'
+          : ['FAILURE', 'FAILED', 'ERROR', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE'].includes(outcome)
+            ? 'FAILURE'
+            : ['PENDING', 'EXPECTED', 'QUEUED', 'IN_PROGRESS', 'WAITING', 'REQUESTED'].includes(outcome)
+              ? 'PENDING'
+              : outcome === 'CANCELLED' || outcome === 'SKIPPED'
+                ? outcome
+                : 'NEUTRAL';
     return {
       name: row.displayName ?? row.name ?? row.context ?? '',
       state,
@@ -50,18 +64,6 @@ export function checksFrom(data: unknown): { ci: CiSummary; requiredCheckNames: 
   };
 }
 
-/** A check's outcome; anything not yet finished is PENDING. */
-function checkState(row: CheckRow): CheckState {
-  const status = row.status?.toUpperCase();
-  if (status && status !== 'COMPLETED' && !row.conclusion && !row.state) return 'PENDING';
-  const outcome = (row.state ?? row.conclusion ?? row.status ?? '').toUpperCase();
-  if (outcome === 'SUCCESS' || outcome === 'PASSED') return 'SUCCESS';
-  if (['FAILURE', 'FAILED', 'ERROR', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE'].includes(outcome)) return 'FAILURE';
-  if (['PENDING', 'EXPECTED', 'QUEUED', 'IN_PROGRESS', 'WAITING', 'REQUESTED'].includes(outcome)) return 'PENDING';
-  if (outcome === 'CANCELLED') return 'CANCELLED';
-  if (outcome === 'SKIPPED') return 'SKIPPED';
-  return 'NEUTRAL';
-}
 
 interface CheckRow {
   displayName?: string;

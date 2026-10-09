@@ -89,7 +89,7 @@ export function FilesSection({
   );
 }
 
-export interface FileReview {
+interface FileReview {
   tree: FileTreeNode[];
   /** Files in tree order, which is also the order the diffs render in. */
   order: ChangedFile[];

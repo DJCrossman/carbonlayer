@@ -2,6 +2,7 @@
 // and share links in both directions. Only a list where every view is valid is passed on to be saved.
 import { useState } from 'react';
 import type { View } from '../../src/lib/model';
+import { importViews } from '../../src/inbox/import-views';
 import { DEFAULT_VIEWS, GITHUB_INBOX_FILTERS, decodeViewsShareHash, encodeViewsShareLink } from '../../src/lib/views';
 
 export function ViewsEditor({ views, onChange }: { views: View[]; onChange: (views: View[], typing: boolean) => void }) {
@@ -29,7 +30,7 @@ export function ViewsEditor({ views, onChange }: { views: View[]; onChange: (vie
     change(next);
   }
 
-  function importViews(mode: 'replace' | 'append') {
+  function importFromLink(mode: 'replace' | 'append') {
     let imported: View[] | null = null;
     try {
       imported = decodeViewsShareHash(new URL(importLink.trim(), 'https://github.com/pulls').hash);
@@ -40,17 +41,9 @@ export function ViewsEditor({ views, onChange }: { views: View[]; onChange: (vie
       setNotice('That link does not carry any views.');
       return;
     }
-    // Ids must stay unique: an imported view that collides with a kept one gets a fresh id.
-    const kept = mode === 'replace' ? [] : draft;
-    const taken = new Set(kept.map((view) => view.id));
-    const added = imported.map((view) => {
-      const id = taken.has(view.id) ? crypto.randomUUID() : view.id;
-      taken.add(id);
-      return { ...view, id };
-    });
-    change([...kept, ...added]);
+    change(importViews(draft, imported, mode));
     setImportLink('');
-    setNotice(`Imported ${added.length} ${added.length === 1 ? 'view' : 'views'}.`);
+    setNotice(`Imported ${imported.length} ${imported.length === 1 ? 'view' : 'views'}.`);
   }
 
   async function copyShareLink() {
@@ -150,10 +143,10 @@ export function ViewsEditor({ views, onChange }: { views: View[]; onChange: (vie
           placeholder="Paste a share link (https://github.com/pulls#views=…)"
           onChange={(event) => setImportLink(event.target.value)}
         />
-        <button type="button" disabled={!importLink.trim()} onClick={() => importViews('replace')}>
+        <button type="button" disabled={!importLink.trim()} onClick={() => importFromLink('replace')}>
           Replace
         </button>
-        <button type="button" disabled={!importLink.trim()} onClick={() => importViews('append')}>
+        <button type="button" disabled={!importLink.trim()} onClick={() => importFromLink('append')}>
           Append
         </button>
       </div>

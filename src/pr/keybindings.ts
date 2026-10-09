@@ -1,30 +1,34 @@
-// Graphite's PR-page keybindings: the binding table (also rendered by the help overlay and the
-// legend), a chord reader that understands sequences like "r c", and the document-level listener.
+// Graphite's PR-page keybindings: the document-level listener, the binding table (also rendered by the
+// help overlay and the legend), and a chord reader that understands sequences like "r c".
 // The parent github.com page replays its own keystrokes into this document (entrypoints/app/main.tsx),
 // so one `keydown` listener on `document` sees both.
 
 import { useEffect, useRef } from 'react';
 
-export type PrAction =
-  | 'next-file'
-  | 'prev-file'
-  | 'next-thread'
-  | 'prev-thread'
-  | 'toggle-tree'
-  | 'toggle-stack'
-  | 'stack-down'
-  | 'stack-up'
-  | 'review-comment'
-  | 'review-request-changes'
-  | 'review-approve'
-  | 'quick-approve'
-  | 'toggle-viewed'
-  | 'toggle-file'
-  | 'open-github'
-  | 'go-description'
-  | 'go-files'
-  | 'help'
-  | 'close';
+/** Runs `onAction` for every PR keybinding pressed outside a text field. */
+export function usePrKeybindings(onAction: (action: PrAction) => void): void {
+  const onActionRef = useRef(onAction);
+  onActionRef.current = onAction;
+
+  useEffect(() => {
+    const read = createChordReader(PR_KEYBINDINGS, { isMac: navigator.userAgent.includes('Mac') });
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (
+        event.defaultPrevented ||
+        (target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)))
+      ) {
+        return;
+      }
+      const result = read(event);
+      if (result === null) return;
+      event.preventDefault();
+      if (result !== 'pending') onActionRef.current(result.action);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
+}
 
 /** `mod` is ⌘ on macOS and Ctrl elsewhere; space separates the strokes of a chord. */
 export const PR_KEYBINDINGS: ReadonlyArray<{ chord: string; action: PrAction; label: string; legend?: boolean }> = [
@@ -48,29 +52,6 @@ export const PR_KEYBINDINGS: ReadonlyArray<{ chord: string; action: PrAction; la
   { chord: '?', action: 'help', label: 'Show all shortcuts', legend: true },
   { chord: 'Escape', action: 'close', label: 'Close overlay' },
 ];
-
-export interface KeyStroke {
-  key: string;
-  mod: boolean;
-  shift: boolean;
-  alt: boolean;
-}
-
-type KeyEventLike = Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'shiftKey' | 'altKey' | 'timeStamp'>;
-
-/** Parses "r c", "mod+shift+ArrowDown" or "?" into its strokes. */
-export function parseChord(spec: string): KeyStroke[] {
-  return spec
-    .trim()
-    .split(/\s+/)
-    .map((stroke) => {
-      // "+" on its own is a key, so split on "+" only between parts ("mod++" is mod and "+").
-      const parts = stroke.length > 1 ? stroke.split(/\+(?=.)/) : [stroke];
-      const key = parts.pop() ?? '';
-      const modifiers = new Set(parts.map((part) => part.toLowerCase()));
-      return { key, mod: modifiers.has('mod'), shift: modifiers.has('shift'), alt: modifiers.has('alt') };
-    });
-}
 
 /**
  * Turns a stream of keydown events into actions. A stroke that starts a longer chord ("r") returns
@@ -117,27 +98,46 @@ export function createChordReader<A>(
   }
 }
 
-/** Runs `onAction` for every PR keybinding pressed outside a text field. */
-export function usePrKeybindings(onAction: (action: PrAction) => void): void {
-  const onActionRef = useRef(onAction);
-  onActionRef.current = onAction;
-
-  useEffect(() => {
-    const read = createChordReader(PR_KEYBINDINGS, { isMac: navigator.userAgent.includes('Mac') });
-    const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target;
-      if (
-        event.defaultPrevented ||
-        (target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)))
-      ) {
-        return;
-      }
-      const result = read(event);
-      if (result === null) return;
-      event.preventDefault();
-      if (result !== 'pending') onActionRef.current(result.action);
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, []);
+/** Parses "r c", "mod+shift+ArrowDown" or "?" into its strokes. */
+export function parseChord(spec: string): KeyStroke[] {
+  return spec
+    .trim()
+    .split(/\s+/)
+    .map((stroke) => {
+      // "+" on its own is a key, so split on "+" only between parts ("mod++" is mod and "+").
+      const parts = stroke.length > 1 ? stroke.split(/\+(?=.)/) : [stroke];
+      const key = parts.pop() ?? '';
+      const modifiers = new Set(parts.map((part) => part.toLowerCase()));
+      return { key, mod: modifiers.has('mod'), shift: modifiers.has('shift'), alt: modifiers.has('alt') };
+    });
 }
+
+type PrAction =
+  | 'next-file'
+  | 'prev-file'
+  | 'next-thread'
+  | 'prev-thread'
+  | 'toggle-tree'
+  | 'toggle-stack'
+  | 'stack-down'
+  | 'stack-up'
+  | 'review-comment'
+  | 'review-request-changes'
+  | 'review-approve'
+  | 'quick-approve'
+  | 'toggle-viewed'
+  | 'toggle-file'
+  | 'open-github'
+  | 'go-description'
+  | 'go-files'
+  | 'help'
+  | 'close';
+
+interface KeyStroke {
+  key: string;
+  mod: boolean;
+  shift: boolean;
+  alt: boolean;
+}
+
+type KeyEventLike = Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'shiftKey' | 'altKey' | 'timeStamp'>;

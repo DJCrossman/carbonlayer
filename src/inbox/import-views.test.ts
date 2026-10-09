@@ -25,9 +25,9 @@ describe('importViews', () => {
     expect(new Set(result.map((view) => view.id)).size).toBe(4);
   });
 
-  it('keeps ids unique when the link itself repeats one', () => {
+  it.each(['append', 'replace'] as const)('keeps ids unique when the link itself repeats one (%s)', (mode) => {
     const repeated = [incoming[1]!, { ...incoming[1]!, name: 'Hotfixes again' }];
-    const result = importViews([], repeated, 'append');
+    const result = importViews([], repeated, mode);
     expect(result[0]?.id).toBe('hotfixes');
     expect(result[1]?.id).not.toBe('hotfixes');
   });

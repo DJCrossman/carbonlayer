@@ -2,7 +2,7 @@
 // assignees. Cards with nothing to show are left out.
 import { useState } from 'react';
 import type { MergeMethod } from '../lib/rpc';
-import type { CheckState, PrDetail } from '../lib/model';
+import type { PrDetail } from '../lib/model';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
@@ -273,10 +273,18 @@ function ChecksCard({ pr }: { pr: PrDetail }) {
         {visible.map((check) => {
           const seconds =
             check.startedAt && check.completedAt ? Math.round((Date.parse(check.completedAt) - Date.parse(check.startedAt)) / 1000) : null;
+          const [icon, tone] =
+            check.state === 'SUCCESS'
+              ? (['check-circle-fill', 'success'] as const)
+              : urgency(check.state) === 0
+                ? (['x-circle-fill', 'danger'] as const)
+                : check.state === 'PENDING'
+                  ? (['dot-fill', 'attention'] as const)
+                  : (['skip', 'muted'] as const);
           return (
             <li key={`${check.group ?? ''}/${check.name}`}>
               <a className="check-row" href={check.url ?? undefined} target="_blank" rel="noopener" title={check.description ?? undefined}>
-                <CheckIcon state={check.state} />
+                <Icon name={icon} size={14} className={`pr-fg-${tone}`} />
                 <span className="check-name">{check.name}</span>
                 {check.group && <span className="check-group pr-muted">{check.group}</span>}
                 {pr.requiredCheckNames.includes(check.name) && <span className="check-required">Required</span>}
@@ -297,20 +305,6 @@ function ChecksCard({ pr }: { pr: PrDetail }) {
   );
 }
 
-/** One check run's state. */
-function CheckIcon({ state, size = 14 }: { state: CheckState; size?: number }) {
-  switch (state) {
-    case 'SUCCESS':
-      return <Icon name="check-circle-fill" size={size} className="pr-fg-success" />;
-    case 'FAILURE':
-    case 'CANCELLED':
-      return <Icon name="x-circle-fill" size={size} className="pr-fg-danger" />;
-    case 'PENDING':
-      return <Icon name="dot-fill" size={size} className="pr-fg-attention" />;
-    default:
-      return <Icon name="skip" size={size} className="pr-fg-muted" />;
-  }
-}
 
 const MERGE_LABELS = {
   SQUASH: { short: 'Squash', verb: 'Squash and merge' },

@@ -34,20 +34,22 @@ export const DEFAULT_VIEWS: View[] = [
   { id: 'waiting-author', name: 'Waiting for author', query: 'is:pr is:open -author:@me reviewed-by:@me -review-requested:@me sort:updated-desc' },
 ];
 
-export const SHARE_HASH_KEY = 'views';
-
+/** A link that shares these views: their JSON as base64url (UTF-8) in the `views` hash parameter of github.com/pulls. */
 export function encodeViewsShareLink(views: View[]): string {
   const json = JSON.stringify(views.map(({ id, name, query, limit }) => ({ id, name, query, limit })));
-  return `https://github.com/pulls#${SHARE_HASH_KEY}=${base64UrlEncode(json)}`;
+  let binary = '';
+  for (const byte of new TextEncoder().encode(json)) binary += String.fromCharCode(byte);
+  return `https://github.com/pulls#views=${btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`;
 }
 
 /** Views encoded in a location hash, or null when the hash carries none / is malformed. */
 export function decodeViewsShareHash(hash: string): View[] | null {
   const params = new URLSearchParams(hash.replace(/^#/, ''));
-  const encoded = params.get(SHARE_HASH_KEY);
+  const encoded = params.get('views');
   if (!encoded) return null;
   try {
-    const parsed: unknown = JSON.parse(base64UrlDecode(encoded));
+    const binary = atob(encoded.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(encoded.length / 4) * 4, '='));
+    const parsed: unknown = JSON.parse(new TextDecoder().decode(Uint8Array.from(binary, (c) => c.charCodeAt(0))));
     if (!Array.isArray(parsed)) return null;
     const views = parsed.filter(isView);
     return views.length === parsed.length && views.length > 0 ? views : null;
@@ -77,18 +79,4 @@ export function isView(value: unknown): value is View {
     (v.limit === undefined || typeof v.limit === 'number') &&
     (v.collapsed === undefined || typeof v.collapsed === 'boolean')
   );
-}
-
-function base64UrlEncode(text: string): string {
-  const bytes = new TextEncoder().encode(text);
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-function base64UrlDecode(encoded: string): string {
-  const padded = encoded.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(encoded.length / 4) * 4, '=');
-  const binary = atob(padded);
-  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
-  return new TextDecoder().decode(bytes);
 }

@@ -12,7 +12,7 @@ export interface UserRef {
   url: string;
 }
 
-export type PrState = 'OPEN' | 'MERGED' | 'CLOSED';
+type PrState = 'OPEN' | 'MERGED' | 'CLOSED';
 
 /** GitHub's reviewDecision, with NONE when no review is required and none given. */
 export type ReviewDecision = 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | 'NONE';
@@ -103,7 +103,7 @@ export interface Stack {
   source: 'native' | 'graphite-comment' | 'none';
 }
 
-export interface ReviewThreadComment {
+interface ReviewThreadComment {
   id: string;
   author: UserRef;
   bodyHtml: string;

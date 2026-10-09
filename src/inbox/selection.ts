@@ -1,16 +1,5 @@
 // Keyboard selection in the inbox. A row is identified by its section and PR, because one PR can appear in several sections.
 
-export interface SelectedRow {
-  viewId: string;
-  prId: string;
-}
-
-export interface SectionRows {
-  viewId: string;
-  collapsed: boolean;
-  prIds: string[];
-}
-
 /**
  * The row j (`step` 1) or k (`step` -1) lands on: the neighbouring row across expanded sections, skipping collapsed
  * ones and staying put at either end. With no (or a vanished) selection it starts at the first visible row. A selection
@@ -34,4 +23,15 @@ export function moveSelection(sections: SectionRows[], current: SelectedRow | nu
   if (ahead) return ahead;
   if (rows[index]?.visible) return current;
   return nearestVisible(step === 1 ? -1 : 1);
+}
+
+export interface SelectedRow {
+  viewId: string;
+  prId: string;
+}
+
+export interface SectionRows {
+  viewId: string;
+  collapsed: boolean;
+  prIds: string[];
 }

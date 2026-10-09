@@ -200,42 +200,6 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   );
 }
 
-/** Opens a PR the way a link would: the github.com page navigates (or opens a tab); the standalone harness opens a tab. */
-function openPullRequest(url: string, newTab: boolean) {
-  if (window.parent === window) window.open(url, '_blank');
-  else postToParent({ type: 'gg:navigate', url, newTab });
-}
-
-/** The global scope (`org:acme`) prepended to every view; click to edit inline, Enter saves, Esc or blur cancels. */
-function ScopeChip({ scope, onSave }: { scope: string; onSave: (scope: string) => void }) {
-  const [draft, setDraft] = useState<string | null>(null);
-  if (draft === null) {
-    return (
-      <button type="button" className="gg-inbox__scope" title="Prepended to every view's query. Click to change." onClick={() => setDraft(scope)}>
-        <Icon name="repo" size={14} />
-        {scope || 'All repositories'}
-      </button>
-    );
-  }
-  return (
-    <input
-      className="gg-inbox__scope-input"
-      autoFocus
-      value={draft}
-      placeholder="org:acme or repo:acme/widgets — Enter to save"
-      aria-label="Inbox scope"
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={() => setDraft(null)}
-      onKeyDown={(event) => {
-        if (event.key === 'Escape') setDraft(null);
-        if (event.key !== 'Enter') return;
-        if (draft.trim() !== scope) onSave(draft.trim());
-        setDraft(null);
-      }}
-    />
-  );
-}
-
 /**
  * Settings plus every view's results, kept fresh: refetched when what GitHub is asked changes (not on rename or
  * collapse), every 2 minutes while the tab is visible, and on returning to the tab when older than a minute.
@@ -308,4 +272,40 @@ function useInbox(source: DataSource) {
   }, []);
 
   return { settings, results, error, fetchedAt, refreshing, refresh, saveSettings };
+}
+
+/** Opens a PR the way a link would: the github.com page navigates (or opens a tab); the standalone harness opens a tab. */
+function openPullRequest(url: string, newTab: boolean) {
+  if (window.parent === window) window.open(url, '_blank');
+  else postToParent({ type: 'gg:navigate', url, newTab });
+}
+
+/** The global scope (`org:acme`) prepended to every view; click to edit inline, Enter saves, Esc or blur cancels. */
+function ScopeChip({ scope, onSave }: { scope: string; onSave: (scope: string) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  if (draft === null) {
+    return (
+      <button type="button" className="gg-inbox__scope" title="Prepended to every view's query. Click to change." onClick={() => setDraft(scope)}>
+        <Icon name="repo" size={14} />
+        {scope || 'All repositories'}
+      </button>
+    );
+  }
+  return (
+    <input
+      className="gg-inbox__scope-input"
+      autoFocus
+      value={draft}
+      placeholder="org:acme or repo:acme/widgets — Enter to save"
+      aria-label="Inbox scope"
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => setDraft(null)}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') setDraft(null);
+        if (event.key !== 'Enter') return;
+        if (draft.trim() !== scope) onSave(draft.trim());
+        setDraft(null);
+      }}
+    />
+  );
 }

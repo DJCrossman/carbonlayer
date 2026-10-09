@@ -140,7 +140,7 @@ export function noteShape(label: string, data: unknown): void {
   console.debug('[gg]', label, keys);
 }
 
-export interface EmbeddedData {
+interface EmbeddedData {
   payload: Record<string, unknown>;
   appPayload: Record<string, unknown>;
 }

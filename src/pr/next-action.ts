@@ -2,29 +2,6 @@
 
 import type { PrDetail, PrSummary } from '../lib/model';
 
-export type NextAction = {
-  tone: 'success' | 'danger' | 'attention' | 'neutral' | 'done';
-  title: string;
-  detail: string | null;
-} & (
-  | {
-      kind:
-        | 'merged'
-        | 'closed'
-        | 'draft'
-        | 'conflicts'
-        | 'unresolved'
-        | 'checks-failed'
-        | 'changes-requested'
-        | 'review-required'
-        | 'checks-running'
-        | 'behind'
-        | 'blocked'
-        | 'ready';
-    }
-  | { kind: 'downstack'; pr: PrSummary }
-);
-
 /**
  * What stands between this PR and being merged, most fundamental first: its state, then conflicts,
  * the stack below it, open conversations, CI, reviews, and finally branch protection. When nothing
@@ -80,3 +57,26 @@ export function nextActionFor(pr: PrDetail): NextAction {
   if (pr.mergeStatus === 'BLOCKED') return { kind: 'blocked', tone: 'danger', title: 'Blocked by branch protection', detail: null };
   return { kind: 'ready', tone: 'success', title: 'Ready to merge', detail: null };
 }
+
+type NextAction = {
+  tone: 'success' | 'danger' | 'attention' | 'neutral' | 'done';
+  title: string;
+  detail: string | null;
+} & (
+  | {
+      kind:
+        | 'merged'
+        | 'closed'
+        | 'draft'
+        | 'conflicts'
+        | 'unresolved'
+        | 'checks-failed'
+        | 'changes-requested'
+        | 'review-required'
+        | 'checks-running'
+        | 'behind'
+        | 'blocked'
+        | 'ready';
+    }
+  | { kind: 'downstack'; pr: PrSummary }
+);

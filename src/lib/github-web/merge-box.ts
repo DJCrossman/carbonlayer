@@ -56,7 +56,7 @@ export function mergeState(data: unknown, pr: { isDraft: boolean; isOpen: boolea
   };
 }
 
-export interface MergeState {
+interface MergeState {
   mergeStatus: MergeStatus;
   allowedMergeMethods: MergeMethod[];
   defaultMergeMethod: MergeMethod | null;
