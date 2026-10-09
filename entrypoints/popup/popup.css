@@ -43,6 +43,10 @@
   color: var(--gg-fg-muted);
 }
 
+.problem {
+  color: var(--gg-danger);
+}
+
 .actions {
   display: flex;
   gap: var(--gg-space-2);

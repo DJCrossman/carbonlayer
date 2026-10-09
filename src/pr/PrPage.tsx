@@ -333,7 +333,9 @@ function PrView({
         review={files}
         batch={batch}
         diffStyle={settings.diffLayout}
-        onDiffStyleChange={(diffLayout) => void source.setSettings({ diffLayout })}
+        onDiffStyleChange={(diffLayout) =>
+          source.setSettings({ diffLayout }).catch((reason: unknown) => showToast(`Could not save: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger'))
+        }
         onToggleViewed={toggleViewed}
         noteActions={noteActions}
       />

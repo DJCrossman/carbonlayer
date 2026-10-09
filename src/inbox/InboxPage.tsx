@@ -145,8 +145,9 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   function saveSection(saved: View) {
     if (!settings) return;
     const exists = settings.views.some((view) => view.id === saved.id);
-    void inbox.saveSettings({ views: exists ? settings.views.map((view) => (view.id === saved.id ? saved : view)) : [...settings.views, saved] });
-    showToast(exists ? 'Section saved' : 'Section added');
+    void inbox
+      .saveSettings({ views: exists ? settings.views.map((view) => (view.id === saved.id ? saved : view)) : [...settings.views, saved] })
+      .then((done) => done && showToast(exists ? 'Section saved' : 'Section added'));
     setEditing(null);
   }
 
@@ -158,8 +159,10 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
 
   function answerImport(answer: 'replace' | 'append' | 'dismiss') {
     if (settings && pendingImport && answer !== 'dismiss') {
-      void inbox.saveSettings({ views: importViews(settings.views, pendingImport, answer) });
-      showToast(answer === 'replace' ? 'Views replaced' : `Added ${pendingImport.length} ${pendingImport.length === 1 ? 'view' : 'views'}`);
+      const count = `${pendingImport.length} ${pendingImport.length === 1 ? 'view' : 'views'}`;
+      void inbox
+        .saveSettings({ views: importViews(settings.views, pendingImport, answer) })
+        .then((done) => done && showToast(answer === 'replace' ? 'Views replaced' : `Imported ${count}`));
     }
     setAnsweredImport(route.importViews);
     history.replaceState(null, '', '#/inbox');
@@ -340,11 +343,9 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
                 autoFocus
                 currentInboxScope={settings.inboxScope}
                 onImport={(views, mode, inboxRepos) => {
-                  void inbox.saveSettings({
-                    views: importViews(settings.views, views, mode),
-                    ...(inboxRepos !== undefined && { inboxRepos }),
-                  });
-                  showToast(mode === 'replace' ? 'Views replaced' : `Added ${views.length} ${views.length === 1 ? 'view' : 'views'}`);
+                  void inbox
+                    .saveSettings({ views: importViews(settings.views, views, mode), ...(inboxRepos !== undefined && { inboxRepos }) })
+                    .then((done) => done && showToast(mode === 'replace' ? 'Views replaced' : `Imported ${views.length} ${views.length === 1 ? 'view' : 'views'}`));
                   setGraphiteOpen(false);
                 }}
               />
@@ -399,11 +400,14 @@ function useInbox(source: DataSource) {
     }
   }
 
-  async function saveSettings(patch: Partial<Settings>) {
+  /** Whether `patch` was saved; when not, a toast has said why. */
+  async function saveSettings(patch: Partial<Settings>): Promise<boolean> {
     try {
       setSettings(await source.setSettings(patch));
+      return true;
     } catch (cause) {
       showToast(`Could not save: ${cause instanceof Error ? cause.message : String(cause)}`, 'danger');
+      return false;
     }
   }
 

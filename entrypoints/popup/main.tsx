@@ -14,6 +14,8 @@ createRoot(document.getElementById('root')!).render(
 
 function Popup() {
   const [settings, setLocalSettings] = useState<Settings | null>(null);
+  // Why the last switch did not save (Chrome refusing the write).
+  const [problem, setProblem] = useState<string | null>(null);
 
   useEffect(() => {
     void getSettings().then(setLocalSettings);
@@ -34,7 +36,13 @@ function Popup() {
 
   function toggle(patch: Partial<Pick<Settings, 'inboxEnabled' | 'prEnabled'>>) {
     setLocalSettings((current) => current && { ...current, ...patch });
-    void setSettings(patch);
+    setSettings(patch).then(
+      () => setProblem(null),
+      (error: unknown) => {
+        setProblem(error instanceof Error ? error.message : String(error));
+        void getSettings().then(setLocalSettings);
+      },
+    );
   }
 
   return (
@@ -52,6 +60,11 @@ function Popup() {
         <input type="checkbox" checked={settings.prEnabled} onChange={(event) => toggle({ prEnabled: event.target.checked })} />
         Pull request pages
       </label>
+      {problem && (
+        <p className="hint problem" role="alert">
+          Could not save: {problem}
+        </p>
+      )}
       <p className="hint">Uses your github.com sign-in. Switches apply to open GitHub tabs at once.</p>
       <div className="actions">
         <button

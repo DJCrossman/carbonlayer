@@ -359,7 +359,9 @@ function addPageViewSwitch() {
     button.addEventListener('click', () => {
       const showOurs = button === ours;
       if (showOurs === oursShown) return;
-      void setSettings(setting === 'inboxEnabled' ? { inboxEnabled: showOurs } : { prEnabled: showOurs });
+      setSettings(setting === 'inboxEnabled' ? { inboxEnabled: showOurs } : { prEnabled: showOurs }).catch((error: unknown) =>
+        console.error('[gg]', 'Could not save the page view:', error instanceof Error ? error.message : error),
+      );
     });
   }
   group.append(style, github, ours);

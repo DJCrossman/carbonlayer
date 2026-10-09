@@ -21,6 +21,8 @@ createRoot(document.getElementById('root')!).render(
 function OptionsPage() {
   const [settings, setLocalSettings] = useState<Settings | null>(null);
   const [saved, setSaved] = useState(false);
+  // Why the last save failed (Chrome refusing the write), until one succeeds.
+  const [problem, setProblem] = useState<string | null>(null);
   const pending = useRef<Partial<Settings>>({});
   const saveTimer = useRef<number | undefined>(undefined);
   const savedTimer = useRef<number | undefined>(undefined);
@@ -42,7 +44,13 @@ function OptionsPage() {
   if (!settings) return null;
 
   async function save(patch: Partial<Settings>) {
-    await setSettings(patch);
+    try {
+      await setSettings(patch);
+    } catch (error) {
+      setProblem(error instanceof Error ? error.message : String(error));
+      return;
+    }
+    setProblem(null);
     setSaved(true);
     window.clearTimeout(savedTimer.current);
     savedTimer.current = window.setTimeout(() => setSaved(false), 1500);
@@ -71,6 +79,11 @@ function OptionsPage() {
         <span className={saved ? 'saved visible' : 'saved'} aria-live="polite">
           {saved ? 'Saved' : ''}
         </span>
+        {problem && (
+          <span className="problem" role="alert">
+            Could not save: {problem}
+          </span>
+        )}
       </header>
 
       <section>
