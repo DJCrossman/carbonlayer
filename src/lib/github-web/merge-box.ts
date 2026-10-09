@@ -13,7 +13,7 @@ export function mergeState(data: unknown, pr: { isDraft: boolean; isOpen: boolea
   const box = (data ?? {}) as MergeBox;
   const pullRequest = box.pullRequest ?? {};
   noteShape('page_data/merge_box pullRequest', pullRequest);
-  const conditions = box.mergeRequirements?.conditions ?? [];
+  const conditions = Array.isArray(box.mergeRequirements?.conditions) ? box.mergeRequirements.conditions : [];
   const failed = (type: string) => conditions.some((condition) => condition.type === type && condition.result === 'FAILED');
 
   const reported = pullRequest.mergeStateStatus?.toUpperCase();
@@ -31,7 +31,7 @@ export function mergeState(data: unknown, pr: { isDraft: boolean; isOpen: boolea
               : 'UNKNOWN';
 
   // viewerMergeActions: [{ name: DIRECT_MERGE | AUTO_MERGE | MERGE_QUEUE, mergeMethods: [{ name, allowableStatus, isDefault }] }]
-  const actions = pullRequest.viewerMergeActions ?? [];
+  const actions = Array.isArray(pullRequest.viewerMergeActions) ? pullRequest.viewerMergeActions : [];
   const directMerge = actions.find((action) => action.name === 'DIRECT_MERGE');
   const allowed = (directMerge?.mergeMethods ?? [])
     .filter((method) => method.allowableStatus === 'ALLOWED' || method.allowableStatus === 'ALLOWED_WITH_BYPASS')

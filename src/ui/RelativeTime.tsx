@@ -1,4 +1,5 @@
-// Compact age of a timestamp ("18m", "13h", "4d", "3w"), full date on hover, red once older than `overdueAfterHours`.
+// Compact age of a timestamp ("18m", "13h", "4d", "3w"), full date on hover, red once older than `overdueAfterHours`;
+// nothing for a time GitHub did not give (an empty or unreadable date).
 import { useSyncExternalStore } from 'react';
 import './ui.css';
 
@@ -6,6 +7,7 @@ export function RelativeTime({ date, overdueAfterHours, ago = false }: { date: s
   // One shared 30 s clock keeps every visible age current.
   const now = useSyncExternalStore(subscribeToClock, () => clock);
   const then = Date.parse(date);
+  if (Number.isNaN(then)) return null;
   const minutes = Math.max(0, Math.floor((now - then) / 60_000));
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);

@@ -401,7 +401,7 @@ function PrHeader({
                 role="menuitem"
                 onClick={() => {
                   setMenuOpen(false);
-                  void navigator.clipboard.writeText(pr.url).then(onCopied);
+                  navigator.clipboard.writeText(pr.url).then(onCopied, () => showToast('Could not copy the link', 'danger'));
                 }}
               >
                 <Icon name="link-external" size={14} />

@@ -24,7 +24,7 @@ export function reviewersOf(input: { requests: unknown; latestOpinionatedReviews
   const opinionated = Array.isArray(input.latestOpinionatedReviews)
     ? (input.latestOpinionatedReviews as Array<{ author?: RawReviewer | null; state?: string }>).flatMap((review) => {
         const login = review.author?.login ?? review.author?.displayLogin;
-        return login && review.state ? [{ login, avatarUrl: review.author?.avatarUrl, state: review.state.toUpperCase() }] : [];
+        return login && typeof review.state === 'string' ? [{ login, avatarUrl: review.author?.avatarUrl, state: review.state.toUpperCase() }] : [];
       })
     : input.timeline.flatMap((item) => (item.kind === 'review' && item.state !== 'COMMENTED' ? [{ login: item.author.login, avatarUrl: item.author.avatarUrl, state: item.state }] : []));
   for (const review of opinionated) {
