@@ -140,7 +140,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
             <Button size="sm" icon="link" title="Copy a link that shares these views" onClick={() => void copyShareLink()}>
               Share
             </Button>
-            <Button size="sm" icon="stack" title="Add views from Graphite section links" onClick={() => setGraphiteOpen(true)}>
+            <Button size="sm" icon="stack" title="Copy your sections from Graphite, or paste section links" onClick={() => setGraphiteOpen(true)}>
               Import from Graphite…
             </Button>
             <Button size="sm" icon="gear" title="Views and other settings" onClick={openOptions}>
@@ -218,8 +218,12 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
             <div className="gg-inbox__graphite-body">
               <GraphiteImport
                 autoFocus
-                onImport={(views, mode) => {
-                  void inbox.saveSettings({ views: importViews(settings.views, views, mode) });
+                currentInboxScope={settings.inboxScope}
+                onImport={(views, mode, inboxScope) => {
+                  void inbox.saveSettings({
+                    views: importViews(settings.views, views, mode),
+                    ...(inboxScope !== undefined && { inboxScope }),
+                  });
                   showToast(mode === 'replace' ? 'Views replaced' : `Added ${views.length} ${views.length === 1 ? 'view' : 'views'}`);
                   setGraphiteOpen(false);
                 }}

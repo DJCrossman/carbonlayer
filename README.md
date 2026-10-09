@@ -9,9 +9,9 @@ A Chrome extension that makes GitHub's pull requests look and work like [Graphit
   your team's review, Returned to you, Ready to merge, Drafts, Waiting for review or checks, Merging
   and recently merged, Waiting for author), each either one of GitHub's own inbox sections
   (`inbox:<section>`) or a GitHub search query, with review, CI and merge status per row. Views are
-  stored in your browser profile and can be shared as a link. Graphite's own "Share section" links can be
-  imported too ("Import from Graphite…" in the inbox, or the options page): each becomes a view whose search
-  approximates Graphite's filter, and the preview lists what GitHub's search cannot express.
+  stored in your browser profile and can be shared as a link. "Import from Graphite…" copies every section from
+  your signed-in Graphite inbox in one click (or takes pasted "Share section" links): each becomes a view whose
+  search approximates Graphite's filter, and the preview lists what GitHub's search cannot express.
 - **Pull request page**: the stack at the top, one vertical scroll (description → activity → diff),
   CI checks, reviewers and a single "next step" merge card in a right sidebar, diffs rendered with
   [`@pierre/diffs`](https://diffs.com), and Graphite's keyboard shortcuts.
