@@ -27,7 +27,7 @@ export function LabelChip({ label }: { label: LabelSummary }) {
     '--label-l': Math.round(lightness * 100),
   } as CSSProperties;
   return (
-    <span className="gg-label" style={style} title={label.name}>
+    <span className="gg-label-chip" style={style} title={label.name}>
       {label.name}
     </span>
   );

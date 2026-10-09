@@ -131,9 +131,14 @@ function PrRow({
           <MergeStatus status={pr.mergeStatus} state={pr.state} />
         )}
       </span>
-      <span className="gg-row__diff" title={`${pr.changedFiles} files changed`}>
-        <span className="gg-row__add">+{pr.additions}</span>
-        <span className="gg-row__del">−{pr.deletions}</span>
+      {/* GitHub's dashboard endpoints report no line counts; zeros mean unknown, not an empty diff. */}
+      <span className="gg-row__diff" title={pr.changedFiles > 0 ? `${pr.changedFiles} files changed` : undefined}>
+        {(pr.additions > 0 || pr.deletions > 0) && (
+          <>
+            <span className="gg-row__add">+{pr.additions}</span>
+            <span className="gg-row__del">−{pr.deletions}</span>
+          </>
+        )}
       </span>
       <span className="gg-row__comments" title={`${pr.commentCount} comments`}>
         {pr.commentCount > 0 && (

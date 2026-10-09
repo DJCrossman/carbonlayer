@@ -8,11 +8,10 @@
 
 /* Avatar */
 .gg-avatar {
-  display: inline-flex;
+  display: inline-block;
   flex: none;
-  align-items: center;
-  justify-content: center;
   border-radius: 50%;
+  vertical-align: middle;
   object-fit: cover;
   background: var(--gg-bg-inset);
   box-shadow: 0 0 0 1px var(--gg-border-muted);
@@ -20,7 +19,7 @@
 .gg-avatar--initial {
   color: #fff;
   font-weight: 600;
-  line-height: 1;
+  text-align: center;
   user-select: none;
 }
 
@@ -148,8 +147,8 @@
   color: var(--gg-attention);
 }
 
-/* LabelChip: github.com's label colour maths, so any label colour stays readable in both themes. */
-.gg-label {
+/* LabelChip (gg-label-chip): github.com's label colour maths, so any label colour stays readable in both themes. */
+.gg-label-chip {
   --perceived-lightness: calc(((var(--label-r) * 0.2126) + (var(--label-g) * 0.7152) + (var(--label-b) * 0.0722)) / 255);
   --lightness-switch: max(0, min(calc((var(--perceived-lightness) - var(--lightness-threshold)) * -1000), 1));
   --lightness-threshold: 0.453;
@@ -158,8 +157,8 @@
   display: inline-flex;
   align-items: center;
   max-width: 160px;
-  height: 18px;
-  padding: 0 7px;
+  height: 16px;
+  padding: 0 6px;
   overflow: hidden;
   border: 1px solid hsla(var(--label-h), calc(var(--label-s) * 1%), calc((var(--label-l) - 25) * 1%), var(--border-alpha));
   border-radius: 999px;
@@ -167,11 +166,12 @@
   color: hsl(0deg, 0%, calc(var(--lightness-switch) * 100%));
   font-size: 11px;
   font-weight: 500;
-  line-height: 16px;
+  line-height: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
+  box-sizing: border-box;
 }
-:root[data-theme='dark'] .gg-label {
+:root[data-theme='dark'] .gg-label-chip {
   --lightness-threshold: 0.6;
   --background-alpha: 0.18;
   --border-alpha: 0.3;
@@ -221,7 +221,6 @@
   border-radius: var(--gg-radius);
   background: var(--gg-bg);
   box-shadow: var(--gg-shadow);
-  overflow: hidden;
 }
 .gg-card__header {
   display: flex;
@@ -268,7 +267,8 @@
   cursor: default;
   opacity: 0.55;
 }
-.gg-btn .gg-icon {
+.gg-btn--default .gg-icon,
+.gg-btn--ghost .gg-icon {
   color: var(--gg-fg-muted);
 }
 .gg-btn--sm {
@@ -289,17 +289,11 @@
   background: var(--gg-accent);
   color: var(--gg-accent-fg);
 }
-.gg-btn--primary .gg-icon {
-  color: inherit;
-}
 .gg-btn--primary:hover:not(:disabled) {
   background: color-mix(in srgb, var(--gg-accent) 88%, #000);
 }
 .gg-btn--danger {
   color: var(--gg-danger);
-}
-.gg-btn--danger .gg-icon {
-  color: inherit;
 }
 .gg-btn--danger:hover:not(:disabled) {
   border-color: var(--gg-danger);

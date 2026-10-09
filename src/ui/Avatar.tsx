@@ -26,7 +26,7 @@ export function Avatar({ user, size = 20 }: { user: UserRef; size?: number }) {
   return (
     <span
       className="gg-avatar gg-avatar--initial"
-      style={{ width: size, height: size, fontSize: Math.round(size * 0.5), background: `hsl(${hue} 42% 46%)` }}
+      style={{ width: size, height: size, lineHeight: `${size}px`, fontSize: Math.round(size * 0.5), background: `hsl(${hue} 42% 46%)` }}
       title={user.login}
       aria-hidden
     >

@@ -131,7 +131,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
             <Button size="sm" icon="link" title="Copy a link that shares these views" onClick={() => void copyShareLink()}>
               Share
             </Button>
-            <Button size="sm" icon="gear" title="Views, token and other settings" onClick={openOptions}>
+            <Button size="sm" icon="gear" title="Views and other settings" onClick={openOptions}>
               Configure
             </Button>
             {window.parent !== window && (
@@ -172,11 +172,6 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
           <div className="gg-inbox__notice gg-inbox__notice--danger" role="alert">
             <Icon name="alert" />
             <span className="gg-inbox__notice-text">{inbox.error}</span>
-            {/token|credential|401|unauthori[sz]ed/i.test(inbox.error) && (
-              <button type="button" className="gg-inbox__link" onClick={openOptions}>
-                Open settings
-              </button>
-            )}
           </div>
         )}
 

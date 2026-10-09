@@ -1,12 +1,15 @@
 // Content script on github.com: recognises the inbox and PR routes, hides GitHub's page content below its header,
-// shows app.html there in an iframe, and bridges theme, keystrokes, titles and navigation (src/app/bridge.ts).
-// `?gh=1` or a disabled setting leaves GitHub untouched.
+// shows app.html there in an iframe, and bridges theme, keystrokes, titles and navigation (src/app/bridge.ts). It also
+// answers the app's data requests (src/lib/rpc.ts) with the user's github.com session. `?gh=1` or a disabled setting
+// leaves GitHub untouched.
 import { browser } from 'wxt/browser';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { createIframeUi } from 'wxt/utils/content-script-ui/iframe';
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { isAppToParentMessage, type ParentToAppMessage } from '../src/app/bridge';
 import { parseGitHubLocation, toAppHash, type AppRoute } from '../src/app/routes';
+import { handleRpc } from '../src/lib/github-web';
+import { isRpcRequest, type RpcResponse } from '../src/lib/rpc';
 import { getSettings, watchSettings } from '../src/lib/settings';
 
 export default defineContentScript({
@@ -93,7 +96,7 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
   if (header) headerResizes.observe(header);
   window.addEventListener('resize', placeBelowHeader, { signal });
 
-  const post = (message: ParentToAppMessage) => ui.iframe.contentWindow?.postMessage(message, appOrigin);
+  const post = (message: ParentToAppMessage | RpcResponse) => ui.iframe.contentWindow?.postMessage(message, appOrigin);
   const systemTheme = matchMedia('(prefers-color-scheme: dark)');
   const postTheme = () => {
     const mode = html.dataset.colorMode;
@@ -116,7 +119,16 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
   window.addEventListener(
     'message',
     (event) => {
-      if (event.origin !== appOrigin || event.source !== ui.iframe.contentWindow || !isAppToParentMessage(event.data)) return;
+      if (event.origin !== appOrigin || event.source !== ui.iframe.contentWindow) return;
+      if (isRpcRequest(event.data)) {
+        // Data requests run here, not in the app: only a github.com document can fetch with the user's session.
+        const { id } = event.data;
+        handleRpc(event.data).then(post, (error: unknown) =>
+          post({ kind: 'gg-rpc-result', id, ok: false, error: error instanceof Error ? error.message : String(error) }),
+        );
+        return;
+      }
+      if (!isAppToParentMessage(event.data)) return;
       const message = event.data;
       switch (message.type) {
         case 'gg:ready':

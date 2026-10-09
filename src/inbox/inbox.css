@@ -133,19 +133,6 @@
   flex: none;
   gap: 6px;
 }
-.gg-inbox__link {
-  flex: none;
-  padding: 0 6px;
-  border: 0;
-  background: none;
-  color: var(--gg-accent);
-  font: inherit;
-  font-weight: 500;
-  cursor: pointer;
-}
-.gg-inbox__link:hover {
-  text-decoration: underline;
-}
 .gg-inbox__muted {
   margin: 0;
   color: var(--gg-fg-muted);
@@ -156,6 +143,9 @@
 }
 
 /* Section card */
+.gg-section {
+  overflow: hidden;
+}
 .gg-section .gg-card__header {
   padding: 0;
 }
@@ -257,7 +247,7 @@
   overflow: hidden;
   color: var(--gg-fg-muted);
   font-size: 12px;
-  line-height: 18px;
+  line-height: 16px;
   white-space: nowrap;
 }
 .gg-row__byline {
@@ -266,7 +256,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.gg-row__meta .gg-label {
+.gg-row__meta .gg-label-chip {
   flex: none;
 }
 .gg-row__more {

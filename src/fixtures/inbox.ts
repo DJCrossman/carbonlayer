@@ -1,7 +1,7 @@
 // Inbox fixtures for the dev harness (`app.html?fixtures=1#/inbox`): every default view, covering each review, CI and
 // merge state a row can show, native stack positions, unread rows, long titles, labels and team reviewers. The viewer is
-// octocat. Ages are relative to page load so the harness always looks current. Avatar ids past GitHub's range 404 on
-// purpose, to exercise the initials fallback.
+// octocat. Ages are relative to page load so the harness always looks current. The team-review rows look like what
+// GitHub's dashboard endpoints return: no line counts and no merge state.
 import type { CheckState, CiSummary, PrSummary, UserRef, ViewResult } from '../lib/model';
 import { DEFAULT_VIEWS } from '../lib/views';
 
@@ -106,6 +106,35 @@ function prsFor(viewId: string): PrSummary[] {
           additions: 88,
           deletions: 141,
           commentCount: 2,
+        }),
+      ];
+    case 'team-review':
+      return [
+        pr({
+          repo: 'acme/platform',
+          number: 1293,
+          title: 'Bump the Terraform AWS provider to v6',
+          author: kenji,
+          updated: 2 * HOUR,
+          unread: true,
+          reviewers: [{ kind: 'team', user: platformTeam, state: 'PENDING' }],
+          ci: ci({ passed: 6, pending: ['deploy-preview'] }),
+          mergeStatus: 'UNKNOWN',
+          changedFiles: 0,
+          labels: [{ name: 'dependencies', color: '0366d6' }],
+        }),
+        pr({
+          repo: 'acme/widgets',
+          number: 416,
+          title: 'Tighten spacing scale in the dense table variant',
+          author: mona,
+          updated: 9 * HOUR,
+          reviewers: [{ kind: 'team', user: designTeam, state: 'PENDING' }, { kind: 'user', user: nat, state: 'APPROVED' }],
+          ci: ci({ passed: 10 }),
+          mergeStatus: 'UNKNOWN',
+          changedFiles: 0,
+          commentCount: 1,
+          labels: [{ name: 'design system', color: '7057ff' }],
         }),
       ];
     case 'returned':
