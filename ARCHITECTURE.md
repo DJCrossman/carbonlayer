@@ -57,7 +57,9 @@ comment in the timeline, enriched through a `/pulls/search` query on the author'
 type View = { id: string; name: string; query: string; filter?: GraphiteFilter; repos?: RepoRef[]; limit?: number; collapsed?: boolean }
 ```
 
-Stored in `chrome.storage.sync`. The default views are Graphite's default sections as the Graphite import translates
+Stored in `chrome.storage.sync`, which holds at most 8 KB an item and 100 KB in all: each view is an item of its own,
+`view:<id>`, and the `settings` item holds the rest with the views' order (`viewOrder`); a save writes only the views
+that changed, and a write Chrome refuses reaches the UI as an error (`src/lib/settings.ts`). The default views are Graphite's default sections as the Graphite import translates
 them (`DEFAULT_VIEWS` in `src/lib/views.ts`: each with its Graphite `filter`, the viewer as `@me`, and the query compiled
 from it); settings whose views are all an earlier version's defaults (GitHub's own inbox sections) get them once, in
 `getSettings`. A query `inbox:<filter>` is one of GitHub's own inbox sections (`/pulls/inbox/queries`), anything else a
@@ -82,7 +84,11 @@ at the page's own document), the inbox asks `inbox.enrich` for it, up to 10 rows
 and the content script answers from each PR's `page_data/merge_box` (skipped for drafts and merged or closed PRs) and
 `page_data/diffstat`, three PRs at a time, each answer kept 2 minutes (`enrichPull` in `src/lib/github-web/inbox.ts`).
 Until a row's answer arrives its Reviewers, Merge and Changes columns show a skeleton dash; a failure leaves the row as
-it was. Section counts read `sectionCount` (`99+` above 99, `<limit>+` for a view cut short below that).
+it was. Section counts read `sectionCount` (`99+` above 99, `<limit>+` for a view cut short below that). A section shows
+GitHub's first page of rows (cut to the view's `limit`, default 50); while GitHub counts more, "Load more" at its foot
+asks `inbox.fetchMore` for the next of GitHub's pages (`/pulls/search?…&page=N` with its `/pulls/deferred`, or
+`/pulls/inbox/queries?…&page=N`) and appends the rows (page state, kept while the view's search is unchanged), until a
+page comes back empty.
 
 Repositories are picked, not typed (`src/inbox/RepoPicker.tsx`): the inbox's top-bar chip, the options page and the
 section editor's Repositories field open a popover with a search box, "Select all / none" and checkboxes, fed by GitHub's

@@ -27,6 +27,33 @@ export const inboxFixtures: ViewResult[] = DEFAULT_VIEWS.map((view) => {
   return { view, prs, totalCount, fetchedAt: new Date(NOW).toISOString() };
 });
 
+/** The pages after the first: "Merging and recently merged" goes on, as the user's does, for "Load more". */
+export const inboxPageFixtures: Record<string, PrSummary[][]> = {
+  'graphite-merging-and-recently-merged': [
+    ['Cache the tenant settings lookup', 'Fix the date picker on Safari 17', 'Rename the billing feature flags', 'Drop the legacy CSV importer', 'Add retries to the webhook sender'],
+    ['Pin the Playwright browsers', 'Log slow queries over 500 ms', 'Move the icons into @acme/ui'],
+  ].map((titles, page) =>
+    titles.map((title, index) => {
+      const age = (3.5 + page * 2.5 + index * 0.5) * DAY;
+      return pr({
+        repo: index % 2 ? 'acme/platform' : 'acme/widgets',
+        number: 380 - page * 10 - index,
+        title,
+        author: [mona, priya, nat, jdoe, kenji][index]!,
+        updated: age,
+        state: 'MERGED',
+        mergedAt: new Date(NOW - age).toISOString(),
+        reviewDecision: 'APPROVED',
+        reviewers: [{ kind: 'user', user: octocat, state: 'APPROVED' }],
+        ci: ci({ passed: 10 }),
+        mergeStatus: 'UNKNOWN',
+        additions: 20 + index * 37,
+        deletions: 5 + index * 11,
+      });
+    }),
+  ),
+};
+
 function prsFor(viewId: string): PrSummary[] {
   switch (viewId) {
     case 'graphite-needs-your-review':

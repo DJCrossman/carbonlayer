@@ -201,6 +201,30 @@
   font-weight: 400;
 }
 
+.gg-section__more {
+  display: block;
+  width: 100%;
+  height: 32px;
+  border: 0;
+  border-top: 1px solid var(--gg-border-muted);
+  background: none;
+  color: var(--gg-accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.gg-section__more:hover:not(:disabled) {
+  background: var(--gg-bg-hover);
+}
+.gg-section__more:disabled {
+  color: var(--gg-fg-muted);
+  cursor: default;
+}
+.gg-section__more:focus-visible {
+  outline: 2px solid var(--gg-accent);
+  outline-offset: -2px;
+}
+
 /* Column header row and rows, in Graphite's columns: unread · avatar · title/byline · reviewers · labels · stack ·
    review · CI · merge · changes · updated. Fixed widths so the status icons line up across rows and sections; narrower
    sections drop reviewers and labels, then stack and changes. */

@@ -8,6 +8,8 @@ export type MergeMethod = 'MERGE' | 'SQUASH' | 'REBASE';
 
 export interface RpcMethods {
   'inbox.fetch': { args: { views: View[]; force?: boolean }; result: ViewResult[] };
+  /** Page `page` of a view's rows, whole, as GitHub pages its search or section: what "Load more" adds to a section. */
+  'inbox.fetchMore': { args: { view: View; page: number }; result: ViewResult };
   /**
    * What GitHub's dashboard leaves out of these inbox rows (mergeability, reviewers, line counts), in the same order. A
    * row's state and draft flag say whether its merge box is worth asking.

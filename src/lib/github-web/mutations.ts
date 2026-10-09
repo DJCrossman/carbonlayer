@@ -8,7 +8,7 @@ import { rerunWorkflowJobs } from './actions';
 import type { MergeBox } from './merge-box';
 import { getJson, send } from './session';
 
-export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox.enrich' | 'repos.search' | 'pr.fetch' | 'pr.reviewerCandidates'>]: (args: RpcMethods[M]['args']) => Promise<RpcMethods[M]['result']> } = {
+export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox.fetchMore' | 'inbox.enrich' | 'repos.search' | 'pr.fetch' | 'pr.reviewerCandidates'>]: (args: RpcMethods[M]['args']) => Promise<RpcMethods[M]['result']> } = {
   'pr.review': async ({ prId, event, body, threads }) => {
     const pull = pullRequestFor(prId);
     // Batched inline comments join the viewer's pending review; submitting the review publishes them.

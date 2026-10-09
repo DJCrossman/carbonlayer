@@ -21,6 +21,8 @@ export interface ReviewerChange {
 
 export interface DataSource {
   fetchInbox(views: View[], force?: boolean): Promise<ViewResult[]>;
+  /** Page `page` of a view's rows, whole: what "Load more" adds to a section. */
+  fetchInboxPage(view: View, page: number): Promise<ViewResult>;
   /** What GitHub's dashboard leaves out of these inbox rows (mergeability, reviewers, line counts), in the same order. */
   enrichInbox(prs: Array<Pick<PrSummary, 'repo' | 'number' | 'state' | 'isDraft'>>): Promise<PrEnrichment[]>;
   /** The repositories GitHub's repository picker offers for what the user typed (nothing: its first list). */
@@ -49,6 +51,7 @@ export interface DataSource {
 export function createRpcDataSource(): DataSource {
   return {
     fetchInbox: (views, force) => rpc('inbox.fetch', { views, force }),
+    fetchInboxPage: (view, page) => rpc('inbox.fetchMore', { view, page }),
     enrichInbox: (prs) => rpc('inbox.enrich', { prs }),
     searchRepos: (query) => rpc('repos.search', { query }),
     fetchPr: (repo, number, force) => rpc('pr.fetch', { repo, number, force }),
@@ -74,6 +77,8 @@ export function createRpcDataSource(): DataSource {
 
 export interface Fixtures {
   inbox: ViewResult[];
+  /** The rows of each view's later pages, by view id, page 2 first. */
+  inboxPages: Record<string, PrSummary[][]>;
   prs: PrDetail[];
 }
 
@@ -92,10 +97,16 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
         const result = fixtures.inbox.find((r) => r.view.id === view.id) ?? { view, prs: [], totalCount: 0, fetchedAt: new Date().toISOString() };
         return { ...result, prs: result.prs.map((pr) => ({ ...pr, mergeStatus: pr.isDraft ? 'DRAFT' : 'UNKNOWN', reviewers: [], additions: 0, deletions: 0 })) };
       }),
+    fetchInboxPage: async (view, page) => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const first = fixtures.inbox.find((r) => r.view.id === view.id);
+      const prs = fixtures.inboxPages[view.id]?.[page - 2] ?? [];
+      return { view, totalCount: first?.totalCount ?? 0, fetchedAt: new Date().toISOString(), prs: prs.map((pr) => ({ ...pr, reviewers: [], additions: 0, deletions: 0 })) };
+    },
     // The fixture rows' own values, a moment later, as GitHub's merge box and diffstat would give them.
     enrichInbox: async (prs) => {
       await new Promise((resolve) => setTimeout(resolve, 400));
-      const rows = fixtures.inbox.flatMap((result) => result.prs);
+      const rows = [...fixtures.inbox.flatMap((result) => result.prs), ...Object.values(fixtures.inboxPages).flat(2)];
       return prs.map(({ repo, number }) => {
         const pr = rows.find((row) => row.repo.owner === repo.owner && row.repo.name === repo.name && row.number === number);
         return pr ? { mergeStatus: pr.mergeStatus, reviewers: pr.reviewers, additions: pr.additions, deletions: pr.deletions } : {};

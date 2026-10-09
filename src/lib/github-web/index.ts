@@ -4,7 +4,7 @@
 
 import type { RpcMethod, RpcMethods, RpcRequest, RpcResponse } from '../rpc';
 import { getSettings } from '../settings';
-import { enrichPull, fetchInbox } from './inbox';
+import { enrichPull, fetchInbox, fetchViewPage } from './inbox';
 import { mutations, pullRequestFor, rememberPullRequest } from './mutations';
 import { fetchPullRequestPage } from './pull-request';
 import { repositoryCandidatesFrom, repositoryPickerPath } from './repositories';
@@ -32,6 +32,11 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
     const results = await cached(key, 60_000, force, () => fetchInbox(views, inboxScope));
     // Results are index-aligned with `views`; the views themselves are not cached so renames show at once.
     return results.map((result, i) => ({ ...result, view: views[i]! }));
+  },
+  'inbox.fetchMore': async ({ view, page }) => {
+    const { inboxScope } = await getSettings();
+    const key = `inbox-page:${JSON.stringify([inboxScope, view.query, page])}`;
+    return { ...(await cached(key, 60_000, false, () => fetchViewPage(view, inboxScope, page))), view };
   },
   'inbox.enrich': async ({ prs }) => {
     const { mergeMethod } = await getSettings();

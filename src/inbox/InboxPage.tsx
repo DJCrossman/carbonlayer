@@ -26,6 +26,7 @@ import './inbox.css';
 export function InboxPage({ source, route }: { source: DataSource; route: Extract<AppRoute, { page: 'inbox' }> }) {
   const inbox = useInbox(source);
   const enrichment = useRowEnrichment(source);
+  const moreRows = useMoreRows(source);
   const { settings } = inbox;
   const [selected, setSelected] = useState<SelectedRow | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -41,11 +42,13 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
 
   // How each section orders its rows, as its column headers were last clicked (this visit only).
   const [sorts, setSorts] = useState<Record<string, SectionSort>>({});
-  // Each section's rows, with what enrichment has found, in the order the section shows them, which j / k follow too.
+  // Each section's rows, those "Load more" added after the first page's, with what enrichment has found, in the order the
+  // section shows them, which j / k follow too.
   const resultsByView = new Map(
     inbox.results?.map((result) => {
       const { by, descending } = sorts[result.view.id] ?? LATEST_UPDATED_FIRST;
-      const enriched = result.prs.map((pr) => ({ ...pr, ...enrichment.found.get(pr.id)?.enrichment }));
+      const added = moreRows.addedTo(result.view, settings?.inboxScope ?? '')?.prs.filter((pr) => !result.prs.some((first) => first.id === pr.id)) ?? [];
+      const enriched = [...result.prs, ...added].map((pr) => ({ ...pr, ...enrichment.found.get(pr.id)?.enrichment }));
       const prs = enriched.toSorted((a, b) => {
         const ascending =
           by === 'title' ? a.title.localeCompare(b.title) : by === 'changes' ? a.additions + a.deletions - (b.additions + b.deletions) : Date.parse(a.updatedAt) - Date.parse(b.updatedAt);
@@ -290,27 +293,38 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
 
           {settings.views.length === 0 && <p className="gg-inbox__muted">No sections yet: Add section in the sidebar adds one.</p>}
 
-          {settings.views.map((view) => (
-            <div key={view.id} className="gg-inbox__section" data-view-id={view.id}>
-              <InboxSection
-                view={view}
-                result={resultsByView.get(view.id)}
-                loading={inbox.error === null}
-                sort={sorts[view.id] ?? LATEST_UPDATED_FIRST}
-                selectedPrId={selected?.viewId === view.id ? selected.prId : null}
-                overdueAfterHours={view.id === 'graphite-needs-your-review' ? 48 : undefined}
-                onSort={(by) => sortSection(view.id, by)}
-                onToggleCollapsed={() => toggleCollapsed(view.id)}
-                onEdit={() => setEditing(view)}
-                isEnriched={(pr) => enrichment.found.has(pr.id)}
-                onRowShown={enrichment.want}
-                onOpen={(pr, newTab) => {
-                  setSelected({ viewId: view.id, prId: pr.id });
-                  openPullRequest(pr.url, newTab);
-                }}
-              />
-            </div>
-          ))}
+          {settings.views.map((view) => {
+            const result = resultsByView.get(view.id);
+            // GitHub has more rows than shown, until one of its pages comes back empty.
+            const more = moreRows.loading.has(view.id)
+              ? 'loading'
+              : result && result.prs.length < result.totalCount && !moreRows.addedTo(view, settings.inboxScope)?.done
+                ? 'more'
+                : 'none';
+            return (
+              <div key={view.id} className="gg-inbox__section" data-view-id={view.id}>
+                <InboxSection
+                  view={view}
+                  result={result}
+                  loading={inbox.error === null}
+                  sort={sorts[view.id] ?? LATEST_UPDATED_FIRST}
+                  selectedPrId={selected?.viewId === view.id ? selected.prId : null}
+                  overdueAfterHours={view.id === 'graphite-needs-your-review' ? 48 : undefined}
+                  isEnriched={(pr) => enrichment.found.has(pr.id)}
+                  more={more}
+                  onSort={(by) => sortSection(view.id, by)}
+                  onRowShown={enrichment.want}
+                  onLoadMore={() => void moreRows.loadMore(view, settings.inboxScope, result?.prs ?? [])}
+                  onToggleCollapsed={() => toggleCollapsed(view.id)}
+                  onEdit={() => setEditing(view)}
+                  onOpen={(pr, newTab) => {
+                    setSelected({ viewId: view.id, prId: pr.id });
+                    openPullRequest(pr.url, newTab);
+                  }}
+                />
+              </div>
+            );
+          })}
         </main>
       </div>
 
@@ -433,6 +447,50 @@ function useInbox(source: DataSource) {
   }, []);
 
   return { settings, results, error, fetchedAt, refreshing, refresh, saveSettings };
+}
+
+/**
+ * The rows "Load more" has added to each section after its first page, by view id, kept while what the view searches
+ * stays the same. Each click asks for the next of GitHub's pages, or, when the view's limit cut the first page short,
+ * the first again for the rows it left out; a page that adds nothing new is followed by the next, once; an empty page
+ * means there is no more.
+ */
+function useMoreRows(source: DataSource) {
+  const [added, setAdded] = useState<Record<string, { searched: string; nextPage: number; prs: PrSummary[]; done: boolean }>>({});
+  const [loading, setLoading] = useState<ReadonlySet<string>>(new Set());
+
+  /** What "Load more" has added to `view`, unless what it searches has changed since. */
+  function addedTo(view: View, scope: string) {
+    const entry = added[view.id];
+    return entry?.searched === JSON.stringify([scope, view.query, view.limit]) ? entry : undefined;
+  }
+
+  async function loadMore(view: View, scope: string, shown: PrSummary[]) {
+    if (loading.has(view.id)) return;
+    setLoading((current) => new Set(current).add(view.id));
+    const kept = addedTo(view, scope);
+    let page = kept?.nextPage ?? (view.limit !== undefined && shown.length >= view.limit ? 1 : 2);
+    const found: PrSummary[] = [];
+    let done = false;
+    try {
+      for (let tries = 0; tries < 2 && found.length === 0 && !done; tries += 1, page += 1) {
+        const { prs } = await source.fetchInboxPage(view, page);
+        done = prs.length === 0;
+        found.push(...prs.filter((pr) => !shown.some((other) => other.id === pr.id)));
+      }
+      setAdded((current) => ({ ...current, [view.id]: { searched: JSON.stringify([scope, view.query, view.limit]), nextPage: page, prs: [...(kept?.prs ?? []), ...found], done } }));
+    } catch (cause) {
+      showToast(`Could not load more: ${cause instanceof Error ? cause.message : String(cause)}`, 'danger');
+    } finally {
+      setLoading((current) => {
+        const next = new Set(current);
+        next.delete(view.id);
+        return next;
+      });
+    }
+  }
+
+  return { addedTo, loading, loadMore };
 }
 
 /**

@@ -22,8 +22,10 @@ export function InboxSection({
   selectedPrId,
   overdueAfterHours,
   isEnriched,
+  more,
   onSort,
   onRowShown,
+  onLoadMore,
   onToggleCollapsed,
   onEdit,
   onOpen,
@@ -37,7 +39,10 @@ export function InboxSection({
   overdueAfterHours: number | undefined;
   /** Whether a row has what GitHub's dashboard leaves out (merge status, reviewers, line counts); until then those columns show a skeleton dash. */
   isEnriched: (pr: PrSummary) => boolean;
+  /** Whether GitHub has rows beyond those shown ("Load more"), and whether they are on their way. */
+  more: 'more' | 'loading' | 'none';
   onSort: (by: SectionSort['by']) => void;
+  onLoadMore: () => void;
   /** A row came within 200px of view (again, after it was updated): time to ask for what the dashboard leaves out. */
   onRowShown: (pr: PrSummary) => void;
   onToggleCollapsed: () => void;
@@ -96,6 +101,11 @@ export function InboxSection({
               />
             ))
           : loading && ['48%', '62%', '36%'].map((width) => <SkeletonRow key={width} titleWidth={width} />))}
+      {expanded && result && more !== 'none' && (
+        <button type="button" className="gg-section__more" disabled={more === 'loading'} onClick={onLoadMore}>
+          {more === 'loading' ? 'Loading…' : 'Load more'}
+        </button>
+      )}
     </Card>
   );
 }

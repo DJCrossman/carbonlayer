@@ -3,11 +3,11 @@ import type { PrDetail } from '../model';
 import type { RpcRequest } from '../rpc';
 import { DEFAULT_SETTINGS } from '../settings';
 import { handleRpc } from './index';
-import { enrichPull, fetchInbox } from './inbox';
+import { enrichPull, fetchInbox, fetchViewPage } from './inbox';
 import { fetchPullRequestPage } from './pull-request';
 
 vi.mock('../settings', async (original) => ({ ...(await original<typeof import('../settings')>()), getSettings: vi.fn(async () => DEFAULT_SETTINGS) }));
-vi.mock('./inbox', () => ({ fetchInbox: vi.fn(async () => [{ prs: [], totalCount: 0, fetchedAt: 'now' }]), enrichPull: vi.fn() }));
+vi.mock('./inbox', () => ({ fetchInbox: vi.fn(async () => [{ prs: [], totalCount: 0, fetchedAt: 'now' }]), enrichPull: vi.fn(), fetchViewPage: vi.fn() }));
 vi.mock('./pull-request', () => ({
   fetchPullRequestPage: vi.fn(async () => ({ id: 'PR_1', repo: { owner: 'o', name: 'r' }, number: 1, headOid: 'h', baseOid: 'b', stack: { source: 'none' }, threads: [] }) as unknown as PrDetail),
 }));
@@ -39,6 +39,13 @@ describe('handleRpc', () => {
 
     expect(await call('pr.comment', { prId: 'PR_unknown', body: 'hi' })).toEqual({ kind: 'gg-rpc-result', id: 'req-1', ok: false, error: 'Open the pull request first' });
     expect(await call('nope' as RpcRequest['method'], {})).toMatchObject({ ok: false, error: 'Unknown request: nope' });
+  });
+
+  it('fetches a later page of a view in the inbox scope, answering with the view as asked', async () => {
+    const view = { id: 'a', name: 'Mine', query: 'is:pr author:@me' };
+    vi.mocked(fetchViewPage).mockResolvedValue({ view: { ...view, name: 'Earlier name' }, prs: [], totalCount: 40, fetchedAt: 'now' });
+    expect(await call('inbox.fetchMore', { view, page: 2 })).toMatchObject({ ok: true, result: { view, totalCount: 40 } });
+    expect(fetchViewPage).toHaveBeenCalledWith(view, DEFAULT_SETTINGS.inboxScope, 2);
   });
 
   it('enriches inbox rows three pull requests at a time, and keeps each answer', async () => {

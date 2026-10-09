@@ -9,24 +9,29 @@ import { mergeState } from './merge-box';
 import { reviewersOf } from './reviews';
 import { embeddedPayload, findInPayload, getJson, githubUser, noteShape, politely, request } from './session';
 
-/** Every view's rows, three views at a time so at most three requests are in flight. */
+/** Every view's first page of rows, cut to its limit, three views at a time so at most three requests are in flight. */
 export async function fetchInbox(views: View[], scope: string): Promise<ViewResult[]> {
-  return politely(views, 3, (view) => fetchView(view, scope));
+  return politely(views, 3, (view) => fetchView(view, scope, 1, view.limit ?? 50));
 }
 
-async function fetchView(view: View, scope: string): Promise<ViewResult> {
+/** Page `page` of a view's rows, as GitHub pages its search or section, whole: what "Load more" adds to a section. */
+export function fetchViewPage(view: View, scope: string, page: number): Promise<ViewResult> {
+  return fetchView(view, scope, page, Infinity);
+}
+
+async function fetchView(view: View, scope: string, page: number, limit: number): Promise<ViewResult> {
   const section = inboxFilterOf(view);
   const query = resolveViewQuery(view, scope);
   let found: { pulls: Pull[]; totalCount: number };
   if (section) {
-    const data = await getJson<unknown>(`/pulls/inbox/queries?filter=${section}&max_pr_age=1m`);
+    const data = await getJson<unknown>(`/pulls/inbox/queries?filter=${section}&max_pr_age=1m${page > 1 ? `&page=${page}` : ''}`);
     noteShape('inbox/queries', data);
     found = pullsIn(data);
   } else {
-    found = await searchPulls(query);
+    found = await searchPulls(query, page);
   }
-  const shown = found.pulls.slice(0, view.limit ?? 50);
-  const deferred = await deferredFields(shown, section ? { section } : { query });
+  const shown = found.pulls.slice(0, limit);
+  const deferred = await deferredFields(shown, section ? { section } : { query }, page);
   return {
     view,
     prs: shown.map((pull) => summarisePull({ ...pull, ...deferred.get(pull.id) }, section)),
@@ -48,25 +53,25 @@ function pullsIn(data: unknown): { pulls: Pull[]; totalCount: number } {
   return { pulls, totalCount };
 }
 
-/** A search's first page of rows, as GitHub's dashboard renders it. Also used for stack neighbours. */
-export async function searchPulls(query: string): Promise<{ pulls: Pull[]; totalCount: number }> {
-  const response = await request(`/pulls/search?${new URLSearchParams({ q: query })}`, 'application/json');
+/** A page of a search's rows (the first unless said), as GitHub's dashboard renders it. Also used for stack neighbours. */
+export async function searchPulls(query: string, page = 1): Promise<{ pulls: Pull[]; totalCount: number }> {
+  const response = await request(`/pulls/search?${new URLSearchParams({ q: query, ...(page > 1 && { page: String(page) }) })}`, 'application/json');
   if (response.headers.get('content-type')?.includes('json')) {
     const data = (await response.json()) as { payload?: Record<string, unknown> } | null;
     noteShape('pulls/search (JSON)', data);
     return pullsIn(data?.payload?.pullsDashboardSurfaceContentRoute ?? data);
   }
-  const page = new DOMParser().parseFromString(await response.text(), 'text/html');
-  return pullsIn(embeddedPayload(page, 'pullsDashboardSurfaceContentRoute')?.payload.pullsDashboardSurfaceContentRoute);
+  const html = new DOMParser().parseFromString(await response.text(), 'text/html');
+  return pullsIn(embeddedPayload(html, 'pullsDashboardSurfaceContentRoute')?.payload.pullsDashboardSurfaceContentRoute);
 }
 
 /**
  * The deferred fields (review decision, CI rollup, review counts) of these rows, by PR id. The rows still show without
  * them, so a failure is logged and yields none.
  */
-export async function deferredFields(pulls: Pull[], search: { section: GitHubInboxFilter } | { query: string }): Promise<Map<string, Partial<Pull>>> {
+export async function deferredFields(pulls: Pull[], search: { section: GitHubInboxFilter } | { query: string }, page = 1): Promise<Map<string, Partial<Pull>>> {
   if (pulls.length === 0) return new Map();
-  const params = new URLSearchParams('section' in search ? { page: '1' } : { q: search.query, page: '1' });
+  const params = new URLSearchParams('section' in search ? { page: String(page) } : { q: search.query, page: String(page) });
   for (const pull of pulls) params.append('ids[]', pull.id);
   let data: unknown;
   try {

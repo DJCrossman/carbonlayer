@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { enrichPull, fetchInbox, summarisePull, type Pull } from './inbox';
+import { enrichPull, fetchInbox, fetchViewPage, summarisePull, type Pull } from './inbox';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -66,6 +66,30 @@ describe('fetchInbox', () => {
     expect(requested).toContain('/pulls/inbox/queries?filter=review-requested&max_pr_age=1m');
     expect(requested).toContain('/pulls/inbox/deferred?page=1&ids%5B%5D=PR_1&ids%5B%5D=PR_2');
     expect(requested).toContain(`/pulls/search?${new URLSearchParams({ q: 'org:acme is:pr author:@me' })}`);
+  });
+
+  it("fetches a later page of a search, or of one of GitHub's sections, whole", async () => {
+    const requested: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        requested.push(url);
+        if (url.startsWith('/pulls/inbox/queries')) return Response.json({ results: [pull(30), pull(31)], totalCount: 60 });
+        if (url.startsWith('/pulls/search')) return Response.json({ payload: { pullsDashboardSurfaceContentRoute: { results: [pull(26), pull(27), pull(28)], pageInfo: { totalCount: 40 } } } });
+        return Response.json([]);
+      }),
+    );
+    const search = await fetchViewPage({ id: 'b', name: 'Mine', query: 'is:pr author:@me', limit: 2 }, 'org:acme', 2);
+    expect(search).toMatchObject({ totalCount: 40, prs: [{ number: 26 }, { number: 27 }, { number: 28 }] });
+    const section = await fetchViewPage({ id: 'a', name: 'Needs your review', query: 'inbox:review-requested' }, '', 3);
+    expect(section).toMatchObject({ totalCount: 60, prs: [{ number: 30 }, { number: 31 }] });
+    const q = 'org:acme is:pr author:@me';
+    expect(requested).toEqual([
+      `/pulls/search?${new URLSearchParams({ q, page: '2' })}`,
+      `/pulls/deferred?${new URLSearchParams([['q', q], ['page', '2'], ['ids[]', 'PR_26'], ['ids[]', 'PR_27'], ['ids[]', 'PR_28']])}`,
+      '/pulls/inbox/queries?filter=review-requested&max_pr_age=1m&page=3',
+      '/pulls/inbox/deferred?page=3&ids%5B%5D=PR_30&ids%5B%5D=PR_31',
+    ]);
   });
 
   it('accepts a bare list of rows', async () => {
