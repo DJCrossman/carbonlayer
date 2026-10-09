@@ -1,5 +1,5 @@
-// The inbox (the github.com homepage): one collapsible card per saved view, Graphite-dense rows, j/k keyboard
-// navigation, shareable view lists, and Graphite's section editor in a drawer. Data comes through the DataSource; navigation goes through the parent page
+// The inbox (the github.com homepage): Graphite's sections sidebar beside one collapsible card per saved view,
+// Graphite-dense rows, j/k keyboard navigation, shareable view lists, and Graphite's section editor in a drawer. Data comes through the DataSource; navigation goes through the parent page
 // (src/app/bridge.ts).
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
@@ -17,6 +17,7 @@ import { GraphiteImport } from './GraphiteImport';
 import { importViews } from './import-views';
 import { InboxSection } from './InboxSection';
 import { SectionEditor } from './SectionEditor';
+import { SectionsSidebar } from './SectionsSidebar';
 import { moveSelection, type SelectedRow } from './selection';
 import { ShortcutHelp } from './ShortcutHelp';
 import './inbox.css';
@@ -29,6 +30,9 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   const [graphiteOpen, setGraphiteOpen] = useState(false);
   // The view in the section editor, 'new' for one being added.
   const [editing, setEditing] = useState<View | 'new' | null>(null);
+  // The sidebar over the inbox, on a window too narrow to show it beside the sections.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [currentViewId, showViewId] = useSectionInView(settings?.views);
   // The import offer is answered once per link; the route keeps the same array until the parent sends a new one.
   const [answeredImport, setAnsweredImport] = useState<View[] | null>(null);
   const pendingImport = route.importViews !== answeredImport ? route.importViews : null;
@@ -93,6 +97,27 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
     void inbox.saveSettings({ views: settings.views.map((view) => (view.id === viewId ? { ...view, collapsed: !view.collapsed } : view)) });
   }
 
+  function goToSection(view: View) {
+    if (view.collapsed) toggleCollapsed(view.id);
+    document.querySelector(`[data-view-id="${CSS.escape(view.id)}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    showViewId(view.id);
+    setSidebarOpen(false);
+  }
+
+  function moveSection(index: number, offset: -1 | 1) {
+    if (!settings) return;
+    const views = [...settings.views];
+    const [view] = views.splice(index, 1);
+    if (view) views.splice(index + offset, 0, view);
+    void inbox.saveSettings({ views });
+  }
+
+  function toggleSidebar() {
+    // A narrow window shows the sidebar over the inbox for a moment; a wide one remembers it shown or hidden.
+    if (window.matchMedia('(max-width: 899px)').matches) setSidebarOpen(!sidebarOpen);
+    else void inbox.saveSettings({ sidebarCollapsed: !settings?.sidebarCollapsed });
+  }
+
   function saveSection(saved: View) {
     if (!settings) return;
     const exists = settings.views.some((view) => view.id === saved.id);
@@ -138,6 +163,16 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
     <div className="gg-inbox">
       <header className="gg-inbox__bar">
         <div className="gg-inbox__bar-inner">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon="sidebar"
+            className={settings.sidebarCollapsed ? 'gg-inbox__sidebar-toggle is-collapsed' : 'gg-inbox__sidebar-toggle'}
+            aria-label="Sections"
+            aria-expanded={sidebarOpen}
+            title="Show sections"
+            onClick={toggleSidebar}
+          />
           <h1 className="gg-inbox__title">
             <Icon name="logo" className="gg-inbox__logo" />
             Pull requests
@@ -168,56 +203,78 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
         </div>
       </header>
 
-      <main className="gg-inbox__body">
-        {pendingImport && (
-          <div className="gg-inbox__notice gg-inbox__notice--accent" role="region" aria-label="Import shared views">
-            <Icon name="link" />
-            <span className="gg-inbox__notice-text">
-              <strong>
-                Import {pendingImport.length} {pendingImport.length === 1 ? 'view' : 'views'} from this link
-              </strong>
-              <span className="gg-inbox__notice-detail">{pendingImport.map((view) => view.name).join(' · ')}</span>
-            </span>
-            <span className="gg-inbox__notice-actions">
-              <Button size="sm" variant="primary" onClick={() => answerImport('replace')}>
-                Replace
-              </Button>
-              <Button size="sm" onClick={() => answerImport('append')}>
-                Append
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => answerImport('dismiss')}>
-                Dismiss
-              </Button>
-            </span>
-          </div>
-        )}
-
-        {inbox.error && (
-          <div className="gg-inbox__notice gg-inbox__notice--danger" role="alert">
-            <Icon name="alert" />
-            <span className="gg-inbox__notice-text">{inbox.error}</span>
-          </div>
-        )}
-
-        {settings.views.length === 0 && <p className="gg-inbox__muted">No views yet. Add one under Configure.</p>}
-
-        {settings.views.map((view) => (
-          <InboxSection
-            key={view.id}
-            view={view}
-            result={resultsByView.get(view.id)}
-            loading={inbox.error === null}
-            selectedPrId={selected?.viewId === view.id ? selected.prId : null}
-            overdueAfterHours={view.id === 'needs-review' ? 48 : undefined}
-            onToggleCollapsed={() => toggleCollapsed(view.id)}
-            onEdit={() => setEditing(view)}
-            onOpen={(pr, newTab) => {
-              setSelected({ viewId: view.id, prId: pr.id });
-              openPullRequest(pr.url, newTab);
+      <div className={settings.sidebarCollapsed ? 'gg-inbox__layout is-sidebar-collapsed' : 'gg-inbox__layout'}>
+        {(!settings.sidebarCollapsed || sidebarOpen) && (
+          <SectionsSidebar
+            views={settings.views}
+            resultsByView={resultsByView}
+            currentViewId={currentViewId}
+            open={sidebarOpen}
+            onSelect={goToSection}
+            onMove={moveSection}
+            onEdit={(view) => {
+              setEditing(view);
+              setSidebarOpen(false);
             }}
+            onAdd={() => {
+              setEditing('new');
+              setSidebarOpen(false);
+            }}
+            onHide={toggleSidebar}
           />
-        ))}
-      </main>
+        )}
+        <main className="gg-inbox__body">
+          {pendingImport && (
+            <div className="gg-inbox__notice gg-inbox__notice--accent" role="region" aria-label="Import shared views">
+              <Icon name="link" />
+              <span className="gg-inbox__notice-text">
+                <strong>
+                  Import {pendingImport.length} {pendingImport.length === 1 ? 'view' : 'views'} from this link
+                </strong>
+                <span className="gg-inbox__notice-detail">{pendingImport.map((view) => view.name).join(' · ')}</span>
+              </span>
+              <span className="gg-inbox__notice-actions">
+                <Button size="sm" variant="primary" onClick={() => answerImport('replace')}>
+                  Replace
+                </Button>
+                <Button size="sm" onClick={() => answerImport('append')}>
+                  Append
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => answerImport('dismiss')}>
+                  Dismiss
+                </Button>
+              </span>
+            </div>
+          )}
+
+          {inbox.error && (
+            <div className="gg-inbox__notice gg-inbox__notice--danger" role="alert">
+              <Icon name="alert" />
+              <span className="gg-inbox__notice-text">{inbox.error}</span>
+            </div>
+          )}
+
+          {settings.views.length === 0 && <p className="gg-inbox__muted">No sections yet: Add section in the sidebar adds one.</p>}
+
+          {settings.views.map((view) => (
+            <div key={view.id} className="gg-inbox__section" data-view-id={view.id}>
+              <InboxSection
+                view={view}
+                result={resultsByView.get(view.id)}
+                loading={inbox.error === null}
+                selectedPrId={selected?.viewId === view.id ? selected.prId : null}
+                overdueAfterHours={view.id === 'needs-review' ? 48 : undefined}
+                onToggleCollapsed={() => toggleCollapsed(view.id)}
+                onEdit={() => setEditing(view)}
+                onOpen={(pr, newTab) => {
+                  setSelected({ viewId: view.id, prId: pr.id });
+                  openPullRequest(pr.url, newTab);
+                }}
+              />
+            </div>
+          ))}
+        </main>
+      </div>
 
       {helpOpen && <ShortcutHelp onClose={() => setHelpOpen(false)} />}
       {editing && (
@@ -336,6 +393,44 @@ function useInbox(source: DataSource) {
   }, []);
 
   return { settings, results, error, fetchedAt, refreshing, refresh, saveSettings };
+}
+
+/**
+ * The section the reader is at: the first whose card reaches below the top bar, as the page scrolls, or the one just
+ * gone to, until the reader scrolls on their own.
+ */
+function useSectionInView(views: View[] | undefined): [string | null, (viewId: string) => void] {
+  const [current, setCurrent] = useState<string | null>(null);
+  const goneTo = useRef<{ viewId: string; at: number } | null>(null);
+  const viewCount = views?.length ?? 0;
+  useEffect(() => {
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      // A smooth scroll to the section just gone to is not the reader scrolling.
+      if (goneTo.current && Date.now() - goneTo.current.at < 1000) return;
+      goneTo.current = null;
+      const sections = [...document.querySelectorAll<HTMLElement>('[data-view-id]')];
+      const reached = sections.find((section) => section.getBoundingClientRect().bottom > 60) ?? sections.at(-1);
+      setCurrent(reached?.dataset.viewId ?? null);
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    update();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      cancelAnimationFrame(frame);
+    };
+  }, [viewCount]);
+  return [
+    current,
+    (viewId) => {
+      goneTo.current = { viewId, at: Date.now() };
+      setCurrent(viewId);
+    },
+  ];
 }
 
 /** Opens a PR the way a link would: the github.com page navigates (or opens a tab); the standalone harness opens a tab. */

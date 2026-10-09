@@ -9,6 +9,8 @@ export interface Settings {
   views: View[];
   /** Prepended to every view query, e.g. "org:offstreet" — Graphite's repo picker equivalent. */
   inboxScope: string;
+  /** Whether the inbox's sections sidebar is hidden (on a wide window; a narrow one shows it on demand). */
+  sidebarCollapsed: boolean;
   inboxEnabled: boolean;
   prEnabled: boolean;
   diffLayout: 'unified' | 'split';
@@ -19,6 +21,7 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   views: DEFAULT_VIEWS,
   inboxScope: '',
+  sidebarCollapsed: false,
   inboxEnabled: true,
   prEnabled: true,
   diffLayout: 'unified',

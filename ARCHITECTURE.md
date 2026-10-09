@@ -64,7 +64,11 @@ A view with a `filter` (Graphite's share-link form, `{ groups: [{ rules: [{ isNe
 row by row in the section editor (`src/inbox/SectionEditor.tsx`, a right-side drawer like Graphite's "Update section",
 opened from a section's gear in the inbox and from "Edit…" on the options page), and its `query` is compiled from the
 filter and its own `repos` on every save with the import's mapping (`searchForFilter` in `src/lib/graphite.ts`).
-"Advanced" there shows that query and lets the user write one by hand instead, which drops the filter. Sharing: "Share" encodes
+"Advanced" there shows that query and lets the user write one by hand instead, which drops the filter. Beside the
+section cards, Graphite's sections sidebar (`src/inbox/SectionsSidebar.tsx`) lists every section with its count, the one
+in view highlighted; a click scrolls to the section (expanding it), ↑ / ↓ reorder, the gear opens the editor and "Add
+section" opens it for a new view. It hides with `sidebarCollapsed` in settings, and below 900px it opens over the inbox
+from the top bar's toggle. Sharing: "Share" encodes
 the view list into `https://github.com/#views=<base64url json>`; opening such a link with the
 extension installed offers to import (replace or append).
 

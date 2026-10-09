@@ -1,0 +1,155 @@
+/* The sections sidebar (SectionsSidebar.tsx): a sticky 240px column beside the section cards, 30px rows; over the
+   inbox, from the top bar's toggle, below 900px. */
+
+.gg-sidebar {
+  position: sticky;
+  top: 48px;
+  display: flex;
+  flex-direction: column;
+  align-self: start;
+  max-height: calc(100vh - 48px);
+  padding: var(--gg-space-3) var(--gg-space-2) var(--gg-space-4);
+  overflow: auto;
+  box-sizing: border-box;
+}
+.gg-sidebar__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 24px;
+  padding: 0 0 0 var(--gg-space-2);
+  margin-bottom: var(--gg-space-1);
+  color: var(--gg-fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.gg-sidebar__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.gg-sidebar__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: var(--gg-radius);
+}
+.gg-sidebar__item:hover {
+  background: var(--gg-bg-hover);
+}
+.gg-sidebar__item.is-current {
+  background: var(--gg-bg-selected);
+}
+.gg-sidebar__item.is-current::before {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--gg-accent);
+  content: '';
+}
+.gg-sidebar__link {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--gg-space-2);
+  min-width: 0;
+  height: 30px;
+  padding: 0 var(--gg-space-2);
+  border: 0;
+  border-radius: var(--gg-radius);
+  background: none;
+  color: var(--gg-fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.gg-sidebar__link:focus-visible {
+  outline: 2px solid var(--gg-accent);
+  outline-offset: -2px;
+}
+.gg-sidebar__item.is-current .gg-sidebar__link {
+  font-weight: 600;
+}
+.gg-sidebar__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gg-sidebar__count {
+  flex: none;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--gg-fg-muted) 18%, transparent);
+  color: var(--gg-fg-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  line-height: 18px;
+  text-align: center;
+  box-sizing: border-box;
+}
+/* The row's tools take the count's place while the row is hovered or holds the keyboard focus. */
+.gg-sidebar__tools {
+  display: none;
+  flex: none;
+  padding-right: 2px;
+}
+.gg-sidebar__item:hover .gg-sidebar__tools,
+.gg-sidebar__item:has(:focus-visible) .gg-sidebar__tools {
+  display: flex;
+}
+.gg-sidebar__item:hover .gg-sidebar__count,
+.gg-sidebar__item:has(:focus-visible) .gg-sidebar__count {
+  display: none;
+}
+.gg-sidebar__tools .gg-btn--icon.gg-btn--sm {
+  width: 22px;
+  height: 22px;
+}
+.gg-sidebar__add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  margin-top: var(--gg-space-1);
+  padding: 0 var(--gg-space-2);
+  border: 0;
+  border-radius: var(--gg-radius);
+  background: none;
+  color: var(--gg-fg-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.gg-sidebar__add:hover {
+  background: var(--gg-bg-hover);
+  color: var(--gg-fg);
+}
+
+@media (max-width: 899px) {
+  .gg-sidebar {
+    display: none;
+  }
+  .gg-sidebar.is-open {
+    position: fixed;
+    top: 48px;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    display: flex;
+    /* Fixed in the inbox's grid: stretched from top to bottom, not sized to the list. */
+    align-self: stretch;
+    width: 260px;
+    max-height: none;
+    border-right: 1px solid var(--gg-border);
+    background: var(--gg-bg);
+    box-shadow: var(--gg-shadow-overlay);
+  }
+}
