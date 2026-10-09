@@ -1,0 +1,348 @@
+/* Shared UI primitives (src/ui/*.tsx). Only --gg-* tokens; every class is prefixed gg-. */
+
+.gg-icon {
+  display: inline-block;
+  flex: none;
+  vertical-align: text-bottom;
+}
+
+/* Avatar */
+.gg-avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--gg-bg-inset);
+  box-shadow: 0 0 0 1px var(--gg-border-muted);
+}
+.gg-avatar--initial {
+  color: #fff;
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+}
+
+/* RelativeTime */
+.gg-time {
+  color: var(--gg-fg-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.gg-time.is-overdue {
+  color: var(--gg-danger);
+  font-weight: 600;
+}
+
+/* StatusPill */
+.gg-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.gg-pill--success {
+  color: var(--gg-success);
+  background: var(--gg-success-bg);
+}
+.gg-pill--attention {
+  color: var(--gg-attention);
+  background: var(--gg-attention-bg);
+}
+.gg-pill--danger {
+  color: var(--gg-danger);
+  background: var(--gg-danger-bg);
+}
+.gg-pill--done {
+  color: var(--gg-done);
+  background: var(--gg-done-bg);
+}
+.gg-pill--neutral {
+  color: var(--gg-neutral);
+  background: var(--gg-neutral-bg);
+}
+.gg-pill--accent {
+  color: var(--gg-accent);
+  background: color-mix(in srgb, var(--gg-accent) 14%, transparent);
+}
+
+/* ReviewStatus */
+.gg-review {
+  display: inline-flex;
+  align-items: center;
+}
+.gg-review--success {
+  color: var(--gg-success);
+}
+.gg-review--danger {
+  color: var(--gg-danger);
+}
+.gg-review--attention {
+  color: var(--gg-attention);
+}
+.gg-review--muted {
+  color: var(--gg-fg-muted);
+}
+.gg-review--subtle {
+  color: var(--gg-fg-subtle);
+  opacity: 0.6;
+}
+
+/* CiStatus */
+.gg-ci-bar {
+  display: flex;
+  gap: 2px;
+  width: 100%;
+  height: 6px;
+}
+.gg-ci-bar--dense {
+  gap: 1px;
+}
+.gg-ci-bar__seg {
+  flex: 1 1 0;
+  min-width: 1px;
+  border-radius: 1px;
+  background: var(--gg-border);
+}
+.gg-ci-bar__seg:first-child {
+  border-radius: 3px 1px 1px 3px;
+}
+.gg-ci-bar__seg:last-child {
+  border-radius: 1px 3px 3px 1px;
+}
+.gg-ci-bar__seg:only-child {
+  border-radius: 3px;
+}
+.gg-ci-bar__seg--success {
+  background: var(--gg-success);
+}
+.gg-ci-bar__seg--danger {
+  background: var(--gg-danger);
+}
+.gg-ci-bar__seg--attention {
+  background: var(--gg-attention);
+}
+.gg-ci-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--gg-fg-muted);
+  white-space: nowrap;
+}
+.gg-ci-compact--success .gg-icon {
+  color: var(--gg-success);
+}
+.gg-ci-compact--danger .gg-icon {
+  color: var(--gg-danger);
+}
+.gg-ci-compact--attention .gg-icon {
+  color: var(--gg-attention);
+}
+
+/* LabelChip: github.com's label colour maths, so any label colour stays readable in both themes. */
+.gg-label {
+  --perceived-lightness: calc(((var(--label-r) * 0.2126) + (var(--label-g) * 0.7152) + (var(--label-b) * 0.0722)) / 255);
+  --lightness-switch: max(0, min(calc((var(--perceived-lightness) - var(--lightness-threshold)) * -1000), 1));
+  --lightness-threshold: 0.453;
+  --border-threshold: 0.96;
+  --border-alpha: max(0, min(calc((var(--perceived-lightness) - var(--border-threshold)) * 100), 1));
+  display: inline-flex;
+  align-items: center;
+  max-width: 160px;
+  height: 18px;
+  padding: 0 7px;
+  overflow: hidden;
+  border: 1px solid hsla(var(--label-h), calc(var(--label-s) * 1%), calc((var(--label-l) - 25) * 1%), var(--border-alpha));
+  border-radius: 999px;
+  background: rgb(var(--label-r), var(--label-g), var(--label-b));
+  color: hsl(0deg, 0%, calc(var(--lightness-switch) * 100%));
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:root[data-theme='dark'] .gg-label {
+  --lightness-threshold: 0.6;
+  --background-alpha: 0.18;
+  --border-alpha: 0.3;
+  --lighten-by: calc(((var(--lightness-threshold) - var(--perceived-lightness)) * 100) * var(--lightness-switch));
+  border-color: hsla(var(--label-h), calc(var(--label-s) * 1%), calc((var(--label-l) + var(--lighten-by)) * 1%), var(--border-alpha));
+  background: rgba(var(--label-r), var(--label-g), var(--label-b), var(--background-alpha));
+  color: hsl(var(--label-h), calc(var(--label-s) * 1%), calc((var(--label-l) + var(--lighten-by)) * 1%));
+}
+
+/* Kbd */
+.gg-kbd {
+  display: inline-block;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--gg-border);
+  border-bottom-color: var(--gg-fg-subtle);
+  border-radius: 4px;
+  background: var(--gg-bg-subtle);
+  color: var(--gg-fg);
+  font: 11px/16px var(--gg-font-mono);
+  text-align: center;
+  box-sizing: border-box;
+}
+
+/* Skeleton */
+.gg-skeleton {
+  display: inline-block;
+  flex: none;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--gg-bg-inset) 25%, var(--gg-bg-hover) 50%, var(--gg-bg-inset) 75%);
+  background-size: 200% 100%;
+  animation: gg-shimmer 1.4s linear infinite;
+}
+@keyframes gg-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Card */
+.gg-card {
+  border: 1px solid var(--gg-border);
+  border-radius: var(--gg-radius);
+  background: var(--gg-bg);
+  box-shadow: var(--gg-shadow);
+  overflow: hidden;
+}
+.gg-card__header {
+  display: flex;
+  align-items: center;
+  gap: var(--gg-space-2);
+  min-height: 36px;
+  padding: 0 var(--gg-space-3);
+  border-bottom: 1px solid var(--gg-border-muted);
+  background: var(--gg-bg-subtle);
+  font-weight: 600;
+}
+.gg-card__header:last-child {
+  border-bottom: 0;
+}
+
+/* Button */
+.gg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--gg-border);
+  border-radius: var(--gg-radius);
+  background: var(--gg-bg-subtle);
+  color: var(--gg-fg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.gg-btn:hover:not(:disabled) {
+  background: var(--gg-bg-inset);
+}
+.gg-btn:focus-visible {
+  outline: 2px solid var(--gg-accent);
+  outline-offset: -1px;
+}
+.gg-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.gg-btn .gg-icon {
+  color: var(--gg-fg-muted);
+}
+.gg-btn--sm {
+  height: 24px;
+  padding: 0 8px;
+  gap: 4px;
+  font-size: 12px;
+}
+.gg-btn--icon {
+  width: 28px;
+  padding: 0;
+}
+.gg-btn--icon.gg-btn--sm {
+  width: 24px;
+}
+.gg-btn--primary {
+  border-color: transparent;
+  background: var(--gg-accent);
+  color: var(--gg-accent-fg);
+}
+.gg-btn--primary .gg-icon {
+  color: inherit;
+}
+.gg-btn--primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--gg-accent) 88%, #000);
+}
+.gg-btn--danger {
+  color: var(--gg-danger);
+}
+.gg-btn--danger .gg-icon {
+  color: inherit;
+}
+.gg-btn--danger:hover:not(:disabled) {
+  border-color: var(--gg-danger);
+  background: var(--gg-danger);
+  color: #fff;
+}
+.gg-btn--ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--gg-fg-muted);
+}
+.gg-btn--ghost:hover:not(:disabled) {
+  background: var(--gg-bg-hover);
+  color: var(--gg-fg);
+}
+
+/* Toast */
+.gg-toast-host {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  z-index: 1000;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.gg-toast {
+  padding: 7px 12px;
+  border-radius: var(--gg-radius);
+  background: var(--gg-fg);
+  color: var(--gg-bg);
+  box-shadow: var(--gg-shadow-overlay);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  animation: gg-toast-in 140ms ease-out;
+}
+.gg-toast--danger {
+  background: var(--gg-danger);
+  color: #fff;
+}
+@keyframes gg-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
