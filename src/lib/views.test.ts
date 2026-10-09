@@ -1,5 +1,31 @@
 import { describe, expect, it } from 'vitest';
+import { importGraphiteSections, searchForFilter, type GraphiteInboxSnapshot } from './graphite';
+import userInbox from './graphite-inbox.fixture.json';
 import { DEFAULT_VIEWS, decodeViewsShareHash, encodeViewsShareLink, inboxFilterOf, resolveViewQuery } from './views';
+
+describe('the default views', () => {
+  const imported = importGraphiteSections(userInbox as GraphiteInboxSnapshot).views.map(({ view }) => view);
+
+  it("are Graphite's sections in its order, without the user's own", () => {
+    expect(DEFAULT_VIEWS.map((view) => view.name)).toEqual([
+      'Needs your review',
+      'Returned to you',
+      'Approved',
+      'Waiting for reviewers',
+      'Drafts',
+      "Needs anyone's review",
+      'Merging and recently merged',
+      'Waiting for author',
+    ]);
+    expect(new Set(DEFAULT_VIEWS.map((view) => view.id)).size).toBe(DEFAULT_VIEWS.length);
+  });
+
+  it.each(DEFAULT_VIEWS.map((view) => [view.name, view] as const))('%s carries the filter the Graphite import makes and the query it compiles to', (name, view) => {
+    expect(view.filter).toEqual(imported.find((candidate) => candidate.name === name)?.filter);
+    expect(view.query).toBe(searchForFilter(view.filter!, []).query);
+    expect(view.repos).toBeUndefined();
+  });
+});
 
 describe('share links', () => {
   it('round-trips the default views through a share link', () => {

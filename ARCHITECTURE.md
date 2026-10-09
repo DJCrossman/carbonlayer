@@ -57,9 +57,12 @@ comment in the timeline, enriched through a `/pulls/search` query on the author'
 type View = { id: string; name: string; query: string; filter?: GraphiteFilter; repos?: RepoRef[]; limit?: number; collapsed?: boolean }
 ```
 
-Stored in `chrome.storage.sync`. Default views mirror Graphite's sections; a query `inbox:<filter>` is one
-of GitHub's own inbox sections (`/pulls/inbox/queries`), anything else a search (`/pulls/search`) with
-the inbox scope prepended, unless the query names repositories of its own (`repo:`), which it then searches instead.
+Stored in `chrome.storage.sync`. The default views are Graphite's default sections as the Graphite import translates
+them (`DEFAULT_VIEWS` in `src/lib/views.ts`: each with its Graphite `filter`, the viewer as `@me`, and the query compiled
+from it); settings whose views are all an earlier version's defaults (GitHub's own inbox sections) get them once, in
+`getSettings`. A query `inbox:<filter>` is one of GitHub's own inbox sections (`/pulls/inbox/queries`), anything else a
+search (`/pulls/search`) with the inbox scope prepended, unless the query names repositories of its own (`repo:`), which
+it then searches instead.
 A view with a `filter` (Graphite's share-link form, `{ groups: [{ rules: [{ isNegated, conditions }] }] }`) is edited
 row by row in the section editor (`src/inbox/SectionEditor.tsx`, a right-side drawer like Graphite's "Update section",
 opened from a section's gear in the inbox and from "Edit…" on the options page), and its `query` is compiled from the
@@ -78,7 +81,8 @@ extension's host permission). The inbox's choice is stored as `inboxRepos`, and 
 compiled `(repo:a OR repo:b)` that is prepended; a scope saved earlier as bare `repo:` terms reads back as those
 repositories chosen. Sharing: "Share" encodes
 the view list into `https://github.com/#views=<base64url json>`; opening such a link with the
-extension installed offers to import (replace or append).
+extension installed offers to import (replace or append; appending a view named like one already there, case aside,
+replaces that one in place under its id).
 
 Importing from Graphite (`src/lib/graphite.ts`, UI in `src/inbox/GraphiteImport.tsx` on the inbox's "Import from
 Graphite…" dialog and the options page): "Copy my sections from Graphite" reads every section straight out of the

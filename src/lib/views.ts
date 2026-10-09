@@ -1,9 +1,218 @@
-// Inbox views: Graphite's default sections, each either one of GitHub's own inbox sections
-// (`inbox:<filter>`, served by /pulls/inbox/queries) or a GitHub search query (served by
-// /pulls/search), plus the share-link format (`https://github.com/#views=<base64url json>`).
+// Inbox views: Graphite's default sections, each a GitHub search query (served by /pulls/search) or one of GitHub's own
+// inbox sections (`inbox:<filter>`, served by /pulls/inbox/queries), plus the share-link format
+// (`https://github.com/#views=<base64url json>`).
 
 import { isGraphiteFilter } from './graphite';
 import type { View } from './model';
+
+/**
+ * Graphite's default inbox sections, as its import translates them (the filters of the user's own Graphite inbox,
+ * src/lib/graphite-inbox.fixture.json, with the viewer as @me and the inbox's repositories left to the inbox scope), so
+ * the section editor shows their rows. Each `query` is what `searchForFilter` compiles from its `filter`, written out
+ * because graphite.ts and this module import each other; views.test.ts holds them equal, and each was checked against
+ * the user's live inbox (docs/research/graphite-sections.md, "Verified mapping").
+ */
+export const DEFAULT_VIEWS: View[] = [
+  {
+    id: 'graphite-needs-your-review',
+    name: 'Needs your review',
+    query: 'is:pr -author:@me is:open draft:false review-requested:@me -review:changes_requested sort:updated-desc',
+    filter: {
+      groups: [
+        {
+          rules: [
+            { isNegated: true, conditions: [{ kind: 'AUTHOR_IS', username: '@me' }] },
+            { isNegated: true, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'DRAFT' }, { kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'MERGING' }] },
+            { isNegated: false, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'OPEN' }] },
+            { isNegated: false, conditions: [{ kind: 'OPEN_REVIEW_REQUEST_FOR', username: '@me' }] },
+            { isNegated: true, conditions: [{ kind: 'REVIEW_STATUS_IS', state: 'HAS_UNADDRESSED_CHANGES_REQUESTED' }] },
+            { isNegated: true, conditions: [{ kind: 'REVIEW_STATUS_IS', state: 'IS_FULLY_APPROVED' }] },
+          ],
+        },
+        {
+          rules: [
+            { isNegated: true, conditions: [{ kind: 'AUTHOR_IS', username: '@me' }] },
+            { isNegated: true, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'DRAFT' }, { kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'MERGING' }] },
+            { isNegated: false, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'OPEN' }] },
+            { isNegated: false, conditions: [{ kind: 'OPEN_REVIEW_REQUEST_FOR', username: '@me' }] },
+            { isNegated: true, conditions: [{ kind: 'REVIEW_STATUS_IS', state: 'HAS_UNADDRESSED_CHANGES_REQUESTED' }] },
+            { isNegated: true, conditions: [{ kind: 'REVIEW_STATUS_IS', state: 'ONE_OR_MORE_APPROVALS' }] },
+          ],
+        },
+        {
+          rules: [
+            { isNegated: true, conditions: [{ kind: 'AUTHOR_IS', username: '@me' }] },
+            { isNegated: true, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'DRAFT' }, { kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'MERGING' }] },
+            { isNegated: false, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'OPEN' }] },
+            { isNegated: false, conditions: [{ kind: 'REOPENED_REVIEW_REQUEST_FOR', username: '@me' }] },
+            { isNegated: true, conditions: [{ kind: 'REVIEW_STATUS_IS', state: 'HAS_UNADDRESSED_CHANGES_REQUESTED' }] },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: 'graphite-returned-to-you',
+    name: 'Returned to you',
+    query: 'is:pr is:open draft:false author:@me review:changes_requested sort:updated-desc',
+    filter: {
+      groups: [
+        {
+          rules: [
+            { isNegated: true, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'DRAFT' }, { kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'MERGING' }] },
+            { isNegated: false, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'OPEN' }] },
+            { isNegated: false, conditions: [{ kind: 'AUTHOR_IS', username: '@me' }] },
+            { isNegated: true, conditions: [{ kind: 'REVIEW_STATUS_IS', state: 'IS_FULLY_APPROVED' }] },
+            { isNegated: false, conditions: [{ kind: 'REVIEW_STATUS_IS', state: 'HAS_ACTIVE_REVIEW' }] },
+          ],
+        },
+        {
+          rules: [
+            { isNegated: true, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'DRAFT' }, { kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'MERGING' }] },
+            { isNegated: false, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'OPEN' }] },
+            { isNegated: false, conditions: [{ kind: 'AUTHOR_IS', username: '@me' }] },
+            { isNegated: true, conditions: [{ kind: 'REVIEW_STATUS_IS', state: 'ONE_OR_MORE_APPROVALS' }] },
+            { isNegated: false, conditions: [{ kind: 'REVIEW_STATUS_IS', state: 'HAS_ACTIVE_REVIEW' }] },
+          ],
+        },
+        {
+          rules: [
+            { isNegated: true, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'DRAFT' }, { kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'MERGING' }] },
+            { isNegated: false, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'OPEN' }] },
+            { isNegated: false, conditions: [{ kind: 'AUTHOR_IS', username: '@me' }] },
+            { isNegated: false, conditions: [{ kind: 'REVIEW_STATUS_IS', state: 'HAS_UNADDRESSED_CHANGES_REQUESTED' }] },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: 'graphite-approved',
+    name: 'Approved',
+    query: 'is:pr is:open draft:false author:@me review:approved -review:changes_requested sort:updated-desc',
+    filter: {
+      groups: [
+        {
+          rules: [
+            { isNegated: true, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'DRAFT' }, { kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'MERGING' }] },
+            { isNegated: false, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'OPEN' }] },
+            { isNegated: false, conditions: [{ kind: 'AUTHOR_IS', username: '@me' }] },
+            { isNegated: false, conditions: [{ kind: 'REVIEW_STATUS_IS', state: 'ONE_OR_MORE_APPROVALS' }] },
+            { isNegated: false, conditions: [{ kind: 'REVIEW_STATUS_IS', state: 'IS_FULLY_APPROVED' }] },
+            { isNegated: true, conditions: [{ kind: 'REVIEW_STATUS_IS', state: 'HAS_UNADDRESSED_CHANGES_REQUESTED' }] },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: 'graphite-waiting-for-reviewers',
+    name: 'Waiting for reviewers',
+    query: 'is:pr author:@me is:open draft:false -review:approved -review:changes_requested sort:updated-desc',
+    filter: {
+      groups: [
+        {
+          rules: [
+            { isNegated: false, conditions: [{ kind: 'AUTHOR_IS', username: '@me' }] },
+            { isNegated: false, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'OPEN' }] },
+            { isNegated: true, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'DRAFT' }, { kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'MERGING' }] },
+            { isNegated: true, conditions: [{ kind: 'REVIEW_STATUS_IS', state: 'HAS_ACTIVE_REVIEW' }] },
+            { isNegated: true, conditions: [{ kind: 'REVIEW_STATUS_IS', state: 'IS_FULLY_APPROVED' }] },
+          ],
+        },
+        {
+          rules: [
+            { isNegated: false, conditions: [{ kind: 'AUTHOR_IS', username: '@me' }] },
+            { isNegated: false, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'OPEN' }] },
+            { isNegated: true, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'DRAFT' }, { kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'MERGING' }] },
+            { isNegated: true, conditions: [{ kind: 'REVIEW_STATUS_IS', state: 'HAS_ACTIVE_REVIEW' }] },
+            { isNegated: true, conditions: [{ kind: 'REVIEW_STATUS_IS', state: 'ONE_OR_MORE_APPROVALS' }] },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: 'graphite-drafts',
+    name: 'Drafts',
+    query: 'is:pr author:@me is:open draft:true sort:updated-desc',
+    filter: {
+      groups: [
+        {
+          rules: [
+            { isNegated: false, conditions: [{ kind: 'AUTHOR_IS', username: '@me' }] },
+            { isNegated: false, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'OPEN' }] },
+            { isNegated: false, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'DRAFT' }] },
+            { isNegated: true, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'MERGING' }] },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: 'graphite-needs-anyones-review',
+    name: "Needs anyone's review",
+    query: 'is:pr is:open -author:dependabot -author:app/dependabot -author:@me review:none draft:false sort:updated-desc',
+    filter: {
+      groups: [
+        {
+          rules: [
+            { isNegated: false, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'OPEN' }] },
+            { isNegated: true, conditions: [{ kind: 'AUTHOR_IS', username: 'dependabot' }, { kind: 'AUTHOR_IS', username: '@me' }] },
+            { isNegated: false, conditions: [{ kind: 'REVIEW_STATUS_IS', state: 'REVIEW_REQUIRED_GITHUB' }] },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: 'graphite-merging-and-recently-merged',
+    name: 'Merging and recently merged',
+    query: 'is:pr is:merged merged:>={{7d}} sort:updated-desc',
+    filter: {
+      groups: [
+        {
+          rules: [
+            { isNegated: false, conditions: [{ kind: 'AUTHOR_IS', username: '@me' }] },
+            { isNegated: false, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'MERGING' }] },
+            { isNegated: false, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'OPEN' }] },
+          ],
+        },
+        {
+          rules: [
+            { isNegated: false, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'MERGED' }] },
+            { isNegated: false, conditions: [{ kind: 'LAST_UPDATED', hours: 168 }] },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    id: 'graphite-waiting-for-author',
+    name: 'Waiting for author',
+    query: 'is:pr is:open draft:false reviewed-by:@me -review-requested:@me -author:@me sort:updated-desc',
+    filter: {
+      groups: [
+        {
+          rules: [
+            { isNegated: false, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'OPEN' }] },
+            { isNegated: true, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'DRAFT' }, { kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'MERGING' }] },
+            { isNegated: false, conditions: [{ kind: 'CLOSED_REVIEW_REQUEST_FROM', username: '@me' }] },
+            { isNegated: true, conditions: [{ kind: 'AUTHOR_IS', username: '@me' }] },
+          ],
+        },
+        {
+          rules: [
+            { isNegated: false, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'OPEN' }] },
+            { isNegated: true, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'DRAFT' }, { kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'MERGING' }] },
+            { isNegated: false, conditions: [{ kind: 'APPROVED_BY', username: '@me' }] },
+            { isNegated: true, conditions: [{ kind: 'REOPENED_REVIEW_REQUEST_FOR', username: '@me' }] },
+          ],
+        },
+      ],
+    },
+  },
+];
 
 /** GitHub's built-in inbox sections, usable as a view query `inbox:<id>`. */
 export const GITHUB_INBOX_FILTERS = [
@@ -23,17 +232,6 @@ export function inboxFilterOf(view: View): GitHubInboxFilter | null {
   const filter = match?.[1] as GitHubInboxFilter | undefined;
   return filter && GITHUB_INBOX_FILTERS.includes(filter) ? filter : null;
 }
-
-export const DEFAULT_VIEWS: View[] = [
-  { id: 'needs-review', name: 'Needs your review', query: 'inbox:review-requested' },
-  { id: 'team-review', name: "Needs your team's review", query: 'inbox:team-review-requested' },
-  { id: 'returned', name: 'Returned to you', query: 'inbox:needs-action' },
-  { id: 'approved', name: 'Ready to merge', query: 'inbox:ready-to-merge' },
-  { id: 'drafts', name: 'Drafts', query: 'inbox:your-drafts' },
-  { id: 'waiting-reviewers', name: 'Waiting for review or checks', query: 'inbox:waiting-for-review' },
-  { id: 'recently-merged', name: 'Merging and recently merged', query: 'is:pr author:@me is:merged merged:>={{7d}} sort:updated-desc', limit: 15 },
-  { id: 'waiting-author', name: 'Waiting for author', query: 'is:pr is:open -author:@me reviewed-by:@me -review-requested:@me sort:updated-desc' },
-];
 
 /** A link that shares these views: their JSON as base64url (UTF-8) in the `views` hash parameter of the github.com homepage. */
 export function encodeViewsShareLink(views: View[]): string {

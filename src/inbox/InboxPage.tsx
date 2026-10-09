@@ -271,7 +271,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
                 result={resultsByView.get(view.id)}
                 loading={inbox.error === null}
                 selectedPrId={selected?.viewId === view.id ? selected.prId : null}
-                overdueAfterHours={view.id === 'needs-review' ? 48 : undefined}
+                overdueAfterHours={view.id === 'graphite-needs-your-review' ? 48 : undefined}
                 onToggleCollapsed={() => toggleCollapsed(view.id)}
                 onEdit={() => setEditing(view)}
                 onOpen={(pr, newTab) => {

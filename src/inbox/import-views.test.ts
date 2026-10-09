@@ -25,6 +25,18 @@ describe('importViews', () => {
     expect(new Set(result.map((view) => view.id)).size).toBe(4);
   });
 
+  it('replaces a view of the same name, whatever its case, in place and under its own id', () => {
+    const again: View[] = [
+      { id: 'from-link', name: 'needs your REVIEW ', query: 'is:pr review-requested:@me -author:@me' },
+      { id: 'hotfixes', name: 'Hotfixes', query: 'is:pr label:hotfix' },
+    ];
+    expect(importViews(current, again, 'append')).toEqual([
+      { id: 'needs-review', name: 'needs your REVIEW ', query: 'is:pr review-requested:@me -author:@me' },
+      current[1],
+      again[1],
+    ]);
+  });
+
   it.each(['append', 'replace'] as const)('keeps ids unique when the link itself repeats one (%s)', (mode) => {
     const repeated = [incoming[1]!, { ...incoming[1]!, name: 'Hotfixes again' }];
     const result = importViews([], repeated, mode);

@@ -43,7 +43,11 @@ export async function getSettings(): Promise<Settings> {
   const named = [...(stored.inboxScope ?? '').matchAll(/(?:^|[\s(])repo:([^\s/()]+)\/([^\s()]+)/g)];
   const onlyRepositories = (stored.inboxScope ?? '').replace(/(?:^|[\s(])repo:[^\s()]+/g, ' ').replace(/[()\s]|\bOR\b/g, '') === '';
   const inboxRepos = stored.inboxRepos ?? (onlyRepositories ? named.map(([, owner, name]) => ({ owner: owner!, name: name! })) : []);
-  return { ...DEFAULT_SETTINGS, ...stored, inboxRepos };
+  // Views that are all earlier versions' defaults (mostly GitHub's own inbox sections, none with a Graphite filter)
+  // become Graphite's defaults, once: the swap is saved.
+  const views = stored.views?.length && stored.views.every((view) => EARLIER_DEFAULT_IDS.includes(view.id) && !view.filter) ? DEFAULT_VIEWS : stored.views;
+  if (views !== stored.views) await browser.storage.sync.set({ settings: { ...stored, views } });
+  return { ...DEFAULT_SETTINGS, ...stored, ...(views && { views }), inboxRepos };
 }
 
 export async function setSettings(patch: Partial<Settings>): Promise<Settings> {
@@ -59,3 +63,6 @@ export function watchSettings(onChange: (settings: Settings) => void): () => voi
   browser.storage.onChanged.addListener(listener);
   return () => browser.storage.onChanged.removeListener(listener);
 }
+
+/** The ids of the default views before they were Graphite's sections (most were GitHub's own inbox sections). */
+const EARLIER_DEFAULT_IDS = ['needs-review', 'team-review', 'returned', 'approved', 'drafts', 'waiting-reviewers', 'recently-merged', 'waiting-author'];
