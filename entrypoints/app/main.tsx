@@ -61,7 +61,7 @@ function App({ source }: { source: DataSource }) {
     case 'pr':
       return <PrPage source={source} route={route} />;
     case 'none':
-      return <p style={{ padding: 16 }}>Open github.com/pulls or a pull request.</p>;
+      return <p style={{ padding: 16 }}>Open github.com or a pull request.</p>;
   }
 }
 

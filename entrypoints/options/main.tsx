@@ -112,7 +112,7 @@ function OptionsPage() {
         <h2>Enable</h2>
         <label className="check">
           <input type="checkbox" checked={settings.inboxEnabled} onChange={(event) => update({ inboxEnabled: event.target.checked })} />
-          Replace the pull request inbox at github.com/pulls
+          Show the pull request inbox on the github.com homepage
         </label>
         <label className="check">
           <input type="checkbox" checked={settings.prEnabled} onChange={(event) => update({ prEnabled: event.target.checked })} />

@@ -1,6 +1,6 @@
 // Inbox views: Graphite's default sections, each either one of GitHub's own inbox sections
 // (`inbox:<filter>`, served by /pulls/inbox/queries) or a GitHub search query (served by
-// /pulls/search), plus the share-link format (`https://github.com/pulls#views=<base64url json>`).
+// /pulls/search), plus the share-link format (`https://github.com/#views=<base64url json>`).
 
 import type { View } from './model';
 
@@ -34,12 +34,12 @@ export const DEFAULT_VIEWS: View[] = [
   { id: 'waiting-author', name: 'Waiting for author', query: 'is:pr is:open -author:@me reviewed-by:@me -review-requested:@me sort:updated-desc' },
 ];
 
-/** A link that shares these views: their JSON as base64url (UTF-8) in the `views` hash parameter of github.com/pulls. */
+/** A link that shares these views: their JSON as base64url (UTF-8) in the `views` hash parameter of the github.com homepage. */
 export function encodeViewsShareLink(views: View[]): string {
   const json = JSON.stringify(views.map(({ id, name, query, limit }) => ({ id, name, query, limit })));
   let binary = '';
   for (const byte of new TextEncoder().encode(json)) binary += String.fromCharCode(byte);
-  return `https://github.com/pulls#views=${btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`;
+  return `https://github.com/#views=${btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`;
 }
 
 /** Views encoded in a location hash, or null when the hash carries none / is malformed. */

@@ -35,7 +35,7 @@ export function ViewsEditor({ views, onChange }: { views: View[]; onChange: (vie
   function importFromLink(mode: 'replace' | 'append') {
     let imported: View[] | null = null;
     try {
-      imported = decodeViewsShareHash(new URL(importLink.trim(), 'https://github.com/pulls').hash);
+      imported = decodeViewsShareHash(new URL(importLink.trim(), 'https://github.com/').hash);
     } catch {
       // Not a URL at all.
     }
@@ -142,7 +142,7 @@ export function ViewsEditor({ views, onChange }: { views: View[]; onChange: (vie
           className="grow"
           aria-label="Share link to import"
           value={importLink}
-          placeholder="Paste a share link (https://github.com/pulls#views=…)"
+          placeholder="Paste a share link (https://github.com/#views=…)"
           onChange={(event) => setImportLink(event.target.value)}
         />
         <button type="button" disabled={!importLink.trim()} onClick={() => importFromLink('replace')}>

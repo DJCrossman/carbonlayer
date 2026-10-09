@@ -41,7 +41,7 @@ function Popup() {
       <h1>Graphite-style GitHub</h1>
       <label className="toggle">
         <input type="checkbox" checked={settings.inboxEnabled} onChange={(event) => toggle({ inboxEnabled: event.target.checked })} />
-        Inbox at github.com/pulls
+        Inbox on the github.com homepage
       </label>
       <label className="toggle">
         <input type="checkbox" checked={settings.prEnabled} onChange={(event) => toggle({ prEnabled: event.target.checked })} />
@@ -53,7 +53,7 @@ function Popup() {
           type="button"
           className="primary"
           onClick={() => {
-            void browser.tabs.create({ url: 'https://github.com/pulls' });
+            void browser.tabs.create({ url: 'https://github.com/' });
             window.close();
           }}
         >

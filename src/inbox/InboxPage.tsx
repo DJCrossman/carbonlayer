@@ -1,5 +1,6 @@
-// The inbox (github.com/pulls): one collapsible card per saved view, Graphite-dense rows, j/k keyboard navigation and
-// shareable view lists. Data comes through the DataSource; navigation goes through the parent page (src/app/bridge.ts).
+// The inbox (the github.com homepage): one collapsible card per saved view, Graphite-dense rows, j/k keyboard
+// navigation and shareable view lists. Data comes through the DataSource; navigation goes through the parent page
+// (src/app/bridge.ts).
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { postToParent } from '../app/bridge';

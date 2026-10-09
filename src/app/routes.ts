@@ -12,11 +12,9 @@ export type AppRoute =
 /** Which surface, if any, a github.com URL belongs to. `?gh=1` opts out and yields 'none'. */
 export function parseGitHubLocation(url: URL): AppRoute {
   if (url.hostname !== 'github.com' || url.searchParams.get('gh') === '1') return { page: 'none' };
-  // Signed in, GitHub redirects /pulls to /pulls/inbox, and its dashboard also lives at /pulls/search?q=…,
-  // /pulls/authored, /pulls/assigned, /pulls/involves and saved views /pulls/<id>: every one of them is the inbox.
-  if (/^\/pulls(\/.*)?$/.test(url.pathname)) {
-    return { page: 'inbox', importViews: decodeViewsShareHash(url.hash) };
-  }
+  // The homepage: signed in, GitHub's dashboard. Signed out it is GitHub's marketing page, which the content script
+  // leaves alone.
+  if (url.pathname === '/') return { page: 'inbox', importViews: decodeViewsShareHash(url.hash) };
   // GitHub redirects /files to /changes, its new name for the tab.
   const match = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/(files|changes|commits|checks))?\/?$/.exec(url.pathname);
   if (match && match[1] && match[2] && match[3]) {
@@ -78,7 +76,7 @@ export function parseAppHash(hash: string): AppRoute {
 export function toGitHubUrl(route: AppRoute): string {
   switch (route.page) {
     case 'inbox':
-      return 'https://github.com/pulls';
+      return 'https://github.com/';
     case 'pr': {
       const base = `https://github.com/${route.repo.owner}/${route.repo.name}/pull/${route.number}`;
       return route.section === 'conversation' ? base : `${base}/${route.section}`;

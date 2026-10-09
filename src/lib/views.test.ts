@@ -4,7 +4,7 @@ import { DEFAULT_VIEWS, decodeViewsShareHash, encodeViewsShareLink, inboxFilterO
 describe('share links', () => {
   it('round-trips the default views through a share link', () => {
     const link = encodeViewsShareLink(DEFAULT_VIEWS);
-    expect(link.startsWith('https://github.com/pulls#views=')).toBe(true);
+    expect(link.startsWith('https://github.com/#views=')).toBe(true);
     const hash = new URL(link).hash;
     const decoded = decodeViewsShareHash(hash);
     expect(decoded?.map((v) => v.query)).toEqual(DEFAULT_VIEWS.map((v) => v.query));

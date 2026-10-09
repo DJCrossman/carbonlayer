@@ -1,7 +1,8 @@
-// Content script on github.com: recognises the inbox and PR routes, hides GitHub's page content below its header,
-// shows app.html there in an iframe, and bridges theme, keystrokes, titles and navigation (src/app/bridge.ts). It also
-// answers the app's data requests (src/lib/rpc.ts) with the user's github.com session. `?gh=1` leaves GitHub untouched
-// for one visit; a disabled setting leaves it untouched and offers a "Graphite view" button that switches back.
+// Content script on github.com: recognises the inbox (the homepage, signed in) and PR routes, hides GitHub's page
+// content below its header, shows app.html there in an iframe, and bridges theme, keystrokes, titles and navigation
+// (src/app/bridge.ts). It also answers the app's data requests (src/lib/rpc.ts) with the user's github.com session.
+// `?gh=1` leaves GitHub untouched for one visit; a disabled setting leaves it untouched and offers a "Graphite view"
+// button that switches back.
 import { browser } from 'wxt/browser';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { createIframeUi } from 'wxt/utils/content-script-ui/iframe';
@@ -20,12 +21,32 @@ export default defineContentScript({
     let settings = await getSettings();
     let takeover: ReturnType<typeof takeOverPage> | null = null;
     let graphiteViewButton: HTMLElement | null = null;
+    let awaitingSignIn: MutationObserver | null = null;
 
     // WXT reports navigations through the Navigation API before they commit, and none to the URL already shown, so
     // the destination comes from the event; settings changes use the committed location.
     const sync = (url: URL) => {
       if (takeover?.leavingFor === url.href) return;
-      const route = parseGitHubLocation(url);
+      let route = parseGitHubLocation(url);
+      if (route.page === 'inbox') {
+        // Signed out, the homepage is GitHub's marketing page, which stays GitHub's. <meta name="user-login"> in <head>
+        // names who is signed in, empty for no one; at document_start the parser has not reached it yet, so the
+        // homepage waits for it (or for <body>, which means it is not coming) before hiding or mounting anything.
+        const login = document.querySelector('meta[name="user-login"]')?.getAttribute('content');
+        if (login === undefined && !document.body) {
+          if (!awaitingSignIn) {
+            awaitingSignIn = new MutationObserver(() => {
+              if (!document.querySelector('meta[name="user-login"]') && !document.body) return;
+              awaitingSignIn?.disconnect();
+              awaitingSignIn = null;
+              sync(new URL(location.href));
+            });
+            awaitingSignIn.observe(document.documentElement, { childList: true, subtree: true });
+          }
+          return;
+        }
+        if (!login) route = { page: 'none' };
+      }
       const enabled = (route.page === 'inbox' && settings.inboxEnabled) || (route.page === 'pr' && settings.prEnabled);
       if (!enabled) {
         takeover?.release();
@@ -53,6 +74,7 @@ export default defineContentScript({
     });
     ctx.onInvalidated(() => {
       unwatchSettings();
+      awaitingSignIn?.disconnect();
       takeover?.release();
       takeover = null;
       graphiteViewButton?.remove();

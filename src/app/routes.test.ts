@@ -3,19 +3,17 @@ import { encodeViewsShareLink } from '../lib/views';
 import { parseAppHash, parseGitHubLocation, toAppHash, toGitHubUrl } from './routes';
 
 describe('parseGitHubLocation', () => {
-  it.each([
-    '/pulls',
-    '/pulls/',
-    '/pulls?q=is%3Aopen',
-    '/pulls/inbox',
-    '/pulls/search?q=is%3Apr+is%3Aopen',
-    '/pulls/authored',
-    '/pulls/assigned',
-    '/pulls/involves',
-    '/pulls/12345',
-  ])('takes over GitHub\'s pull request dashboard at %s', (path) => {
-    expect(parseGitHubLocation(new URL(`https://github.com${path}`))).toEqual({ page: 'inbox', importViews: null });
+  it("takes over GitHub's homepage", () => {
+    expect(parseGitHubLocation(new URL('https://github.com/'))).toEqual({ page: 'inbox', importViews: null });
+    expect(parseGitHubLocation(new URL('https://github.com'))).toEqual({ page: 'inbox', importViews: null });
   });
+
+  it.each(['/pulls', '/pulls/inbox', '/pulls/search?q=is%3Apr+is%3Aopen', '/pulls/authored', '/pulls/12345'])(
+    "leaves GitHub's pull request dashboard at %s to GitHub",
+    (path) => {
+      expect(parseGitHubLocation(new URL(`https://github.com${path}`))).toEqual({ page: 'none' });
+    },
+  );
 
   it('recognises the PR pages', () => {
     expect(parseGitHubLocation(new URL('https://github.com/acme/widgets/pull/42'))).toEqual({
@@ -31,26 +29,22 @@ describe('parseGitHubLocation', () => {
   it('leaves everything else, and opted-out pages, to GitHub', () => {
     expect(parseGitHubLocation(new URL('https://github.com/acme/widgets/pulls'))).toEqual({ page: 'none' });
     expect(parseGitHubLocation(new URL('https://github.com/pullsx'))).toEqual({ page: 'none' });
-    expect(parseGitHubLocation(new URL('https://github.com/pulls/inbox?gh=1'))).toEqual({ page: 'none' });
+    expect(parseGitHubLocation(new URL('https://github.com/?gh=1'))).toEqual({ page: 'none' });
     expect(parseGitHubLocation(new URL('https://github.com/acme/widgets/pull/42?gh=1'))).toEqual({ page: 'none' });
     expect(parseGitHubLocation(new URL('https://github.com/acme/widgets/pull/42/commits/abc'))).toEqual({ page: 'none' });
-    expect(parseGitHubLocation(new URL('https://gist.github.com/pulls'))).toEqual({ page: 'none' });
+    expect(parseGitHubLocation(new URL('https://gist.github.com/'))).toEqual({ page: 'none' });
   });
 
   it('carries shared views from the hash into the inbox route', () => {
     const views = [{ id: 'a', name: 'A', query: 'is:pr' }];
-    const route = parseGitHubLocation(new URL(encodeViewsShareLink(views)));
-    expect(route).toEqual({ page: 'inbox', importViews: views });
-    const redirected = new URL(encodeViewsShareLink(views));
-    redirected.pathname = '/pulls/inbox';
-    expect(parseGitHubLocation(redirected)).toEqual({ page: 'inbox', importViews: views });
+    expect(parseGitHubLocation(new URL(encodeViewsShareLink(views)))).toEqual({ page: 'inbox', importViews: views });
   });
 });
 
 describe('app hash round trip', () => {
   it('round-trips every route through the app hash', () => {
     const routes = [
-      parseGitHubLocation(new URL('https://github.com/pulls')),
+      parseGitHubLocation(new URL('https://github.com/')),
       parseGitHubLocation(new URL('https://github.com/acme/widgets/pull/42')),
       parseGitHubLocation(new URL('https://github.com/acme/widgets/pull/42/files')),
       parseGitHubLocation(new URL(encodeViewsShareLink([{ id: 'a', name: 'A', query: 'is:pr' }]))),
@@ -65,7 +59,7 @@ describe('app hash round trip', () => {
 
   it('maps routes back to github.com URLs', () => {
     expect(toGitHubUrl(parseAppHash('#/pr/acme/widgets/42?section=files'))).toBe('https://github.com/acme/widgets/pull/42/files');
-    expect(toGitHubUrl(parseAppHash('#/inbox'))).toBe('https://github.com/pulls');
-    expect(toGitHubUrl(parseGitHubLocation(new URL('https://github.com/pulls/search?q=is%3Aopen')))).toBe('https://github.com/pulls');
+    expect(toGitHubUrl(parseAppHash('#/inbox'))).toBe('https://github.com/');
+    expect(toGitHubUrl(parseAppHash('#/inbox?import=' + encodeURIComponent('[{"id":"a","name":"A","query":"is:pr"}]')))).toBe('https://github.com/');
   });
 });

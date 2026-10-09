@@ -3,8 +3,9 @@
 A Chrome (MV3) extension, built with WXT + React 19 + TypeScript, that re-renders two GitHub
 surfaces in the style of Graphite:
 
-1. **Inbox** at `https://github.com/pulls` — several configurable, shareable "views" (each view is a
-   GitHub search query) rendered on one page with review / CI / merge status per PR.
+1. **Inbox** on the GitHub homepage, `https://github.com/`, when signed in — several configurable, shareable
+   "views" (each view is a GitHub search query) rendered on one page with review / CI / merge status per PR. GitHub's
+   own pull request dashboard under `/pulls` stays GitHub's.
 2. **PR page** at `https://github.com/<owner>/<repo>/pull/<n>[/…]` — stack at the top, a single
    vertical scroll (description → activity → diff), CI / reviewers / merge status in a right sidebar,
    diffs rendered with `@pierre/diffs`, Graphite keybindings.
@@ -22,7 +23,7 @@ CSP. The content script is a thin bridge.
 
 | file | role |
 | --- | --- |
-| `github.content.ts` | Content script on `github.com/*`, run at `document_start`. Recognises the inbox (`/pulls` and every path under it: signed in, GitHub redirects `/pulls` to `/pulls/inbox`, and its dashboard also lives at `/pulls/search?q=…`, `/pulls/authored`, `/pulls/assigned`, `/pulls/involves` and saved views `/pulls/<id>`) and PR (`/:owner/:repo/pull/:n`, plus `/files`, `/changes`, `/commits`, `/checks`) routes (`src/app/routes.ts`). On a handled route it reads the settings, then hides GitHub's `main` with a `<style>` on `<html>` before the page paints, and mounts the iframe (`app.html#<route>`) on `<html>` too, below GitHub's header, so Turbo's `<body>` swaps leave both in place and a soft navigation moves the loaded app with `gg:route` instead of reloading it. It forwards theme and keydown to the iframe, performs top-level navigations the iframe asks for (`src/app/bridge.ts`), answers the iframe's RPC requests with `handleRpc` from `src/lib/github-web/` (session fetches), and re-routes on `wxt:locationchange`. `?gh=1` leaves GitHub untouched for one visit. The `inboxEnabled` / `prEnabled` settings (the popup's switches, and "Use GitHub's view" in the app, which saves them) leave it untouched until switched back; while one is off on its route the script appends a "Graphite view" pill (plain DOM in a shadow root on `<html>`, GitHub's colour variables) at the bottom right that turns the setting on again, and the settings watcher mounts the app in place. |
+| `github.content.ts` | Content script on `github.com/*`, run at `document_start`. Recognises the inbox (the homepage `/`, only when `<meta name="user-login">` names a signed-in user: signed out, `/` is GitHub's marketing page and stays untouched, so at `document_start` the script waits for that tag, or for `<body>`, before hiding anything) and PR (`/:owner/:repo/pull/:n`, plus `/files`, `/changes`, `/commits`, `/checks`) routes (`src/app/routes.ts`). On a handled route it reads the settings, then hides GitHub's `main` with a `<style>` on `<html>` before the page paints, and mounts the iframe (`app.html#<route>`) on `<html>` too, below GitHub's header, so Turbo's `<body>` swaps leave both in place and a soft navigation moves the loaded app with `gg:route` instead of reloading it. It forwards theme and keydown to the iframe, performs top-level navigations the iframe asks for (`src/app/bridge.ts`), answers the iframe's RPC requests with `handleRpc` from `src/lib/github-web/` (session fetches), and re-routes on `wxt:locationchange`. `?gh=1` leaves GitHub untouched for one visit. The `inboxEnabled` / `prEnabled` settings (the popup's switches, and "Use GitHub's view" in the app, which saves them) leave it untouched until switched back; while one is off on its route the script appends a "Graphite view" pill (plain DOM in a shadow root on `<html>`, GitHub's colour variables) at the bottom right that turns the setting on again, and the settings watcher mounts the app in place. |
 | `app/` | The React app (`entrypoints/app/main.tsx`): hash router → `InboxPage` (`src/inbox/`) or `PrPage` (`src/pr/`). Data comes through a `DataSource` (`src/app/data-source.ts`): the RPC-backed one in the extension, a fixture-backed one when opened with `?fixtures=1` (the dev harness). Listed in `web_accessible_resources` for `https://github.com/*`. |
 | `options/` | Options page: inbox scope and views editor, merge method, diff layout, theme, on/off switches. |
 | `popup/` | Toolbar popup: on/off toggles, links to inbox and options. |
@@ -57,7 +58,7 @@ type View = { id: string; name: string; query: string; limit?: number; collapsed
 Stored in `chrome.storage.sync`. Default views mirror Graphite's sections; a query `inbox:<filter>` is one
 of GitHub's own inbox sections (`/pulls/inbox/queries`), anything else a search (`/pulls/search`) with
 the inbox scope prepended. Sharing: "Share" encodes
-the view list into `https://github.com/pulls#views=<base64url json>`; opening such a link with the
+the view list into `https://github.com/#views=<base64url json>`; opening such a link with the
 extension installed offers to import (replace or append).
 
 Importing from Graphite (`src/lib/graphite.ts`, UI in `src/inbox/GraphiteImport.tsx` on the inbox's "Import from
@@ -76,4 +77,4 @@ express (file and line counts, forks, source, some review states) is listed as n
   view link encode/decode, Graphite section import, routes, keyboard chords, next-step derivation.
 - Harness: `pnpm build`, then serve `.output/chrome-mv3` statically and open `app.html?fixtures=1#/inbox` or
   `app.html?fixtures=1#/pr/acme/widgets/42` for visual checks (no session, no `chrome.*`).
-- Real-site check: load `.output/chrome-mv3` unpacked while signed in to github.com, open github.com/pulls.
+- Real-site check: load `.output/chrome-mv3` unpacked while signed in to github.com, open github.com.

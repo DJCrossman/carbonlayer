@@ -2,7 +2,8 @@
 
 A Chrome extension that makes GitHub's pull requests look and work like [Graphite](https://graphite.dev):
 
-- **Inbox** at `github.com/pulls` (and GitHub's dashboard pages under it, such as `/pulls/inbox`): several configurable views on one page (Needs your review, Needs
+- **Inbox** on the GitHub homepage (`github.com`, when signed in; signed out it stays GitHub's own page, and so does
+  GitHub's pull request dashboard at `/pulls`): several configurable views on one page (Needs your review, Needs
   your team's review, Returned to you, Ready to merge, Drafts, Waiting for review or checks, Merging
   and recently merged, Waiting for author), each either one of GitHub's own inbox sections
   (`inbox:<section>`) or a GitHub search query, with review, CI and merge status per row. Views are
@@ -27,7 +28,7 @@ pnpm build
 Then in Chrome open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and
 pick the `.output/chrome-mv3` folder. There is no token to set up: the extension reads and writes
 through your github.com session, so sign in to github.com in that browser profile and visit
-`https://github.com/pulls`. The extension's **Options** page holds the inbox views and scope, the
+`https://github.com/`. The extension's **Options** page holds the inbox views and scope, the
 merge method, diff layout and theme, and the on/off switches.
 
 ## Develop
