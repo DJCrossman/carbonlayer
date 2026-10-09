@@ -1,7 +1,9 @@
 // The inbox views: one row per view (name, query, limit), reordering, Graphite's defaults,
-// and share links in both directions. Only a list where every view is valid is passed on to be saved.
+// share links in both directions and Graphite's own section links. Only a list where every view is valid is passed on
+// to be saved.
 import { useState } from 'react';
 import type { View } from '../../src/lib/model';
+import { GraphiteImport } from '../../src/inbox/GraphiteImport';
 import { importViews } from '../../src/inbox/import-views';
 import { DEFAULT_VIEWS, GITHUB_INBOX_FILTERS, decodeViewsShareHash, encodeViewsShareLink } from '../../src/lib/views';
 
@@ -151,6 +153,18 @@ export function ViewsEditor({ views, onChange }: { views: View[]; onChange: (vie
         </button>
       </div>
       {notice && <p className="status muted">{notice}</p>}
+
+      <h3>Import from Graphite</h3>
+      <p className="hint">
+        Graphite's “Share section” or “Share all sections” links, or the JSON they carry, become views; the preview says what GitHub's search can only
+        approximate.
+      </p>
+      <GraphiteImport
+        onImport={(imported, mode) => {
+          change(importViews(draft, imported, mode));
+          setNotice(`Imported ${imported.length} ${imported.length === 1 ? 'view' : 'views'} from Graphite.`);
+        }}
+      />
     </div>
   );
 }

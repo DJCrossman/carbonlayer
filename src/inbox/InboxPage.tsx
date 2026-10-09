@@ -12,6 +12,7 @@ import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
 import { RelativeTime } from '../ui/RelativeTime';
 import { showToast, ToastHost } from '../ui/Toast';
+import { GraphiteImport } from './GraphiteImport';
 import { importViews } from './import-views';
 import { InboxSection } from './InboxSection';
 import { moveSelection, type SelectedRow } from './selection';
@@ -23,6 +24,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   const { settings } = inbox;
   const [selected, setSelected] = useState<SelectedRow | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [graphiteOpen, setGraphiteOpen] = useState(false);
   // The import offer is answered once per link; the route keeps the same array until the parent sends a new one.
   const [answeredImport, setAnsweredImport] = useState<View[] | null>(null);
   const pendingImport = route.importViews !== answeredImport ? route.importViews : null;
@@ -45,6 +47,9 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
     if (event.key === 'Escape') {
       if (!helpOpen) return;
       setHelpOpen(false);
+    } else if (graphiteOpen) {
+      // The import dialog's own keys (it closes itself on Esc).
+      return;
     } else if (event.key === '?') {
       setHelpOpen((open) => !open);
     } else if (helpOpen || !settings) {
@@ -131,6 +136,9 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
             <Button size="sm" icon="link" title="Copy a link that shares these views" onClick={() => void copyShareLink()}>
               Share
             </Button>
+            <Button size="sm" icon="stack" title="Add views from Graphite section links" onClick={() => setGraphiteOpen(true)}>
+              Import from Graphite…
+            </Button>
             <Button size="sm" icon="gear" title="Views and other settings" onClick={openOptions}>
               Configure
             </Button>
@@ -201,6 +209,32 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
       </main>
 
       {helpOpen && <ShortcutHelp onClose={() => setHelpOpen(false)} />}
+      {graphiteOpen && (
+        <div
+          className="gg-help"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Import from Graphite"
+          onKeyDown={(event) => event.key === 'Escape' && setGraphiteOpen(false)}
+        >
+          <div className="gg-help__panel gg-inbox__graphite">
+            <header className="gg-help__header">
+              Import from Graphite
+              <Button variant="ghost" size="sm" icon="x" aria-label="Close" onClick={() => setGraphiteOpen(false)} />
+            </header>
+            <div className="gg-inbox__graphite-body">
+              <GraphiteImport
+                autoFocus
+                onImport={(views, mode) => {
+                  void inbox.saveSettings({ views: importViews(settings.views, views, mode) });
+                  showToast(mode === 'replace' ? 'Views replaced' : `Added ${views.length} ${views.length === 1 ? 'view' : 'views'}`);
+                  setGraphiteOpen(false);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
       <ToastHost />
     </div>
   );

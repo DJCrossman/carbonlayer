@@ -33,6 +33,12 @@ body {
   font-weight: 600;
 }
 
+.options h3 {
+  margin: var(--gg-space-4) 0 var(--gg-space-1);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .options p {
   margin: var(--gg-space-1) 0 var(--gg-space-2);
 }

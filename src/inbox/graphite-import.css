@@ -1,0 +1,93 @@
+/* The Graphite section importer (GraphiteImport.tsx), in the inbox's dialog and on the options page. */
+
+.gg-graphite-import {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gg-space-2);
+}
+.gg-graphite-import__input {
+  width: 100%;
+  min-height: 60px;
+  padding: 6px 8px;
+  border: 1px solid var(--gg-border);
+  border-radius: var(--gg-radius);
+  background: var(--gg-bg);
+  color: var(--gg-fg);
+  font: 12px/1.45 var(--gg-font-mono);
+  resize: vertical;
+  box-sizing: border-box;
+}
+.gg-graphite-import__input:focus {
+  outline: 2px solid var(--gg-accent);
+  outline-offset: -1px;
+}
+.gg-graphite-import__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.gg-graphite-import__error {
+  min-width: 0;
+  color: var(--gg-danger);
+  font-size: 12px;
+}
+
+.gg-graphite-import__views {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--gg-border-muted);
+  border-radius: var(--gg-radius);
+}
+.gg-graphite-import__view {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: var(--gg-space-2);
+  align-items: center;
+  padding: 4px 8px;
+  border-top: 1px solid var(--gg-border-muted);
+}
+.gg-graphite-import__view:first-child {
+  border-top: 0;
+}
+.gg-graphite-import__view input {
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--gg-border);
+  border-radius: var(--gg-radius);
+  background: var(--gg-bg);
+  color: var(--gg-fg);
+  font: inherit;
+  font-size: 12px;
+  box-sizing: border-box;
+}
+.gg-graphite-import__view input:focus {
+  outline: 2px solid var(--gg-accent);
+  outline-offset: -1px;
+}
+.gg-graphite-import__view code {
+  min-width: 0;
+  color: var(--gg-fg-muted);
+  font: 12px/1.45 var(--gg-font-mono);
+  overflow-wrap: anywhere;
+}
+
+.gg-graphite-import__notes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--gg-fg-muted);
+  font-size: 12px;
+}
+.gg-graphite-import__notes li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 1px 0;
+}
+.gg-graphite-import__notes .gg-icon {
+  position: relative;
+  top: 1px;
+  color: var(--gg-attention);
+}

@@ -34,8 +34,9 @@ App (iframe) → `window.parent.postMessage` RPC (`src/lib/rpc.ts`) → content 
 uses (`/pulls/inbox/queries`, `/pulls/search`, `/pulls/…/deferred`, `/{o}/{r}/pull/{n}/page_data/*`,
 the pages' embedded `react-app.embeddedData`) with the session cookies → normalised domain objects
 (`src/lib/model.ts`) are posted back. Writes go to the `page_data/*` routes GitHub's PR page posts
-to. See `docs/research/github-web-endpoints.md` and `github-web-mutations.md`. No api.github.com, no
-token, no background service worker.
+to, except re-running checks: the PR page cannot, so `github-web/actions.ts` submits the classic form GitHub's Actions
+run page loads into its re-run dialog. See `docs/research/github-web-endpoints.md`, `github-web-mutations.md` and
+`github-web-reviewers.md`. No api.github.com, no token, no background service worker.
 
 Signed-in state comes from the fetched PR page's `meta[name="user-login"]`: empty means the PR page
 shows "Sign in to github.com in this tab". Signed in, the routes behind the sidebar (`merge_box`,
@@ -60,10 +61,19 @@ the view list into `https://github.com/pulls#views=<base64url json>`; opening su
 extension installed offers to import (replace or append).
 
 ## Verification
+Importing from Graphite (`src/lib/graphite.ts`, UI in `src/inbox/GraphiteImport.tsx` on the inbox's "Import from
+Graphite…" dialog and the options page): Graphite's `?new-section=` (one unnamed filter) and `?shared-sections=`
+(named sections with repositories) links, or the JSON they carry, become views. A rule's conditions are ORed (repeated
+`author:`, comma-separated `label:`, a set of PR states), rules are ANDed, `isNegated` negates a rule, a section's
+repositories become `repo:` qualifiers and `<REPLACE_USERNAME>` becomes `@me`. GitHub's search cannot OR groups, so each
+group is a view of its own. What it only approximates (`reviewed-by:` for approvers, `is:open` for Merging) or cannot
+express (file and line counts, forks, source, some review states) is listed as notes in the preview, per section. See
+`docs/research/graphite-sections.md`.
+
 
 - `pnpm typecheck` (tsc) and `pnpm build` must pass.
 - `pnpm test` (vitest) covers pure logic: the github-web mappers and session handling, stack inference,
-  view link encode/decode, routes, keyboard chords, next-step derivation.
+  view link encode/decode, Graphite section import, routes, keyboard chords, next-step derivation.
 - Harness: `pnpm build`, then serve `.output/chrome-mv3` statically and open `app.html?fixtures=1#/inbox` or
   `app.html?fixtures=1#/pr/acme/widgets/42` for visual checks (no session, no `chrome.*`).
 - Real-site check: load `.output/chrome-mv3` unpacked while signed in to github.com, open github.com/pulls.
