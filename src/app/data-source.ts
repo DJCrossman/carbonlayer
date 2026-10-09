@@ -76,7 +76,8 @@ export interface Fixtures {
 
 /** Serves fixture data and logs mutations; settings live in memory. */
 export function createFixtureDataSource(fixtures: Fixtures): DataSource {
-  let settings: Settings = { ...DEFAULT_SETTINGS };
+  // The fixtures' own views, which may carry Graphite filters the defaults do not.
+  let settings: Settings = { ...DEFAULT_SETTINGS, views: fixtures.inbox.map((result) => result.view) };
   const listeners = new Set<(settings: Settings) => void>();
   const log = async (...args: unknown[]) => {
     console.info('[fixtures] mutation', ...args);

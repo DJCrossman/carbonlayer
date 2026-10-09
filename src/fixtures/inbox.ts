@@ -1,8 +1,9 @@
 // Inbox fixtures for the dev harness (`app.html?fixtures=1#/inbox`): every default view, covering each review, CI and
 // merge state a row can show, native stack positions, unread rows, long titles, labels and team reviewers. The viewer is
-// octocat. Ages are relative to page load so the harness always looks current. CI is a rollup without per-check
+// octocat. "Waiting for author" carries the filter it was imported from Graphite with, for the section editor. Ages are
+// relative to page load so the harness always looks current. CI is a rollup without per-check
 // detail, as GitHub's dashboard endpoints return it; the team-review rows also have no line counts and no merge state.
-import type { CheckState, CiSummary, PrSummary, UserRef, ViewResult } from '../lib/model';
+import type { CheckState, CiSummary, PrSummary, UserRef, View, ViewResult } from '../lib/model';
 import { DEFAULT_VIEWS } from '../lib/views';
 
 const NOW = Date.now();
@@ -19,9 +20,39 @@ const kenji: UserRef = { login: 'kenji-w', avatarUrl: 'https://avatars.githubuse
 const platformTeam: UserRef = { login: 'acme/platform-reviewers', avatarUrl: '', url: 'https://github.com/orgs/acme/teams/platform-reviewers' };
 const designTeam: UserRef = { login: 'acme/design-systems', avatarUrl: '', url: 'https://github.com/orgs/acme/teams/design-systems' };
 
+/**
+ * The user's own "Waiting for author" section, as the Graphite import saves it (src/lib/graphite-inbox.fixture.json).
+ * Above the fixtures, which read it as the module loads.
+ */
+const WAITING_FOR_AUTHOR: View = {
+  id: 'waiting-author',
+  name: 'Waiting for author',
+  query: 'is:pr is:open draft:false reviewed-by:@me -review-requested:@me -author:@me sort:updated-desc',
+  filter: {
+    groups: [
+      {
+        rules: [
+          { isNegated: false, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'OPEN' }] },
+          { isNegated: true, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'DRAFT' }, { kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'MERGING' }] },
+          { isNegated: false, conditions: [{ kind: 'CLOSED_REVIEW_REQUEST_FROM', username: '@me' }] },
+          { isNegated: true, conditions: [{ kind: 'AUTHOR_IS', username: '@me' }] },
+        ],
+      },
+      {
+        rules: [
+          { isNegated: false, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'OPEN' }] },
+          { isNegated: true, conditions: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'DRAFT' }, { kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'MERGING' }] },
+          { isNegated: false, conditions: [{ kind: 'APPROVED_BY', username: '@me' }] },
+          { isNegated: true, conditions: [{ kind: 'REOPENED_REVIEW_REQUEST_FOR', username: '@me' }] },
+        ],
+      },
+    ],
+  },
+};
+
 export const inboxFixtures: ViewResult[] = DEFAULT_VIEWS.map((view) => {
   const prs = prsFor(view.id);
-  return { view, prs, totalCount: prs.length, fetchedAt: new Date(NOW).toISOString() };
+  return { view: view.id === 'waiting-author' ? WAITING_FOR_AUTHOR : view, prs, totalCount: prs.length, fetchedAt: new Date(NOW).toISOString() };
 });
 
 function prsFor(viewId: string): PrSummary[] {

@@ -72,7 +72,7 @@ export function SectionEditor({
     setProblem(null);
   }
 
-  function useFilters() {
+  function buildWithFilters() {
     setGroups(setAside ?? [newFilterGroup()]);
     setProblem(null);
   }
@@ -204,7 +204,7 @@ export function SectionEditor({
                     A GitHub search (<code>@me</code> is you, <code>{'{{7d}}'}</code> seven days ago; <code>repo:</code> terms search those repositories instead of
                     the inbox's) or one of GitHub's inbox sections, such as <code>inbox:{GITHUB_INBOX_FILTERS[0]}</code>.
                   </p>
-                  <Button size="sm" onClick={useFilters}>
+                  <Button size="sm" onClick={buildWithFilters}>
                     {setAside ? 'Back to the filters' : 'Use filters instead'}
                   </Button>
                 </div>
