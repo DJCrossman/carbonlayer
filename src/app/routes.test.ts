@@ -13,6 +13,7 @@ describe('parseGitHubLocation', () => {
       section: 'conversation',
     });
     expect(parseGitHubLocation(new URL('https://github.com/acme/widgets/pull/42/files'))).toMatchObject({ page: 'pr', section: 'files' });
+    expect(parseGitHubLocation(new URL('https://github.com/acme/widgets/pull/42/changes'))).toMatchObject({ page: 'pr', section: 'files' });
   });
 
   it('leaves everything else, and opted-out pages, to GitHub', () => {

@@ -6,7 +6,7 @@ import { browser } from 'wxt/browser';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { createIframeUi } from 'wxt/utils/content-script-ui/iframe';
 import { defineContentScript } from 'wxt/utils/define-content-script';
-import { isAppToParentMessage, type ParentToAppMessage } from '../src/app/bridge';
+import { isBridgeMessage, type AppToParentMessage, type ParentToAppMessage } from '../src/app/bridge';
 import { parseGitHubLocation, toAppHash, type AppRoute } from '../src/app/routes';
 import { handleRpc } from '../src/lib/github-web';
 import { isRpcRequest, type RpcResponse } from '../src/lib/rpc';
@@ -14,24 +14,26 @@ import { getSettings, watchSettings } from '../src/lib/settings';
 
 export default defineContentScript({
   matches: ['https://github.com/*'],
-  runAt: 'document_idle',
+  // Before GitHub's page is parsed, so a handled route never shows GitHub's own content first.
+  runAt: 'document_start',
   async main(ctx) {
     let settings = await getSettings();
     let takeover: ReturnType<typeof takeOverPage> | null = null;
 
-    // WXT reports navigations through the Navigation API before they commit, so the destination comes from the event;
-    // settings changes and body swaps use the committed location.
+    // WXT reports navigations through the Navigation API before they commit, and none to the URL already shown, so
+    // the destination comes from the event; settings changes use the committed location.
     const sync = (url: URL) => {
       if (takeover?.leavingFor === url.href) return;
       const route = parseGitHubLocation(url);
       const enabled = (route.page === 'inbox' && settings.inboxEnabled) || (route.page === 'pr' && settings.prEnabled);
-      if (takeover && (!enabled || !takeover.isIntact())) {
-        takeover.release();
+      if (!enabled) {
+        takeover?.release();
         takeover = null;
+      } else if (takeover) {
+        takeover.show(route);
+      } else {
+        takeover = takeOverPage(ctx, route);
       }
-      if (!enabled) return;
-      if (takeover) takeover.show(route);
-      else takeover = takeOverPage(ctx, route);
     };
 
     sync(new URL(location.href));
@@ -40,14 +42,8 @@ export default defineContentScript({
       settings = next;
       sync(new URL(location.href));
     });
-    // Turbo swaps <body> on some navigations, taking the iframe with it and bringing GitHub's content back.
-    const bodySwaps = new MutationObserver(() => {
-      if (takeover && !takeover.isIntact()) sync(new URL(location.href));
-    });
-    bodySwaps.observe(document.documentElement, { childList: true });
     ctx.onInvalidated(() => {
       unwatchSettings();
-      bodySwaps.disconnect();
       takeover?.release();
       takeover = null;
     });
@@ -58,11 +54,12 @@ export default defineContentScript({
 function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
   const appOrigin = new URL(browser.runtime.getURL('/')).origin;
   const html = document.documentElement;
-  const main = document.querySelector<HTMLElement>('main') ?? document.querySelector<HTMLElement>('.application-main');
-  const header = document.querySelector<HTMLElement>('header.AppHeader, .AppHeader, header[role="banner"]');
-  const restore = { mainDisplay: main?.style.display ?? '', htmlOverflow: html.style.overflow };
-  if (main) main.style.display = 'none';
-  html.style.overflow = 'hidden';
+  // A style sheet rather than inline styles on GitHub's elements: it hides `main` before the parser reaches it and
+  // whatever `main` a Turbo visit brings. Like the app's wrapper below, it sits on <html>, outside the <head> and
+  // <body> Turbo replaces.
+  const hideGitHub = document.createElement('style');
+  hideGitHub.textContent = 'main { display: none !important; } html { overflow: hidden !important; }';
+  html.append(hideGitHub);
   window.scrollTo(0, 0);
 
   // The hash the app shows, or will show once it has loaded and said gg:ready.
@@ -75,11 +72,13 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
   const ui = createIframeUi(ctx, {
     page: '/app.html',
     position: 'inline',
-    anchor: 'body',
+    // On <html> next to <body>, not in it: a Turbo visit swaps <body> and would take the app with it.
+    anchor: 'html',
     append: 'last',
     onBeforeMount(wrapper, iframe) {
-      // Below GitHub's own menus and dialogs (z-index 100+), above everything else on the page.
-      wrapper.style.cssText = 'position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;';
+      // Below GitHub's own menus and dialogs (z-index 100+), above everything else on the page; hidden until it can
+      // sit below GitHub's header.
+      wrapper.style.cssText = 'position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; visibility: hidden;';
       iframe.style.cssText = 'display: block; width: 100%; height: 100%; border: 0; background: var(--bgColor-default, #fff);';
       iframe.title = 'Pull requests';
       iframe.allow = 'clipboard-write';
@@ -88,12 +87,37 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
   });
   ui.mount();
 
+  // GitHub's header is parsed after this runs at document_start, and replaced with <body> on Turbo visits.
+  let header: HTMLElement | null = null;
   const placeBelowHeader = () => {
     ui.wrapper.style.top = `${Math.max(0, header?.getBoundingClientRect().bottom ?? 0)}px`;
+    ui.wrapper.style.visibility = 'visible';
   };
-  placeBelowHeader();
   const headerResizes = new ResizeObserver(placeBelowHeader);
-  if (header) headerResizes.observe(header);
+  const findHeader = () => {
+    const found = document.querySelector<HTMLElement>('header.AppHeader, .AppHeader, header[role="banner"]');
+    if (found !== header) {
+      if (header) headerResizes.unobserve(header);
+      header = found;
+      // Observing calls placeBelowHeader once.
+      if (header) headerResizes.observe(header);
+    }
+    // A page without a header gets the app at the top, once it is clear none is coming.
+    if (!header && document.readyState !== 'loading') placeBelowHeader();
+  };
+  const pageChanges = new MutationObserver(findHeader);
+  pageChanges.observe(html, { childList: true, subtree: document.readyState === 'loading' });
+  document.addEventListener(
+    'DOMContentLoaded',
+    () => {
+      // Parsed: from now on only a new <body> brings a new header.
+      pageChanges.disconnect();
+      pageChanges.observe(html, { childList: true });
+      findHeader();
+    },
+    { once: true, signal },
+  );
+  findHeader();
   window.addEventListener('resize', placeBelowHeader, { signal });
 
   const post = (message: ParentToAppMessage | RpcResponse) => ui.iframe.contentWindow?.postMessage(message, appOrigin);
@@ -122,13 +146,11 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
       if (event.origin !== appOrigin || event.source !== ui.iframe.contentWindow) return;
       if (isRpcRequest(event.data)) {
         // Data requests run here, not in the app: only a github.com document can fetch with the user's session.
-        const { id } = event.data;
-        handleRpc(event.data).then(post, (error: unknown) =>
-          post({ kind: 'gg-rpc-result', id, ok: false, error: error instanceof Error ? error.message : String(error) }),
-        );
+        // handleRpc answers every request, failures included.
+        void handleRpc(event.data).then(post);
         return;
       }
-      if (!isAppToParentMessage(event.data)) return;
+      if (!isBridgeMessage<AppToParentMessage>(event.data)) return;
       const message = event.data;
       switch (message.type) {
         case 'gg:ready':
@@ -162,6 +184,7 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
         case 'gg:open-native': {
           const url = new URL(location.href);
           url.searchParams.set('gh', '1');
+          takeover.leavingFor = url.href;
           location.assign(url.href);
           break;
         }
@@ -170,12 +193,17 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
     { signal },
   );
 
+  // Keys typed while the app has focus stay in its document and never reach this listener. These are keys typed on
+  // GitHub's header or a stray focus on the page: the app gets them, and GitHub does not act on its hidden page.
   window.addEventListener(
     'keydown',
     (event) => {
-      if (document.activeElement === ui.iframe) return;
-      const target = event.target;
+      if (event.isComposing || document.activeElement === ui.iframe) return;
+      // The innermost target: GitHub's custom elements keep their text fields in shadow roots.
+      const target = event.composedPath()[0];
       if (target instanceof HTMLElement && (target.isContentEditable || target.matches('input, textarea, select'))) return;
+      // Enter and Space on a focused link or button belong to that control.
+      if ((event.key === 'Enter' || event.key === ' ') && target instanceof Element && target.closest('a[href], button, summary, [role="button"], [role="menuitem"]')) return;
       if (document.querySelector('dialog[open], [aria-modal="true"]')) return;
       post({
         type: 'gg:keydown',
@@ -200,8 +228,6 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
   const takeover = {
     /** Where a same-tab navigation the app asked for is heading while this document unloads; not worth tearing down for. */
     leavingFor: null as string | null,
-    /** False once GitHub re-rendered underneath (Turbo body swap): the iframe or the hidden content is gone. */
-    isIntact: () => ui.wrapper.isConnected && (main === null || main.isConnected),
     /** Moves the already-loaded app to another handled route, without reloading it. */
     show(route: AppRoute) {
       const hash = toAppHash(route);
@@ -211,15 +237,15 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
     },
     release() {
       listeners.abort();
+      pageChanges.disconnect();
       headerResizes.disconnect();
       themeChanges.disconnect();
       ui.remove();
-      if (main) main.style.display = restore.mainDisplay;
-      html.style.overflow = restore.htmlOverflow;
+      hideGitHub.remove();
     },
   };
   return takeover;
 }
 
-/** Keys the app binds (inbox and PR page); GitHub keeps every other shortcut. */
-const APP_KEYS = new Set(['j', 'k', 'o', 'enter', 'r', '?', 'n', 'p', 'f', 's', 'v', 'e', 'g', 'c', 'a']);
+/** Keys the app binds, chord strokes included (inbox and PR page); GitHub keeps every other shortcut. */
+const APP_KEYS = new Set(['j', 'k', 'o', 'enter', 'r', '?', 'n', 'p', 'f', 's', 'v', 'e', 'g', 'c', 'a', 'y', 'd', 'h']);

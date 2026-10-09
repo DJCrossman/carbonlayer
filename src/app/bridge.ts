@@ -20,12 +20,9 @@ export type AppToParentMessage =
 
 export const GITHUB_ORIGIN = 'https://github.com';
 
-export function isParentToAppMessage(data: unknown): data is ParentToAppMessage {
+/** Whether a postMessage payload is one of this protocol's messages; the receiver has already checked who sent it. */
+export function isBridgeMessage<M extends ParentToAppMessage | AppToParentMessage>(data: unknown): data is M {
   return typeof data === 'object' && data !== null && typeof (data as { type?: unknown }).type === 'string' && (data as { type: string }).type.startsWith('gg:');
-}
-
-export function isAppToParentMessage(data: unknown): data is AppToParentMessage {
-  return isParentToAppMessage(data);
 }
 
 /** Sends a message to the embedding github.com page; a no-op when the app is opened directly (harness). */

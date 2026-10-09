@@ -15,9 +15,11 @@ export function parseGitHubLocation(url: URL): AppRoute {
   if (url.pathname === '/pulls' || url.pathname === '/pulls/') {
     return { page: 'inbox', importViews: decodeViewsShareHash(url.hash) };
   }
-  const match = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/(files|commits|checks))?\/?$/.exec(url.pathname);
+  // GitHub redirects /files to /changes, its new name for the tab.
+  const match = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/(files|changes|commits|checks))?\/?$/.exec(url.pathname);
   if (match && match[1] && match[2] && match[3]) {
-    const section = (match[4] as 'files' | 'commits' | 'checks' | undefined) ?? 'conversation';
+    const tab = match[4] ?? 'conversation';
+    const section = tab === 'changes' ? 'files' : (tab as 'conversation' | 'files' | 'commits' | 'checks');
     return { page: 'pr', repo: { owner: match[1], name: match[2] }, number: Number(match[3]), section };
   }
   return { page: 'none' };
