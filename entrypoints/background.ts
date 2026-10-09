@@ -8,7 +8,13 @@ import { defineBackground } from 'wxt/utils/define-background';
 
 export default defineBackground(() => {
   browser.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-    const { kind, sections, defaultRepos, error } = (message ?? {}) as { kind?: unknown; sections?: unknown; defaultRepos?: unknown; error?: unknown };
+    const { kind, sections, defaultRepos, viewerLogin, error } = (message ?? {}) as {
+      kind?: unknown;
+      sections?: unknown;
+      defaultRepos?: unknown;
+      viewerLogin?: unknown;
+      error?: unknown;
+    };
     // The inbox's iframe and the options page are frames of a tab too.
     const tabId = sender.tab?.id;
     switch (kind) {
@@ -24,7 +30,9 @@ export default defineBackground(() => {
       case 'carbonlayer-graphite-sections':
         void copyingTab().then(async (copying) => {
           if (tabId === undefined || copying?.tabId !== tabId || !Array.isArray(sections) || !Array.isArray(defaultRepos)) return;
-          await browser.storage.local.set({ graphiteImport: { at: new Date().toISOString(), sections, defaultRepos } });
+          await browser.storage.local.set({
+            graphiteImport: { at: new Date().toISOString(), sections, defaultRepos, ...(typeof viewerLogin === 'string' && { viewerLogin }) },
+          });
           await browser.storage.session.remove('graphiteImportTab');
           // The tab that asked may have been closed meanwhile.
           if (copying.openerTabId !== undefined) await browser.tabs.update(copying.openerTabId, { active: true }).catch(() => {});

@@ -96,3 +96,20 @@ polls `li` elements for 30 s with `inboxSnapshotOf` (`src/lib/graphite.ts`) and 
 the isolated script relays them to the background → `storage.local.graphiteImport = { at, sections, defaultRepos }`
 (or `{ at, error }`, leaving the tab open so signing in there finishes the copy) → the background re-activates the
 asking tab and closes Graphite's → the dialog, watching that key, previews the views.
+
+## Viewer, default repos, people (VERIFIED in B1's code 2026-10-09; not observed live)
+- The signed-in user is a React context: module 840697 provides `value={…}` with `user`, read by `(0,a.Xn)().githubLogin`
+  (module 460747); `user` also has `github: { login, id }`. The provider is an ancestor of the inbox, so a reader can walk
+  on up from the `snapshot` holder to the first `memoizedProps.value.user.githubLogin`. Saved filters hold that literal
+  login wherever the user picked "me".
+- `usesDefaultRepos` is just `repos.length === 0` (`usesDefaultRepos:0===e.repos.length`).
+- A section's optional `people` is a cache of display names for Graphite's people picker, not part of the filter.
+
+## One GitHub search per section (2026-10-09)
+The user verified, signed in, that `https://github.com/pulls/search?q=is:pr is:open ((author:@me draft:true) OR
+(review-requested:@me -author:@me)) sort:updated-desc` returns results, so a section's groups are ORed in one query:
+`is:pr <terms every group has> ((g1) OR (g2)) sort:updated-desc`. The outer parentheses matter because the inbox scope
+is prepended as plain text. Groups that repeat or only add terms to another group are dropped first. GitHub allows at
+most five AND / OR / NOT operators in a query; past that a section is split into one view per group. A group's PR-status
+rules are intersected as one set of states (so `is:open` and `is:closed` never meet), and "is not Merging" excludes
+nothing: Graphite's merge queue is part of GitHub's open.

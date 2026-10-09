@@ -25,11 +25,12 @@ export default defineContentScript({
 
     ctx.addEventListener(window, 'message', (event) => {
       if (event.source !== window || event.origin !== location.origin) return;
-      const { source, kind, sections, defaultRepos, error } = (event.data ?? {}) as {
+      const { source, kind, sections, defaultRepos, viewerLogin, error } = (event.data ?? {}) as {
         source?: unknown;
         kind?: unknown;
         sections?: unknown;
         defaultRepos?: unknown;
+        viewerLogin?: unknown;
         error?: unknown;
       };
       if (source !== 'carbonlayer') return;
@@ -40,7 +41,12 @@ export default defineContentScript({
         Array.isArray(defaultRepos)
       ) {
         banner.textContent = `CarbonLayer: copied ${sections.length} ${sections.length === 1 ? 'section' : 'sections'}, you can close this tab.`;
-        void browser.runtime.sendMessage({ kind: 'carbonlayer-graphite-sections', sections, defaultRepos });
+        void browser.runtime.sendMessage({
+          kind: 'carbonlayer-graphite-sections',
+          sections,
+          defaultRepos,
+          viewerLogin: typeof viewerLogin === 'string' ? viewerLogin : undefined,
+        });
       } else if (kind === 'graphite-sections-error' && typeof error === 'string') {
         banner.textContent = `CarbonLayer: ${error}`;
         void browser.runtime.sendMessage({ kind: 'carbonlayer-graphite-sections-error', error });

@@ -52,7 +52,7 @@
   display: grid;
   grid-template-columns: 180px 1fr;
   gap: var(--gg-space-2);
-  align-items: center;
+  align-items: start;
   padding: 4px 8px;
   border-top: 1px solid var(--gg-border-muted);
 }
@@ -75,11 +75,39 @@
   outline: 2px solid var(--gg-accent);
   outline-offset: -1px;
 }
-.gg-graphite-import__view code {
+.gg-graphite-import__view-detail {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 3px;
+}
+.gg-graphite-import__view code,
+.gg-graphite-import__scope code {
   min-width: 0;
   color: var(--gg-fg-muted);
   font: 12px/1.45 var(--gg-font-mono);
   overflow-wrap: anywhere;
+}
+.gg-graphite-import__view code {
+  color: var(--gg-fg);
+}
+.gg-graphite-import__view code > span {
+  display: inline-block;
+  max-width: 100%;
+}
+
+.gg-graphite-import__scope {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+}
+.gg-graphite-import__scope input {
+  flex: none;
+  margin: 0;
+  position: relative;
+  top: 2px;
 }
 
 .gg-graphite-import__notes {

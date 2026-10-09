@@ -2,43 +2,69 @@
 // `https://app.graphite.com/?new-section=<…>` and every section (name, filter, repositories) as `?shared-sections=<…>`,
 // both `btoa(encodeURIComponent(JSON))`; its signed-in inbox page holds every section in React's state, which
 // `inboxSnapshotOf` copies out. A filter ORs its groups, ANDs a group's rules and ORs a rule's conditions (one kind per
-// rule), and `isNegated` negates a whole rule; the inbox page holds the same filter as an OR / AND / NOT tree. GitHub's
-// search cannot OR across qualifiers, so each group becomes a view of its own. See docs/research/graphite-sections.md.
+// rule), and `isNegated` negates a whole rule; the inbox page holds the same filter as an OR / AND / NOT tree. A section
+// becomes one view: GitHub's search ORs parenthesised groups, `is:pr ((a b) OR (c))`, up to five operators a query.
+// See docs/research/graphite-sections.md.
 
 import type { View } from './model';
 
 /**
  * The views that pasted Graphite section links (one per line), their decoded JSON, or the sections copied from
- * Graphite's inbox page describe, plus a note, per section, on every filter GitHub's search only approximates or cannot
- * express. Throws an Error saying what is wrong with junk.
+ * Graphite's inbox page describe: one per section, with notes on what GitHub's search only approximates or cannot
+ * express. Also how many sections there were, notes on any that could not be imported, and the inbox scope that stands
+ * for the inbox's repositories when a section searches those. `viewerLogin`, Graphite's signed-in user (the inbox page's
+ * copy names its own), is searched as `@me`. Throws an Error saying what is wrong with junk.
  */
-export function importGraphiteSections(input: string | GraphiteInboxSnapshot): { views: View[]; notes: string[] } {
-  const views: View[] = [];
+export function importGraphiteSections(
+  input: string | GraphiteInboxSnapshot,
+  options: { viewerLogin?: string } = {},
+): { views: Array<{ view: View; notes: string[] }>; notes: string[]; sectionCount: number; inboxScope: string | null } {
+  const sections = typeof input === 'string' ? readSections(input) : sectionsIn(input, "Graphite's inbox");
+  const viewer = (options.viewerLogin ?? (typeof input === 'string' ? undefined : input.viewerLogin))?.toLowerCase() || null;
+  const views: Array<{ view: View; notes: string[] }> = [];
   const notes: string[] = [];
-  for (const section of typeof input === 'string' ? readSections(input) : sectionsIn(input, "Graphite's inbox")) {
+  for (const section of sections) {
     const name = section.name?.trim() || 'Imported section';
-    notes.push(...section.notes.map((note) => `${name}: ${note}`));
-    if (!section.filter) continue;
-    // A filter with no groups matches every pull request.
-    const groups = section.filter.groups.length > 0 ? section.filter.groups : [{ rules: [] }];
-    if (groups.length > 1) {
-      notes.push(`${name}: Graphite matches any of its ${groups.length} filter groups; GitHub's search cannot, so each group is a view of its own.`);
+    if (!section.filter) {
+      notes.push(...section.notes.map((note) => `${name}: ${note}`));
+      continue;
     }
-    groups.forEach((group, index) => {
-      const viewName = groups.length > 1 ? `${name} (${index + 1})` : name;
-      // GitHub ORs repeated repo: qualifiers.
-      const terms = ['is:pr', ...section.repos.map((repo) => `repo:${repo.owner}/${repo.name}`)];
-      const viewNotes = new Set<string>();
-      for (const rule of group.rules) {
-        const translated = translateRule(rule);
-        terms.push(...translated.terms);
-        for (const note of translated.notes) viewNotes.add(`${viewName}: ${note}`);
-      }
-      notes.push(...viewNotes);
-      views.push({ id: crypto.randomUUID(), name: viewName, query: [...new Set([...terms, 'sort:updated-desc'])].join(' ') });
-    });
+    // A filter with no groups matches every pull request.
+    const translated = (section.filter.groups.length > 0 ? section.filter.groups : [{ rules: [] }]).map((group) => translateGroup(group.rules, viewer));
+    // An OR gains nothing from a group twice, or from a group with every term of another: it only narrows that one.
+    const groups = translated.filter(
+      (group, index) =>
+        !translated.some(
+          (other, otherIndex) =>
+            otherIndex !== index && other.terms.every((term) => group.terms.includes(term)) && (other.terms.length < group.terms.length || otherIndex < index),
+        ),
+    );
+    // GitHub ORs repeated repo: qualifiers.
+    const scope = ['is:pr', ...section.repos.map((repo) => `repo:${repo.owner}/${repo.name}`)];
+    // One search holds at most five AND / OR / NOT operators.
+    const operators = groups.length - 1 + groups.flatMap((group) => group.terms).filter((term) => term.startsWith('NOT ')).length;
+    if (operators <= 5) {
+      // Terms every group has are searched once, before the alternatives; the outer parentheses keep an inbox scope
+      // written in front of the query applying to every alternative.
+      const common = groups[0]!.terms.filter((term) => groups.every((group) => group.terms.includes(term)));
+      const alternatives = groups.map((group) => `(${group.terms.filter((term) => !common.includes(term)).join(' ')})`);
+      const query = [...scope, ...common, ...(groups.length > 1 ? [`(${alternatives.join(' OR ')})`] : []), 'sort:updated-desc'];
+      views.push({ view: { id: crypto.randomUUID(), name, query: [...new Set(query)].join(' ') }, notes: [...new Set([...section.notes, ...groups.flatMap((group) => group.notes)])] });
+    } else {
+      const split = `Graphite matches any of its ${groups.length} filter groups, more than one GitHub search can OR; each group is a view of its own.`;
+      groups.forEach((group, index) =>
+        views.push({
+          view: { id: crypto.randomUUID(), name: `${name} (${index + 1})`, query: [...new Set([...scope, ...group.terms, 'sort:updated-desc'])].join(' ') },
+          notes: [...new Set([...section.notes, split, ...group.notes])],
+        }),
+      );
+    }
   }
-  return { views, notes };
+  const inboxScope =
+    typeof input !== 'string' && sections.some((section) => section.usesInboxRepos) && input.defaultRepos.length > 0
+      ? input.defaultRepos.map((repo) => `repo:${repo.owner}/${repo.name}`).join(' ')
+      : null;
+  return { views, notes, sectionCount: sections.length, inboxScope };
 }
 
 /**
@@ -52,26 +78,37 @@ export function inboxSnapshotOf(element: object): GraphiteInboxSnapshot | null {
   // React keeps each element's fiber under a key with a per-page random suffix.
   const key = Object.keys(element).find((name) => name.startsWith('__reactFiber$'));
   let fiber = key ? (element as Record<string, Fiber | null | undefined>)[key] : null;
-  for (let depth = 0; fiber && depth < 100; depth += 1, fiber = fiber.return) {
-    const snapshot = fiber.memoizedProps?.snapshot;
-    if (!Array.isArray(snapshot?.sections)) continue;
-    const sections: Array<Record<string, unknown> | null> = snapshot.sections;
-    const syncedRepos: Array<Record<string, unknown> | null> = Array.isArray(snapshot.syncedRepos) ? snapshot.syncedRepos : [];
-    return JSON.parse(
-      JSON.stringify({
-        sections: sections.map((section) => ({
-          name: section?.name,
-          filter: section?.filter,
-          repos: section?.repos,
-          usesDefaultRepos: section?.usesDefaultRepos,
-          includeInTotalCount: section?.includeInTotalCount,
-        })),
-        // The inbox's "N repos selected", without the ones Graphite can no longer reach.
-        defaultRepos: syncedRepos.filter((repo) => repo && !repo.isInvalid).map((repo) => ({ owner: repo?.owner, name: repo?.name })),
-      }),
-    ) as GraphiteInboxSnapshot;
+  let snapshot: { sections: Array<Record<string, unknown> | null>; syncedRepos?: unknown } | null = null;
+  let viewerLogin: string | undefined;
+  for (let depth = 0; fiber; depth += 1, fiber = fiber.return) {
+    const props = fiber.memoizedProps;
+    const sections = props?.snapshot?.sections;
+    if (!snapshot && Array.isArray(sections)) snapshot = { sections, syncedRepos: props?.snapshot?.syncedRepos };
+    // Not an element of the inbox.
+    if (!snapshot && depth >= 100) return null;
+    // Further up, Graphite's signed-in-user context provides { user: { githubLogin, github: { login } } }.
+    const login = props?.value?.user?.githubLogin ?? props?.value?.user?.github?.login;
+    if (snapshot && typeof login === 'string' && login) {
+      viewerLogin = login;
+      break;
+    }
   }
-  return null;
+  if (!snapshot) return null;
+  const syncedRepos: Array<Record<string, unknown> | null> = Array.isArray(snapshot.syncedRepos) ? snapshot.syncedRepos : [];
+  return JSON.parse(
+    JSON.stringify({
+      sections: snapshot.sections.map((section) => ({
+        name: section?.name,
+        filter: section?.filter,
+        repos: section?.repos,
+        usesDefaultRepos: section?.usesDefaultRepos,
+        includeInTotalCount: section?.includeInTotalCount,
+      })),
+      // The inbox's "N repos selected", without the ones Graphite can no longer reach.
+      defaultRepos: syncedRepos.filter((repo) => repo && !repo.isInvalid).map((repo) => ({ owner: repo?.owner, name: repo?.name })),
+      viewerLogin,
+    }),
+  ) as GraphiteInboxSnapshot;
 }
 
 /** What Graphite's inbox page holds, as `inboxSnapshotOf` copies it out of the page. */
@@ -80,6 +117,8 @@ export interface GraphiteInboxSnapshot {
   sections: Array<{ name: string; filter: unknown; repos: Array<{ owner: string; name: string }>; usesDefaultRepos: boolean; includeInTotalCount: boolean }>;
   /** The repositories the inbox covers (its "N repos selected"). */
   defaultRepos: Array<{ owner: string; name: string }>;
+  /** Who is signed in to Graphite, when the page said. */
+  viewerLogin?: string;
 }
 
 /** A section as read; only `shared-sections` links and the inbox page carry a name and repositories. */
@@ -88,6 +127,8 @@ interface GraphiteSection {
   /** Null for a section copied from the inbox page whose filter could not be read; its notes say so. */
   filter: GraphiteFilter | null;
   repos: Array<{ owner: string; name: string }>;
+  /** Whether the section searches the inbox's repositories, which the inbox's scope stands for. */
+  usesInboxRepos: boolean;
   /** What reading the section left out or changed, before its filter is translated. */
   notes: string[];
 }
@@ -137,29 +178,67 @@ function readSections(input: string): GraphiteSection[] {
   });
 }
 
-/** The GitHub search terms that select what one Graphite rule selects, and notes on what they approximate or leave out. */
-function translateRule({ isNegated, conditions }: GraphiteRule): { terms: string[]; notes: string[] } {
+/**
+ * The GitHub search terms one group of a filter comes to (its rules ANDed, no term twice), and notes on what they
+ * approximate or leave out. `viewer` is the signed-in user's login in lower case.
+ */
+function translateGroup(rules: GraphiteRule[], viewer: string | null): { terms: string[]; notes: string[] } {
+  const terms: string[] = [];
+  const notes: string[] = [];
+  // The PR-status rules together allow one set of GitHub's states, searched where the first of them was.
+  let states = 0b1111;
+  let statusAt: number | null = null;
+  const statusRules: string[] = [];
+  for (const rule of rules) {
+    const translated = translateRule(rule, viewer);
+    notes.push(...translated.notes);
+    if (!translated.status) {
+      terms.push(...translated.terms);
+      continue;
+    }
+    states &= translated.status.states;
+    statusAt ??= terms.length;
+    statusRules.push(translated.status.wording);
+  }
+  if (statusAt !== null) {
+    const stateTerms = STATE_TERMS[states];
+    const wording = statusRules.join(' and ');
+    if (!stateTerms) {
+      notes.push(statusRules.length > 1 ? `${wording} have no GitHub search equivalent together; those rules were left out.` : `${wording} has no GitHub search equivalent; that rule was left out.`);
+    } else {
+      terms.splice(statusAt, 0, ...stateTerms);
+      if (states === 0b0111) notes.push(`${wording} is searched as is:open, which leaves out merged pull requests.`);
+    }
+  }
+  return { terms: [...new Set(terms)], notes: [...new Set(notes)] };
+}
+
+/**
+ * The GitHub search terms that select what one Graphite rule selects, and notes on what they approximate or leave out.
+ * A PR-status rule instead gives the set of GitHub's states it allows (see PR_STATES), for its group to combine.
+ */
+function translateRule({ isNegated, conditions }: GraphiteRule, viewer: string | null): { terms: string[]; notes: string[]; status?: { states: number; wording: string } } {
   const kind = conditions[0]!.kind;
   const { label, field, verbs = ['is', 'is not'] } = Object.hasOwn(RULE_KINDS, kind) ? RULE_KINDS[kind]! : { label: kind };
-  // A link shared "for the recipient" carries <REPLACE_USERNAME> where the sharer's login was.
-  const values = field ? conditions.map((condition) => String(condition[field])).map((value) => (value === '<REPLACE_USERNAME>' ? '@me' : value)) : [];
+  // A link shared "for the recipient" carries <REPLACE_USERNAME> where the sharer's login was, and Graphite's own copy
+  // holds the viewer's login; both are searched as @me.
+  const values = field
+    ? conditions.map((condition) => String(condition[field])).map((value) => (value === '<REPLACE_USERNAME>' || (field === 'username' && value.toLowerCase() === viewer) ? '@me' : value))
+    : [];
   // The rule as Graphite's filter editor words it.
   const quoted = values.length > 0 ? `“${label} ${verbs[isNegated ? 1 : 0]} ${values.join(' or ')}${kind === 'LAST_UPDATED' ? ' hours ago' : ''}”` : `“${label}”`;
   const leftOut = `${quoted} has no GitHub search equivalent; that rule was left out.`;
   if (!field) return { terms: [], notes: [leftOut] };
 
   if (kind === 'CONSOLIDATED_PR_STATUS_IS') {
-    // The pull requests a rule selects, as a set of GitHub's four states; one search can select only some such sets.
     if (!values.every((status) => Object.hasOwn(PR_STATES, status))) return { terms: [], notes: [leftOut] };
+    // Merging (Graphite's merge queue) is part of open: searched as open, and impossible to exclude.
     let states = 0;
-    for (const status of values) states |= PR_STATES[status]!;
-    if (isNegated) states = 0b1111 & ~states;
-    const terms = STATE_TERMS[states];
-    if (!terms) return { terms: [], notes: [leftOut] };
-    const notes: string[] = [];
-    if (values.includes('MERGING')) notes.push(`${quoted}: Merging (Graphite's merge queue) is searched as open.`);
-    if (states === 0b0111) notes.push(`${quoted} is searched as is:open, which leaves out merged pull requests.`);
-    return { terms, notes };
+    for (const status of values) states |= isNegated && status === 'MERGING' ? 0 : PR_STATES[status]!;
+    const notes = !values.includes('MERGING')
+      ? []
+      : [isNegated ? `${quoted}: pull requests in Graphite's merge queue cannot be excluded, so they still show.` : `${quoted}: Merging (Graphite's merge queue) is searched as open.`];
+    return { terms: [], notes, status: { states: isNegated ? 0b1111 & ~states : states, wording: quoted } };
   }
 
   if (kind === 'LAST_UPDATED') {
@@ -272,6 +351,7 @@ const PR_STATES: Record<string, number> = { OPEN: 0b0001, DRAFT: 0b0010, MERGING
 
 /** The search terms selecting each set of states that one GitHub search can select (open-or-merged only roughly). */
 const STATE_TERMS: Record<number, string[]> = {
+  0b1001: ['draft:false', '-is:merged'],
   0b0001: ['is:open', 'draft:false'],
   0b0010: ['is:open', 'draft:true'],
   0b0011: ['is:open'],
@@ -300,13 +380,13 @@ const REVIEW_TERMS: Record<string, string> = {
  */
 function sectionsIn(payload: unknown, source: string): GraphiteSection[] {
   const filter = groupsOf(payload);
-  if (filter) return [{ name: null, filter, repos: [], notes: [] }];
+  if (filter) return [{ name: null, filter, repos: [], usesInboxRepos: false, notes: [] }];
 
   if (Array.isArray(payload) && payload.length > 0) {
     const sections = payload.map((entry: unknown): GraphiteSection | null => {
       const { name, filter, repos = [] } = (entry ?? {}) as { name?: unknown; filter?: unknown; repos?: unknown };
       const groups = groupsOf(filter);
-      return typeof name === 'string' && groups && isRepoList(repos) ? { name, filter: groups, repos, notes: [] } : null;
+      return typeof name === 'string' && groups && isRepoList(repos) ? { name, filter: groups, repos, usesInboxRepos: false, notes: [] } : null;
     });
     if (sections.every((section) => section !== null)) return sections;
   }
@@ -321,17 +401,16 @@ function sectionsIn(payload: unknown, source: string): GraphiteSection[] {
       return typeof name === 'string' && (usesDefaultRepos === true || isRepoList(repos));
     })
   ) {
-    // GitHub ORs repeated repo: qualifiers; past eight they make every view's query long, so a larger inbox is left to
-    // the inbox's scope.
-    const inboxRepos = defaultRepos.length <= 8 ? defaultRepos : [];
     return (sections as GraphiteInboxSnapshot['sections']).map((section) => {
       const groups = groupsOf(section.filter);
-      const notes: string[] = [];
-      if (!groups) notes.push('Graphite holds its filter in a form this import cannot read; that section was left out.');
-      else if (section.usesDefaultRepos && inboxRepos.length < defaultRepos.length) {
-        notes.push(`Graphite searches the inbox's ${defaultRepos.length} repositories; this view searches every repository instead (narrow it with the inbox's scope).`);
-      }
-      return { name: section.name, filter: groups, repos: section.usesDefaultRepos ? inboxRepos : section.repos, notes };
+      // Sections on the inbox's repositories leave them to the inbox's scope rather than repeat them in every view.
+      return {
+        name: section.name,
+        filter: groups,
+        repos: section.usesDefaultRepos ? [] : section.repos,
+        usesInboxRepos: section.usesDefaultRepos === true,
+        notes: groups ? [] : ['Graphite holds its filter in a form this import cannot read; that section was left out.'],
+      };
     });
   }
 
@@ -399,6 +478,9 @@ function isRepoList(value: unknown): value is Array<{ owner: string; name: strin
 
 /** A React fiber as `inboxSnapshotOf` walks it: page objects, so nothing about them is certain. */
 interface Fiber {
-  memoizedProps?: { snapshot?: { sections?: unknown; syncedRepos?: unknown } | null } | null;
+  memoizedProps?: {
+    snapshot?: { sections?: unknown; syncedRepos?: unknown } | null;
+    value?: { user?: { githubLogin?: unknown; github?: { login?: unknown } | null } | null } | null;
+  } | null;
   return?: Fiber | null;
 }
