@@ -1,20 +1,24 @@
 // Graphite's PR-inbox sections as inbox views. Graphite shares one section's filter as
 // `https://app.graphite.com/?new-section=<…>` and every section (name, filter, repositories) as `?shared-sections=<…>`,
-// both `btoa(encodeURIComponent(JSON))`. A filter ORs its groups, ANDs a group's rules and ORs a rule's conditions
-// (one kind per rule), and `isNegated` negates a whole rule. GitHub's search cannot OR across qualifiers, so each
-// group becomes a view of its own. See docs/research/graphite-sections.md.
+// both `btoa(encodeURIComponent(JSON))`; its signed-in inbox page holds every section in React's state, which
+// `inboxSnapshotOf` copies out. A filter ORs its groups, ANDs a group's rules and ORs a rule's conditions (one kind per
+// rule), and `isNegated` negates a whole rule; the inbox page holds the same filter as an OR / AND / NOT tree. GitHub's
+// search cannot OR across qualifiers, so each group becomes a view of its own. See docs/research/graphite-sections.md.
 
 import type { View } from './model';
 
 /**
- * The views that pasted Graphite section links (one per line) or their decoded JSON describe, plus a note, per section,
- * on every filter GitHub's search only approximates or cannot express. Throws an Error saying what is wrong with junk.
+ * The views that pasted Graphite section links (one per line), their decoded JSON, or the sections copied from
+ * Graphite's inbox page describe, plus a note, per section, on every filter GitHub's search only approximates or cannot
+ * express. Throws an Error saying what is wrong with junk.
  */
-export function importGraphiteSections(input: string): { views: View[]; notes: string[] } {
+export function importGraphiteSections(input: string | GraphiteInboxSnapshot): { views: View[]; notes: string[] } {
   const views: View[] = [];
   const notes: string[] = [];
-  for (const section of readSections(input)) {
+  for (const section of typeof input === 'string' ? readSections(input) : sectionsIn(input, "Graphite's inbox")) {
     const name = section.name?.trim() || 'Imported section';
+    notes.push(...section.notes.map((note) => `${name}: ${note}`));
+    if (!section.filter) continue;
     // A filter with no groups matches every pull request.
     const groups = section.filter.groups.length > 0 ? section.filter.groups : [{ rules: [] }];
     if (groups.length > 1) {
@@ -37,11 +41,55 @@ export function importGraphiteSections(input: string): { views: View[]; notes: s
   return { views, notes };
 }
 
-/** A section as pasted; only `shared-sections` links carry a name and repositories. */
+/**
+ * The sections and repositories Graphite's inbox page holds, read from React's state behind `element` (any element of
+ * the inbox, such as a section in its sidebar), or null when no component above it holds them. The page fetches no
+ * section list one could request again: the sections arrive through the app's own sync and live in the `snapshot` prop
+ * of a component some 40 levels above the sidebar. Runs in Graphite's page (entrypoints/graphite-sections.content.ts),
+ * and copies plain data, which postMessage can carry whatever library holds the state.
+ */
+export function inboxSnapshotOf(element: object): GraphiteInboxSnapshot | null {
+  // React keeps each element's fiber under a key with a per-page random suffix.
+  const key = Object.keys(element).find((name) => name.startsWith('__reactFiber$'));
+  let fiber = key ? (element as Record<string, Fiber | null | undefined>)[key] : null;
+  for (let depth = 0; fiber && depth < 100; depth += 1, fiber = fiber.return) {
+    const snapshot = fiber.memoizedProps?.snapshot;
+    if (!Array.isArray(snapshot?.sections)) continue;
+    const sections: Array<Record<string, unknown> | null> = snapshot.sections;
+    const syncedRepos: Array<Record<string, unknown> | null> = Array.isArray(snapshot.syncedRepos) ? snapshot.syncedRepos : [];
+    return JSON.parse(
+      JSON.stringify({
+        sections: sections.map((section) => ({
+          name: section?.name,
+          filter: section?.filter,
+          repos: section?.repos,
+          usesDefaultRepos: section?.usesDefaultRepos,
+          includeInTotalCount: section?.includeInTotalCount,
+        })),
+        // The inbox's "N repos selected", without the ones Graphite can no longer reach.
+        defaultRepos: syncedRepos.filter((repo) => repo && !repo.isInvalid).map((repo) => ({ owner: repo?.owner, name: repo?.name })),
+      }),
+    ) as GraphiteInboxSnapshot;
+  }
+  return null;
+}
+
+/** What Graphite's inbox page holds, as `inboxSnapshotOf` copies it out of the page. */
+export interface GraphiteInboxSnapshot {
+  /** `filter` is the OR / AND / NOT tree; `usesDefaultRepos` sections search `defaultRepos` instead of `repos`. */
+  sections: Array<{ name: string; filter: unknown; repos: Array<{ owner: string; name: string }>; usesDefaultRepos: boolean; includeInTotalCount: boolean }>;
+  /** The repositories the inbox covers (its "N repos selected"). */
+  defaultRepos: Array<{ owner: string; name: string }>;
+}
+
+/** A section as read; only `shared-sections` links and the inbox page carry a name and repositories. */
 interface GraphiteSection {
   name: string | null;
-  filter: GraphiteFilter;
+  /** Null for a section copied from the inbox page whose filter could not be read; its notes say so. */
+  filter: GraphiteFilter | null;
   repos: Array<{ owner: string; name: string }>;
+  /** What reading the section left out or changed, before its filter is translated. */
+  notes: string[];
 }
 
 interface GraphiteFilter {
@@ -246,13 +294,74 @@ const REVIEW_TERMS: Record<string, string> = {
   HAS_ONE_OR_MORE_REQUESTED_REVIEWERS: 'review:required',
 };
 
-/** The sections a decoded payload holds: a bare filter (one unnamed section) or Graphite's list of named sections. */
+/**
+ * The sections a decoded payload holds: a bare filter (one unnamed section), Graphite's list of named sections, or what
+ * its inbox page holds.
+ */
 function sectionsIn(payload: unknown, source: string): GraphiteSection[] {
-  if (isGraphiteFilter(payload)) return [{ name: null, filter: payload, repos: [] }];
-  if (Array.isArray(payload) && payload.length > 0 && payload.every(isSharedSection)) {
-    return payload.map((section) => ({ name: section.name, filter: section.filter, repos: section.repos ?? [] }));
+  const filter = groupsOf(payload);
+  if (filter) return [{ name: null, filter, repos: [], notes: [] }];
+
+  if (Array.isArray(payload) && payload.length > 0) {
+    const sections = payload.map((entry: unknown): GraphiteSection | null => {
+      const { name, filter, repos = [] } = (entry ?? {}) as { name?: unknown; filter?: unknown; repos?: unknown };
+      const groups = groupsOf(filter);
+      return typeof name === 'string' && groups && isRepoList(repos) ? { name, filter: groups, repos, notes: [] } : null;
+    });
+    if (sections.every((section) => section !== null)) return sections;
   }
-  throw new Error(`${source} does not hold a Graphite section: expected { groups: [{ rules: [{ isNegated, conditions }] }] } or a list of { name, filter, repos }.`);
+
+  const { sections, defaultRepos } = (payload ?? {}) as { sections?: unknown; defaultRepos?: unknown };
+  if (
+    Array.isArray(sections) &&
+    sections.length > 0 &&
+    isRepoList(defaultRepos) &&
+    sections.every((section: unknown) => {
+      const { name, repos, usesDefaultRepos } = (section ?? {}) as { name?: unknown; repos?: unknown; usesDefaultRepos?: unknown };
+      return typeof name === 'string' && (usesDefaultRepos === true || isRepoList(repos));
+    })
+  ) {
+    // GitHub ORs repeated repo: qualifiers; past eight they make every view's query long, so a larger inbox is left to
+    // the inbox's scope.
+    const inboxRepos = defaultRepos.length <= 8 ? defaultRepos : [];
+    return (sections as GraphiteInboxSnapshot['sections']).map((section) => {
+      const groups = groupsOf(section.filter);
+      const notes: string[] = [];
+      if (!groups) notes.push('Graphite holds its filter in a form this import cannot read; that section was left out.');
+      else if (section.usesDefaultRepos && inboxRepos.length < defaultRepos.length) {
+        notes.push(`Graphite searches the inbox's ${defaultRepos.length} repositories; this view searches every repository instead (narrow it with the inbox's scope).`);
+      }
+      return { name: section.name, filter: groups, repos: section.usesDefaultRepos ? inboxRepos : section.repos, notes };
+    });
+  }
+
+  throw new Error(
+    `${source} does not hold a Graphite section: expected { groups: [{ rules: [{ isNegated, conditions }] }] }, its { kind: 'OR', exprs } tree, or a list of { name, filter, repos }.`,
+  );
+}
+
+/**
+ * A section filter's groups in the share-link form, or null when it is in neither of Graphite's forms. The inbox page
+ * holds the filter as a tree, OR(groups → AND(rules → OR(conditions) or NOT(OR(conditions)))); a level that is not its
+ * connective counts as a list of one.
+ */
+function groupsOf(filter: unknown): GraphiteFilter | null {
+  if (isGraphiteFilter(filter)) return filter;
+  if (typeof (filter as { kind?: unknown } | null)?.kind !== 'string') return null;
+  // The operands of a `connective` node; any other node is the only one.
+  const operands = (node: unknown, connective: string): unknown[] => {
+    const { kind, exprs } = (node ?? {}) as { kind?: unknown; exprs?: unknown };
+    return kind === connective && Array.isArray(exprs) ? exprs : [node];
+  };
+  const converted = {
+    groups: operands(filter, 'OR').map((group) => ({
+      rules: operands(group, 'AND').map((rule) => {
+        const { kind, expr } = (rule ?? {}) as { kind?: unknown; expr?: unknown };
+        return kind === 'NOT' ? { isNegated: true, conditions: operands(expr, 'OR') } : { isNegated: false, conditions: operands(rule, 'OR') };
+      }),
+    })),
+  };
+  return isGraphiteFilter(converted) ? converted : null;
 }
 
 /** Whether a decoded payload is a section filter as Graphite writes it, with the value every known condition kind needs. */
@@ -280,14 +389,16 @@ function isGraphiteFilter(value: unknown): value is GraphiteFilter {
   );
 }
 
-/** Whether an entry of a `shared-sections` list is a section as Graphite shares it. */
-function isSharedSection(value: unknown): value is { name: string; filter: GraphiteFilter; repos?: Array<{ owner: string; name: string }> } {
-  const { name, filter, repos } = (value ?? {}) as { name?: unknown; filter?: unknown; repos?: unknown };
+/** Whether a value is a list of repositories as Graphite writes them, `{ owner, name, forge? }`. */
+function isRepoList(value: unknown): value is Array<{ owner: string; name: string }> {
   return (
-    typeof name === 'string' &&
-    isGraphiteFilter(filter) &&
-    (repos === undefined ||
-      (Array.isArray(repos) &&
-        repos.every((repo: unknown) => typeof (repo as { owner?: unknown } | null)?.owner === 'string' && typeof (repo as { name?: unknown } | null)?.name === 'string')))
+    Array.isArray(value) &&
+    value.every((repo: unknown) => typeof (repo as { owner?: unknown } | null)?.owner === 'string' && typeof (repo as { name?: unknown } | null)?.name === 'string')
   );
+}
+
+/** A React fiber as `inboxSnapshotOf` walks it: page objects, so nothing about them is certain. */
+interface Fiber {
+  memoizedProps?: { snapshot?: { sections?: unknown; syncedRepos?: unknown } | null } | null;
+  return?: Fiber | null;
 }

@@ -66,3 +66,33 @@ graphite.com/docs/use-pr-inbox ("Share sections"), graphite.com/docs/customize-p
 No qualifier for: file/line counts, forked repos, Source, MERGING, re-requested reviewers, "A bot" as a value, author-by-team.
 APPROVED_BY / INCLUDES_PAST_REVIEWER / CLOSED_REVIEW_REQUEST_FROM only roughly match `reviewed-by:`. ORed groups need one
 query per group (or the advanced `(a) OR (b)` syntax).
+
+## Signed-in inbox page (OBSERVED 2026-10-09 by the user, signed in; not re-checked signed in)
+- No request returns the section list (no `/api/v1/graphite/…sections` call); the inbox state arrives through the app's
+  own sync. It lives in React state: a sidebar section `<li>` has a `__reactFiber$<random>` property, and ~40 steps up
+  `fiber.return` a component's `memoizedProps` hold `{ snapshot, actions }`.
+- `snapshot.sections[]`: `{ clientId: 'section/<id>', sectionId, name, repos: [{ owner, name, forge? }], usesDefaultRepos,
+  filter, includeInTotalCount, totalUnpaginatedPrs, countsDegraded, sort: { method: 'updatedAt', direction: 'DESC' } }`.
+- `snapshot.syncedRepos[]`: `{ owner, name, isInvalid, … }`, the inbox's "N repos selected"; sections with
+  `usesDefaultRepos: true` search these instead of `repos`.
+- `filter` is the server form, a tree of the same conditions: `{ kind: 'OR', exprs: [ { kind: 'AND', exprs: [ { kind: 'OR',
+  exprs: [cond…] } | { kind: 'NOT', expr: { kind: 'OR', exprs: [cond…] } } ] } ] }`. Groups = the top OR's operands, rules =
+  each AND's operands, a `NOT` = a negated rule. Example ("Needs anyone's review"): OR[ AND[ OR[status OPEN],
+  NOT(OR[author dependabot, author DJCrossman]), OR[review REVIEW_REQUIRED_GITHUB] ] ], the share link's
+  `is:open draft:false -author:dependabot -author:DJCrossman review:required`.
+- Fibers are page objects: only a script in the page's main world sees them (an extension's isolated world does not).
+
+## Signed out (VERIFIED 2026-10-09, throwaway profile, never signed in)
+`https://app.graphite.com/` keeps its URL and renders the login card ("Welcome back to Graphite", "Log in with GitHub");
+its data requests answer 401 and no `snapshot` exists. A `world: 'MAIN'` content script and an isolated one both inject
+there, and a `<div>` appended to `<body>` causes no hydration error.
+
+## How CarbonLayer copies the sections (IMPLEMENTED 2026-10-09)
+Inbox dialog → `runtime.sendMessage({ kind: 'carbonlayer-open-graphite-import' })` → background opens
+`https://app.graphite.com/` beside the asking tab and records `{ tabId, openerTabId }` in `storage.session` →
+`entrypoints/graphite.content.ts` (isolated) asks the background whether its tab is that one → posts
+`{ source: 'carbonlayer', kind: 'graphite-sections-request' }` → `entrypoints/graphite-sections.content.ts` (main world)
+polls `li` elements for 30 s with `inboxSnapshotOf` (`src/lib/graphite.ts`) and posts the sections back (or an error) →
+the isolated script relays them to the background → `storage.local.graphiteImport = { at, sections, defaultRepos }`
+(or `{ at, error }`, leaving the tab open so signing in there finishes the copy) → the background re-activates the
+asking tab and closes Graphite's → the dialog, watching that key, previews the views.

@@ -1,10 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { importGraphiteSections } from './graphite';
+import { importGraphiteSections, inboxSnapshotOf, type GraphiteInboxSnapshot } from './graphite';
 
 // Graphite's "Share section" link for: status OPEN; NOT (author dependabot OR DJCrossman); review REVIEW_REQUIRED_GITHUB.
 const EXAMPLE_LINK =
   'https://app.graphite.com/?new-section=JTdCJTIyZ3JvdXBzJTIyJTNBJTVCJTdCJTIycnVsZXMlMjIlM0ElNUIlN0IlMjJpc05lZ2F0ZWQlMjIlM0FmYWxzZSUyQyUyMmNvbmRpdGlvbnMlMjIlM0ElNUIlN0IlMjJraW5kJTIyJTNBJTIyQ09OU09MSURBVEVEX1BSX1NUQVRVU19JUyUyMiUyQyUyMnN0YXR1cyUyMiUzQSUyMk9QRU4lMjIlN0QlNUQlN0QlMkMlN0IlMjJpc05lZ2F0ZWQlMjIlM0F0cnVlJTJDJTIyY29uZGl0aW9ucyUyMiUzQSU1QiU3QiUyMmtpbmQlMjIlM0ElMjJBVVRIT1JfSVMlMjIlMkMlMjJ1c2VybmFtZSUyMiUzQSUyMmRlcGVuZGFib3QlMjIlN0QlMkMlN0IlMjJraW5kJTIyJTNBJTIyQVVUSE9SX0lTJTIyJTJDJTIydXNlcm5hbWUlMjIlM0ElMjJESkNyb3NzbWFuJTIyJTdEJTVEJTdEJTJDJTdCJTIyaXNOZWdhdGVkJTIyJTNBZmFsc2UlMkMlMjJjb25kaXRpb25zJTIyJTNBJTVCJTdCJTIya2luZCUyMiUzQSUyMlJFVklFV19TVEFUVVNfSVMlMjIlMkMlMjJzdGF0ZSUyMiUzQSUyMlJFVklFV19SRVFVSVJFRF9HSVRIVUIlMjIlN0QlNUQlN0QlNUQlN0QlNUQlN0Q%3D';
 const EXAMPLE_QUERY = 'is:pr is:open draft:false -author:dependabot -author:DJCrossman review:required sort:updated-desc';
+// The same filter as Graphite's signed-in inbox page holds it (section "Needs anyone's review").
+const EXAMPLE_TREE = {
+  kind: 'OR',
+  exprs: [
+    {
+      kind: 'AND',
+      exprs: [
+        { kind: 'OR', exprs: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'OPEN' }] },
+        { kind: 'NOT', expr: { kind: 'OR', exprs: [{ kind: 'AUTHOR_IS', username: 'dependabot' }, { kind: 'AUTHOR_IS', username: 'DJCrossman' }] } },
+        { kind: 'OR', exprs: [{ kind: 'REVIEW_STATUS_IS', state: 'REVIEW_REQUIRED_GITHUB' }] },
+      ],
+    },
+  ],
+};
 
 const NEEDS_REVIEW = {
   name: 'Needs my review',
@@ -168,6 +182,57 @@ describe('importGraphiteSections', () => {
     expect(notes).toEqual([expect.stringContaining('left out')]);
   });
 
+  it("reads the filter tree Graphite's inbox page holds as the share link's filter", () => {
+    expect(importGraphiteSections(JSON.stringify(EXAMPLE_TREE)).views.map((view) => view.query)).toEqual([EXAMPLE_QUERY]);
+  });
+
+  it("turns the sections copied from Graphite's inbox into named views, scoped to the inbox's repositories where they use them", () => {
+    const snapshot: GraphiteInboxSnapshot = {
+      sections: [
+        { name: "Needs anyone's review", filter: EXAMPLE_TREE, repos: [], usesDefaultRepos: true, includeInTotalCount: true },
+        {
+          name: 'Merged',
+          filter: { kind: 'OR', exprs: [{ kind: 'AND', exprs: [{ kind: 'OR', exprs: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'MERGED' }] }] }] },
+          repos: [{ owner: 'acme', name: 'web' }],
+          usesDefaultRepos: false,
+          includeInTotalCount: false,
+        },
+      ],
+      defaultRepos: [
+        { owner: 'acme', name: 'web' },
+        { owner: 'acme', name: 'api' },
+      ],
+    };
+    const { views, notes } = importGraphiteSections(snapshot);
+    expect(views.map(({ name, query }) => [name, query])).toEqual([
+      ["Needs anyone's review", 'is:pr repo:acme/web repo:acme/api is:open draft:false -author:dependabot -author:DJCrossman review:required sort:updated-desc'],
+      ['Merged', 'is:pr repo:acme/web is:merged sort:updated-desc'],
+    ]);
+    expect(notes).toEqual([]);
+  });
+
+  it("searches every repository, with a note, when the inbox's repositories are too many to list", () => {
+    const defaultRepos = Array.from({ length: 9 }, (_, index) => ({ owner: 'acme', name: `repo-${index}` }));
+    const { views, notes } = importGraphiteSections({
+      sections: [{ name: 'Everything open', filter: { kind: 'OR', exprs: [{ kind: 'AND', exprs: [{ kind: 'OR', exprs: [{ kind: 'CONSOLIDATED_PR_STATUS_IS', status: 'OPEN' }] }] }] }, repos: [], usesDefaultRepos: true, includeInTotalCount: true }],
+      defaultRepos,
+    });
+    expect(views[0]?.query).toBe('is:pr is:open draft:false sort:updated-desc');
+    expect(notes).toEqual([expect.stringMatching(/^Everything open: .*9 repositories/)]);
+  });
+
+  it('leaves out, with a note, a copied section whose filter it cannot read', () => {
+    const { views, notes } = importGraphiteSections({
+      sections: [
+        { name: 'Odd', filter: null, repos: [], usesDefaultRepos: false, includeInTotalCount: false },
+        { name: 'Mine', filter: EXAMPLE_TREE, repos: [], usesDefaultRepos: false, includeInTotalCount: true },
+      ],
+      defaultRepos: [],
+    });
+    expect(views.map((view) => view.name)).toEqual(['Mine']);
+    expect(notes).toEqual([expect.stringMatching(/^Odd: .*left out/)]);
+  });
+
   it.each([
     ['nothing', ''],
     ['plain text', 'needs review'],
@@ -182,5 +247,48 @@ describe('importGraphiteSections', () => {
     ['a rule mixing kinds', '{"groups":[{"rules":[{"isNegated":false,"conditions":[{"kind":"AUTHOR_IS","username":"a"},{"kind":"MENTIONS","username":"a"}]}]}]}'],
   ])('rejects %s with a message', (_, input) => {
     expect(() => importGraphiteSections(input)).toThrow(/\S/);
+  });
+});
+
+describe('inboxSnapshotOf', () => {
+  it("copies the sections and repositories out of the React state some levels above an element of Graphite's inbox", () => {
+    const section = {
+      clientId: 'section/42',
+      sectionId: 42,
+      name: "Needs anyone's review",
+      repos: [],
+      usesDefaultRepos: true,
+      filter: EXAMPLE_TREE,
+      includeInTotalCount: true,
+      totalUnpaginatedPrs: 3,
+      countsDegraded: false,
+      sort: { method: 'updatedAt', direction: 'DESC' },
+    };
+    const inbox = {
+      memoizedProps: {
+        snapshot: {
+          sections: [section],
+          syncedRepos: [
+            { owner: 'acme', name: 'web', isInvalid: false, id: 7 },
+            { owner: 'acme', name: 'gone', isInvalid: true, id: 8 },
+          ],
+        },
+        actions: { selectSection: () => {} },
+      },
+      return: { memoizedProps: { children: [] }, return: null },
+    };
+    let fiber: object = inbox;
+    for (let level = 0; level < 40; level += 1) fiber = { memoizedProps: level % 2 ? { className: 'row' } : null, return: fiber };
+    const item = document.createElement('li');
+    Object.assign(item, { '__reactFiber$k3j9x2': fiber });
+
+    expect(inboxSnapshotOf(item)).toEqual({
+      sections: [{ name: "Needs anyone's review", filter: EXAMPLE_TREE, repos: [], usesDefaultRepos: true, includeInTotalCount: true }],
+      defaultRepos: [{ owner: 'acme', name: 'web' }],
+    });
+  });
+
+  it('finds nothing behind an element React did not render', () => {
+    expect(inboxSnapshotOf(document.createElement('li'))).toBeNull();
   });
 });

@@ -31,6 +31,15 @@
   color: var(--gg-danger);
   font-size: 12px;
 }
+.gg-graphite-import__status,
+.gg-graphite-import__label {
+  margin: 0;
+  color: var(--gg-fg-muted);
+  font-size: 12px;
+}
+.gg-graphite-import__label {
+  margin-top: var(--gg-space-1);
+}
 
 .gg-graphite-import__views {
   margin: 0;
