@@ -2,12 +2,17 @@
 // GitHub with the user's session. Inside github.com the app posts requests to its parent window, the
 // content script answers them with same-origin fetches (cookies included); see src/lib/github-web/.
 
-import type { PrDetail, RepoCandidate, RepoRef, ReviewerCandidate, View, ViewResult } from './model';
+import type { PrDetail, PrEnrichment, PrSummary, RepoCandidate, RepoRef, ReviewerCandidate, View, ViewResult } from './model';
 
 export type MergeMethod = 'MERGE' | 'SQUASH' | 'REBASE';
 
 export interface RpcMethods {
   'inbox.fetch': { args: { views: View[]; force?: boolean }; result: ViewResult[] };
+  /**
+   * What GitHub's dashboard leaves out of these inbox rows (mergeability, reviewers, line counts), in the same order. A
+   * row's state and draft flag say whether its merge box is worth asking.
+   */
+  'inbox.enrich': { args: { prs: Array<Pick<PrSummary, 'repo' | 'number' | 'state' | 'isDraft'>> }; result: PrEnrichment[] };
   /** The repositories GitHub's repository picker offers for `query` (what the user typed; empty for its first list). */
   'repos.search': { args: { query: string }; result: RepoCandidate[] };
   'pr.fetch': { args: { repo: RepoRef; number: number; force?: boolean }; result: PrDetail };

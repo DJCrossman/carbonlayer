@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchInbox, summarisePull, type Pull } from './inbox';
+import { enrichPull, fetchInbox, summarisePull, type Pull } from './inbox';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -86,6 +86,69 @@ describe('fetchInbox', () => {
     const [result] = await fetchInbox([{ id: 'a', name: 'Drafts', query: 'inbox:your-drafts' }], '');
     expect(result?.prs).toMatchObject([{ number: 5, reviewDecision: 'NONE', ci: { state: 'NONE' } }]);
     expect(console.debug).toHaveBeenCalledWith('[gg]', expect.stringContaining('deferred fields failed'), 'GitHub answered 404 for /pulls/inbox/deferred');
+  });
+});
+
+describe('enrichPull', () => {
+  const widgets = { owner: 'acme', name: 'widgets' };
+
+  it("reads mergeability and reviewers from the merge box, line counts from the diffstat", async () => {
+    const requested: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        requested.push(url);
+        if (url.includes('/page_data/merge_box')) {
+          return Response.json({
+            pullRequest: { mergeStateStatus: 'DIRTY', latestOpinionatedReviews: [{ author: { login: 'bo', avatarUrl: 'https://avatars/bo' }, state: 'APPROVED' }] },
+            reviewerSection: { pendingRequestedReviews: [{ reviewer: { login: 'cy', avatarUrl: 'https://avatars/cy' }, isCodeOwner: false }] },
+          });
+        }
+        return Response.json({ diffstat: { linesAdded: 12, linesDeleted: 3, linesChanged: 15 } });
+      }),
+    );
+    expect(await enrichPull({ repo: widgets, number: 7, state: 'OPEN', isDraft: false }, 'SQUASH')).toEqual({
+      mergeStatus: 'DIRTY',
+      reviewers: [
+        { kind: 'user', user: { login: 'cy', avatarUrl: 'https://avatars/cy', url: 'https://github.com/cy' }, state: 'PENDING', id: undefined, canReRequest: false },
+        { kind: 'user', user: { login: 'bo', avatarUrl: 'https://avatars/bo', url: 'https://github.com/bo' }, state: 'APPROVED' },
+      ],
+      additions: 12,
+      deletions: 3,
+    });
+    expect(requested.sort()).toEqual(['/acme/widgets/pull/7/page_data/diffstat', '/acme/widgets/pull/7/page_data/merge_box?merge_method=SQUASH&bypass_requirements=false']);
+  });
+
+  it.each([
+    ['a draft', { state: 'OPEN', isDraft: true }, { mergeStatus: 'DRAFT', additions: 4, deletions: 1 }],
+    ['a merged pull request', { state: 'MERGED', isDraft: false }, { additions: 4, deletions: 1 }],
+    ['a closed pull request', { state: 'CLOSED', isDraft: false }, { additions: 4, deletions: 1 }],
+  ] as const)('asks no merge box for %s', async (_, pr, found) => {
+    const requested: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        requested.push(url);
+        return Response.json({ diffstat: { linesAdded: 4, linesDeleted: 1 } });
+      }),
+    );
+    expect(await enrichPull({ repo: widgets, number: 8, ...pr }, 'MERGE')).toEqual(found);
+    expect(requested).toEqual(['/acme/widgets/pull/8/page_data/diffstat']);
+  });
+
+  it('leaves out what GitHub refuses, and reviewers a merge box does not name', async () => {
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url.includes('/merge_box') ? Response.json({ mergeRequirements: { state: 'MERGEABLE', conditions: [] } }) : new Response('', { status: 500 }),
+      ),
+    );
+    expect(await enrichPull({ repo: widgets, number: 9, state: 'OPEN', isDraft: false }, 'MERGE')).toEqual({ mergeStatus: 'CLEAN' });
+    expect(console.debug).toHaveBeenCalledWith('[gg]', expect.stringContaining('page_data/diffstat for acme/widgets#9 failed'), 'GitHub answered 500 for /acme/widgets/pull/9/page_data/diffstat');
+
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => (url.includes('/merge_box') ? new Response('', { status: 404 }) : Response.json({ diffstat: { linesAdded: 1, linesDeleted: 0 } }))));
+    expect(await enrichPull({ repo: widgets, number: 9, state: 'OPEN', isDraft: false }, 'MERGE')).toEqual({ additions: 1, deletions: 0 });
   });
 });
 

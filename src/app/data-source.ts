@@ -1,7 +1,7 @@
 // Everything the UI needs from the outside world, behind one interface so the same pages render
 // from the content script's RPC in the extension and from fixtures in the dev harness (`?fixtures=1`).
 
-import type { PrDetail, RepoCandidate, RepoRef, ReviewerCandidate, View, ViewResult } from '../lib/model';
+import type { PrDetail, PrEnrichment, PrSummary, RepoCandidate, RepoRef, ReviewerCandidate, View, ViewResult } from '../lib/model';
 import { rpc, type MergeMethod } from '../lib/rpc';
 import { DEFAULT_SETTINGS, getSettings, setSettings, watchSettings, type Settings } from '../lib/settings';
 import { repositoryScope } from '../lib/views';
@@ -21,6 +21,8 @@ export interface ReviewerChange {
 
 export interface DataSource {
   fetchInbox(views: View[], force?: boolean): Promise<ViewResult[]>;
+  /** What GitHub's dashboard leaves out of these inbox rows (mergeability, reviewers, line counts), in the same order. */
+  enrichInbox(prs: Array<Pick<PrSummary, 'repo' | 'number' | 'state' | 'isDraft'>>): Promise<PrEnrichment[]>;
   /** The repositories GitHub's repository picker offers for what the user typed (nothing: its first list). */
   searchRepos(query: string): Promise<RepoCandidate[]>;
   fetchPr(repo: RepoRef, number: number, force?: boolean): Promise<PrDetail>;
@@ -47,6 +49,7 @@ export interface DataSource {
 export function createRpcDataSource(): DataSource {
   return {
     fetchInbox: (views, force) => rpc('inbox.fetch', { views, force }),
+    enrichInbox: (prs) => rpc('inbox.enrich', { prs }),
     searchRepos: (query) => rpc('repos.search', { query }),
     fetchPr: (repo, number, force) => rpc('pr.fetch', { repo, number, force }),
     review: (prId, event, body, threads) => rpc('pr.review', { prId, event, body, threads }),
@@ -83,8 +86,21 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     console.info('[fixtures] mutation', ...args);
   };
   return {
+    // Rows as GitHub's dashboard lists them: their merge status, reviewers and line counts come later, from enrichInbox.
     fetchInbox: async (views) =>
-      views.map((view) => fixtures.inbox.find((r) => r.view.id === view.id) ?? { view, prs: [], totalCount: 0, fetchedAt: new Date().toISOString() }),
+      views.map((view) => {
+        const result = fixtures.inbox.find((r) => r.view.id === view.id) ?? { view, prs: [], totalCount: 0, fetchedAt: new Date().toISOString() };
+        return { ...result, prs: result.prs.map((pr) => ({ ...pr, mergeStatus: pr.isDraft ? 'DRAFT' : 'UNKNOWN', reviewers: [], additions: 0, deletions: 0 })) };
+      }),
+    // The fixture rows' own values, a moment later, as GitHub's merge box and diffstat would give them.
+    enrichInbox: async (prs) => {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      const rows = fixtures.inbox.flatMap((result) => result.prs);
+      return prs.map(({ repo, number }) => {
+        const pr = rows.find((row) => row.repo.owner === repo.owner && row.repo.name === repo.name && row.number === number);
+        return pr ? { mergeStatus: pr.mergeStatus, reviewers: pr.reviewers, additions: pr.additions, deletions: pr.deletions } : {};
+      });
+    },
     searchRepos: async (query) => {
       const needle = query.trim().toLowerCase();
       return FIXTURE_REPOSITORIES.filter((repo) => `${repo.owner}/${repo.name}`.includes(needle));

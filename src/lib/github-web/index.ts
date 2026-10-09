@@ -4,12 +4,12 @@
 
 import type { RpcMethod, RpcMethods, RpcRequest, RpcResponse } from '../rpc';
 import { getSettings } from '../settings';
-import { fetchInbox } from './inbox';
+import { enrichPull, fetchInbox } from './inbox';
 import { mutations, pullRequestFor, rememberPullRequest } from './mutations';
 import { fetchPullRequestPage } from './pull-request';
 import { repositoryCandidatesFrom, repositoryPickerPath } from './repositories';
 import { reviewerCandidatesFrom } from './reviews';
-import { getJson, noteShape } from './session';
+import { getJson, noteShape, politely } from './session';
 
 export async function handleRpc(request: RpcRequest): Promise<RpcResponse> {
   try {
@@ -32,6 +32,13 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
     const results = await cached(key, 60_000, force, () => fetchInbox(views, inboxScope));
     // Results are index-aligned with `views`; the views themselves are not cached so renames show at once.
     return results.map((result, i) => ({ ...result, view: views[i]! }));
+  },
+  'inbox.enrich': async ({ prs }) => {
+    const { mergeMethod } = await getSettings();
+    // Three pull requests at a time (each a merge box and a diffstat request), each answer kept for 2 minutes.
+    return politely(prs, 3, (pr) =>
+      cached(`enrich:${pr.repo.owner}/${pr.repo.name}#${pr.number}:${pr.state}:${pr.isDraft}:${mergeMethod}`.toLowerCase(), 120_000, false, () => enrichPull(pr, mergeMethod)),
+    );
   },
   'repos.search': async ({ query }) => {
     // The picker asks again after every pause in typing; what it asked in the last minute is answered from memory.

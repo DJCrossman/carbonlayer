@@ -87,6 +87,10 @@ Data endpoints (all `page_data/*` need a session; `tab_counts` and `diffstat` al
   `latestOpinionatedReviews: [{ id, author: { login, avatarUrl, name, url }, state: 'APPROVED'|…,
   authorCanPushToRepository, onBehalfOf }], pendingRequestedReviews: [{ reviewer, isCodeOwner }],
   reviewsState, numReviewsRequired, viewerCanReRequestReviews`. Exact top-level JSON keys: confirm at runtime.
+  The inbox asks this route, and `diffstat`, for each row on screen to fill the merge status, reviewers and line
+  counts the dashboard rows lack (`enrichPull` in `src/lib/github-web/inbox.ts`). Whether the merge box names reviewers
+  (`latestOpinionatedReviews`, `pendingReviewRequests` / `pendingRequestedReviews`) has not been seen signed in; without
+  them the row shows no reviewer avatars.
 - `GET …/page_data/status_checks` → the checks list (`ChecksSection` has `sectionStatus: 'PASSED'`, grouping
   preference). **Shape unconfirmed**: log it and map tolerantly (expect check name, status/conclusion,
   details URL, app/workflow name, required flag, durations).

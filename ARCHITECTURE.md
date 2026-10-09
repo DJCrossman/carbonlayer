@@ -73,6 +73,17 @@ in view highlighted; a click scrolls to the section (expanding it), ↑ / ↓ re
 section" opens it for a new view. It hides with `sidebarCollapsed` in settings, and below 900px it opens over the inbox
 from the top bar's toggle.
 
+Rows follow Graphite's columns (`src/inbox/InboxSection.tsx`): unread dot, avatar, title with `author · owner/repo #N`,
+stacked reviewer avatars, a labels chip, the stack chip, then fixed Review, CI and Merge icon columns (`ReviewStatus`,
+`CiStatus` and `MergeStatus` as `variant="icon"`), line counts and age, under a header row whose Title, Changes and
+Updated sort the section (page state only). GitHub's dashboard rows carry review decision and CI rollup but no
+mergeability, reviewers or line counts: as a row comes within 200px of view (an `IntersectionObserver` per row, rooted
+at the page's own document), the inbox asks `inbox.enrich` for it, up to 10 rows a request and one request at a time,
+and the content script answers from each PR's `page_data/merge_box` (skipped for drafts and merged or closed PRs) and
+`page_data/diffstat`, three PRs at a time, each answer kept 2 minutes (`enrichPull` in `src/lib/github-web/inbox.ts`).
+Until a row's answer arrives its Reviewers, Merge and Changes columns show a skeleton dash; a failure leaves the row as
+it was. Section counts read `sectionCount` (`99+` above 99, `<limit>+` for a view cut short below that).
+
 Repositories are picked, not typed (`src/inbox/RepoPicker.tsx`): the inbox's top-bar chip, the options page and the
 section editor's Repositories field open a popover with a search box, "Select all / none" and checkboxes, fed by GitHub's
 own repository picker (`repos.search` RPC → `GET /repositories/picker/search?q=contributed-by:@me <text>`, read by

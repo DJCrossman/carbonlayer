@@ -1,7 +1,7 @@
 // One inbox view as a collapsible card, laid out like Graphite's inbox: header "Name N" with a gear that opens the section
 // editor, a column header row (sortable Title, Changes and Updated; icons over the Review, CI and Merge columns), then one
 // dense row per PR in fixed columns so the status icons line up (skeleton rows while loading).
-import { useEffect, useRef, type MouseEvent } from 'react';
+import { useEffect, useEffectEvent, useRef, type MouseEvent } from 'react';
 import type { PrSummary, ReviewerSummary, View, ViewResult } from '../lib/model';
 import { sectionCount } from '../lib/views';
 import { Avatar } from '../ui/Avatar';
@@ -21,7 +21,9 @@ export function InboxSection({
   sort,
   selectedPrId,
   overdueAfterHours,
+  isEnriched,
   onSort,
+  onRowShown,
   onToggleCollapsed,
   onEdit,
   onOpen,
@@ -33,7 +35,11 @@ export function InboxSection({
   sort: SectionSort;
   selectedPrId: string | null;
   overdueAfterHours: number | undefined;
+  /** Whether a row has what GitHub's dashboard leaves out (merge status, reviewers, line counts); until then those columns show a skeleton dash. */
+  isEnriched: (pr: PrSummary) => boolean;
   onSort: (by: SectionSort['by']) => void;
+  /** A row came within 200px of view (again, after it was updated): time to ask for what the dashboard leaves out. */
+  onRowShown: (pr: PrSummary) => void;
   onToggleCollapsed: () => void;
   onEdit: () => void;
   onOpen: (pr: PrSummary, newTab: boolean) => void;
@@ -79,7 +85,15 @@ export function InboxSection({
         !empty &&
         (result
           ? result.prs.map((pr) => (
-              <PrRow key={pr.id} pr={pr} selected={pr.id === selectedPrId} overdueAfterHours={overdueAfterHours} onOpen={onOpen} />
+              <PrRow
+                key={pr.id}
+                pr={pr}
+                enriched={isEnriched(pr)}
+                selected={pr.id === selectedPrId}
+                overdueAfterHours={overdueAfterHours}
+                onShown={onRowShown}
+                onOpen={onOpen}
+              />
             ))
           : loading && ['48%', '62%', '36%'].map((width) => <SkeletonRow key={width} titleWidth={width} />))}
     </Card>
@@ -122,19 +136,41 @@ function SortHeader({
 
 function PrRow({
   pr,
+  enriched,
   selected,
   overdueAfterHours,
+  onShown,
   onOpen,
 }: {
   pr: PrSummary;
+  enriched: boolean;
   selected: boolean;
   overdueAfterHours: number | undefined;
+  onShown: (pr: PrSummary) => void;
   onOpen: (pr: PrSummary, newTab: boolean) => void;
 }) {
   const row = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (selected) row.current?.scrollIntoView({ block: 'nearest' });
   }, [selected]);
+
+  const shown = useEffectEvent(() => onShown(pr));
+  useEffect(() => {
+    const element = row.current;
+    if (!element) return;
+    // `root: document` is this page's own scrolling viewport (in the extension, the iframe's), where the margin applies;
+    // with no root it would be github.com's, which ignores a margin for a frame of another origin.
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        observer.disconnect();
+        shown();
+      },
+      { root: document, rootMargin: '200px' },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [pr.id, pr.updatedAt]);
 
   // A plain click anywhere on the row (title link included) opens the PR through the parent page; middle-click keeps
   // the title link's native behaviour because it never fires `click`.
@@ -161,6 +197,7 @@ function PrRow({
         className="gg-row__reviewers"
         title={pr.reviewers.length > 0 ? `Reviewers: ${pr.reviewers.map((reviewer) => `${reviewer.user.login} (${REVIEWER_STATE_WORDS[reviewer.state]})`).join(', ')}` : undefined}
       >
+        {!enriched && <Skeleton width={12} height={3} />}
         {shownReviewers.map((reviewer) => (
           <Avatar key={reviewer.user.login} user={reviewer.user} size={16} />
         ))}
@@ -188,7 +225,9 @@ function PrRow({
         <CiStatus variant="icon" ci={pr.ci} />
       </span>
       <span className="gg-row__status">
-        {pr.state === 'OPEN' && (pr.isInMergeQueue || pr.autoMerge) ? (
+        {pr.state === 'OPEN' && !pr.isDraft && !enriched ? (
+          <Skeleton width={12} height={3} />
+        ) : pr.state === 'OPEN' && (pr.isInMergeQueue || pr.autoMerge) ? (
           <span className="gg-status-icon gg-status-icon--accent">
             <Icon
               name="git-merge"
@@ -199,13 +238,17 @@ function PrRow({
           <MergeStatus variant="icon" status={pr.mergeStatus} state={pr.state} />
         )}
       </span>
-      {/* GitHub's dashboard endpoints report no line counts; zeros mean unknown, not an empty diff. */}
+      {/* GitHub's dashboard reports no line counts; they come with the row's enrichment (its diffstat), else stay hidden. */}
       <span className="gg-row__diff" title={pr.changedFiles > 0 ? `${pr.changedFiles} files changed` : undefined}>
-        {(pr.additions > 0 || pr.deletions > 0) && (
-          <>
-            <span className="gg-row__add">+{pr.additions}</span>
-            <span className="gg-row__del">−{pr.deletions}</span>
-          </>
+        {!enriched ? (
+          <Skeleton width={12} height={3} />
+        ) : (
+          (pr.additions > 0 || pr.deletions > 0) && (
+            <>
+              <span className="gg-row__add">+{pr.additions}</span>
+              <span className="gg-row__del">−{pr.deletions}</span>
+            </>
+          )
         )}
       </span>
       <span className="gg-row__age">

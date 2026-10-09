@@ -1,9 +1,13 @@
 // The inbox. Each view is one of GitHub's own inbox sections (`inbox:<filter>` → /pulls/inbox/queries) or a
-// search (/pulls/search); the rows shown then get their "deferred" fields (review decision, CI rollup).
+// search (/pulls/search); the rows shown then get their "deferred" fields (review decision, CI rollup), and the rows on
+// screen later what the dashboard has not at all (mergeability, reviewers, line counts) from each PR's page data.
 
-import type { CheckState, PrSummary, View, ViewResult } from '../model';
+import type { CheckState, PrEnrichment, PrSummary, View, ViewResult } from '../model';
+import type { MergeMethod } from '../rpc';
 import { inboxFilterOf, resolveViewQuery, type GitHubInboxFilter } from '../views';
-import { embeddedPayload, getJson, githubUser, noteShape, politely, request } from './session';
+import { mergeState } from './merge-box';
+import { reviewersOf } from './reviews';
+import { embeddedPayload, findInPayload, getJson, githubUser, noteShape, politely, request } from './session';
 
 /** Every view's rows, three views at a time so at most three requests are in flight. */
 export async function fetchInbox(views: View[], scope: string): Promise<ViewResult[]> {
@@ -140,6 +144,42 @@ export function summarisePull(pull: Pull, section: GitHubInboxFilter | null): Pr
     autoMerge: null,
     nativeStack: pull.stackPosition != null && pull.stackSize != null ? { position: pull.stackPosition, size: pull.stackSize } : null,
   };
+}
+
+/**
+ * What GitHub's dashboard leaves out of a row, from the PR's own page data: mergeability, and reviewers when it names
+ * them (`latestOpinionatedReviews`, pending requests), from its merge box (`page_data/merge_box`, read as the PR page
+ * reads it), and line counts from `page_data/diffstat`. A draft's merge status is DRAFT and a merged or closed PR's is its
+ * state, so neither asks the merge box. A route that fails is logged and leaves its fields out: the row keeps what it had.
+ */
+export async function enrichPull(pr: Pick<PrSummary, 'repo' | 'number' | 'state' | 'isDraft'>, mergeMethod: MergeMethod): Promise<PrEnrichment> {
+  const data = `/${pr.repo.owner}/${pr.repo.name}/pull/${pr.number}/page_data`;
+  const asksMergeBox = pr.state === 'OPEN' && !pr.isDraft;
+  const [mergeBox, diffstat] = await Promise.allSettled([
+    asksMergeBox ? getJson<unknown>(`${data}/merge_box?merge_method=${mergeMethod}&bypass_requirements=false`) : null,
+    getJson<{ diffstat?: { linesAdded?: number; linesDeleted?: number } }>(`${data}/diffstat`),
+  ]);
+  const found: PrEnrichment = pr.state === 'OPEN' && pr.isDraft ? { mergeStatus: 'DRAFT' } : {};
+  if (asksMergeBox && mergeBox.status === 'fulfilled') {
+    const merge = mergeState(mergeBox.value, { isDraft: false, isOpen: true });
+    found.mergeStatus = merge.mergeStatus;
+    const pendingReviewRequests = findInPayload(mergeBox.value, (key) => key === 'pendingReviewRequests' || key === 'pendingRequestedReviews');
+    if (merge.latestOpinionatedReviews != null || pendingReviewRequests !== undefined) {
+      // The dashboard has no timeline to add commenters from; the author is never among a PR's reviewers here.
+      found.reviewers = reviewersOf({ requests: { pendingReviewRequests }, latestOpinionatedReviews: merge.latestOpinionatedReviews, timeline: [], author: '' });
+    }
+  } else if (mergeBox.status === 'rejected') {
+    const reason: unknown = mergeBox.reason;
+    console.debug('[gg]', `page_data/merge_box for ${pr.repo.owner}/${pr.repo.name}#${pr.number} failed; the row keeps its merge status:`, reason instanceof Error ? reason.message : reason);
+  }
+  if (diffstat.status === 'fulfilled' && diffstat.value.diffstat) {
+    found.additions = diffstat.value.diffstat.linesAdded ?? 0;
+    found.deletions = diffstat.value.diffstat.linesDeleted ?? 0;
+  } else if (diffstat.status === 'rejected') {
+    const reason: unknown = diffstat.reason;
+    console.debug('[gg]', `page_data/diffstat for ${pr.repo.owner}/${pr.repo.name}#${pr.number} failed; the row shows no line counts:`, reason instanceof Error ? reason.message : reason);
+  }
+  return found;
 }
 
 /** A dashboard row ("Pull"), as GitHub's dashboard components receive it. */

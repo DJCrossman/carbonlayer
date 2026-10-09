@@ -117,6 +117,12 @@ export interface PrSummary {
   nativeStack: { position: number; size: number } | null;
 }
 
+/**
+ * What the inbox learns about a row after GitHub's dashboard listed it, from the PR's own page data: its mergeability,
+ * reviewers and line counts. A field is absent where GitHub did not say.
+ */
+export type PrEnrichment = Partial<Pick<PrSummary, 'mergeStatus' | 'reviewers' | 'additions' | 'deletions'>>;
+
 export interface Stack {
   /** Ordered from the PR closest to trunk (index 0) to the top of the stack. */
   entries: PrSummary[];

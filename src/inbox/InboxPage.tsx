@@ -6,7 +6,7 @@ import { browser } from 'wxt/browser';
 import { postToParent } from '../app/bridge';
 import type { DataSource } from '../app/data-source';
 import { toGitHubUrl, type AppRoute } from '../app/routes';
-import type { View, ViewResult } from '../lib/model';
+import type { PrEnrichment, PrSummary, View, ViewResult } from '../lib/model';
 import type { Settings } from '../lib/settings';
 import { encodeViewsShareLink, sectionCount } from '../lib/views';
 import { Button } from '../ui/Button';
@@ -25,6 +25,7 @@ import './inbox.css';
 
 export function InboxPage({ source, route }: { source: DataSource; route: Extract<AppRoute, { page: 'inbox' }> }) {
   const inbox = useInbox(source);
+  const enrichment = useRowEnrichment(source);
   const { settings } = inbox;
   const [selected, setSelected] = useState<SelectedRow | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -40,11 +41,12 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
 
   // How each section orders its rows, as its column headers were last clicked (this visit only).
   const [sorts, setSorts] = useState<Record<string, SectionSort>>({});
-  // Each section's rows in the order it shows them, which j / k follow too.
+  // Each section's rows, with what enrichment has found, in the order the section shows them, which j / k follow too.
   const resultsByView = new Map(
     inbox.results?.map((result) => {
       const { by, descending } = sorts[result.view.id] ?? LATEST_UPDATED_FIRST;
-      const prs = result.prs.toSorted((a, b) => {
+      const enriched = result.prs.map((pr) => ({ ...pr, ...enrichment.found.get(pr.id)?.enrichment }));
+      const prs = enriched.toSorted((a, b) => {
         const ascending =
           by === 'title' ? a.title.localeCompare(b.title) : by === 'changes' ? a.additions + a.deletions - (b.additions + b.deletions) : Date.parse(a.updatedAt) - Date.parse(b.updatedAt);
         return descending ? -ascending : ascending;
@@ -297,6 +299,8 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
                 onSort={(by) => sortSection(view.id, by)}
                 onToggleCollapsed={() => toggleCollapsed(view.id)}
                 onEdit={() => setEditing(view)}
+                isEnriched={(pr) => enrichment.found.has(pr.id)}
+                onRowShown={enrichment.want}
                 onOpen={(pr, newTab) => {
                   setSelected({ viewId: view.id, prId: pr.id });
                   openPullRequest(pr.url, newTab);
@@ -425,6 +429,50 @@ function useInbox(source: DataSource) {
   }, []);
 
   return { settings, results, error, fetchedAt, refreshing, refresh, saveSettings };
+}
+
+/**
+ * What GitHub's dashboard leaves out of the rows (mergeability, reviewers, line counts), by PR id, asked for as rows
+ * come within 200px of view: up to 10 rows a request and one request at a time, so with the content script asking
+ * GitHub about 3 PRs at once (and keeping each answer 2 minutes) the inbox never has more than that in flight. A PR is
+ * asked again once it has been updated since; an answer that misses something keeps what was found before.
+ */
+function useRowEnrichment(source: DataSource) {
+  const [found, setFound] = useState<ReadonlyMap<string, { updatedAt: string; enrichment: PrEnrichment }>>(new Map());
+  const asked = useRef(new Set<string>());
+  const queue = useRef<PrSummary[]>([]);
+  const asking = useRef(false);
+
+  async function askInTurn() {
+    while (queue.current.length > 0) {
+      const batch = queue.current.splice(0, 10);
+      let answers: PrEnrichment[] = [];
+      try {
+        answers = await source.enrichInbox(batch.map(({ repo, number, state, isDraft }) => ({ repo, number, state, isDraft })));
+      } catch (error) {
+        console.debug('[gg]', 'enriching inbox rows failed; they keep what the dashboard said:', error instanceof Error ? error.message : error);
+      }
+      setFound((current) => {
+        const next = new Map(current);
+        batch.forEach((pr, index) => next.set(pr.id, { updatedAt: pr.updatedAt, enrichment: { ...current.get(pr.id)?.enrichment, ...answers[index] } }));
+        return next;
+      });
+    }
+    asking.current = false;
+  }
+
+  function want(pr: PrSummary) {
+    const key = `${pr.id}@${pr.updatedAt}`;
+    if (asked.current.has(key)) return;
+    asked.current.add(key);
+    queue.current.push(pr);
+    if (asking.current) return;
+    asking.current = true;
+    // Rows that come into view together (the first paint, a section opening, a scroll) share a request.
+    setTimeout(() => void askInTurn(), 50);
+  }
+
+  return { found, want };
 }
 
 /**
