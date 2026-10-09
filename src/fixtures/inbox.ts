@@ -22,7 +22,9 @@ const designTeam: UserRef = { login: 'acme/design-systems', avatarUrl: '', url: 
 
 export const inboxFixtures: ViewResult[] = DEFAULT_VIEWS.map((view) => {
   const prs = prsFor(view.id);
-  return { view, prs, totalCount: prs.length, fetchedAt: new Date(NOW).toISOString() };
+  // As in the user's inbox, more merged in a week than the section lists, which its count shows as 99+.
+  const totalCount = view.id === 'graphite-merging-and-recently-merged' ? 141 : prs.length;
+  return { view, prs, totalCount, fetchedAt: new Date(NOW).toISOString() };
 });
 
 function prsFor(viewId: string): PrSummary[] {

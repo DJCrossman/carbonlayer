@@ -8,7 +8,7 @@ import type { DataSource } from '../app/data-source';
 import { toGitHubUrl, type AppRoute } from '../app/routes';
 import type { View, ViewResult } from '../lib/model';
 import type { Settings } from '../lib/settings';
-import { encodeViewsShareLink } from '../lib/views';
+import { encodeViewsShareLink, sectionCount } from '../lib/views';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
 import { RelativeTime } from '../ui/RelativeTime';
@@ -39,8 +39,8 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   const pendingImport = route.importViews !== answeredImport ? route.importViews : null;
 
   const resultsByView = new Map(inbox.results?.map((result) => [result.view.id, result]));
-  const firstView = settings?.views[0];
-  const toReview = firstView && resultsByView.get(firstView.id)?.totalCount;
+  const firstResult = settings?.views[0] && resultsByView.get(settings.views[0].id);
+  const toReview = firstResult && sectionCount(firstResult);
 
   useEffect(() => {
     if (toReview === undefined) return;

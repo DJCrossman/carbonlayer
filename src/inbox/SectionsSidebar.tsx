@@ -1,6 +1,7 @@
 // Graphite's sections sidebar: every inbox section with its count, the one in view highlighted; a click scrolls to it.
 // Each row has ↑ / ↓ to reorder and a gear for the section editor; "Add section" at the bottom opens it for a new one.
 import type { View, ViewResult } from '../lib/model';
+import { sectionCount } from '../lib/views';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
 import './sections-sidebar.css';
@@ -40,9 +41,7 @@ export function SectionsSidebar({
             <li key={view.id} className={view.id === currentViewId ? 'gg-sidebar__item is-current' : 'gg-sidebar__item'}>
               <button type="button" className="gg-sidebar__link" aria-current={view.id === currentViewId ? 'location' : undefined} onClick={() => onSelect(view)}>
                 <span className="gg-sidebar__name">{view.name}</span>
-                {result && (
-                  <span className="gg-sidebar__count">{view.limit !== undefined && result.totalCount > view.limit ? `${view.limit}+` : result.totalCount}</span>
-                )}
+                {result && <span className="gg-sidebar__count">{sectionCount(result)}</span>}
               </button>
               <span className="gg-sidebar__tools">
                 <Button variant="ghost" size="sm" icon="arrow-up" aria-label={`Move ${view.name} up`} title="Move up" disabled={index === 0} onClick={() => onMove(index, -1)} />

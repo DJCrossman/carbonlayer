@@ -3,7 +3,7 @@
 // (`https://github.com/#views=<base64url json>`).
 
 import { isGraphiteFilter } from './graphite';
-import type { View } from './model';
+import type { View, ViewResult } from './model';
 
 /**
  * Graphite's default inbox sections, as its import translates them (the filters of the user's own Graphite inbox,
@@ -231,6 +231,15 @@ export function inboxFilterOf(view: View): GitHubInboxFilter | null {
   const match = /^inbox:([a-z-]+)$/.exec(view.query.trim());
   const filter = match?.[1] as GitHubInboxFilter | undefined;
   return filter && GITHUB_INBOX_FILTERS.includes(filter) ? filter : null;
+}
+
+/**
+ * The count a section shows for its pull requests, as Graphite writes it: the total, `99+` above 99, or `<limit>+` when
+ * the view lists fewer than it found.
+ */
+export function sectionCount({ view, totalCount }: Pick<ViewResult, 'view' | 'totalCount'>): string {
+  if (view.limit !== undefined && view.limit <= 99 && totalCount > view.limit) return `${view.limit}+`;
+  return totalCount > 99 ? '99+' : String(totalCount);
 }
 
 /** A link that shares these views: their JSON as base64url (UTF-8) in the `views` hash parameter of the github.com homepage. */

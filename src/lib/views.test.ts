@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { importGraphiteSections, searchForFilter, type GraphiteInboxSnapshot } from './graphite';
 import userInbox from './graphite-inbox.fixture.json';
-import { DEFAULT_VIEWS, decodeViewsShareHash, encodeViewsShareLink, inboxFilterOf, resolveViewQuery } from './views';
+import { DEFAULT_VIEWS, decodeViewsShareHash, encodeViewsShareLink, inboxFilterOf, resolveViewQuery, sectionCount } from './views';
 
 describe('the default views', () => {
   const imported = importGraphiteSections(userInbox as GraphiteInboxSnapshot).views.map(({ view }) => view);
@@ -93,5 +93,19 @@ describe('resolveViewQuery', () => {
     expect(inboxFilterOf({ id: 'x', name: 'X', query: 'inbox:bogus' })).toBeNull();
     expect(inboxFilterOf({ id: 'y', name: 'Y', query: 'is:pr inbox:review-requested' })).toBeNull();
     expect(resolveViewQuery(view, 'org:acme')).toBe('inbox:review-requested');
+  });
+});
+
+describe('sectionCount', () => {
+  it.each([
+    [0, undefined, '0'],
+    [99, undefined, '99'],
+    [100, undefined, '99+'],
+    [141, undefined, '99+'],
+    [40, 15, '15+'],
+    [15, 15, '15'],
+    [150, 100, '99+'],
+  ])('shows %i pull requests in a view limited to %s as %s', (totalCount, limit, shown) => {
+    expect(sectionCount({ view: { id: 'v', name: 'V', query: 'is:pr', limit }, totalCount })).toBe(shown);
   });
 });

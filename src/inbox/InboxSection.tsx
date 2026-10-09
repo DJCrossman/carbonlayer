@@ -2,6 +2,7 @@
 // per PR (skeleton rows while loading).
 import { useEffect, useRef, type MouseEvent } from 'react';
 import type { PrSummary, View, ViewResult } from '../lib/model';
+import { sectionCount } from '../lib/views';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
@@ -47,9 +48,7 @@ export function InboxSection({
               <span className="gg-section__empty">No pull requests</span>
             ) : (
               result && (
-                <span className="gg-section__count">
-                  {view.limit !== undefined && result.totalCount > view.limit ? `${view.limit}+` : result.totalCount}
-                </span>
+<span className="gg-section__count">{sectionCount(result)}</span>
               )
             )}
           </button>
