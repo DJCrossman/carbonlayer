@@ -1,7 +1,7 @@
 // Content script on github.com: recognises the inbox (the homepage, signed in) and PR routes, hides GitHub's page
 // content below its header, shows app.html there in an iframe, and bridges theme, keystrokes, titles and navigation
 // (src/app/bridge.ts). It also answers the app's data requests (src/lib/rpc.ts) with the user's github.com session.
-// `?gh=1` leaves GitHub untouched for one visit. On every handled route it adds a "GitHub | Graphite" switch to
+// `?gh=1` leaves GitHub untouched for one visit. On every handled route it adds a "GitHub | CarbonLayer" switch to
 // GitHub's header, which saves the surface's setting; while that is off, GitHub's page stays untouched.
 import { browser } from 'wxt/browser';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
@@ -292,9 +292,9 @@ const GITHUB_HEADER =
 const APP_KEYS = new Set(['j', 'k', 'o', 'enter', 'r', '?', 'n', 'p', 'f', 's', 'v', 'e', 'g', 'c', 'a', 'y', 'd', 'h']);
 
 /**
- * "GitHub | Graphite" in GitHub's header, just before its + and notification buttons (signed out, before the search
- * box): which page this surface shows, and the way to change it. A click saves the surface's setting; the settings
- * watcher then mounts or releases the app in place and calls `show` again.
+ * "GitHub | CarbonLayer" (with CarbonLayer's mark) in GitHub's header, just before its + and notification buttons
+ * (signed out, before the search box): which page this surface shows, and the way to change it. A click saves the
+ * surface's setting; the settings watcher then mounts or releases the app in place and calls `show` again.
  *
  * GitHub's headers are React partials rendered on the server and hydrated later, and an element inserted among their
  * children before hydration makes React render the header again without it. So the switch sits in a shadow root on
@@ -313,6 +313,7 @@ function addPageViewSwitch() {
       white-space: nowrap;
     }
     button {
+      display: inline-flex; align-items: center; gap: 4px;
       margin: 0; padding: 0 8px; border: 0; background: none; color: var(--fgColor-muted, #59636e); cursor: pointer;
       font: 500 12px/1 var(--fontStack-sansSerif, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif);
     }
@@ -328,20 +329,29 @@ function addPageViewSwitch() {
   const github = document.createElement('button');
   github.textContent = 'GitHub';
   github.title = "Show GitHub's own page here from now on";
-  const graphite = document.createElement('button');
-  graphite.textContent = 'Graphite';
-  graphite.title = 'Show the Graphite-style page here from now on';
+  const mark = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  mark.setAttribute('viewBox', '0 0 28 28');
+  mark.setAttribute('width', '14');
+  mark.setAttribute('height', '14');
+  mark.setAttribute('fill', 'currentColor');
+  mark.setAttribute('aria-hidden', 'true');
+  const markPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  markPath.setAttribute('d', CARBONLAYER_MARK);
+  mark.append(markPath);
+  const ours = document.createElement('button');
+  ours.append(mark, 'CarbonLayer');
+  ours.title = "Show CarbonLayer's page here from now on";
   let setting: 'inboxEnabled' | 'prEnabled' = 'prEnabled';
-  let graphiteShown = false;
-  for (const button of [github, graphite]) {
+  let oursShown = false;
+  for (const button of [github, ours]) {
     button.type = 'button';
     button.addEventListener('click', () => {
-      const showGraphite = button === graphite;
-      if (showGraphite === graphiteShown) return;
-      void setSettings(setting === 'inboxEnabled' ? { inboxEnabled: showGraphite } : { prEnabled: showGraphite });
+      const showOurs = button === ours;
+      if (showOurs === oursShown) return;
+      void setSettings(setting === 'inboxEnabled' ? { inboxEnabled: showOurs } : { prEnabled: showOurs });
     });
   }
-  group.append(style, github, graphite);
+  group.append(style, github, ours);
 
   const listeners = new AbortController();
   let header: Element | null = null;
@@ -405,12 +415,12 @@ function addPageViewSwitch() {
   place();
 
   return {
-    /** Shows which page the surface whose switch is `surfaceSetting` is set to: ours when `graphiteOn`. */
-    show(surfaceSetting: 'inboxEnabled' | 'prEnabled', graphiteOn: boolean) {
+    /** Shows which page the surface whose switch is `surfaceSetting` is set to: ours when `oursOn`. */
+    show(surfaceSetting: 'inboxEnabled' | 'prEnabled', oursOn: boolean) {
       setting = surfaceSetting;
-      graphiteShown = graphiteOn;
-      github.setAttribute('aria-pressed', String(!graphiteOn));
-      graphite.setAttribute('aria-pressed', String(graphiteOn));
+      oursShown = oursOn;
+      github.setAttribute('aria-pressed', String(!oursOn));
+      ours.setAttribute('aria-pressed', String(oursOn));
     },
     remove() {
       listeners.abort();
@@ -421,3 +431,7 @@ function addPageViewSwitch() {
     },
   };
 }
+
+/** CarbonLayer's mark (assets/logo.svg) as one path on a 28px grid, as `logo` in src/ui/Icon.tsx. */
+const CARBONLAYER_MARK =
+  'M17.644 0 3.73 3.729 0 17.644l10.187 10.187 13.915-3.729 3.73-13.915zm2.27 24.312H7.917L1.92 13.915 7.917 3.518h11.997l5.998 10.397zM20.704 7.123l-9.27-2.484-6.788 6.793 2.482 9.276 9.27 2.484 6.788-6.793zM12.709 16.765C10.692 16.52 9.272 15.07 9.272 13.191C9.272 12.427 9.547 11.603 10.005 11.053C9.806 10.549 9.837 9.48 10.066 9.037C10.677 8.961 11.502 9.282 11.991 9.724C12.571 9.541 13.182 9.449 13.931 9.449C14.679 9.449 15.29 9.541 15.839 9.709C16.313 9.281 17.153 8.961 17.764 9.037C17.978 9.449 18.009 10.519 17.809 11.037C18.299 11.618 18.558 12.397 18.558 13.191C18.558 15.07 17.138 16.49 15.091 16.75C15.61 17.086 15.962 17.819 15.962 18.659L15.962 23.075L11.96 22.003L11.96 19.04A1.972 1.972 0 0 1 11.227 19.193C10.219 19.193 9.623 18.643 9.196 17.62C9.028 17.207 8.844 16.963 8.493 16.917C8.309 16.902 8.249 16.826 8.249 16.734C8.249 16.55 8.555 16.414 8.859 16.414C9.303 16.414 9.684 16.688 10.081 17.253C10.387 17.696 10.707 17.895 11.09 17.895C11.471 17.895 11.715 17.757 12.067 17.406C12.327 17.147 12.525 16.917 12.709 16.764Z';

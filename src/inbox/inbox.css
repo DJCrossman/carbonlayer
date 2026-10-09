@@ -24,10 +24,16 @@
   box-sizing: border-box;
 }
 .gg-inbox__title {
+  display: flex;
+  align-items: center;
+  gap: var(--gg-space-2);
   margin: 0;
   font-size: 16px;
   font-weight: 600;
   white-space: nowrap;
+}
+.gg-inbox__logo {
+  color: var(--gg-fg-muted);
 }
 .gg-inbox__scope {
   display: inline-flex;

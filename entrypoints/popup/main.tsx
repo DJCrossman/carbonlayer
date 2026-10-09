@@ -2,6 +2,7 @@
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { getSettings, setSettings, watchSettings, type Settings } from '../../src/lib/settings';
+import { Icon } from '../../src/ui/Icon';
 import '../../src/ui/tokens.css';
 import './popup.css';
 
@@ -38,7 +39,11 @@ function Popup() {
 
   return (
     <main className="popup">
-      <h1>Graphite-style GitHub</h1>
+      <header className="brand">
+        <Icon name="logo" size={24} />
+        <h1>CarbonLayer</h1>
+        <p className="slogan">We have Graphite at home</p>
+      </header>
       <label className="toggle">
         <input type="checkbox" checked={settings.inboxEnabled} onChange={(event) => toggle({ inboxEnabled: event.target.checked })} />
         Inbox on the github.com homepage

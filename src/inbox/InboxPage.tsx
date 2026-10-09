@@ -121,7 +121,10 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
     <div className="gg-inbox">
       <header className="gg-inbox__bar">
         <div className="gg-inbox__bar-inner">
-          <h1 className="gg-inbox__title">Pull requests</h1>
+          <h1 className="gg-inbox__title">
+            <Icon name="logo" className="gg-inbox__logo" />
+            Pull requests
+          </h1>
           <ScopeChip scope={settings.inboxScope} onSave={(inboxScope) => void inbox.saveSettings({ inboxScope })} />
           <div className="gg-inbox__actions">
             <Button

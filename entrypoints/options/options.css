@@ -10,17 +10,28 @@ body {
 
 .options header {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  gap: var(--gg-space-2);
+  align-items: center;
   padding-bottom: var(--gg-space-2);
   margin-bottom: var(--gg-space-4);
   border-bottom: 1px solid var(--gg-border);
+}
+
+.options .brand {
+  flex: 1;
 }
 
 .options h1 {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
+  line-height: 20px;
+}
+
+.options .slogan {
+  margin: 0;
+  font-size: 12px;
+  color: var(--gg-fg-muted);
 }
 
 .options section {

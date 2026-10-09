@@ -3,6 +3,7 @@
 import { StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { getSettings, setSettings, type Settings } from '../../src/lib/settings';
+import { Icon } from '../../src/ui/Icon';
 import '../../src/ui/tokens.css';
 import './options.css';
 import { ViewsEditor } from './ViewsEditor';
@@ -58,7 +59,11 @@ function OptionsPage() {
   return (
     <main className="options">
       <header>
-        <h1>Graphite-style GitHub</h1>
+        <Icon name="logo" size={28} />
+        <div className="brand">
+          <h1>CarbonLayer</h1>
+          <p className="slogan">We have Graphite at home</p>
+        </div>
         <span className={saved ? 'saved visible' : 'saved'} aria-live="polite">
           {saved ? 'Saved' : ''}
         </span>

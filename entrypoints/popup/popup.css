@@ -4,10 +4,30 @@
   padding: var(--gg-space-3);
 }
 
+.brand {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: var(--gg-space-2);
+  align-items: center;
+  margin-bottom: var(--gg-space-2);
+}
+
+.brand .gg-icon {
+  grid-row: span 2;
+}
+
 .popup h1 {
-  margin: 0 0 var(--gg-space-2);
+  margin: 0;
   font-size: 13px;
   font-weight: 600;
+  line-height: 16px;
+}
+
+.slogan {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--gg-fg-muted);
 }
 
 .toggle {
