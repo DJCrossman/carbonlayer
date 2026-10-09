@@ -1,0 +1,63 @@
+query Inbox($needsReview: String!, $mine: String!, $first: Int = 50) {
+  rateLimit { cost remaining resetAt }
+  needsReview: search(type: ISSUE, query: $needsReview, first: $first) { ...PrResults }
+  mine: search(type: ISSUE, query: $mine, first: $first) { ...PrResults }
+}
+
+fragment PrResults on SearchResultItemConnection {
+  issueCount
+  pageInfo { hasNextPage endCursor }
+  nodes { ...PrCard }
+}
+
+fragment PrCard on PullRequest {
+  id number title url isDraft state isReadByViewer
+  createdAt updatedAt
+  author { login avatarUrl }
+  repository { nameWithOwner }
+  headRefName baseRefName
+  reviewDecision mergeable mergeStateStatus
+  additions deletions changedFiles
+  totalCommentsCount
+  stackEntry { position }
+  stack { number size }
+  labels(first: 10) { nodes { name color } }
+  reviewRequests(first: 10) {
+    nodes {
+      asCodeOwner
+      requestedReviewer {
+        __typename
+        ... on User { login avatarUrl }
+        ... on Team { slug combinedSlug name }
+        ... on Bot { login avatarUrl }
+        ... on Mannequin { login avatarUrl }
+      }
+    }
+  }
+  latestOpinionatedReviews(first: 10, writersOnly: true) {
+    nodes { state submittedAt author { login avatarUrl } }
+  }
+  latestReviews(first: 10) {
+    nodes { state submittedAt author { login avatarUrl } }
+  }
+  commits(last: 1) {
+    nodes {
+      commit {
+        oid
+        statusCheckRollup {
+          state
+          contexts(first: 50) {
+            totalCount
+            checkRunCountsByState { state count }
+            statusContextCountsByState { state count }
+            nodes {
+              __typename
+              ... on CheckRun { name status conclusion detailsUrl title }
+              ... on StatusContext { context state targetUrl description }
+            }
+          }
+        }
+      }
+    }
+  }
+}
