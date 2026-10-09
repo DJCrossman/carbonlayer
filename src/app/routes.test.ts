@@ -40,6 +40,11 @@ describe('app hash round trip', () => {
     for (const route of routes) expect(parseAppHash(toAppHash(route))).toEqual(route);
   });
 
+  it('drops malformed import payloads from the app hash', () => {
+    expect(parseAppHash('#/inbox?import=' + encodeURIComponent('[{"id":1}]'))).toEqual({ page: 'inbox', importViews: null });
+    expect(parseAppHash('#/inbox?import=' + encodeURIComponent('[]'))).toEqual({ page: 'inbox', importViews: null });
+  });
+
   it('maps routes back to github.com URLs', () => {
     expect(toGitHubUrl(parseAppHash('#/pr/acme/widgets/42?section=files'))).toBe('https://github.com/acme/widgets/pull/42/files');
     expect(toGitHubUrl(parseAppHash('#/inbox'))).toBe('https://github.com/pulls');

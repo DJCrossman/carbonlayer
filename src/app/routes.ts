@@ -2,7 +2,7 @@
 // or the app's own location hash (iframe). Both sides agree on one `AppRoute` shape.
 
 import type { RepoRef, View } from '../lib/model';
-import { decodeViewsShareHash } from '../lib/views';
+import { decodeViewsShareHash, isView } from '../lib/views';
 
 export type AppRoute =
   | { page: 'inbox'; importViews: View[] | null }
@@ -50,7 +50,7 @@ export function parseAppHash(hash: string): AppRoute {
     if (raw) {
       try {
         const parsed: unknown = JSON.parse(raw);
-        importViews = Array.isArray(parsed) ? (parsed as View[]) : null;
+        importViews = Array.isArray(parsed) && parsed.length > 0 && parsed.every(isView) ? parsed : null;
       } catch {
         importViews = null;
       }
