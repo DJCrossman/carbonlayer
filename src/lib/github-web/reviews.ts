@@ -75,20 +75,24 @@ export function reviewDecisionOf(reviewers: ReviewerSummary[], numReviewsRequire
 export function reviewerCandidatesFrom(available: unknown, suggested: unknown, query: string): { suggested: ReviewerCandidate[]; reviewers: ReviewerCandidate[] } {
   noteShape('page_data/reviewers', available);
   noteShape('page_data/suggested_reviewers', suggested);
-  const candidates = (raw: unknown) =>
-    (Array.isArray(raw) ? (raw as Array<RawReviewer | null>) : []).flatMap((reviewer): ReviewerCandidate[] => {
-      const login = reviewer?.displayLogin ?? reviewer?.login;
-      if (!reviewer?.id || !login) return [];
-      const kind = reviewer.reviewerType === 'Team' || reviewer.__typename === 'Team' ? 'team' : 'user';
-      return [{ id: String(reviewer.id), login, name: reviewer.name || null, avatarUrl: reviewer.avatarUrl ?? '', kind }];
-    });
-  const needle = query.trim().toLowerCase();
   const { suggestedReviewers } = (suggested ?? {}) as { suggestedReviewers?: unknown };
-  const suggestions = candidates(Array.isArray(suggestedReviewers) ? suggestedReviewers.map((entry: { reviewer?: RawReviewer } | null) => entry?.reviewer) : []).filter(
-    (candidate) => !needle || candidate.login.toLowerCase().includes(needle) || !!candidate.name?.toLowerCase().includes(needle),
-  );
-  const everyone = candidates(((available ?? {}) as { availableReviewers?: unknown }).availableReviewers);
-  return { suggested: suggestions, reviewers: everyone.filter((candidate) => !suggestions.some((suggestion) => suggestion.id === candidate.id)) };
+  const { availableReviewers } = (available ?? {}) as { availableReviewers?: unknown };
+  const found = { suggested: [] as ReviewerCandidate[], reviewers: [] as ReviewerCandidate[] };
+  const listed = [
+    ...(Array.isArray(suggestedReviewers) ? (suggestedReviewers as Array<{ reviewer?: RawReviewer } | null>) : []).map((entry) => ({ group: found.suggested, reviewer: entry?.reviewer })),
+    ...(Array.isArray(availableReviewers) ? (availableReviewers as Array<RawReviewer | null>) : []).map((reviewer) => ({ group: found.reviewers, reviewer })),
+  ];
+  const needle = query.trim().toLowerCase();
+  for (const { group, reviewer } of listed) {
+    const login = reviewer?.displayLogin ?? reviewer?.login;
+    if (!reviewer?.id || !login) continue;
+    const id = String(reviewer.id);
+    const name = reviewer.name || null;
+    if (group === found.suggested && needle && !login.toLowerCase().includes(needle) && !name?.toLowerCase().includes(needle)) continue;
+    if (group === found.reviewers && found.suggested.some((suggestion) => suggestion.id === id)) continue;
+    group.push({ id, login, name, avatarUrl: reviewer.avatarUrl ?? '', kind: reviewer.reviewerType === 'Team' || reviewer.__typename === 'Team' ? 'team' : 'user' });
+  }
+  return found;
 }
 
 interface RawReviewer {
