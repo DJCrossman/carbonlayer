@@ -5,11 +5,15 @@ import { GITHUB_ORIGIN, isBridgeMessage, postToParent, type ParentToAppMessage }
 import { createFixtureDataSource, createRpcDataSource, type DataSource } from '../../src/app/data-source';
 import { parseAppHash, type AppRoute } from '../../src/app/routes';
 import { InboxPage } from '../../src/inbox/InboxPage';
+import type { Settings } from '../../src/lib/settings';
 import { PrPage } from '../../src/pr/PrPage';
 import '../../src/ui/tokens.css';
 
 function App({ source }: { source: DataSource }) {
   const [route, setRoute] = useState<AppRoute>(() => parseAppHash(location.hash));
+  // GitHub's own theme, sent by the parent page; null standalone (harness) and until the parent has said.
+  const [githubTheme, setGithubTheme] = useState<'light' | 'dark' | null>(null);
+  const [themeSetting, setThemeSetting] = useState<Settings['theme']>('auto');
 
   useEffect(() => {
     const onHashChange = () => setRoute(parseAppHash(location.hash));
@@ -20,7 +24,7 @@ function App({ source }: { source: DataSource }) {
         history.replaceState(null, '', message.hash);
         setRoute(parseAppHash(message.hash));
       } else if (message.type === 'gg:theme') {
-        document.documentElement.dataset.theme = message.theme;
+        setGithubTheme(message.theme);
       } else if (message.type === 'gg:keydown') {
         // A key typed on GitHub's page while this document did not have focus, so its own listeners never saw it:
         // replay it once, on the document, where the page-level shortcut hooks listen.
@@ -38,14 +42,18 @@ function App({ source }: { source: DataSource }) {
   }, []);
 
   useEffect(() => {
-    // Standalone (harness) only: follow the OS theme. Inside github.com the parent sends gg:theme.
-    if (window.parent !== window) return;
+    void source.getSettings().then((settings) => setThemeSetting(settings.theme), () => {});
+    return source.watchSettings((settings) => setThemeSetting(settings.theme));
+  }, [source]);
+
+  useEffect(() => {
+    // The options' Light or Dark wins; "Match GitHub" follows GitHub's theme, or the OS theme until it is known.
     const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const apply = () => (document.documentElement.dataset.theme = media.matches ? 'dark' : 'light');
+    const apply = () => (document.documentElement.dataset.theme = themeSetting !== 'auto' ? themeSetting : (githubTheme ?? (media.matches ? 'dark' : 'light')));
     apply();
     media.addEventListener('change', apply);
     return () => media.removeEventListener('change', apply);
-  }, []);
+  }, [themeSetting, githubTheme]);
 
   switch (route.page) {
     case 'inbox':
