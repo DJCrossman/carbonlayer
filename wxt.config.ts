@@ -5,11 +5,12 @@ import { defineConfig } from 'wxt';
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   manifest: {
-    name: 'Graphite-style GitHub',
-    description: 'Makes GitHub pull requests look and work like Graphite: a configurable inbox and a tidy, stack-aware PR page.',
+    name: 'CarbonLayer – Graphite UI for GitHub',
+    short_name: 'CarbonLayer',
+    description: 'We have Graphite at home: a Graphite-style inbox and pull request page on top of your GitHub session.',
     permissions: ['storage'],
     host_permissions: ['https://github.com/*'],
-    action: { default_title: 'Graphite-style GitHub' },
+    action: { default_title: 'CarbonLayer' },
     // The content script embeds app.html in an iframe on github.com.
     web_accessible_resources: [{ resources: ['app.html'], matches: ['https://github.com/*'] }],
   },

@@ -1,6 +1,6 @@
 {
-  "name": "github-graphite",
-  "description": "Makes GitHub pull requests look and work like Graphite: a configurable inbox and a tidy, stack-aware PR page.",
+  "name": "carbonlayer",
+  "description": "We have Graphite at home: a Graphite-style inbox and pull request page on top of your GitHub session.",
   "private": true,
   "version": "0.0.0",
   "type": "module",
