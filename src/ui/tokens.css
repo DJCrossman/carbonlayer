@@ -1,0 +1,86 @@
+/* Design tokens for the app. Light values on :root, dark values when [data-theme="dark"].
+   Primer-adjacent so the page feels at home on github.com, tightened for density. */
+:root {
+  --gg-font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+  --gg-font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --gg-font-size: 13px;
+  --gg-line-height: 1.4;
+  --gg-radius: 6px;
+  --gg-space-1: 4px;
+  --gg-space-2: 8px;
+  --gg-space-3: 12px;
+  --gg-space-4: 16px;
+  --gg-space-5: 24px;
+
+  --gg-bg: #ffffff;
+  --gg-bg-subtle: #f6f8fa;
+  --gg-bg-inset: #eff2f5;
+  --gg-bg-hover: #f3f4f6;
+  --gg-bg-selected: #ddf4ff;
+  --gg-border: #d1d9e0;
+  --gg-border-muted: #e5e9ed;
+  --gg-fg: #1f2328;
+  --gg-fg-muted: #59636e;
+  --gg-fg-subtle: #818b98;
+  --gg-accent: #0969da;
+  --gg-accent-fg: #ffffff;
+  --gg-success: #1a7f37;
+  --gg-success-bg: #dafbe1;
+  --gg-attention: #9a6700;
+  --gg-attention-bg: #fff8c5;
+  --gg-danger: #cf222e;
+  --gg-danger-bg: #ffebe9;
+  --gg-done: #8250df;
+  --gg-done-bg: #fbefff;
+  --gg-neutral: #59636e;
+  --gg-neutral-bg: #eff2f5;
+  --gg-shadow: 0 1px 0 rgba(31, 35, 40, 0.04);
+  --gg-shadow-overlay: 0 8px 24px rgba(140, 149, 159, 0.2);
+}
+
+:root[data-theme='dark'] {
+  --gg-bg: #0d1117;
+  --gg-bg-subtle: #151b23;
+  --gg-bg-inset: #010409;
+  --gg-bg-hover: #1b2129;
+  --gg-bg-selected: #0c2d6b;
+  --gg-border: #3d444d;
+  --gg-border-muted: #262c36;
+  --gg-fg: #f0f6fc;
+  --gg-fg-muted: #9198a1;
+  --gg-fg-subtle: #6e7681;
+  --gg-accent: #4493f8;
+  --gg-accent-fg: #ffffff;
+  --gg-success: #3fb950;
+  --gg-success-bg: #12261e;
+  --gg-attention: #d29922;
+  --gg-attention-bg: #272115;
+  --gg-danger: #f85149;
+  --gg-danger-bg: #2d1416;
+  --gg-done: #ab7df8;
+  --gg-done-bg: #271d3b;
+  --gg-neutral: #9198a1;
+  --gg-neutral-bg: #1b2129;
+  --gg-shadow: 0 0 0 rgba(0, 0, 0, 0);
+  --gg-shadow-overlay: 0 8px 24px rgba(1, 4, 9, 0.8);
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--gg-bg);
+  color: var(--gg-fg);
+  font-family: var(--gg-font);
+  font-size: var(--gg-font-size);
+  line-height: var(--gg-line-height);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--gg-accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
