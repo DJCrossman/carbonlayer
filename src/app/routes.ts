@@ -12,7 +12,9 @@ export type AppRoute =
 /** Which surface, if any, a github.com URL belongs to. `?gh=1` opts out and yields 'none'. */
 export function parseGitHubLocation(url: URL): AppRoute {
   if (url.hostname !== 'github.com' || url.searchParams.get('gh') === '1') return { page: 'none' };
-  if (url.pathname === '/pulls' || url.pathname === '/pulls/') {
+  // Signed in, GitHub redirects /pulls to /pulls/inbox, and its dashboard also lives at /pulls/search?q=…,
+  // /pulls/authored, /pulls/assigned, /pulls/involves and saved views /pulls/<id>: every one of them is the inbox.
+  if (/^\/pulls(\/.*)?$/.test(url.pathname)) {
     return { page: 'inbox', importViews: decodeViewsShareHash(url.hash) };
   }
   // GitHub redirects /files to /changes, its new name for the tab.

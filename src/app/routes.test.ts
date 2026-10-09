@@ -3,9 +3,21 @@ import { encodeViewsShareLink } from '../lib/views';
 import { parseAppHash, parseGitHubLocation, toAppHash, toGitHubUrl } from './routes';
 
 describe('parseGitHubLocation', () => {
-  it('recognises the inbox and PR pages', () => {
-    expect(parseGitHubLocation(new URL('https://github.com/pulls'))).toEqual({ page: 'inbox', importViews: null });
-    expect(parseGitHubLocation(new URL('https://github.com/pulls?q=is%3Aopen'))).toEqual({ page: 'inbox', importViews: null });
+  it.each([
+    '/pulls',
+    '/pulls/',
+    '/pulls?q=is%3Aopen',
+    '/pulls/inbox',
+    '/pulls/search?q=is%3Apr+is%3Aopen',
+    '/pulls/authored',
+    '/pulls/assigned',
+    '/pulls/involves',
+    '/pulls/12345',
+  ])('takes over GitHub\'s pull request dashboard at %s', (path) => {
+    expect(parseGitHubLocation(new URL(`https://github.com${path}`))).toEqual({ page: 'inbox', importViews: null });
+  });
+
+  it('recognises the PR pages', () => {
     expect(parseGitHubLocation(new URL('https://github.com/acme/widgets/pull/42'))).toEqual({
       page: 'pr',
       repo: { owner: 'acme', name: 'widgets' },
@@ -18,6 +30,8 @@ describe('parseGitHubLocation', () => {
 
   it('leaves everything else, and opted-out pages, to GitHub', () => {
     expect(parseGitHubLocation(new URL('https://github.com/acme/widgets/pulls'))).toEqual({ page: 'none' });
+    expect(parseGitHubLocation(new URL('https://github.com/pullsx'))).toEqual({ page: 'none' });
+    expect(parseGitHubLocation(new URL('https://github.com/pulls/inbox?gh=1'))).toEqual({ page: 'none' });
     expect(parseGitHubLocation(new URL('https://github.com/acme/widgets/pull/42?gh=1'))).toEqual({ page: 'none' });
     expect(parseGitHubLocation(new URL('https://github.com/acme/widgets/pull/42/commits/abc'))).toEqual({ page: 'none' });
     expect(parseGitHubLocation(new URL('https://gist.github.com/pulls'))).toEqual({ page: 'none' });
@@ -27,6 +41,9 @@ describe('parseGitHubLocation', () => {
     const views = [{ id: 'a', name: 'A', query: 'is:pr' }];
     const route = parseGitHubLocation(new URL(encodeViewsShareLink(views)));
     expect(route).toEqual({ page: 'inbox', importViews: views });
+    const redirected = new URL(encodeViewsShareLink(views));
+    redirected.pathname = '/pulls/inbox';
+    expect(parseGitHubLocation(redirected)).toEqual({ page: 'inbox', importViews: views });
   });
 });
 
@@ -49,5 +66,6 @@ describe('app hash round trip', () => {
   it('maps routes back to github.com URLs', () => {
     expect(toGitHubUrl(parseAppHash('#/pr/acme/widgets/42?section=files'))).toBe('https://github.com/acme/widgets/pull/42/files');
     expect(toGitHubUrl(parseAppHash('#/inbox'))).toBe('https://github.com/pulls');
+    expect(toGitHubUrl(parseGitHubLocation(new URL('https://github.com/pulls/search?q=is%3Aopen')))).toBe('https://github.com/pulls');
   });
 });
