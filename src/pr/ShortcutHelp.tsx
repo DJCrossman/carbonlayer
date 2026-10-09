@@ -1,8 +1,8 @@
 // The shortcut legend pinned to the bottom of the page (as Graphite does) and the full list behind `?`.
 import { Button } from '../ui/Button';
+import { Icon } from '../ui/Icon';
 import { Kbd } from '../ui/Kbd';
 import { PR_KEYBINDINGS, parseChord } from './keybindings';
-import { Icon } from './primitives';
 import './shortcuts.css';
 
 export function ShortcutLegend({ onHide, onShowAll }: { onHide: () => void; onShowAll: () => void }) {

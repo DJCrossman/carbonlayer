@@ -7,8 +7,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import type { ReviewThreadDraft } from '../app/data-source';
 import type { ChangedFile, PrDetail } from '../lib/model';
 import { Button } from '../ui/Button';
+import { Icon } from '../ui/Icon';
 import { fileNotes, filesInTreeOrder, fileTree, renderableDiff, type ComposerAnchor, type DiffNote, type FileTreeNode } from './diff';
-import { Icon } from './primitives';
 import { DiffNoteView, type NoteActions } from './Threads';
 import './files.css';
 
@@ -318,7 +318,7 @@ function FileCard({
     (): FileDiffOptions<DiffNote, undefined> => ({
       diffStyle,
       overflow: 'wrap',
-      theme: { light: 'github-light', dark: 'github-dark' },
+      theme: { light: 'github-light', dark: 'github-dark-default' },
       themeType,
       stickyHeader: true,
       diffIndicators: 'bars',

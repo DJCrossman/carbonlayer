@@ -4,10 +4,11 @@ import { useEffect, useState } from 'react';
 import type { ReviewThreadDraft } from '../app/data-source';
 import type { ReviewThread } from '../lib/model';
 import { Button } from '../ui/Button';
+import { Icon } from '../ui/Icon';
 import { Kbd } from '../ui/Kbd';
 import { Comment } from './Comment';
 import type { ComposerAnchor, DiffNote } from './diff';
-import { CommentInput, Icon } from './primitives';
+import { CommentInput } from './primitives';
 import './threads.css';
 
 export function DiffNoteView({
@@ -67,7 +68,7 @@ function ThreadNote({ thread, current, actions }: { thread: ReviewThread; curren
     return (
       <div className={`diff-note is-collapsed ${current ? 'is-current' : ''}`} data-thread-id={thread.id}>
         <button className="diff-note-summary" onClick={() => setExpanded(true)}>
-          <Icon name="check-circle" size={14} className="pr-fg-success" />
+          <Icon name="check-circle-fill" size={14} className="pr-fg-success" />
           {thread.isOutdated && <span className="diff-note-tag">Outdated</span>}
           <span>
             Resolved · {count} {count === 1 ? 'comment' : 'comments'} · <span className="diff-note-show">show</span>

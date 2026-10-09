@@ -6,12 +6,13 @@ import type { CheckState, PrDetail } from '../lib/model';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
+import { Icon } from '../ui/Icon';
 import { LabelChip } from '../ui/LabelChip';
 import { RelativeTime } from '../ui/RelativeTime';
 import { ReviewStatus } from '../ui/ReviewStatus';
 import { goToPr } from './navigation';
 import { nextActionFor } from './next-action';
-import { Icon, StatePill } from './primitives';
+import { StatePill } from './primitives';
 import './sidebar.css';
 
 export function Sidebar({
@@ -141,7 +142,7 @@ function ActionCard({
   const action = nextActionFor(pr);
   const [busy, setBusy] = useState(false);
   const failingCheck = pr.ci.checks.find((check) => check.state === 'FAILURE');
-  const icon = ({ success: 'check-circle', danger: 'x-circle', attention: 'clock', neutral: 'pr-draft', done: 'merge' } as const)[action.tone];
+  const icon = ({ success: 'check-circle-fill', danger: 'x-circle-fill', attention: 'clock', neutral: 'git-pull-request-draft', done: 'git-merge' } as const)[action.tone];
   return (
     <Card className={`side-card side-action is-${action.tone}`}>
       <div className="side-action-title">
@@ -232,7 +233,7 @@ function MergeControls({ pr, mergeMethod, onMerge }: { pr: PrDetail; mergeMethod
         title={pr.viewerCanMerge ? undefined : 'You do not have permission to merge this pull request'}
         onClick={() => setConfirming(true)}
       >
-        <Icon name="merge" size={14} />
+        <Icon name="git-merge" size={14} />
         Merge
       </Button>
     </div>
@@ -300,10 +301,10 @@ function ChecksCard({ pr }: { pr: PrDetail }) {
 function CheckIcon({ state, size = 14 }: { state: CheckState; size?: number }) {
   switch (state) {
     case 'SUCCESS':
-      return <Icon name="check-circle" size={size} className="pr-fg-success" />;
+      return <Icon name="check-circle-fill" size={size} className="pr-fg-success" />;
     case 'FAILURE':
     case 'CANCELLED':
-      return <Icon name="x-circle" size={size} className="pr-fg-danger" />;
+      return <Icon name="x-circle-fill" size={size} className="pr-fg-danger" />;
     case 'PENDING':
       return <Icon name="dot-fill" size={size} className="pr-fg-attention" />;
     default:

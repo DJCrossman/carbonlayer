@@ -4,10 +4,11 @@ import { useState } from 'react';
 import type { PrDetail, TimelineItem } from '../lib/model';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
+import { Icon } from '../ui/Icon';
 import { Kbd } from '../ui/Kbd';
 import { RelativeTime } from '../ui/RelativeTime';
 import { Comment } from './Comment';
-import { CommentInput, Icon } from './primitives';
+import { CommentInput } from './primitives';
 import './activity.css';
 
 export function Activity({
@@ -64,7 +65,7 @@ export function Activity({
                 <li key={entry.id} className="timeline-commits">
                   {entry.commits.map((commit) => (
                     <div key={commit.id} className="timeline-commit">
-                      <Icon name="commit" size={14} className="pr-fg-muted" />
+                      <Icon name="git-commit" size={14} className="pr-fg-muted" />
                       {commit.author && <Avatar user={commit.author} size={16} />}
                       <a className="timeline-commit-message" href={commit.url} target="_blank" rel="noopener">
                         {commit.messageHeadline}
@@ -98,10 +99,10 @@ export function Activity({
               const [icon, text] = (
                 {
                   'ready-for-review': ['eye', 'marked this ready for review'],
-                  'converted-to-draft': ['pr-draft', 'converted this to a draft'],
-                  merged: ['merge', 'merged this'],
-                  closed: ['pr-closed', 'closed this'],
-                  reopened: ['pr', 'reopened this'],
+                  'converted-to-draft': ['git-pull-request-draft', 'converted this to a draft'],
+                  merged: ['git-merge', 'merged this'],
+                  closed: ['git-pull-request-closed', 'closed this'],
+                  reopened: ['git-pull-request', 'reopened this'],
                 } as const
               )[entry.kind];
               return (

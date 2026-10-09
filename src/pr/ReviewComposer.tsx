@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react';
 import type { ReviewThreadDraft } from '../app/data-source';
 import type { PrDetail } from '../lib/model';
 import { Button } from '../ui/Button';
+import { Icon } from '../ui/Icon';
 import { Kbd } from '../ui/Kbd';
-import { CommentInput, Icon } from './primitives';
+import { CommentInput } from './primitives';
 import './review.css';
 
 export type ReviewEvent = 'COMMENT' | 'REQUEST_CHANGES' | 'APPROVE';
@@ -113,7 +114,7 @@ export function QuickApproveDialog({ pr, onConfirm, onClose }: { pr: PrDetail; o
     <div className="pr-overlay" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
       <div className="pr-dialog" role="alertdialog" aria-label={`Approve #${pr.number}?`}>
         <div className="pr-dialog-title">
-          <Icon name="check-circle" size={16} className="pr-fg-success" />
+          <Icon name="check-circle-fill" size={16} className="pr-fg-success" />
           Approve #{pr.number}?
         </div>
         <p className="pr-muted">{pr.title}</p>

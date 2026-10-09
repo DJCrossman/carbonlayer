@@ -1,4 +1,5 @@
 // Bottom-centre transient message: render <ToastHost /> once per page, call showToast() from anywhere.
+// Errors stay up for 6 s so they can be read; everything else for 2.4 s.
 import { useSyncExternalStore } from 'react';
 import './ui.css';
 
@@ -21,7 +22,7 @@ export function showToast(message: string, tone: 'default' | 'danger' = 'default
   hideTimer = setTimeout(() => {
     current = null;
     for (const notify of listeners) notify();
-  }, 2400);
+  }, tone === 'danger' ? 6000 : 2400);
 }
 
 let current: { id: number; message: string; tone: 'default' | 'danger' } | null = null;

@@ -2,11 +2,11 @@
 import type { PrSummary, Stack } from '../lib/model';
 import { Card } from '../ui/Card';
 import { CiStatus } from '../ui/CiStatus';
+import { Icon } from '../ui/Icon';
 import { MergeStatus } from '../ui/MergeStatus';
 import { RelativeTime } from '../ui/RelativeTime';
 import { ReviewStatus } from '../ui/ReviewStatus';
 import { goToPr } from './navigation';
-import { Icon } from './primitives';
 import './stack.css';
 
 export function StackCard({ stack, collapsed, onToggle }: { stack: Stack; collapsed: boolean; onToggle: () => void }) {

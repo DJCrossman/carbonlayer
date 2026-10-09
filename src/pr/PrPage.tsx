@@ -10,6 +10,7 @@ import type { MergeMethod } from '../lib/rpc';
 import type { Settings } from '../lib/settings';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
+import { Icon } from '../ui/Icon';
 import { RelativeTime } from '../ui/RelativeTime';
 import { Skeleton } from '../ui/Skeleton';
 import { showToast, ToastHost } from '../ui/Toast';
@@ -18,7 +19,7 @@ import { Markdown } from './Comment';
 import { FilesSection, useFileReview } from './Files';
 import { usePrKeybindings } from './keybindings';
 import { goToPr, openOnGitHub } from './navigation';
-import { Icon, StatePill } from './primitives';
+import { StatePill } from './primitives';
 import { QuickApproveDialog, ReviewComposer, type ReviewEvent } from './ReviewComposer';
 import { ShortcutHelp, ShortcutLegend } from './ShortcutHelp';
 import { Sidebar } from './Sidebar';
@@ -380,7 +381,7 @@ function PrHeader({
         </div>
         <div className="pr-menu">
           <Button onClick={() => setMenuOpen((open) => !open)} aria-haspopup="menu" aria-expanded={menuOpen} aria-label="More actions">
-            <Icon name="kebab" size={14} />
+            <Icon name="kebab-horizontal" size={14} />
           </Button>
           {menuOpen && (
             <div className="pr-menu-list" role="menu">
@@ -392,7 +393,7 @@ function PrHeader({
                     void onSetDraft(!pr.isDraft);
                   }}
                 >
-                  <Icon name={pr.isDraft ? 'eye' : 'pr-draft'} size={14} />
+                  <Icon name={pr.isDraft ? 'eye' : 'git-pull-request-draft'} size={14} />
                   {pr.isDraft ? 'Ready for review' : 'Convert to draft'}
                 </button>
               )}
@@ -458,11 +459,13 @@ function PrSkeleton() {
 function PrError({ message }: { message: string }) {
   return (
     <div className="pr-error" role="alert">
-      <Icon name="x-circle" size={20} className="pr-fg-danger" />
+      <Icon name="x-circle-fill" size={20} className="pr-fg-danger" />
       <div>
         <strong>Could not load this pull request</strong>
         <p>{message}</p>
-        {/token/i.test(message) && <p className="pr-muted">Add a token in the extension options.</p>}
+        {/sign in|session/i.test(message) || /\b404\b.*\/page_data\//.test(message) ? (
+          <p className="pr-muted">Sign in to github.com in this tab, then reload.</p>
+        ) : null}
       </div>
     </div>
   );
