@@ -44,9 +44,25 @@ run page loads into its re-run dialog. See `docs/research/github-web-endpoints.m
 Signed-in state comes from the fetched PR page's `meta[name="user-login"]`: empty means the PR page
 shows "Sign in to github.com in this tab". Signed in, the routes behind the sidebar (`merge_box`,
 `status_checks`, `stack_mergeability`, `review_requests`, `labels`, `assignees`, `description`) and
-the inbox's deferred fields are side details: a failure is logged with `console.debug('[gg]', …)` and
-leaves that card empty. Reads are cached in the content script for 30–60 s; a successful write clears
-the cache and the page refetches with `force`.
+the inbox's deferred fields are side details: on the PR page a 404 from one is logged with `console.debug('[gg]', …)`
+and leaves that card empty, and any other failure shows in the card with a retry. Reads are cached in the content
+script for 30–60 s; a successful write clears the cache.
+
+The PR page loads in stages (`PrStages` in `src/lib/model.ts`, `src/lib/github-web/pr-stages.ts`), all requested at
+once and each rendered as it arrives (`src/pr/page-data.ts`): `pr.fetchHeader` (the page's HTML, `tab_counts`,
+`diffstat`; the description is the conversation's first comment, `page_data/description` only without one),
+`pr.fetchActivity` (the timeline from that HTML, `threads` for which review opened which), `pr.fetchFiles`
+(`base_comparison_info`: every file, with the diffs GitHub sends along), then `pr.fetchFileDiffs` for the rest, 20
+paths a `diff_entries` request and four requests at a time in the order the files show, `pr.fetchThreads` (`threads`
+placed by the comparison's markers), `pr.fetchMergeBox` (`merge_box`, `review_requests`), `pr.fetchChecks`
+(`status_checks`), `pr.fetchStack` (`stack_mergeability` or Graphite's comment and the author's open PRs) and
+`pr.fetchMeta` (`labels`, `assignees`). The content script keeps each of GitHub's answers per PR for 30 s and shares it
+between the stages that read it, so the HTML is fetched once; `force` repeats only the requests a stage makes for
+itself. Until the header arrives (one round trip) the page is a skeleton; after it each section has its own skeleton
+and, should its stage fail, an inline error with a retry. Only a signed-out header fails the whole page. A write
+forgets what the stages it changes asked (`STAGES_A_WRITE_CHANGES` in `src/lib/rpc.ts`) and the page loads those
+stages again, the others untouched; marking a file viewed only changes it in place. `pr.fetch` still answers the whole
+`PrDetail` at once, composed from the stages.
 
 Stacks: GitHub-native `stack` from the PR page's embedded data first; otherwise Graphite's stack
 comment in the timeline, enriched through a `/pulls/search` query on the author's open PRs.
