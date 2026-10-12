@@ -1,0 +1,7 @@
+title: CarbonLayer
+description: We have Graphite at home
+theme: jekyll-theme-minimal
+exclude:
+  - research/
+  - store/
+  - deploy.md
