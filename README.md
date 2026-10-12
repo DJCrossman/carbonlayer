@@ -19,7 +19,8 @@ A Chrome extension that makes GitHub's pull requests look and work like [Graphit
 
 GitHub's own page is one click away: a "GitHub | CarbonLayer" switch in GitHub's header, at the top right next to the
 + and notification buttons, flips the homepage or the pull request page between GitHub's view and this one, in
-place (remembered per surface, like the popup's switches). Add `?gh=1` to any URL to see GitHub's page just once.
+place. It changes only the tab you are in, and that choice becomes the default for tabs you open afterwards (per
+surface, like the popup's switches). Add `?gh=1` to any URL to see GitHub's page just once.
 
 ## Install (unpacked, for development)
 

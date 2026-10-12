@@ -23,6 +23,20 @@ export default defineContentScript({
     let pageViewSwitch: ReturnType<typeof addPageViewSwitch> | null = null;
     let awaitingSignIn: MutationObserver | null = null;
 
+    // Which page a surface shows in this tab: what its switch was last set to here, for as long as the tab lives, else the
+    // saved default. The switch changes this tab at once and saves the choice as the default for tabs opened later; other
+    // open tabs keep their page until they load again, so flipping one tab never flips the rest.
+    const enabledHere = (surface: 'inboxEnabled' | 'prEnabled') => {
+      const here = sessionStorage.getItem(`gg:${surface}`);
+      return here === null ? settings[surface] : here === 'on';
+    };
+    const choosePage = (surface: 'inboxEnabled' | 'prEnabled', showOurs: boolean) => {
+      sessionStorage.setItem(`gg:${surface}`, showOurs ? 'on' : 'off');
+      settings = { ...settings, [surface]: showOurs };
+      sync(new URL(location.href));
+      setSettings({ [surface]: showOurs }).catch((error: unknown) => console.error('[gg]', 'Could not save the page view:', error instanceof Error ? error.message : error));
+    };
+
     // WXT reports navigations through the Navigation API before they commit, and none to the URL already shown, so
     // the destination comes from the event; settings changes use the committed location.
     const sync = (url: URL) => {
@@ -47,7 +61,7 @@ export default defineContentScript({
         }
         if (!login) route = { page: 'none' };
       }
-      const enabled = (route.page === 'inbox' && settings.inboxEnabled) || (route.page === 'pr' && settings.prEnabled);
+      const enabled = (route.page === 'inbox' && enabledHere('inboxEnabled')) || (route.page === 'pr' && enabledHere('prEnabled'));
       if (!enabled) {
         takeover?.release();
         takeover = null;
@@ -61,7 +75,7 @@ export default defineContentScript({
         pageViewSwitch?.remove();
         pageViewSwitch = null;
       } else {
-        pageViewSwitch ??= addPageViewSwitch();
+        pageViewSwitch ??= addPageViewSwitch(choosePage);
         pageViewSwitch.show(route.page === 'inbox' ? 'inboxEnabled' : 'prEnabled', enabled);
       }
     };
@@ -69,11 +83,21 @@ export default defineContentScript({
     sync(new URL(location.href));
     ctx.addEventListener(window, 'wxt:locationchange', (event) => sync(event.newUrl));
     const unwatchSettings = watchSettings((next) => {
-      settings = next;
+      // A saved page choice is for tabs opened later: this tab keeps the page it shows (the popup reaches the tab in
+      // view through `gg:choose` instead).
+      settings = { ...next, inboxEnabled: settings.inboxEnabled, prEnabled: settings.prEnabled };
       sync(new URL(location.href));
     });
+    const onChoose = (message: unknown) => {
+      const choice = message as { type?: unknown; surface?: unknown; showOurs?: unknown } | null;
+      if (choice?.type === 'gg:choose' && (choice.surface === 'inboxEnabled' || choice.surface === 'prEnabled') && typeof choice.showOurs === 'boolean') {
+        choosePage(choice.surface, choice.showOurs);
+      }
+    };
+    browser.runtime.onMessage.addListener(onChoose);
     ctx.onInvalidated(() => {
       unwatchSettings();
+      browser.runtime.onMessage.removeListener(onChoose);
       awaitingSignIn?.disconnect();
       takeover?.release();
       takeover = null;
@@ -319,7 +343,7 @@ const APP_KEYS = new Set(['j', 'k', 'o', 'enter', 'r', '?', 'n', 'p', 'f', 's', 
  * the button cluster, next to a <slot> that keeps GitHub's own children rendering as before: hydration walks only
  * those children and never sees it. GitHub's colour variables reach into the shadow root, so it fits either theme.
  */
-function addPageViewSwitch() {
+function addPageViewSwitch(onChoose: (surface: 'inboxEnabled' | 'prEnabled', showOurs: boolean) => void) {
   const group = document.createElement('div');
   group.setAttribute('role', 'group');
   group.setAttribute('aria-label', 'Page view');
@@ -365,10 +389,7 @@ function addPageViewSwitch() {
     button.type = 'button';
     button.addEventListener('click', () => {
       const showOurs = button === ours;
-      if (showOurs === oursShown) return;
-      setSettings(setting === 'inboxEnabled' ? { inboxEnabled: showOurs } : { prEnabled: showOurs }).catch((error: unknown) =>
-        console.error('[gg]', 'Could not save the page view:', error instanceof Error ? error.message : error),
-      );
+      if (showOurs !== oursShown) onChoose(setting, showOurs);
     });
   }
   group.append(style, github, ours);

@@ -43,6 +43,11 @@ function Popup() {
         void getSettings().then(setLocalSettings);
       },
     );
+    // The tab in view changes now, as the header's switch would change it; other tabs follow when they load again.
+    void browser.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
+      if (tab?.id === undefined) return;
+      for (const [surface, showOurs] of Object.entries(patch)) void browser.tabs.sendMessage(tab.id, { type: 'gg:choose', surface, showOurs }).catch(() => {});
+    });
   }
 
   return (
