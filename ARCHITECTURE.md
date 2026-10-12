@@ -55,9 +55,10 @@ comment in the timeline, enriched through a `/pulls/search` query on the author'
 
 The inbox shows one organization's pull requests at a time (`currentOrg` in settings: an organization the viewer belongs
 to, or their own account). The list comes from the `orgs.list` RPC, which the content script answers with
-`listOrganizations` (`src/lib/github-web/organizations.ts`): the organizations `GET /settings/organizations` lists (its
-rows' `/orgs/<login>`, `/organizations/<login>/…` or `/<login>` links; HTML, signed in), else the distinct owners of the
-repositories GitHub's repository picker offers for `contributed-by:@me`, then the viewer's own account
+`listOrganizations` (`src/lib/github-web/organizations.ts`): the distinct owners of the repositories GitHub's repository
+picker offers for `contributed-by:@me`, with the organizations `GET /settings/organizations` lists (its rows'
+`/orgs/<login>`, `/organizations/<login>/…` or `/<login>` links; HTML, signed in; when it fails or names nobody, the
+owners stand alone), by login, then the viewer's own account
 (`meta[name="user-login"]`, of the settings page or of the github.com page the script runs in), last; kept 10 minutes.
 The options page, no github.com page, asks github.com for both itself. Until an organization is chosen, or once the list
 no longer has the chosen one, the inbox shows a centred "Choose an organization" card (`OrgChooser` in

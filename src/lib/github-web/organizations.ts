@@ -1,7 +1,7 @@
-// The accounts whose pull requests the inbox can show: the organizations the viewer belongs to, as their settings page
-// lists them (`GET /settings/organizations`, HTML, signed in), else the owners of the repositories GitHub's repository
-// picker offers them (`contributed-by:@me`), then the viewer's own account. Neither answer has been seen signed in, so
-// both are read tolerantly: a source that fails or names nobody leaves the other.
+// The accounts whose pull requests the inbox can show: the owners of the repositories GitHub's repository picker offers
+// the viewer (`contributed-by:@me`) together with the organizations their settings page lists (`GET
+// /settings/organizations`, HTML, signed in), then the viewer's own account. Neither answer has been seen signed in, so
+// both are read tolerantly: a source that fails or names nobody leaves the other's list as it is.
 
 import type { Organization } from '../model';
 import { repositoryCandidatesFrom, repositoryPickerPath } from './repositories';
@@ -24,8 +24,9 @@ export async function listOrganizations(load: { json: (path: string) => Promise<
 }
 
 /**
- * The organizations a settings page lists (its rows' `/orgs/<login>`, `/organizations/<login>/…` or `/<login>` links),
- * else the repositories' owners, each once and by login, without the viewer, whose own account comes last.
+ * The repositories' owners and the organizations a settings page lists (its rows' `/orgs/<login>`,
+ * `/organizations/<login>/…` or `/<login>` links), each once and by login, without the viewer, whose own account comes
+ * last.
  */
 export function organizationsFrom({ settingsPage, repositoryOwners, viewerLogin }: { settingsPage: Document | null; repositoryOwners: string[]; viewerLogin: string | null }): Organization[] {
   const viewer = settingsPage?.querySelector('meta[name="user-login"]')?.getAttribute('content') || viewerLogin;
@@ -40,7 +41,7 @@ export function organizationsFrom({ settingsPage, repositoryOwners, viewerLogin 
     if (login && !NOT_ORGANIZATIONS.has(login.toLowerCase())) listed.push(login);
   }
   const byLogin = new Map<string, string>();
-  for (const login of listed.length > 0 ? listed : repositoryOwners) {
+  for (const login of [...listed, ...repositoryOwners]) {
     if (login.toLowerCase() !== viewer?.toLowerCase() && !byLogin.has(login.toLowerCase())) byLogin.set(login.toLowerCase(), login);
   }
   const organizations = [...byLogin.values()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
