@@ -69,7 +69,7 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
   transition: transform 0.15s ease;
 }
-.side-switch input:checked + .side-switch-track { background: var(--gg-done); }
+.side-switch input:checked + .side-switch-track { background: var(--gg-success); }
 .side-switch input:checked + .side-switch-track::after { transform: translateX(12px); }
 .side-switch input:focus-visible + .side-switch-track { outline: 2px solid var(--gg-accent); outline-offset: 1px; }
 .side-switch input:disabled + .side-switch-track { opacity: 0.6; }
