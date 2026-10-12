@@ -121,14 +121,15 @@
 }
 .merge-row .pr-select { flex: 1; min-width: 0; }
 /* Graphite's merge button is purple. */
-.gg-btn.pr-merge-button { background: var(--gg-done); color: #fff; }
-.gg-btn.pr-merge-button:hover:not(:disabled) { background: color-mix(in srgb, var(--gg-done) 88%, #000); }
+/* Merging is the green action; purple is for a PR that is merged. */
+.gg-btn.pr-merge-button { background: var(--gg-success); color: #fff; }
+.gg-btn.pr-merge-button:hover:not(:disabled) { background: color-mix(in srgb, var(--gg-success) 88%, #000); }
 .merge-row .gg-btn { flex: none; }
 .merge-confirm {
   margin-top: 8px;
   padding: 8px;
   border-radius: var(--gg-radius);
-  background: var(--gg-done-bg);
+  background: var(--gg-success-bg);
 }
 .merge-confirm .merge-row { justify-content: flex-end; }
 
