@@ -99,6 +99,11 @@ Data endpoints (all `page_data/*` need a session; `tab_counts` and `diffstat` al
   description, additionalContext, stateChangedAt, durationInSeconds, avatarUrl, … }], statusRollup: { combinedState,
   summary, pendingWorkflowApprovalRollup }, aliveChannels }` (verified signed in, 2026-10-12; headers in
   github-web-mutations.md). GitHub's merge box shows its checks section when `statusRollup.summary` is non-empty.
+  Not in this list, nor in the commit's status rollup ("Status checks: success") nor the PR's Checks tab: runs of
+  GitHub's own `dynamic` workflows such as "Running Copilot Code Review" (Copilot's review agent). They appear only in
+  the repository's Actions list (`/{o}/{r}/actions?query=branch:<head>`), where a failed one reads "Running Copilot Code
+  Review failed: Copilot #N: by Copilot AI". Graphite counts such a failure as a non-required failing check (seen on
+  offstreetparking/core#9003, 2026-10-12); GitHub's UI does not.
 - `GET …/page_data/stack_mergeability?merge_method=MERGE&bypass_requirements=false` → stack entries:
   `[{ pull: { number, title, state, url, headBranch, headOid, isInAutoMergeRange, isUnstackable },
   position: 'CURRENT'|…, status: 'NEEDS_MERGE_STATE'|…, failedSubConditions, channels }]` (called for every
