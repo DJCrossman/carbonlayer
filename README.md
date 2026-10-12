@@ -26,6 +26,10 @@ GitHub's own page is one click away: a "GitHub | CarbonLayer" switch in GitHub's
 place. It changes only the tab you are in, and that choice becomes the default for tabs you open afterwards (per
 surface, like the popup's switches). Add `?gh=1` to any URL to see GitHub's page just once.
 
+## Privacy
+
+Everything stays between your browser and github.com; see [docs/privacy.md](docs/privacy.md).
+
 ## Releases
 
 Every push to `main` runs the Release workflow: tests, a build, a GitHub Release with the zip, and an upload to the

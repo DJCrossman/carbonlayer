@@ -48,6 +48,8 @@ We have Graphite at home.
     its own views, and reads and posts to github.com's own pages and JSON routes with the user's session to show and
     act on pull requests. This is the product; it does nothing on any other site.
 - **Remote code**: No, I am not using remote code. (Everything ships in the package.)
+- **Privacy policy URL**: `https://github.com/DJCrossman/carbonlayer/blob/main/docs/privacy.md` (the same page the
+  Google OAuth consent screen names).
 - **Data usage**: tick nothing collected. Certify the three disclosures: no sale of data, no use unrelated to the
   single purpose, no use for creditworthiness or lending.
 
