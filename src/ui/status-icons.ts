@@ -13,7 +13,7 @@ export function reviewStatusIcon(
   pr: { isDraft: boolean; reviewDecision: ReviewDecision; reviewers: ReviewerSummary[] | null; viewerReview?: ReviewerSummary['state'] | null },
   viewerLogin: string | null,
 ): StatusIcon {
-  if (pr.isDraft) return { icon: 'git-pull-request-draft', tone: 'subtle', tooltip: 'Draft' };
+  if (pr.isDraft) return { icon: 'dash', tone: 'subtle', tooltip: 'Draft: no review yet' };
   if (pr.reviewers === null) {
     switch (pr.reviewDecision) {
       case 'APPROVED':

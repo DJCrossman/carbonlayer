@@ -19,11 +19,11 @@ describe('the Review column', () => {
     expect(reviewStatusIcon({ ...open, reviewers: [...reviewers], viewerReview }, 'octocat')).toEqual({ icon, tone, tooltip });
   });
 
-  it('shows the draft glyph for a draft, whatever its reviews say', () => {
+  it('shows a dash for a draft, whatever its reviews say', () => {
     expect(reviewStatusIcon({ isDraft: true, reviewDecision: 'APPROVED', reviewers: [reviewer('jlord', 'APPROVED')] }, 'octocat')).toEqual({
-      icon: 'git-pull-request-draft',
+      icon: 'dash',
       tone: 'subtle',
-      tooltip: 'Draft',
+      tooltip: 'Draft: no review yet',
     });
   });
 
