@@ -41,9 +41,27 @@ describe('checksFrom', () => {
     expect(ci.checks.map((check) => check.runId)).toEqual(['34362049624', null]);
   });
 
+  it("leaves Graphite's mergeability check out: a stacked PR whose other checks passed has passed", () => {
+    const { ci, listed } = checksFrom({
+      statusRollup: { combinedState: 'PENDING', summary: [] },
+      statusChecks: [
+        { displayName: 'build', state: 'SUCCESS', isRequired: true },
+        { displayName: 'Graphite / mergeability_check', state: 'PENDING', avatarDescription: 'Graphite', description: 'This check will pass when downstack PRs merge' },
+      ],
+    });
+    expect(ci.checks.map((check) => check.name)).toEqual(['build']);
+    expect(ci.state).toBe('SUCCESS');
+    expect(listed).toBe(true);
+    // With nothing but that check, there are no checks, whatever the rollup says.
+    const alone = checksFrom({ statusRollup: { combinedState: 'PENDING', summary: [] }, statusChecks: [{ displayName: 'Graphite / mergeability_check', state: 'PENDING' }] });
+    expect(alone.ci).toEqual({ state: 'NONE', checks: [], counts: { success: 0, failure: 0, pending: 0, other: 0 } });
+    expect(alone.listed).toBe(true);
+  });
+
   it("falls back to GitHub's combined verdict when there are no rows, and to NONE without anything", () => {
     expect(checksFrom({ statusRollup: { combinedState: 'PENDING_APPROVAL', summary: [] } }).ci.state).toBe('PENDING');
     expect(checksFrom({ statusRollup: { combinedState: 'PASSED', summary: [] } }).ci.state).toBe('SUCCESS');
     expect(checksFrom({}).ci).toEqual({ state: 'NONE', checks: [], counts: { success: 0, failure: 0, pending: 0, other: 0 } });
+    expect(checksFrom({}).listed).toBe(false);
   });
 });

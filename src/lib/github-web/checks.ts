@@ -7,10 +7,12 @@ import type { CheckRunSummary, CheckState, CiSummary } from '../model';
 import { findInPayload, noteShape } from './session';
 
 /**
- * The checks with their states, counts and overall verdict, the names of the required ones, and whether the rows say
- * which are required at all (when none does, `requiredCheckNames` is empty for want of knowing).
+ * The checks with their states, counts and overall verdict, the names of the required ones, whether the rows say which
+ * are required at all (when none does, `requiredCheckNames` is empty for want of knowing), and whether GitHub listed
+ * the checks (`listed`; without a list the verdict is its rollup's). Graphite's mergeability check is left out: it
+ * waits on the downstack PRs, not on CI, and the stack card reports that.
  */
-export function checksFrom(data: unknown): { ci: CiSummary; requiredCheckNames: string[]; marksRequired: boolean } {
+export function checksFrom(data: unknown): { ci: CiSummary; requiredCheckNames: string[]; marksRequired: boolean; listed: boolean } {
   noteShape('page_data/status_checks', data);
   const response = (data ?? {}) as { statusChecks?: unknown; statusRollup?: { combinedState?: string } };
   const looksLikeChecks = (value: unknown) =>
@@ -20,7 +22,8 @@ export function checksFrom(data: unknown): { ci: CiSummary; requiredCheckNames: 
       return !!row && ('displayName' in row || 'name' in row || 'context' in row) && ('state' in row || 'conclusion' in row || 'status' in row);
     });
   const found = Array.isArray(response.statusChecks) ? response.statusChecks : findInPayload(data, (_, value) => looksLikeChecks(value));
-  const rows = (Array.isArray(found) ? found : []) as CheckRow[];
+  const listed = Array.isArray(found);
+  const rows = (listed ? found : []).filter((row: CheckRow) => !(/mergeability_check/i.test(row.displayName ?? row.name ?? row.context ?? '') && /graphite/i.test(`${row.displayName ?? row.name ?? row.context ?? ''} ${row.avatarDescription ?? row.workflowName ?? row.app?.name ?? ''}`)));
   noteShape('page_data/status_checks row', rows);
 
   const checks = rows.map((row): CheckRunSummary => {
@@ -62,11 +65,12 @@ export function checksFrom(data: unknown): { ci: CiSummary; requiredCheckNames: 
   const combined = response.statusRollup?.combinedState?.toUpperCase() ?? '';
   const combinedState: CheckState = combined === 'PASSED' ? 'SUCCESS' : /FAILED/.test(combined) ? 'FAILURE' : /PENDING/.test(combined) ? 'PENDING' : 'NONE';
   const state: CheckState =
-    counts.failure > 0 ? 'FAILURE' : counts.pending > 0 ? 'PENDING' : counts.success > 0 ? 'SUCCESS' : checks.length === 0 ? combinedState : 'NONE';
+    counts.failure > 0 ? 'FAILURE' : counts.pending > 0 ? 'PENDING' : counts.success > 0 ? 'SUCCESS' : listed ? 'NONE' : combinedState;
   return {
     ci: { state, checks, counts },
     requiredCheckNames: rows.flatMap((row, i) => ((row.isRequired ?? row.required) ? [checks[i]!.name] : [])),
     marksRequired: rows.some((row) => typeof (row.isRequired ?? row.required) === 'boolean'),
+    listed,
   };
 }
 

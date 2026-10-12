@@ -218,6 +218,21 @@ describe('enrichPull', () => {
     expect(requested.some((url) => url.includes('status_checks'))).toBe(false);
   });
 
+  it("asks a pending rollup its checks, since Graphite's mergeability check keeps a stacked PR's rollup pending", async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url.includes('/page_data/status_checks')
+          ? Response.json({ statusChecks: [{ displayName: 'build', state: 'SUCCESS', isRequired: true }, { displayName: 'Graphite / mergeability_check', state: 'PENDING' }] })
+          : Response.json({}),
+      ),
+    );
+    expect(await enrichPull({ ...row, ci: { state: 'PENDING' } }, 'MERGE', null)).toMatchObject({
+      ci: { state: 'SUCCESS', checks: [{ name: 'build', state: 'SUCCESS' }], counts: { success: 1, failure: 0, pending: 0 } },
+      requiredCheckNames: ['build'],
+    });
+  });
+
   it.each([
     ['a merged pull request', { state: 'MERGED', isDraft: false }, { additions: 4, deletions: 1 }],
     ['a closed pull request', { state: 'CLOSED', isDraft: false }, { additions: 4, deletions: 1 }],

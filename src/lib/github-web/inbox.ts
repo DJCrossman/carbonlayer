@@ -158,15 +158,17 @@ export function summarisePull(pull: Pull, section: GitHubInboxFilter | null): Pr
  * What GitHub's dashboard leaves out of a row, from the PR's own page data: mergeability, and why merging is blocked,
  * from its merge box (`page_data/merge_box`, read as the PR page reads it); reviewers, and the viewer's own review, from
  * `page_data/review_requests`, else from what the merge box names (`latestOpinionatedReviews`, pending requests); line
- * counts from `page_data/diffstat`; and for a failing CI rollup, which checks fail and which are required, from
- * `page_data/status_checks`. A merged or closed PR's merge status is its state, so it does not ask the merge box; a
+ * counts from `page_data/diffstat`; and for a failing or pending CI rollup, the checks themselves (which fail, which are
+ * required, and whether anything but Graphite's mergeability check is still running) from `page_data/status_checks`. A merged or closed PR's merge status is its state, so it does not ask the merge box; a
  * draft does, and shows how it would merge. A route that fails is logged and leaves its fields out: the row keeps what
  * it had.
  */
 export async function enrichPull(pr: InboxRowToEnrich, mergeMethod: MergeMethod, viewerLogin: string | null): Promise<PrEnrichment> {
   const data = `/${pr.repo.owner}/${pr.repo.name}/pull/${pr.number}/page_data`;
   const asksMergeBox = pr.state === 'OPEN';
-  const asksChecks = pr.ci.state === 'FAILURE';
+  // A failing rollup needs its checks to tell required failures from optional ones; a pending one may be pending only on
+  // Graphite's mergeability check, which the checks leave out.
+  const asksChecks = pr.ci.state === 'FAILURE' || pr.ci.state === 'PENDING';
   const [mergeBox, diffstat, reviewRequests, statusChecks] = await Promise.allSettled([
     asksMergeBox ? getJson<unknown>(`${data}/merge_box?merge_method=${mergeMethod}&bypass_requirements=false`) : null,
     getJson<{ diffstat?: { linesAdded?: number; linesDeleted?: number } }>(`${data}/diffstat`),
@@ -217,9 +219,9 @@ export async function enrichPull(pr: InboxRowToEnrich, mergeMethod: MergeMethod,
   }
 
   if (asksChecks && statusChecks.status === 'fulfilled') {
-    const { ci, requiredCheckNames, marksRequired } = checksFrom(statusChecks.value);
-    if (ci.checks.length > 0) found.ci = ci;
-    if (ci.checks.length > 0 && marksRequired) found.requiredCheckNames = requiredCheckNames;
+    const { ci, requiredCheckNames, marksRequired, listed } = checksFrom(statusChecks.value);
+    if (listed) found.ci = ci;
+    if (listed && marksRequired) found.requiredCheckNames = requiredCheckNames;
   } else if (statusChecks.status === 'rejected') {
     const reason: unknown = statusChecks.reason;
     console.debug('[gg]', `page_data/status_checks for ${where} failed; the row says only that checks fail:`, reason instanceof Error ? reason.message : reason);
