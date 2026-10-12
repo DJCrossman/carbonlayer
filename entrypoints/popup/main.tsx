@@ -87,7 +87,7 @@ function Popup() {
         </button>
       </div>
       <a className="support" href="https://buymeacoffee.com/djcrossman" target="_blank" rel="noopener">
-        ☕ Buy me a coffee
+        <img src="/buymeacoffee.png" alt="Buy me a coffee" height={36} />
       </a>
     </main>
   );

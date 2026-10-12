@@ -205,15 +205,10 @@ body {
 
 .support {
   margin-top: var(--gg-space-4);
-  font-size: 12px;
 }
 
-.support a {
-  color: var(--gg-fg-muted);
-  text-decoration: none;
-}
-
-.support a:hover {
-  color: var(--gg-fg);
-  text-decoration: underline;
+.support img {
+  display: block;
+  height: 40px;
+  border-radius: 6px;
 }

@@ -173,7 +173,7 @@ function OptionsPage() {
       </section>
       <footer className="support">
         <a href="https://buymeacoffee.com/djcrossman" target="_blank" rel="noopener">
-          ☕ Buy me a coffee
+          <img src="/buymeacoffee.png" alt="Buy me a coffee" height={40} />
         </a>
       </footer>
     </main>
