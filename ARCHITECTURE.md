@@ -67,17 +67,6 @@ stages again, the others untouched; marking a file viewed only changes it in pla
 Stacks: GitHub-native `stack` from the PR page's embedded data first; otherwise Graphite's stack
 comment in the timeline, enriched through a `/pulls/search` query on the author's open PRs.
 
-The app's iframe keeps DevTools and browser tooling from seeing the content script, so to check a route with the
-signed-in session the content script answers a console probe on every github.com page: a `gg:probe` event on `document`
-whose `detail` is a JSON string `{ id, method, args }` runs that RPC method through `handleRpc` (reads only: `pr.fetch*`,
-`inbox.*`, `repos.*`, `orgs.*`), and the answer comes back as a `gg:probe-result` event, JSON too, since objects do not
-cross from the page's world to the content script's. From the page's console:
-
-```js
-document.addEventListener('gg:probe-result', (e) => console.log(JSON.parse(e.detail)));
-document.dispatchEvent(new CustomEvent('gg:probe', { detail: JSON.stringify({ id: '1', method: 'pr.fetchChecks', args: { repo: { owner: 'o', name: 'r' }, number: 1 } }) }));
-```
-
 ## Organizations (inbox)
 
 The inbox shows one organization's pull requests at a time (`currentOrg` in settings: an organization the viewer belongs
