@@ -13,7 +13,20 @@ export const SIGNED_OUT = 'Sign in to github.com in this tab, then reload.';
  * scripts' requests, as its JSON routes and the HTML partials its classic pages load into dialogs are.
  */
 export async function request(path: string, accept: 'application/json' | 'text/html', { xhr = accept === 'application/json' } = {}): Promise<Response> {
-  const headers: Record<string, string> = xhr ? { Accept: accept, 'X-Requested-With': 'XMLHttpRequest' } : { Accept: accept };
+  // JSON routes get the headers GitHub's React page sends with its own page_data reads (the nonce and client version
+  // come from the page's metas when the content script has a page); without them some routes answer 404.
+  const nonce = typeof document === 'undefined' ? null : document.querySelector('meta[name="fetch-nonce"]')?.getAttribute('content');
+  const release = typeof document === 'undefined' ? null : document.querySelector('meta[name="release"]')?.getAttribute('content');
+  const headers: Record<string, string> = xhr
+    ? {
+        Accept: accept,
+        'X-Requested-With': 'XMLHttpRequest',
+        'GitHub-Verified-Fetch': 'true',
+        'GitHub-Is-React': 'true',
+        ...(nonce && { 'X-Fetch-Nonce': nonce }),
+        ...(release && { 'X-GitHub-Client-Version': release }),
+      }
+    : { Accept: accept };
   let response: Response;
   try {
     response = await fetch(path, { headers, credentials: 'same-origin' });

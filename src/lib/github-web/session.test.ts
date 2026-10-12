@@ -23,14 +23,23 @@ describe('embeddedPayload', () => {
 });
 
 describe('reading with the session', () => {
-  it('sends only the headers GitHub’s UI sends on JSON reads', async () => {
+  it('sends the headers GitHub’s React page sends on JSON reads, with the page’s nonce and client version', async () => {
     const fetch = vi.fn(async () => Response.json({ ok: 1 }));
     vi.stubGlobal('fetch', fetch);
+    document.head.innerHTML = '<meta name="fetch-nonce" content="v2:nonce"><meta name="release" content="abc123">';
     await expect(getJson('/pulls/inbox/queries?filter=review-requested')).resolves.toEqual({ ok: 1 });
     expect(fetch).toHaveBeenCalledWith('/pulls/inbox/queries?filter=review-requested', {
-      headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+      headers: {
+        Accept: 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        'GitHub-Verified-Fetch': 'true',
+        'GitHub-Is-React': 'true',
+        'X-Fetch-Nonce': 'v2:nonce',
+        'X-GitHub-Client-Version': 'abc123',
+      },
       credentials: 'same-origin',
     });
+    document.head.innerHTML = '';
   });
 
   it('recognises a signed-out session by the login redirect or GitHub saying it cannot authenticate', async () => {
