@@ -7,6 +7,7 @@
 import type { ChangedFileDiff, PrStage, PrStages, PrSummary, RepoRef, UserRef } from '../model';
 import type { MergeMethod } from '../rpc';
 import { getSettings } from '../settings';
+import { dynamicWorkflowChecks } from './actions';
 import { checksFrom } from './checks';
 import { changedFileList, fileDiffs, type BaseComparison } from './files';
 import { deferredFields, searchPulls, summarisePull } from './inbox';
@@ -125,9 +126,11 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
     };
   },
 
-  checks: async (github) => {
-    const answer = await github.statusChecks();
-    const checks = checksFrom(answer);
+  checks: async (github, pull) => {
+    // GitHub's own dynamic workflow runs (Copilot's review, …) are not in status_checks; the branch's Actions list names
+    // them, so the checks wait for the header's branch and head commit too.
+    const [answer, { headRefName, headOid }] = await Promise.all([github.statusChecks(), stages.header(github, pull)]);
+    const checks = checksFrom(answer, await github.dynamicChecks(headRefName, headOid));
     // What the card says when it has no checks to show; an answer without rows is named by its keys.
     const emptyReason =
       answer === null
@@ -215,6 +218,7 @@ function answersFor(pull: Pull, repeat: readonly GitHubRequest[]) {
     },
     reviewRequests: () => ask('reviewRequests', '', () => sideDetail<unknown>('review_requests')),
     statusChecks: () => ask('statusChecks', '', () => sideDetail<unknown>('status_checks')),
+    dynamicChecks: (headRefName: string, headOid: string) => ask('dynamicChecks', headOid, () => dynamicWorkflowChecks(pull.repo, headRefName, headOid)),
     labels: () => ask('labels', '', () => sideDetail<{ labels?: Array<{ name: string; color: string }> }>('labels')),
     assignees: () => ask('assignees', '', () => sideDetail<{ assignees?: Array<{ login?: string; displayLogin?: string; avatarUrl?: string }> }>('assignees')),
     stackMergeability: async () => {
@@ -247,7 +251,7 @@ function layoutOf(page: Document, pull: Pull): LayoutRoute {
 
 /**
  * The requests each stage makes for itself: `force` makes them again, and a write that changes the stage forgets them.
- * A stage reads the rest from memory (the activity, threads, merge box and stack all read the header's page).
+ * A stage reads the rest from memory (the activity, threads, merge box, checks and stack all read the header's page).
  */
 const OWN_REQUESTS: { [S in PrStage]: readonly GitHubRequest[] } = {
   header: ['page', 'tabCounts', 'diffstat', 'description'],
@@ -255,7 +259,7 @@ const OWN_REQUESTS: { [S in PrStage]: readonly GitHubRequest[] } = {
   files: ['comparison', 'diffs'],
   threads: ['threads', 'comparison', 'tabCounts'],
   mergeBox: ['mergeBox', 'reviewRequests'],
-  checks: ['statusChecks'],
+  checks: ['statusChecks', 'dynamicChecks'],
   stack: ['stackMergeability', 'authorsOpenPulls'],
   meta: ['labels', 'assignees'],
 };
@@ -276,6 +280,7 @@ type GitHubRequest =
   | 'mergeBox'
   | 'reviewRequests'
   | 'statusChecks'
+  | 'dynamicChecks'
   | 'labels'
   | 'assignees'
   | 'stackMergeability'

@@ -242,9 +242,10 @@ function PrRow({
         <StatusIcon {...reviewStatusIcon({ ...pr, reviewers: enrichment?.reviewers ?? null, viewerReview: enrichment?.viewerReview }, viewerLogin)} />
       </span>
       <span className="gg-row__status">
-        {/* The dashboard's rollup says only that checks fail or run; whether a required one fails, or anything but Graphite's
-            mergeability check still runs, comes with the row's checks, so such a row keeps a placeholder until then. */}
-        {!enriched && (pr.ci.state === 'FAILURE' || pr.ci.state === 'PENDING') ? <Skeleton width={16} height={16} /> : <StatusIcon {...ciStatusIcon(pr.ci, enrichment?.requiredCheckNames ?? null)} />}
+        {/* The dashboard's rollup says only that checks fail, run or pass; whether a required one fails, anything but
+            Graphite's mergeability check still runs, or one of GitHub's own dynamic workflow runs failed comes with the
+            row's checks, so an open row keeps a placeholder until then. A merged or closed row shows its rollup. */}
+        {!enriched && pr.state === 'OPEN' ? <Skeleton width={16} height={16} /> : <StatusIcon {...ciStatusIcon(pr.ci, enrichment?.requiredCheckNames ?? null)} />}
       </span>
       <span className="gg-row__status">
         <StatusIcon {...mergeStatusIcon(pr, enrichment?.mergeBlockedReason)} />

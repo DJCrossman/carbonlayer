@@ -103,7 +103,14 @@ Data endpoints (all `page_data/*` need a session; `tab_counts` and `diffstat` al
   GitHub's own `dynamic` workflows such as "Running Copilot Code Review" (Copilot's review agent). They appear only in
   the repository's Actions list (`/{o}/{r}/actions?query=branch:<head>`), where a failed one reads "Running Copilot Code
   Review failed: Copilot #N: by Copilot AI". Graphite counts such a failure as a non-required failing check (seen on
-  offstreetparking/core#9003, 2026-10-12); GitHub's UI does not.
+  offstreetparking/core#9003, 2026-10-12); GitHub's UI does not. `GET /{o}/{r}/actions?query=branch%3A<head>+event%3Adynamic`
+  (HTML, newest run first; verified 2026-10-12, class names hashed) lists each run as an
+  `<li aria-label="<status>: Run <n> of <workflow>. <title>">`, e.g. `failed: Run 2557 of Copilot. Running Copilot Code
+  Review` (statuses seen: `failed`, `completed successfully`, `cancelled`), holding an
+  `<a href="https://github.com/{o}/{r}/actions/runs/<runId>">` whose text is the title and a
+  `<relative-time datetime="…">`. The row does not name the commit; the run's page, `GET /{o}/{r}/actions/runs/<runId>`,
+  does in its title: `<title>Running Copilot Code Review · offstreetparking/core@9824bb7</title>` (7 or 40 hex
+  characters after `@`). `dynamicWorkflowChecks` in `src/lib/github-web/actions.ts` reads both.
 - `GET …/page_data/stack_mergeability?merge_method=MERGE&bypass_requirements=false` → stack entries:
   `[{ pull: { number, title, state, url, headBranch, headOid, isInAutoMergeRange, isUnstackable },
   position: 'CURRENT'|…, status: 'NEEDS_MERGE_STATE'|…, failedSubConditions, channels }]` (called for every

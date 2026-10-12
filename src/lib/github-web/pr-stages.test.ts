@@ -25,7 +25,7 @@ describe('the PR page in stages', () => {
     ['files', ['base_comparison_info']],
     ['threads', ['threads', 'base_comparison_info', 'page', 'tab_counts']],
     ['mergeBox', ['page', 'merge_box', 'review_requests']],
-    ['checks', ['status_checks']],
+    ['checks', ['page', 'tab_counts', 'diffstat', 'status_checks', 'actions']],
     ['stack', ['page', 'tab_counts', 'diffstat']],
     ['meta', ['labels', 'assignees']],
   ] as const)('%s asks GitHub for %j', async (stage, asked) => {
@@ -36,7 +36,7 @@ describe('the PR page in stages', () => {
   it('fetches the page once for all the stages that read it, and each other route once', async () => {
     await Promise.all(STAGES.map((stage) => loadStage(stage)));
     expect(requests.toSorted()).toEqual(
-      ['page', 'tab_counts', 'diffstat', 'threads', 'base_comparison_info', 'merge_box', 'review_requests', 'status_checks', 'labels', 'assignees'].sort(),
+      ['page', 'tab_counts', 'diffstat', 'threads', 'base_comparison_info', 'merge_box', 'review_requests', 'status_checks', 'actions', 'labels', 'assignees'].sort(),
     );
   });
 
@@ -107,8 +107,22 @@ describe('the PR page in stages', () => {
   });
 
   it('says the checks card is empty because GitHub sent no check rows, naming what it sent', async () => {
-    vi.mocked(fetch).mockImplementationOnce(async () => Response.json({ statusRollup: { combinedState: 'PASSED', summary: [] }, statusChecks: [] }));
+    requests = serveGitHub({}, 'ana', { status_checks: { statusRollup: { combinedState: 'PASSED', summary: [] }, statusChecks: [] } });
     expect(await loadStage('checks')).toMatchObject({ ci: { checks: [] }, emptyReason: 'GitHub sent no checks (keys: statusRollup, statusChecks)' });
+  });
+
+  it("adds a failed run of GitHub's own Copilot review, from the Actions list of the header's branch, to the checks", async () => {
+    requests = serveGitHub({}, 'ana', {
+      actions: `<ul><li aria-label="failed: Run 2557 of Copilot. Running Copilot Code Review"><a href="https://github.com/o/r/actions/runs/31">Running Copilot Code Review</a><relative-time datetime="2026-10-12T19:43:25.000Z"></relative-time></li></ul>`,
+    });
+    const { ci } = await loadStage('checks');
+    expect(ci.state).toBe('FAILURE');
+    expect(ci.checks.map((check) => [check.name, check.state])).toEqual([
+      ['build', 'SUCCESS'],
+      ['Copilot / Running Copilot Code Review', 'FAILURE'],
+    ]);
+    expect(fetch).toHaveBeenCalledWith('/o/r/actions?query=branch%3Afix+event%3Adynamic', expect.anything());
+    expect(requests).toContain('actions/runs/31');
   });
 
   it('asks a signed-out viewer to sign in from the header', async () => {
@@ -133,12 +147,15 @@ async function loadStage<S extends PrStage>(stage: S, force = false) {
 
 /**
  * github.com for PR o/r#1, recording each request as its page_data route (`page` for the page itself, `POST <route>`
- * for a write). `failing` answers a route with that status instead.
+ * for a write, `actions` for the branch's Actions list, `actions/runs/<id>` for a run's page). `failing` answers a route
+ * with that status instead, `answers` with that answer. Each call has a head commit of its own: what the Actions list
+ * says about a commit is kept 5 minutes.
  */
-function serveGitHub(failing: Record<string, number> = {}, viewer = 'ana'): string[] {
+function serveGitHub(failing: Record<string, number> = {}, viewer = 'ana', answers: Record<string, unknown> = {}): string[] {
   const asked: string[] = [];
+  const headSha = String(++heads).padStart(40, '0');
   const layout = {
-    pullRequest: { id: 1, relayId: 'PR_1', number: 1, title: 'Fix the widget', state: 'OPEN', author: { login: 'bo' }, baseBranch: 'main', headBranch: 'fix', headSha: 'h', createdTime: '2026-10-01T00:00:00Z' },
+    pullRequest: { id: 1, relayId: 'PR_1', number: 1, title: 'Fix the widget', state: 'OPEN', author: { login: 'bo' }, baseBranch: 'main', headBranch: 'fix', headSha, createdTime: '2026-10-01T00:00:00Z' },
     stack: null,
   };
   const page = `<html><head><meta name="user-login" content="${viewer}"></head><body>
@@ -166,17 +183,27 @@ function serveGitHub(failing: Record<string, number> = {}, viewer = 'ana'): stri
     assignees: { assignees: [{ login: 'bo' }] },
     create_timeline_comment: {},
     resolve_thread: {},
+    // No runs of GitHub's own dynamic workflows on the branch.
+    actions: '<ul></ul>',
+    ...answers,
   };
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init?: RequestInit) => {
-      const route = /\/o\/r\/pull\/1(?:\/page_data\/([a-z_]+))?/.exec(url)?.[1] ?? 'page';
+      const route = /\/o\/r\/(actions(?:\/runs\/\d+)?)/.exec(url)?.[1] ?? /\/o\/r\/pull\/1(?:\/page_data\/([a-z_]+))?/.exec(url)?.[1] ?? 'page';
       asked.push(init?.method ? `${init.method} ${route}` : route);
       const status = failing[route];
       if (status) return Response.json({ error: 'Not Found' }, { status });
       if (route === 'page') return new Response(page, { headers: { 'content-type': 'text/html' } });
+      // The Actions pages are HTML; a run's page names the commit it ran on, the head.
+      if (route.startsWith('actions')) {
+        return new Response(route === 'actions' ? String(routes.actions) : `<title>Running Copilot Code Review · o/r@${headSha}</title>`, { headers: { 'content-type': 'text/html' } });
+      }
       return route in routes ? Response.json(routes[route]) : Response.json({ error: 'Not Found' }, { status: 404 });
     }),
   );
   return asked;
 }
+
+/** The head commits serveGitHub has made up so far. */
+let heads = 0;

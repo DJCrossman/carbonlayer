@@ -6,6 +6,7 @@
 import type { CheckState, PrEnrichment, PrSummary, View, ViewResult } from '../model';
 import type { InboxRowToEnrich, MergeMethod } from '../rpc';
 import { inboxFilterOf, resolveViewQuery, type GitHubInboxFilter } from '../views';
+import { dynamicWorkflowChecks } from './actions';
 import { checksFrom } from './checks';
 import { mergeState } from './merge-box';
 import { reviewersOf } from './reviews';
@@ -158,17 +159,19 @@ export function summarisePull(pull: Pull, section: GitHubInboxFilter | null): Pr
  * What GitHub's dashboard leaves out of a row, from the PR's own page data: mergeability, and why merging is blocked,
  * from its merge box (`page_data/merge_box`, read as the PR page reads it); reviewers, and the viewer's own review, from
  * `page_data/review_requests`, else from what the merge box names (`latestOpinionatedReviews`, pending requests); line
- * counts from `page_data/diffstat`; and for a failing or pending CI rollup, the checks themselves (which fail, which are
- * required, and whether anything but Graphite's mergeability check is still running) from `page_data/status_checks`. A merged or closed PR's merge status is its state, so it does not ask the merge box; a
- * draft does, and shows how it would merge. A route that fails is logged and leaves its fields out: the row keeps what
- * it had.
+ * counts from `page_data/diffstat`; and for an open PR, the checks themselves (which fail, which are required, and
+ * whether anything but Graphite's mergeability check is still running) from `page_data/status_checks`, with GitHub's own
+ * dynamic workflow runs on the head commit, which only the branch's Actions list names. A merged or closed PR's merge
+ * status is its state, so it does not ask the merge box; a draft does, and shows how it would merge. A route that fails
+ * is logged and leaves its fields out: the row keeps what it had.
  */
 export async function enrichPull(pr: InboxRowToEnrich, mergeMethod: MergeMethod, viewerLogin: string | null): Promise<PrEnrichment> {
   const data = `/${pr.repo.owner}/${pr.repo.name}/pull/${pr.number}/page_data`;
   const asksMergeBox = pr.state === 'OPEN';
   // A failing rollup needs its checks to tell required failures from optional ones; a pending one may be pending only on
-  // Graphite's mergeability check, which the checks leave out.
-  const asksChecks = pr.ci.state === 'FAILURE' || pr.ci.state === 'PENDING';
+  // Graphite's mergeability check, which the checks leave out; a passed one may hide a failed run of GitHub's own dynamic
+  // workflows (Copilot's review), which Graphite counts.
+  const asksChecks = pr.state === 'OPEN';
   const [mergeBox, diffstat, reviewRequests, statusChecks] = await Promise.allSettled([
     asksMergeBox ? getJson<unknown>(`${data}/merge_box?merge_method=${mergeMethod}&bypass_requirements=false`) : null,
     getJson<{ diffstat?: { linesAdded?: number; linesDeleted?: number } }>(`${data}/diffstat`),
@@ -219,12 +222,15 @@ export async function enrichPull(pr: InboxRowToEnrich, mergeMethod: MergeMethod,
   }
 
   if (asksChecks && statusChecks.status === 'fulfilled') {
-    const { ci, requiredCheckNames, marksRequired, listed } = checksFrom(statusChecks.value);
+    // The merge box names the head branch and commit, by which the Actions list finds GitHub's own dynamic workflow runs.
+    const head = mergeBox.status === 'fulfilled' ? (mergeBox.value as { pullRequest?: { headRefName?: string; headRefOid?: string } } | null)?.pullRequest : null;
+    const dynamicChecks = head?.headRefName && head.headRefOid ? await dynamicWorkflowChecks(pr.repo, head.headRefName, head.headRefOid) : [];
+    const { ci, requiredCheckNames, marksRequired, listed } = checksFrom(statusChecks.value, dynamicChecks);
     if (listed) found.ci = ci;
     if (listed && marksRequired) found.requiredCheckNames = requiredCheckNames;
   } else if (statusChecks.status === 'rejected') {
     const reason: unknown = statusChecks.reason;
-    console.debug('[gg]', `page_data/status_checks for ${where} failed; the row says only that checks fail:`, reason instanceof Error ? reason.message : reason);
+    console.debug('[gg]', `page_data/status_checks for ${where} failed; the row keeps its rollup:`, reason instanceof Error ? reason.message : reason);
   }
   return found;
 }

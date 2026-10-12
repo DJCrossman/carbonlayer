@@ -156,6 +156,7 @@ describe('enrichPull', () => {
       '/acme/widgets/pull/7/page_data/diffstat',
       '/acme/widgets/pull/7/page_data/merge_box?merge_method=SQUASH&bypass_requirements=false',
       '/acme/widgets/pull/7/page_data/review_requests',
+      '/acme/widgets/pull/7/page_data/status_checks',
     ]);
   });
 
@@ -214,8 +215,33 @@ describe('enrichPull', () => {
     marked = false;
     expect(await enrichPull(failing, 'MERGE', null)).not.toHaveProperty('requiredCheckNames');
     requested.length = 0;
-    await enrichPull(row, 'MERGE', null);
+    await enrichPull({ ...row, state: 'MERGED' }, 'MERGE', null);
     expect(requested.some((url) => url.includes('status_checks'))).toBe(false);
+  });
+
+  it("counts a failed run of GitHub's own Copilot review on the head commit, which a passed rollup leaves out, as an optional failure", async () => {
+    const requested: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        requested.push(url);
+        if (url.includes('/page_data/merge_box')) return Response.json({ pullRequest: { mergeStateStatus: 'CLEAN', headRefName: 'feat/review', headRefOid: `9824bb7${'0'.repeat(33)}` } });
+        if (url.includes('/page_data/status_checks')) return Response.json({ statusChecks: [{ displayName: 'build', state: 'SUCCESS', isRequired: false }] });
+        if (url.startsWith('/acme/widgets/actions?')) {
+          return new Response(
+            `<ul><li aria-label="failed: Run 2557 of Copilot. Running Copilot Code Review"><a href="https://github.com/acme/widgets/actions/runs/31">Running Copilot Code Review</a><relative-time datetime="2026-10-12T19:43:25.000Z"></relative-time></li></ul>`,
+            { headers: { 'content-type': 'text/html' } },
+          );
+        }
+        if (url === '/acme/widgets/actions/runs/31') return new Response('<title>Running Copilot Code Review · acme/widgets@9824bb7</title>', { headers: { 'content-type': 'text/html' } });
+        return Response.json({});
+      }),
+    );
+    const found = await enrichPull({ ...row, number: 10 }, 'MERGE', null);
+    expect(found.ci?.state).toBe('FAILURE');
+    expect(found.ci?.checks.map((check) => check.name)).toEqual(['build', 'Copilot / Running Copilot Code Review']);
+    expect(found.requiredCheckNames).toEqual([]);
+    expect(requested).toContain('/acme/widgets/actions?query=branch%3Afeat%2Freview+event%3Adynamic');
   });
 
   it("asks a pending rollup its checks, since Graphite's mergeability check keeps a stacked PR's rollup pending", async () => {

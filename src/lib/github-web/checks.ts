@@ -10,9 +10,10 @@ import { findInPayload, noteShape } from './session';
  * The checks with their states, counts and overall verdict, the names of the required ones, whether the rows say which
  * are required at all (when none does, `requiredCheckNames` is empty for want of knowing), and whether GitHub listed
  * the checks (`listed`; without a list the verdict is its rollup's). Graphite's mergeability check is left out: it
- * waits on the downstack PRs, not on CI, and the stack card reports that.
+ * waits on the downstack PRs, not on CI, and the stack card reports that. `alsoChecks`, checks the list leaves out
+ * (GitHub's own dynamic workflow runs), join it and count like it, never as required.
  */
-export function checksFrom(data: unknown): { ci: CiSummary; requiredCheckNames: string[]; marksRequired: boolean; listed: boolean } {
+export function checksFrom(data: unknown, alsoChecks: CheckRunSummary[] = []): { ci: CiSummary; requiredCheckNames: string[]; marksRequired: boolean; listed: boolean } {
   noteShape('page_data/status_checks', data);
   const response = (data ?? {}) as { statusChecks?: unknown; statusRollup?: { combinedState?: string } };
   const looksLikeChecks = (value: unknown) =>
@@ -56,6 +57,10 @@ export function checksFrom(data: unknown): { ci: CiSummary; requiredCheckNames: 
       runId: /\/actions\/runs\/(\d+)/.exec(row.targetUrl ?? row.detailsUrl ?? row.url ?? '')?.[1] ?? null,
     };
   });
+  // After the rows' own checks, so a row's index is still its check's; a name the list already has keeps its row.
+  for (const extra of alsoChecks) {
+    if (!checks.some((check) => check.name === extra.name)) checks.push(extra);
+  }
   const counts = { success: 0, failure: 0, pending: 0, other: 0 };
   for (const check of checks) {
     if (check.state === 'SUCCESS') counts.success++;

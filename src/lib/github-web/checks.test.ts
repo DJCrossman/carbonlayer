@@ -79,6 +79,27 @@ describe('checksFrom', () => {
     expect(alone.listed).toBe(true);
   });
 
+  it("counts checks the list leaves out, GitHub's own dynamic workflow runs, never as required and a listed name once", () => {
+    const copilot = {
+      name: 'Copilot / Running Copilot Code Review',
+      state: 'FAILURE',
+      url: 'https://github.com/acme/widgets/actions/runs/31',
+      description: 'GitHub ran this itself (event "dynamic"); it is not a required check',
+      group: 'Copilot',
+      startedAt: '2026-10-12T19:43:25.000Z',
+      completedAt: null,
+      runId: '31',
+    } as const;
+    const { ci, requiredCheckNames } = checksFrom({ statusRollup: { combinedState: 'PASSED', summary: [] }, statusChecks: [{ displayName: 'build', state: 'SUCCESS', isRequired: true }] }, [copilot]);
+    expect(ci.state).toBe('FAILURE');
+    expect(ci.checks.map((check) => check.name)).toEqual(['build', 'Copilot / Running Copilot Code Review']);
+    expect(ci.checks[1]).toEqual(copilot);
+    expect(ci.counts).toEqual({ success: 1, failure: 1, pending: 0, other: 0 });
+    expect(requiredCheckNames).toEqual(['build']);
+    const listed = checksFrom({ statusChecks: [{ displayName: 'Copilot / Running Copilot Code Review', state: 'SUCCESS' }] }, [copilot]);
+    expect(listed.ci.checks.map((check) => [check.name, check.state])).toEqual([['Copilot / Running Copilot Code Review', 'SUCCESS']]);
+  });
+
   it("falls back to GitHub's combined verdict when there are no rows, and to NONE without anything", () => {
     expect(checksFrom({ statusRollup: { combinedState: 'PENDING_APPROVAL', summary: [] } }).ci.state).toBe('PENDING');
     expect(checksFrom({ statusRollup: { combinedState: 'PASSED', summary: [] } }).ci.state).toBe('SUCCESS');

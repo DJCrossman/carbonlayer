@@ -48,6 +48,13 @@ the inbox's deferred fields are side details: on the PR page a 404 from one is l
 and leaves that card empty (an open PR's checks card says why), and any other failure shows in the card with a retry.
 Reads are cached in the content script for 30–60 s; a successful write clears the cache.
 
+Graphite judges CI from every check run on the head commit, runs of the workflows GitHub triggers itself (event `dynamic`,
+such as Copilot's code review) included, while `status_checks`, the commit's status rollup and the PR's Checks tab all
+leave those out. So the PR page's checks and the inbox's open rows also read the branch's Actions list
+(`/{o}/{r}/actions?query=branch:<head> event:dynamic`, HTML) and count the newest failed, cancelled or unfinished run of
+each such workflow whose run page names the head commit as a check that is never required (`dynamicWorkflowChecks` in
+`src/lib/github-web/actions.ts`, kept 5 minutes a commit; a failure counts none).
+
 The PR page loads in stages (`PrStages` in `src/lib/model.ts`, `src/lib/github-web/pr-stages.ts`), all requested at
 once and each rendered as it arrives (`src/pr/page-data.ts`): `pr.fetchHeader` (the page's HTML, `tab_counts`,
 `diffstat`; the description is the conversation's first comment, `page_data/description` only without one),
@@ -154,12 +161,12 @@ within 200px of view (an `IntersectionObserver` per row, rooted at the page's ow
 `inbox.enrich` for it, up to 10 rows a request and one request at a time, and the content script answers from each PR's
 `page_data/merge_box` (mergeability and the first unmet requirement as the reason it is blocked; skipped for drafts and
 merged or closed PRs), `page_data/review_requests` (reviewers, bots and teams included, and the viewer's own review,
-by the page's `meta[name="user-login"]`; else the reviewers the merge box names), `page_data/diffstat` and, for a
-failing CI rollup only, `page_data/status_checks` (which checks fail and which are required, `checksFrom` in
-`src/lib/github-web/checks.ts`), three PRs at a time, each answer kept 2 minutes (`enrichPull` in
-`src/lib/github-web/inbox.ts`). A row is asked again when it was updated or its rollup changed; the checks it found count
-only while the rollup still fails. Until a row's answer arrives its Reviewers and Changes columns show a skeleton dash
-and its Merge column "Unknown"; a failure leaves the row as it was.
+by the page's `meta[name="user-login"]`; else the reviewers the merge box names), `page_data/diffstat` and, for an
+open PR, `page_data/status_checks` (which checks fail and which are required, `checksFrom` in
+`src/lib/github-web/checks.ts`) with GitHub's own dynamic workflow runs on the head commit (above), three PRs at a time,
+each answer kept 2 minutes (`enrichPull` in `src/lib/github-web/inbox.ts`). A row is asked again when it was updated or
+its rollup changed; the checks it found are its CI. Until a row's answer arrives its Reviewers and Changes columns show a
+skeleton dash, an open row's CI column a placeholder and its Merge column "Unknown"; a failure leaves the row as it was.
 
 Section counts read `sectionCount` (`99+` above 99, `<limit>+` for a view cut short below that). A section shows
 GitHub's first page of rows (cut to the view's `limit`, default 50); while GitHub counts more, "Load more" at its foot
