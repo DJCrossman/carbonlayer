@@ -1,10 +1,12 @@
 // The inbox. Each view is one of GitHub's own inbox sections (`inbox:<filter>` → /pulls/inbox/queries) or a
 // search (/pulls/search); the rows shown then get their "deferred" fields (review decision, CI rollup), and the rows on
-// screen later what the dashboard has not at all (mergeability, reviewers, line counts) from each PR's page data.
+// screen later what the dashboard has not at all (mergeability, reviewers, line counts, failing checks) from each PR's
+// page data.
 
 import type { CheckState, PrEnrichment, PrSummary, View, ViewResult } from '../model';
-import type { MergeMethod } from '../rpc';
+import type { InboxRowToEnrich, MergeMethod } from '../rpc';
 import { inboxFilterOf, resolveViewQuery, type GitHubInboxFilter } from '../views';
+import { checksFrom } from './checks';
 import { mergeState } from './merge-box';
 import { reviewersOf } from './reviews';
 import { embeddedPayload, findInPayload, getJson, githubUser, noteShape, politely, request } from './session';
@@ -152,37 +154,73 @@ export function summarisePull(pull: Pull, section: GitHubInboxFilter | null): Pr
 }
 
 /**
- * What GitHub's dashboard leaves out of a row, from the PR's own page data: mergeability, and reviewers when it names
- * them (`latestOpinionatedReviews`, pending requests), from its merge box (`page_data/merge_box`, read as the PR page
- * reads it), and line counts from `page_data/diffstat`. A draft's merge status is DRAFT and a merged or closed PR's is its
- * state, so neither asks the merge box. A route that fails is logged and leaves its fields out: the row keeps what it had.
+ * What GitHub's dashboard leaves out of a row, from the PR's own page data: mergeability, and why merging is blocked,
+ * from its merge box (`page_data/merge_box`, read as the PR page reads it); reviewers, and the viewer's own review, from
+ * `page_data/review_requests`, else from what the merge box names (`latestOpinionatedReviews`, pending requests); line
+ * counts from `page_data/diffstat`; and for a failing CI rollup, which checks fail and which are required, from
+ * `page_data/status_checks`. A draft's merge status is DRAFT and a merged or closed PR's is its state, so neither asks the
+ * merge box. A route that fails is logged and leaves its fields out: the row keeps what it had.
  */
-export async function enrichPull(pr: Pick<PrSummary, 'repo' | 'number' | 'state' | 'isDraft'>, mergeMethod: MergeMethod): Promise<PrEnrichment> {
+export async function enrichPull(pr: InboxRowToEnrich, mergeMethod: MergeMethod, viewerLogin: string | null): Promise<PrEnrichment> {
   const data = `/${pr.repo.owner}/${pr.repo.name}/pull/${pr.number}/page_data`;
   const asksMergeBox = pr.state === 'OPEN' && !pr.isDraft;
-  const [mergeBox, diffstat] = await Promise.allSettled([
+  const asksChecks = pr.ci.state === 'FAILURE';
+  const [mergeBox, diffstat, reviewRequests, statusChecks] = await Promise.allSettled([
     asksMergeBox ? getJson<unknown>(`${data}/merge_box?merge_method=${mergeMethod}&bypass_requirements=false`) : null,
     getJson<{ diffstat?: { linesAdded?: number; linesDeleted?: number } }>(`${data}/diffstat`),
+    getJson<{ pendingReviewRequests?: unknown; completedReviews?: unknown }>(`${data}/review_requests`),
+    asksChecks ? getJson<unknown>(`${data}/status_checks`) : null,
   ]);
+  const where = `${pr.repo.owner}/${pr.repo.name}#${pr.number}`;
   const found: PrEnrichment = pr.state === 'OPEN' && pr.isDraft ? { mergeStatus: 'DRAFT' } : {};
+  let named: { latestOpinionatedReviews: unknown; pendingReviewRequests: unknown } | null = null;
   if (asksMergeBox && mergeBox.status === 'fulfilled') {
     const merge = mergeState(mergeBox.value, { isDraft: false, isOpen: true });
     found.mergeStatus = merge.mergeStatus;
+    // The first requirement the merge box says is unmet, e.g. "At least 1 approving review is required".
+    const { mergeRequirements } = (mergeBox.value ?? {}) as { mergeRequirements?: { conditions?: Array<{ result?: string; message?: string; description?: string; displayName?: string }> } };
+    const unmet = (Array.isArray(mergeRequirements?.conditions) ? mergeRequirements.conditions : []).find((condition) => condition?.result === 'FAILED');
+    const reason = unmet?.message || unmet?.description || unmet?.displayName;
+    if (reason && (merge.mergeStatus === 'BLOCKED' || merge.mergeStatus === 'BEHIND' || merge.mergeStatus === 'UNSTABLE')) found.mergeBlockedReason = reason;
     const pendingReviewRequests = findInPayload(mergeBox.value, (key) => key === 'pendingReviewRequests' || key === 'pendingRequestedReviews');
-    if (merge.latestOpinionatedReviews != null || pendingReviewRequests !== undefined) {
-      // The dashboard has no timeline to add commenters from; the author is never among a PR's reviewers here.
-      found.reviewers = reviewersOf({ requests: { pendingReviewRequests }, latestOpinionatedReviews: merge.latestOpinionatedReviews, timeline: [], author: '' });
-    }
+    if (merge.latestOpinionatedReviews != null || pendingReviewRequests !== undefined) named = { latestOpinionatedReviews: merge.latestOpinionatedReviews, pendingReviewRequests };
   } else if (mergeBox.status === 'rejected') {
     const reason: unknown = mergeBox.reason;
-    console.debug('[gg]', `page_data/merge_box for ${pr.repo.owner}/${pr.repo.name}#${pr.number} failed; the row keeps its merge status:`, reason instanceof Error ? reason.message : reason);
+    console.debug('[gg]', `page_data/merge_box for ${where} failed; the row keeps its merge status:`, reason instanceof Error ? reason.message : reason);
   }
+
+  // Signed out, review_requests is `{}`: it names nobody.
+  const requests = reviewRequests.status === 'fulfilled' && (Array.isArray(reviewRequests.value?.pendingReviewRequests) || Array.isArray(reviewRequests.value?.completedReviews)) ? reviewRequests.value : null;
+  if (reviewRequests.status === 'rejected') {
+    const reason: unknown = reviewRequests.reason;
+    console.debug('[gg]', `page_data/review_requests for ${where} failed; the row names the reviewers its merge box does:`, reason instanceof Error ? reason.message : reason);
+  }
+  if (requests || named) {
+    // The dashboard has no timeline to add commenters from.
+    found.reviewers = reviewersOf({
+      requests: requests ?? { pendingReviewRequests: named?.pendingReviewRequests },
+      latestOpinionatedReviews: named?.latestOpinionatedReviews ?? null,
+      timeline: [],
+      author: pr.author.login,
+    });
+    if (viewerLogin) found.viewerReview = found.reviewers.find((reviewer) => reviewer.user.login.toLowerCase() === viewerLogin.toLowerCase())?.state ?? null;
+  }
+
   if (diffstat.status === 'fulfilled' && diffstat.value.diffstat) {
     found.additions = diffstat.value.diffstat.linesAdded ?? 0;
     found.deletions = diffstat.value.diffstat.linesDeleted ?? 0;
   } else if (diffstat.status === 'rejected') {
     const reason: unknown = diffstat.reason;
-    console.debug('[gg]', `page_data/diffstat for ${pr.repo.owner}/${pr.repo.name}#${pr.number} failed; the row shows no line counts:`, reason instanceof Error ? reason.message : reason);
+    console.debug('[gg]', `page_data/diffstat for ${where} failed; the row shows no line counts:`, reason instanceof Error ? reason.message : reason);
+  }
+
+  if (asksChecks && statusChecks.status === 'fulfilled') {
+    const { ci, requiredCheckNames, marksRequired } = checksFrom(statusChecks.value);
+    if (ci.checks.length > 0) found.ci = ci;
+    if (ci.checks.length > 0 && marksRequired) found.requiredCheckNames = requiredCheckNames;
+  } else if (statusChecks.status === 'rejected') {
+    const reason: unknown = statusChecks.reason;
+    console.debug('[gg]', `page_data/status_checks for ${where} failed; the row says only that checks fail:`, reason instanceof Error ? reason.message : reason);
   }
   return found;
 }

@@ -115,8 +115,9 @@ describe('fetchInbox', () => {
 
 describe('enrichPull', () => {
   const widgets = { owner: 'acme', name: 'widgets' };
+  const row = { repo: widgets, number: 7, state: 'OPEN', isDraft: false, author: { login: 'ana', avatarUrl: '', url: '' }, ci: { state: 'SUCCESS' } } as const;
 
-  it("reads mergeability and reviewers from the merge box, line counts from the diffstat", async () => {
+  it('reads mergeability, why merging is blocked and the reviewers it names from the merge box, line counts from the diffstat', async () => {
     const requested: string[] = [];
     vi.stubGlobal(
       'fetch',
@@ -124,23 +125,91 @@ describe('enrichPull', () => {
         requested.push(url);
         if (url.includes('/page_data/merge_box')) {
           return Response.json({
-            pullRequest: { mergeStateStatus: 'DIRTY', latestOpinionatedReviews: [{ author: { login: 'bo', avatarUrl: 'https://avatars/bo' }, state: 'APPROVED' }] },
+            pullRequest: { mergeStateStatus: 'BLOCKED', latestOpinionatedReviews: [{ author: { login: 'bo', avatarUrl: 'https://avatars/bo' }, state: 'APPROVED' }] },
+            mergeRequirements: { conditions: [{ type: 'PULL_REQUEST_RULES', result: 'FAILED', displayName: 'Rules', message: 'At least 2 approving reviews are required' }] },
             reviewerSection: { pendingRequestedReviews: [{ reviewer: { login: 'cy', avatarUrl: 'https://avatars/cy' }, isCodeOwner: false }] },
           });
         }
+        // Signed out, review_requests names nobody.
+        if (url.includes('/page_data/review_requests')) return Response.json({});
         return Response.json({ diffstat: { linesAdded: 12, linesDeleted: 3, linesChanged: 15 } });
       }),
     );
-    expect(await enrichPull({ repo: widgets, number: 7, state: 'OPEN', isDraft: false }, 'SQUASH')).toEqual({
-      mergeStatus: 'DIRTY',
+    expect(await enrichPull(row, 'SQUASH', 'bo')).toEqual({
+      mergeStatus: 'BLOCKED',
+      mergeBlockedReason: 'At least 2 approving reviews are required',
       reviewers: [
         { kind: 'user', user: { login: 'cy', avatarUrl: 'https://avatars/cy', url: 'https://github.com/cy' }, state: 'PENDING', id: undefined, canReRequest: false },
         { kind: 'user', user: { login: 'bo', avatarUrl: 'https://avatars/bo', url: 'https://github.com/bo' }, state: 'APPROVED' },
       ],
+      viewerReview: 'APPROVED',
       additions: 12,
       deletions: 3,
     });
-    expect(requested.sort()).toEqual(['/acme/widgets/pull/7/page_data/diffstat', '/acme/widgets/pull/7/page_data/merge_box?merge_method=SQUASH&bypass_requirements=false']);
+    expect(requested.sort()).toEqual([
+      '/acme/widgets/pull/7/page_data/diffstat',
+      '/acme/widgets/pull/7/page_data/merge_box?merge_method=SQUASH&bypass_requirements=false',
+      '/acme/widgets/pull/7/page_data/review_requests',
+    ]);
+  });
+
+  it("names the reviewers, bots and teams too, and the viewer's own review, from the review requests", async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.includes('/page_data/review_requests')) {
+          return Response.json({
+            pendingReviewRequests: [{ reviewer: { id: 7, displayLogin: 'acme/parcs', avatarUrl: '', reviewerType: 'Team' } }],
+            completedReviews: [
+              { reviewer: { id: 1, displayLogin: 'octocat', avatarUrl: 'https://avatars/octocat' }, state: 'APPROVED', submittedAt: '2026-10-02T00:00:00Z' },
+              { reviewer: { id: 2, displayLogin: 'Copilot', avatarUrl: 'https://avatars/in/946600' }, state: 'COMMENTED', submittedAt: '2026-10-01T00:00:00Z' },
+            ],
+          });
+        }
+        if (url.includes('/page_data/merge_box')) return Response.json({ pullRequest: { mergeStateStatus: 'CLEAN' } });
+        return Response.json({ diffstat: { linesAdded: 1, linesDeleted: 1 } });
+      }),
+    );
+    const found = await enrichPull(row, 'MERGE', 'OctoCat');
+    expect(found.reviewers?.map((reviewer) => [reviewer.user.login, reviewer.kind, reviewer.state])).toEqual([
+      ['acme/parcs', 'team', 'PENDING'],
+      ['Copilot', 'user', 'COMMENTED'],
+      ['octocat', 'user', 'APPROVED'],
+    ]);
+    expect(found).toMatchObject({ mergeStatus: 'CLEAN', viewerReview: 'APPROVED' });
+    expect(found).not.toHaveProperty('mergeBlockedReason');
+  });
+
+  it('asks a failing rollup which checks fail and which of them are required', async () => {
+    const requested: string[] = [];
+    let marked = true;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        requested.push(url);
+        if (url.includes('/page_data/status_checks')) {
+          return Response.json({
+            statusChecks: [
+              { displayName: 'build', state: 'SUCCESS', ...(marked && { isRequired: true }) },
+              { displayName: 'preview', state: 'FAILURE', ...(marked && { isRequired: false }) },
+            ],
+          });
+        }
+        return Response.json({});
+      }),
+    );
+    const failing = { ...row, ci: { state: 'FAILURE' } } as const;
+    expect(await enrichPull(failing, 'MERGE', null)).toMatchObject({
+      ci: { state: 'FAILURE', checks: [{ name: 'build', state: 'SUCCESS' }, { name: 'preview', state: 'FAILURE' }], counts: { success: 1, failure: 1 } },
+      requiredCheckNames: ['build'],
+    });
+    expect(requested).toContain('/acme/widgets/pull/7/page_data/status_checks');
+    // Rows that do not say which checks are required leave that unknown.
+    marked = false;
+    expect(await enrichPull(failing, 'MERGE', null)).not.toHaveProperty('requiredCheckNames');
+    requested.length = 0;
+    await enrichPull(row, 'MERGE', null);
+    expect(requested.some((url) => url.includes('status_checks'))).toBe(false);
   });
 
   it.each([
@@ -153,14 +222,14 @@ describe('enrichPull', () => {
       'fetch',
       vi.fn(async (url: string) => {
         requested.push(url);
-        return Response.json({ diffstat: { linesAdded: 4, linesDeleted: 1 } });
+        return Response.json(url.includes('diffstat') ? { diffstat: { linesAdded: 4, linesDeleted: 1 } } : {});
       }),
     );
-    expect(await enrichPull({ repo: widgets, number: 8, ...pr }, 'MERGE')).toEqual(found);
-    expect(requested).toEqual(['/acme/widgets/pull/8/page_data/diffstat']);
+    expect(await enrichPull({ ...row, number: 8, ...pr }, 'MERGE', null)).toEqual(found);
+    expect(requested.sort()).toEqual(['/acme/widgets/pull/8/page_data/diffstat', '/acme/widgets/pull/8/page_data/review_requests']);
   });
 
-  it('leaves out what GitHub refuses, and reviewers a merge box does not name', async () => {
+  it('leaves out what GitHub refuses, and reviewers nobody names', async () => {
     vi.spyOn(console, 'debug').mockImplementation(() => {});
     vi.stubGlobal(
       'fetch',
@@ -168,11 +237,11 @@ describe('enrichPull', () => {
         url.includes('/merge_box') ? Response.json({ mergeRequirements: { state: 'MERGEABLE', conditions: [] } }) : new Response('', { status: 500 }),
       ),
     );
-    expect(await enrichPull({ repo: widgets, number: 9, state: 'OPEN', isDraft: false }, 'MERGE')).toEqual({ mergeStatus: 'CLEAN' });
+    expect(await enrichPull({ ...row, number: 9 }, 'MERGE', null)).toEqual({ mergeStatus: 'CLEAN' });
     expect(console.debug).toHaveBeenCalledWith('[gg]', expect.stringContaining('page_data/diffstat for acme/widgets#9 failed'), 'GitHub answered 500 for /acme/widgets/pull/9/page_data/diffstat');
 
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => (url.includes('/merge_box') ? new Response('', { status: 404 }) : Response.json({ diffstat: { linesAdded: 1, linesDeleted: 0 } }))));
-    expect(await enrichPull({ repo: widgets, number: 9, state: 'OPEN', isDraft: false }, 'MERGE')).toEqual({ additions: 1, deletions: 0 });
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => (url.includes('/diffstat') ? Response.json({ diffstat: { linesAdded: 1, linesDeleted: 0 } }) : new Response('', { status: 404 }))));
+    expect(await enrichPull({ ...row, number: 9 }, 'MERGE', null)).toEqual({ additions: 1, deletions: 0 });
   });
 });
 

@@ -40,9 +40,13 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
   },
   'inbox.enrich': async ({ prs }) => {
     const { mergeMethod } = await getSettings();
-    // Three pull requests at a time (each a merge box and a diffstat request), each answer kept for 2 minutes.
+    // The viewer's own review is found by the login of the github.com page this script runs in.
+    const viewerLogin = document.querySelector('meta[name="user-login"]')?.getAttribute('content') || null;
+    // Three pull requests at a time (each up to four page_data requests), each answer kept for 2 minutes.
     return politely(prs, 3, (pr) =>
-      cached(`enrich:${pr.repo.owner}/${pr.repo.name}#${pr.number}:${pr.state}:${pr.isDraft}:${mergeMethod}`.toLowerCase(), 120_000, false, () => enrichPull(pr, mergeMethod)),
+      cached(`enrich:${pr.repo.owner}/${pr.repo.name}#${pr.number}:${pr.state}:${pr.isDraft}:${pr.ci.state}:${mergeMethod}`.toLowerCase(), 120_000, false, () =>
+        enrichPull(pr, mergeMethod, viewerLogin),
+      ),
     );
   },
   'repos.search': async ({ query }) => {

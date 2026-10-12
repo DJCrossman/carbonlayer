@@ -76,15 +76,47 @@ section" opens it for a new view. It hides with `sidebarCollapsed` in settings, 
 from the top bar's toggle.
 
 Rows follow Graphite's columns (`src/inbox/InboxSection.tsx`): unread dot, avatar, title with `author · owner/repo #N`,
-stacked reviewer avatars, a labels chip, the stack chip, then fixed Review, CI and Merge icon columns (`ReviewStatus`,
-`CiStatus` and `MergeStatus` as `variant="icon"`), line counts and age, under a header row whose Title, Changes and
-Updated sort the section (page state only). GitHub's dashboard rows carry review decision and CI rollup but no
-mergeability, reviewers or line counts: as a row comes within 200px of view (an `IntersectionObserver` per row, rooted
-at the page's own document), the inbox asks `inbox.enrich` for it, up to 10 rows a request and one request at a time,
-and the content script answers from each PR's `page_data/merge_box` (skipped for drafts and merged or closed PRs) and
-`page_data/diffstat`, three PRs at a time, each answer kept 2 minutes (`enrichPull` in `src/lib/github-web/inbox.ts`).
-Until a row's answer arrives its Reviewers, Merge and Changes columns show a skeleton dash; a failure leaves the row as
-it was. Section counts read `sectionCount` (`99+` above 99, `<limit>+` for a view cut short below that). A section shows
+stacked reviewer avatars (three, then `+N`; a bot without an avatar gets its GitHub App's, else a bot glyph; the tooltip
+names each reviewer with their state, "jlord · approved"), a labels chip, the stack chip, then fixed Review, CI and Merge
+icon columns, line counts and age, under a header row whose Title, Changes and Updated sort the section (page state
+only); Changes and Updated keep 16px from their neighbours. Every icon says what it means on hover. Each status column
+is one function from the row's data to an icon, a tone and a tooltip (`reviewStatusIcon`, `ciStatusIcon`,
+`mergeStatusIcon` in `src/ui/status-icons.ts`, drawn by `StatusIcon`), tested case by case:
+
+| column | icon · tone · tooltip | when |
+| --- | --- | --- |
+| Review | draft glyph · grey · "Draft" | a draft |
+| | pencil · orange · "Changes requested by …" | any reviewer requested changes |
+| | filled check · green · "Approved by you" | the viewer approved |
+| | person-check · green · "Reviewed by …" | others approved or commented |
+| | clock · orange · "Waiting for …" | requests nobody has answered |
+| | dash · grey · "No reviewers requested" | no reviewers at all |
+| | the dashboard's decision (approved, changes requested, waiting, none) | until GitHub names the reviewers |
+| CI | filled check · green · "All checks passed" | every check passed |
+| | filled check · yellow · "Non-required checks failing: …" | only optional checks fail |
+| | filled x · red · "Required checks failing: …" | a required check fails (until GitHub says which are required, any failure) |
+| | clock · orange · "Checks running (n/m)" | checks still running |
+| | dash · grey · "No checks" | no checks |
+| Merge | filled check · green · "Mergeable" | CLEAN, HAS_HOOKS |
+| | merge · purple · "Merged" / closed glyph · red · "Closed" | merged / closed |
+| | filled x · red · "Merge conflict" | DIRTY |
+| | alert · orange · "Blocked: <the merge box's reason>" | BLOCKED, BEHIND, UNSTABLE |
+| | merge · blue · "Queued in the merge queue" / "Auto-merge …" | queued or set to auto-merge |
+| | draft glyph · grey · "Draft"; dash · grey · "Unknown" | a draft; not known yet |
+
+GitHub's dashboard rows carry review decision and CI rollup but no mergeability, reviewers or line counts: as a row comes
+within 200px of view (an `IntersectionObserver` per row, rooted at the page's own document), the inbox asks
+`inbox.enrich` for it, up to 10 rows a request and one request at a time, and the content script answers from each PR's
+`page_data/merge_box` (mergeability and the first unmet requirement as the reason it is blocked; skipped for drafts and
+merged or closed PRs), `page_data/review_requests` (reviewers, bots and teams included, and the viewer's own review,
+by the page's `meta[name="user-login"]`; else the reviewers the merge box names), `page_data/diffstat` and, for a
+failing CI rollup only, `page_data/status_checks` (which checks fail and which are required, `checksFrom` in
+`src/lib/github-web/checks.ts`), three PRs at a time, each answer kept 2 minutes (`enrichPull` in
+`src/lib/github-web/inbox.ts`). A row is asked again when it was updated or its rollup changed; the checks it found count
+only while the rollup still fails. Until a row's answer arrives its Reviewers and Changes columns show a skeleton dash
+and its Merge column "Unknown"; a failure leaves the row as it was.
+
+Section counts read `sectionCount` (`99+` above 99, `<limit>+` for a view cut short below that). A section shows
 GitHub's first page of rows (cut to the view's `limit`, default 50); while GitHub counts more, "Load more" at its foot
 asks `inbox.fetchMore` for the next of GitHub's pages (`/pulls/search?…&page=N` with its `/pulls/deferred`, or
 `/pulls/inbox/queries?…&page=N`) and appends the rows (page state, kept while the view's search is unchanged), until a

@@ -6,8 +6,11 @@
 import type { CheckRunSummary, CheckState, CiSummary } from '../model';
 import { findInPayload, noteShape } from './session';
 
-/** The checks with their states, counts and overall verdict, and the names of the required ones. */
-export function checksFrom(data: unknown): { ci: CiSummary; requiredCheckNames: string[] } {
+/**
+ * The checks with their states, counts and overall verdict, the names of the required ones, and whether the rows say
+ * which are required at all (when none does, `requiredCheckNames` is empty for want of knowing).
+ */
+export function checksFrom(data: unknown): { ci: CiSummary; requiredCheckNames: string[]; marksRequired: boolean } {
   noteShape('page_data/status_checks', data);
   const response = (data ?? {}) as { statusChecks?: unknown; statusRollup?: { combinedState?: string } };
   const looksLikeChecks = (value: unknown) =>
@@ -63,6 +66,7 @@ export function checksFrom(data: unknown): { ci: CiSummary; requiredCheckNames: 
   return {
     ci: { state, checks, counts },
     requiredCheckNames: rows.flatMap((row, i) => ((row.isRequired ?? row.required) ? [checks[i]!.name] : [])),
+    marksRequired: rows.some((row) => typeof (row.isRequired ?? row.required) === 'boolean'),
   };
 }
 

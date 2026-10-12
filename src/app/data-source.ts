@@ -2,7 +2,7 @@
 // from the content script's RPC in the extension and from fixtures in the dev harness (`?fixtures=1`).
 
 import type { PrDetail, PrEnrichment, PrSummary, RepoCandidate, RepoRef, ReviewerCandidate, View, ViewResult } from '../lib/model';
-import { rpc, type MergeMethod } from '../lib/rpc';
+import { rpc, type InboxRowToEnrich, type MergeMethod } from '../lib/rpc';
 import { DEFAULT_SETTINGS, getSettings, setSettings, watchSettings, type Settings } from '../lib/settings';
 import { repositoryScope } from '../lib/views';
 
@@ -23,8 +23,8 @@ export interface DataSource {
   fetchInbox(views: View[], force?: boolean): Promise<ViewResult[]>;
   /** Page `page` of a view's rows, whole: what "Load more" adds to a section. */
   fetchInboxPage(view: View, page: number): Promise<ViewResult>;
-  /** What GitHub's dashboard leaves out of these inbox rows (mergeability, reviewers, line counts), in the same order. */
-  enrichInbox(prs: Array<Pick<PrSummary, 'repo' | 'number' | 'state' | 'isDraft'>>): Promise<PrEnrichment[]>;
+  /** What GitHub's dashboard leaves out of these inbox rows (mergeability, reviewers, line counts, failing checks), in the same order. */
+  enrichInbox(prs: InboxRowToEnrich[]): Promise<PrEnrichment[]>;
   /** The repositories GitHub's repository picker offers for what the user typed (nothing: its first list). */
   searchRepos(query: string): Promise<RepoCandidate[]>;
   fetchPr(repo: RepoRef, number: number, force?: boolean): Promise<PrDetail>;
@@ -76,11 +76,14 @@ export function createRpcDataSource(): DataSource {
 }
 
 export interface Fixtures {
-  inbox: ViewResult[];
+  inbox: Array<Omit<ViewResult, 'prs'> & { prs: InboxFixtureRow[] }>;
   /** The rows of each view's later pages, by view id, page 2 first. */
-  inboxPages: Record<string, PrSummary[][]>;
+  inboxPages: Record<string, InboxFixtureRow[][]>;
   prs: PrDetail[];
 }
+
+/** An inbox row with its check list and what only its enrichment says: which checks are required, why it is blocked. */
+export type InboxFixtureRow = PrSummary & Pick<PrEnrichment, 'requiredCheckNames' | 'mergeBlockedReason'>;
 
 /** Serves fixture data and logs mutations; settings live in memory. */
 export function createFixtureDataSource(fixtures: Fixtures): DataSource {
@@ -91,25 +94,44 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     console.info('[fixtures] mutation', ...args);
   };
   return {
-    // Rows as GitHub's dashboard lists them: their merge status, reviewers and line counts come later, from enrichInbox.
+    // Rows as GitHub's dashboard lists them: a CI rollup without its checks; their merge status, reviewers and line counts
+    // come later, from enrichInbox.
     fetchInbox: async (views) =>
       views.map((view) => {
         const result = fixtures.inbox.find((r) => r.view.id === view.id) ?? { view, prs: [], totalCount: 0, fetchedAt: new Date().toISOString() };
-        return { ...result, prs: result.prs.map((pr) => ({ ...pr, mergeStatus: pr.isDraft ? 'DRAFT' : 'UNKNOWN', reviewers: [], additions: 0, deletions: 0 })) };
+        return {
+          ...result,
+          prs: result.prs.map((pr) => ({ ...pr, ci: { ...pr.ci, checks: [] }, mergeStatus: pr.isDraft ? 'DRAFT' : 'UNKNOWN', reviewers: [], additions: 0, deletions: 0 })),
+        };
       }),
     fetchInboxPage: async (view, page) => {
       await new Promise((resolve) => setTimeout(resolve, 300));
       const first = fixtures.inbox.find((r) => r.view.id === view.id);
       const prs = fixtures.inboxPages[view.id]?.[page - 2] ?? [];
-      return { view, totalCount: first?.totalCount ?? 0, fetchedAt: new Date().toISOString(), prs: prs.map((pr) => ({ ...pr, reviewers: [], additions: 0, deletions: 0 })) };
+      return {
+        view,
+        totalCount: first?.totalCount ?? 0,
+        fetchedAt: new Date().toISOString(),
+        prs: prs.map((pr) => ({ ...pr, ci: { ...pr.ci, checks: [] }, reviewers: [], additions: 0, deletions: 0 })),
+      };
     },
-    // The fixture rows' own values, a moment later, as GitHub's merge box and diffstat would give them.
+    // The fixture rows' own values, a moment later, as GitHub's page data would give them: the checks only for a failing
+    // rollup, the viewer's review as octocat's.
     enrichInbox: async (prs) => {
       await new Promise((resolve) => setTimeout(resolve, 400));
       const rows = [...fixtures.inbox.flatMap((result) => result.prs), ...Object.values(fixtures.inboxPages).flat(2)];
       return prs.map(({ repo, number }) => {
         const pr = rows.find((row) => row.repo.owner === repo.owner && row.repo.name === repo.name && row.number === number);
-        return pr ? { mergeStatus: pr.mergeStatus, reviewers: pr.reviewers, additions: pr.additions, deletions: pr.deletions } : {};
+        if (!pr) return {};
+        return {
+          mergeStatus: pr.mergeStatus,
+          reviewers: pr.reviewers,
+          viewerReview: pr.reviewers.find((reviewer) => reviewer.user.login === 'octocat')?.state ?? null,
+          additions: pr.additions,
+          deletions: pr.deletions,
+          ...(pr.ci.state === 'FAILURE' && { ci: pr.ci, requiredCheckNames: pr.requiredCheckNames ?? [] }),
+          ...(pr.mergeBlockedReason && { mergeBlockedReason: pr.mergeBlockedReason }),
+        };
       });
     },
     searchRepos: async (query) => {

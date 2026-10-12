@@ -1,9 +1,11 @@
 // Inbox fixtures for the dev harness (`app.html?fixtures=1#/inbox`): every default view (Graphite's sections, with the
 // filters the section editor shows), covering each review, CI and merge state a row can show, native stack positions,
-// unread rows, long titles, labels and team reviewers. The viewer is octocat. Ages are relative to page load so the
-// harness always looks current. CI is a rollup without per-check detail, as GitHub's dashboard endpoints return it; the
-// rows in "Needs anyone's review" also have no line counts and no merge state.
-import type { CheckState, CiSummary, PrSummary, UserRef, ViewResult } from '../lib/model';
+// unread rows, long titles, labels, team and bot reviewers. The viewer is octocat. Ages are relative to page load so the
+// harness always looks current. Each row has its checks, which the fixture source hands out only as GitHub would: the
+// dashboard's rollup at first, the list (with the required ones) when enriching a failing rollup. The rows in "Needs
+// anyone's review" have no line counts and no merge state.
+import type { Fixtures, InboxFixtureRow } from '../app/data-source';
+import type { CheckRunSummary, CheckState, CiSummary, UserRef } from '../lib/model';
 import { DEFAULT_VIEWS } from '../lib/views';
 
 const NOW = Date.now();
@@ -19,8 +21,12 @@ const jdoe: UserRef = { login: 'jdoe', avatarUrl: 'https://avatars.githubusercon
 const kenji: UserRef = { login: 'kenji-w', avatarUrl: 'https://avatars.githubusercontent.com/u/990000105?v=4', url: 'https://github.com/kenji-w' };
 const platformTeam: UserRef = { login: 'acme/platform-reviewers', avatarUrl: '', url: 'https://github.com/orgs/acme/teams/platform-reviewers' };
 const designTeam: UserRef = { login: 'acme/design-systems', avatarUrl: '', url: 'https://github.com/orgs/acme/teams/design-systems' };
+// Bots as GitHub names them: Copilot's review and Dependabot's PRs come without an avatar here, and acme's own CI bot has none.
+const copilot: UserRef = { login: 'Copilot', avatarUrl: '', url: 'https://github.com/apps/copilot-pull-request-reviewer' };
+const dependabot: UserRef = { login: 'dependabot[bot]', avatarUrl: '', url: 'https://github.com/apps/dependabot' };
+const acmeBot: UserRef = { login: 'acme-ci[bot]', avatarUrl: '', url: 'https://github.com/apps/acme-ci' };
 
-export const inboxFixtures: ViewResult[] = DEFAULT_VIEWS.map((view) => {
+export const inboxFixtures: Fixtures['inbox'] = DEFAULT_VIEWS.map((view) => {
   const prs = prsFor(view.id);
   // As in the user's inbox, more merged in a week than the section lists, which its count shows as 99+.
   const totalCount = view.id === 'graphite-merging-and-recently-merged' ? 141 : prs.length;
@@ -28,7 +34,7 @@ export const inboxFixtures: ViewResult[] = DEFAULT_VIEWS.map((view) => {
 });
 
 /** The pages after the first: "Merging and recently merged" goes on, as the user's does, for "Load more". */
-export const inboxPageFixtures: Record<string, PrSummary[][]> = {
+export const inboxPageFixtures: Fixtures['inboxPages'] = {
   'graphite-merging-and-recently-merged': [
     ['Cache the tenant settings lookup', 'Fix the date picker on Safari 17', 'Rename the billing feature flags', 'Drop the legacy CSV importer', 'Add retries to the webhook sender'],
     ['Pin the Playwright browsers', 'Log slow queries over 500 ms', 'Move the icons into @acme/ui'],
@@ -54,7 +60,7 @@ export const inboxPageFixtures: Record<string, PrSummary[][]> = {
   ),
 };
 
-function prsFor(viewId: string): PrSummary[] {
+function prsFor(viewId: string): InboxFixtureRow[] {
   switch (viewId) {
     case 'graphite-needs-your-review':
       return [
@@ -65,8 +71,9 @@ function prsFor(viewId: string): PrSummary[] {
           author: mona,
           updated: 25 * MINUTE,
           unread: true,
-          reviewers: [{ kind: 'user', user: octocat, state: 'PENDING' }],
+          reviewers: [{ kind: 'user', user: octocat, state: 'PENDING' }, { kind: 'user', user: copilot, state: 'COMMENTED' }],
           ci: ci({ passed: 8, pending: ['e2e (chromium)', 'deploy-preview'] }),
+          mergeBlockedReason: 'At least 1 approving review is required by reviewers with write access',
           additions: 214,
           deletions: 38,
           changedFiles: 9,
@@ -84,6 +91,7 @@ function prsFor(viewId: string): PrSummary[] {
           updated: 5 * HOUR,
           reviewers: [{ kind: 'team', user: platformTeam, state: 'PENDING' }, { kind: 'user', user: octocat, state: 'PENDING' }],
           ci: ci({ passed: 11, failed: ['integration (postgres-15)'] }),
+          requiredCheckNames: ['build', 'integration (postgres-15)'],
           additions: 1240,
           deletions: 612,
           changedFiles: 47,
@@ -103,7 +111,12 @@ function prsFor(viewId: string): PrSummary[] {
           author: jdoe,
           updated: 20 * HOUR,
           unread: true,
-          reviewers: [{ kind: 'user', user: octocat, state: 'PENDING' }, { kind: 'user', user: kenji, state: 'COMMENTED' }],
+          reviewers: [
+            { kind: 'user', user: octocat, state: 'PENDING' },
+            { kind: 'user', user: kenji, state: 'COMMENTED' },
+            { kind: 'user', user: acmeBot, state: 'COMMENTED' },
+            { kind: 'team', user: platformTeam, state: 'PENDING' },
+          ],
           ci: ci({ pending: ['build', 'lint', 'unit (node 22)'] }),
           additions: 96,
           deletions: 14,
@@ -144,7 +157,7 @@ function prsFor(viewId: string): PrSummary[] {
           repo: 'acme/platform',
           number: 1293,
           title: 'Bump the Terraform AWS provider to v6',
-          author: kenji,
+          author: dependabot,
           updated: 2 * HOUR,
           unread: true,
           reviewers: [{ kind: 'team', user: platformTeam, state: 'PENDING' }],
@@ -193,6 +206,7 @@ function prsFor(viewId: string): PrSummary[] {
           reviewDecision: 'CHANGES_REQUESTED',
           reviewers: [{ kind: 'user', user: priya, state: 'CHANGES_REQUESTED' }, { kind: 'user', user: jdoe, state: 'APPROVED' }],
           ci: ci({ passed: 9, failed: ['lint', 'typecheck'] }),
+          requiredCheckNames: ['build', 'lint', 'typecheck'],
           mergeStatus: 'UNSTABLE',
           additions: 402,
           deletions: 20,
@@ -274,6 +288,7 @@ function prsFor(viewId: string): PrSummary[] {
           nativeStack: { position: 3, size: 3 },
           reviewDecision: 'NONE',
           ci: ci({ passed: 4, failed: ['e2e (chromium)'] }),
+          requiredCheckNames: ['build'],
           mergeStatus: 'DRAFT',
           additions: 51,
           deletions: 30,
@@ -300,7 +315,8 @@ function prsFor(viewId: string): PrSummary[] {
           author: octocat,
           updated: 4 * HOUR,
           reviewers: [{ kind: 'team', user: designTeam, state: 'PENDING' }, { kind: 'user', user: mona, state: 'PENDING' }],
-          ci: ci({ passed: 10 }),
+          ci: ci({ passed: 10, failed: ['visual-regression'] }),
+          requiredCheckNames: ['build', 'lint'],
           additions: 64,
           deletions: 8,
           labels: [{ name: 'design system', color: '7057ff' }],
@@ -324,9 +340,11 @@ function prsFor(viewId: string): PrSummary[] {
           title: 'Return 409 on a reused idempotency key',
           author: octocat,
           updated: 1 * DAY,
-          reviewers: [{ kind: 'user', user: jdoe, state: 'PENDING' }],
+          reviewers: [{ kind: 'user', user: jdoe, state: 'PENDING' }, { kind: 'user', user: copilot, state: 'COMMENTED' }],
           ci: ci({ passed: 7, failed: ['unit (node 22)', 'integration (postgres-15)'] }),
+          requiredCheckNames: ['build', 'unit (node 22)'],
           mergeStatus: 'UNSTABLE',
+          mergeBlockedReason: 'Required status check "unit (node 22)" is failing',
           additions: 130,
           deletions: 22,
         }),
@@ -382,13 +400,49 @@ function prsFor(viewId: string): PrSummary[] {
           labels: [{ name: 'breaking change', color: 'b60205' }],
         }),
       ];
+    case 'graphite-waiting-for-author':
+      return [
+        pr({
+          repo: 'acme/api',
+          number: 86,
+          title: 'Stream large exports to S3 instead of buffering them',
+          author: kenji,
+          updated: 3 * HOUR,
+          reviewDecision: 'REVIEW_REQUIRED',
+          reviewers: [
+            { kind: 'user', user: octocat, state: 'APPROVED' },
+            { kind: 'user', user: mona, state: 'PENDING' },
+          ],
+          ci: ci({ passed: 9 }),
+          mergeBlockedReason: 'At least 2 approving reviews are required by reviewers with write access',
+          additions: 180,
+          deletions: 64,
+          commentCount: 4,
+        }),
+        pr({
+          repo: 'acme/widgets',
+          number: 402,
+          title: 'Virtualise the long tables on the reports page',
+          author: priya,
+          updated: 1 * DAY + 2 * HOUR,
+          reviewers: [
+            { kind: 'user', user: octocat, state: 'COMMENTED' },
+            { kind: 'user', user: copilot, state: 'COMMENTED' },
+          ],
+          ci: ci({ passed: 6, pending: ['e2e (chromium)'] }),
+          additions: 512,
+          deletions: 230,
+          commentCount: 7,
+          labels: [{ name: 'performance', color: 'fbca04' }],
+        }),
+      ];
     default:
       return [];
   }
 }
 
 /** An open, review-required PR updated `updated` ms ago in `owner/name`, with whatever the case at hand overrides. */
-function pr(fields: Omit<Partial<PrSummary>, 'repo'> & { repo: string; number: number; title: string; author: UserRef; updated: number }): PrSummary {
+function pr(fields: Omit<Partial<InboxFixtureRow>, 'repo'> & { repo: string; number: number; title: string; author: UserRef; updated: number }): InboxFixtureRow {
   const { repo, number, updated, ...overrides } = fields;
   const [owner = '', name = ''] = repo.split('/');
   return {
@@ -420,9 +474,18 @@ function pr(fields: Omit<Partial<PrSummary>, 'repo'> & { repo: string; number: n
   };
 }
 
-/** GitHub's CI rollup where `passed` checks succeeded and the named ones failed, are still running, or were skipped. */
+/** The checks where `passed` succeeded (the first ones named build, lint, …) and the named ones failed, are still running, or were skipped. */
 function ci({ passed = 0, failed = [], pending = [], skipped = [] }: { passed?: number; failed?: string[]; pending?: string[]; skipped?: string[] }): CiSummary {
   const counts = { success: passed, failure: failed.length, pending: pending.length, other: skipped.length };
   const state: CheckState = counts.failure > 0 ? 'FAILURE' : counts.pending > 0 ? 'PENDING' : counts.success > 0 ? 'SUCCESS' : 'NONE';
-  return { state, checks: [], counts };
+  const succeeded = ['build', 'lint', 'typecheck', 'unit (node 22)', 'integration (postgres-15)', 'e2e (chromium)', 'e2e (webkit)', 'codeql', 'storybook', 'bundle-size', 'docs', 'licenses']
+    .filter((name) => !failed.includes(name) && !pending.includes(name) && !skipped.includes(name))
+    .slice(0, passed);
+  const checks = [
+    ...succeeded.map((name) => [name, 'SUCCESS'] as const),
+    ...failed.map((name) => [name, 'FAILURE'] as const),
+    ...pending.map((name) => [name, 'PENDING'] as const),
+    ...skipped.map((name) => [name, 'SKIPPED'] as const),
+  ].map(([name, checkState]): CheckRunSummary => ({ name, state: checkState, url: null, description: null, group: 'GitHub Actions', startedAt: null, completedAt: null, runId: null }));
+  return { state, checks, counts };
 }

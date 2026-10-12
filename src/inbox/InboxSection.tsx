@@ -1,18 +1,18 @@
 // One inbox view as a collapsible card, laid out like Graphite's inbox: header "Name N" with a gear that opens the section
 // editor, a column header row (sortable Title, Changes and Updated; icons over the Review, CI and Merge columns), then one
-// dense row per PR in fixed columns so the status icons line up (skeleton rows while loading).
+// dense row per PR in fixed columns so the status icons line up (skeleton rows while loading). Every icon in a row says
+// what it means on hover.
 import { useEffect, useEffectEvent, useRef, type MouseEvent } from 'react';
-import type { PrSummary, ReviewerSummary, View, ViewResult } from '../lib/model';
+import type { PrEnrichment, PrSummary, ReviewerSummary, View, ViewResult } from '../lib/model';
 import { sectionCount } from '../lib/views';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
-import { CiStatus } from '../ui/CiStatus';
 import { Icon } from '../ui/Icon';
-import { MergeStatus } from '../ui/MergeStatus';
 import { RelativeTime } from '../ui/RelativeTime';
-import { ReviewStatus } from '../ui/ReviewStatus';
 import { Skeleton } from '../ui/Skeleton';
+import { StatusIcon } from '../ui/StatusIcon';
+import { ciStatusIcon, mergeStatusIcon, reviewStatusIcon } from '../ui/status-icons';
 
 export function InboxSection({
   view,
@@ -21,7 +21,8 @@ export function InboxSection({
   sort,
   selectedPrId,
   overdueAfterHours,
-  isEnriched,
+  viewerLogin,
+  enrichmentOf,
   more,
   onSort,
   onRowShown,
@@ -37,8 +38,13 @@ export function InboxSection({
   sort: SectionSort;
   selectedPrId: string | null;
   overdueAfterHours: number | undefined;
-  /** Whether a row has what GitHub's dashboard leaves out (merge status, reviewers, line counts); until then those columns show a skeleton dash. */
-  isEnriched: (pr: PrSummary) => boolean;
+  /** The signed-in user, "you" in the Review column; null while unknown. */
+  viewerLogin: string | null;
+  /**
+   * What GitHub's dashboard left out of a row and its page data said (merge status, reviewers, line counts, failing
+   * checks); undefined until it arrives, when the reviewer and Changes columns show a skeleton dash.
+   */
+  enrichmentOf: (pr: PrSummary) => PrEnrichment | undefined;
   /** Whether GitHub has rows beyond those shown ("Load more"), and whether they are on their way. */
   more: 'more' | 'loading' | 'none';
   onSort: (by: SectionSort['by']) => void;
@@ -93,7 +99,8 @@ export function InboxSection({
               <PrRow
                 key={pr.id}
                 pr={pr}
-                enriched={isEnriched(pr)}
+                enrichment={enrichmentOf(pr)}
+                viewerLogin={viewerLogin}
                 selected={pr.id === selectedPrId}
                 overdueAfterHours={overdueAfterHours}
                 onShown={onRowShown}
@@ -146,14 +153,17 @@ function SortHeader({
 
 function PrRow({
   pr,
-  enriched,
+  enrichment,
+  viewerLogin,
   selected,
   overdueAfterHours,
   onShown,
   onOpen,
 }: {
+  /** The row with its enrichment applied. */
   pr: PrSummary;
-  enriched: boolean;
+  enrichment: PrEnrichment | undefined;
+  viewerLogin: string | null;
   selected: boolean;
   overdueAfterHours: number | undefined;
   onShown: (pr: PrSummary) => void;
@@ -180,7 +190,7 @@ function PrRow({
     );
     observer.observe(element);
     return () => observer.disconnect();
-  }, [pr.id, pr.updatedAt]);
+  }, [pr.id, pr.updatedAt, pr.ci.state]);
 
   // A plain click anywhere on the row (title link included) opens the PR through the parent page; middle-click keeps
   // the title link's native behaviour because it never fires `click`.
@@ -188,8 +198,11 @@ function PrRow({
     event.preventDefault();
     onOpen(pr, event.metaKey || event.ctrlKey);
   };
+  const enriched = enrichment !== undefined;
   const shownReviewers = pr.reviewers.slice(0, 3);
   const moreReviewers = pr.reviewers.slice(3);
+  // One line a reviewer: "jlord · approved".
+  const reviewersTitle = pr.reviewers.map((reviewer) => `${reviewer.user.login} · ${REVIEWER_STATE_WORDS[reviewer.state]}`).join('\n');
 
   return (
     <div ref={row} className={selected ? 'gg-row is-selected' : 'gg-row'} onClick={open}>
@@ -203,13 +216,10 @@ function PrRow({
           {pr.author.login} · {pr.repo.owner}/{pr.repo.name} #{pr.number}
         </span>
       </div>
-      <span
-        className="gg-row__reviewers"
-        title={pr.reviewers.length > 0 ? `Reviewers: ${pr.reviewers.map((reviewer) => `${reviewer.user.login} (${REVIEWER_STATE_WORDS[reviewer.state]})`).join(', ')}` : undefined}
-      >
+      <span className="gg-row__reviewers" title={reviewersTitle || undefined}>
         {!enriched && <Skeleton width={12} height={3} />}
         {shownReviewers.map((reviewer) => (
-          <Avatar key={reviewer.user.login} user={reviewer.user} size={16} />
+          <Avatar key={reviewer.user.login} user={reviewer.user} size={16} title={reviewersTitle} />
         ))}
         {moreReviewers.length > 0 && <span className="gg-row__more">+{moreReviewers.length}</span>}
       </span>
@@ -229,24 +239,13 @@ function PrRow({
         )}
       </span>
       <span className="gg-row__status">
-        <ReviewStatus variant="icon" state={pr.reviewDecision} isDraft={pr.isDraft} />
+        <StatusIcon {...reviewStatusIcon({ ...pr, reviewers: enrichment?.reviewers ?? null, viewerReview: enrichment?.viewerReview }, viewerLogin)} />
       </span>
       <span className="gg-row__status">
-        <CiStatus variant="icon" ci={pr.ci} />
+        <StatusIcon {...ciStatusIcon(pr.ci, enrichment?.requiredCheckNames ?? null)} />
       </span>
       <span className="gg-row__status">
-        {pr.state === 'OPEN' && !pr.isDraft && !enriched ? (
-          <Skeleton width={12} height={3} />
-        ) : pr.state === 'OPEN' && (pr.isInMergeQueue || pr.autoMerge) ? (
-          <span className="gg-status-icon gg-status-icon--accent">
-            <Icon
-              name="git-merge"
-              title={pr.isInMergeQueue ? 'Queued in the merge queue' : `Auto-merge (${pr.autoMerge!.method.toLowerCase()}) once requirements are met`}
-            />
-          </span>
-        ) : (
-          <MergeStatus variant="icon" status={pr.mergeStatus} state={pr.state} />
-        )}
+        <StatusIcon {...mergeStatusIcon(pr, enrichment?.mergeBlockedReason)} />
       </span>
       {/* GitHub's dashboard reports no line counts; they come with the row's enrichment (its diffstat), else stay hidden. */}
       <span className="gg-row__diff" title={pr.changedFiles > 0 ? `${pr.changedFiles} files changed` : undefined}>
@@ -271,10 +270,10 @@ function PrRow({
 /** How a reviewer's state reads in the reviewers' tooltip. */
 const REVIEWER_STATE_WORDS: Record<ReviewerSummary['state'], string> = {
   APPROVED: 'approved',
-  CHANGES_REQUESTED: 'requested changes',
+  CHANGES_REQUESTED: 'changes requested',
   COMMENTED: 'commented',
-  PENDING: 'review requested',
-  DISMISSED: 'review dismissed',
+  PENDING: 'requested',
+  DISMISSED: 'dismissed',
 };
 
 function SkeletonRow({ titleWidth }: { titleWidth: string }) {

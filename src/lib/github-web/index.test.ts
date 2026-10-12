@@ -57,10 +57,18 @@ describe('handleRpc', () => {
       inFlight -= 1;
       return { additions: pr.number };
     });
-    const prs = Array.from({ length: 7 }, (_, index) => ({ repo: { owner: 'o', name: 'r' }, number: index + 1, state: 'OPEN', isDraft: false }));
+    document.head.innerHTML = '<meta name="user-login" content="octocat">';
+    const prs = Array.from({ length: 7 }, (_, index) => ({
+      repo: { owner: 'o', name: 'r' },
+      number: index + 1,
+      state: 'OPEN',
+      isDraft: false,
+      author: { login: 'ana', avatarUrl: '', url: '' },
+      ci: { state: 'SUCCESS' },
+    }));
     expect(await call('inbox.enrich', { prs })).toMatchObject({ ok: true, result: prs.map((pr) => ({ additions: pr.number })) });
     expect(most).toBe(3);
-    expect(enrichPull).toHaveBeenCalledWith(prs[0], DEFAULT_SETTINGS.mergeMethod);
+    expect(enrichPull).toHaveBeenCalledWith(prs[0], DEFAULT_SETTINGS.mergeMethod, 'octocat');
     await call('inbox.enrich', { prs: prs.slice(0, 2) });
     expect(enrichPull).toHaveBeenCalledTimes(7);
   });

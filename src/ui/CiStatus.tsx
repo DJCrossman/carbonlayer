@@ -1,15 +1,14 @@
-// CI at a glance from a CiSummary: a segmented bar (one segment per check), a compact icon with passed/total, or (`icon`)
-// the inbox's CI column as Graphite draws it, one icon: green check, red x, orange clock, grey dash for none; hover lists
-// failing checks first. The inbox only has GitHub's rollup (counts, no per-check detail), so segments come from the
-// counts when there is no check list.
+// CI at a glance from a CiSummary: a segmented bar (one segment per check) or a compact icon with passed/total; hover
+// lists failing checks first. Without a check list (GitHub's rollup has only counts) segments come from the counts. The
+// inbox's CI column is ciStatusIcon (status-icons.ts).
 import type { CiSummary } from '../lib/model';
 import { Icon } from './Icon';
 import './ui.css';
 
-export function CiStatus({ ci, variant = 'bar' }: { ci: CiSummary; variant?: 'bar' | 'compact' | 'icon' }) {
+export function CiStatus({ ci, variant = 'bar' }: { ci: CiSummary; variant?: 'bar' | 'compact' }) {
   const { success, failure, pending, other } = ci.counts;
   const total = ci.checks.length || success + failure + pending + other;
-  if (total === 0 && variant !== 'icon') return null;
+  if (total === 0) return null;
   const failing = ci.checks.filter((check) => check.state === 'FAILURE' || check.state === 'CANCELLED');
   const running = ci.checks.filter((check) => check.state === 'PENDING');
   const title = [
@@ -19,24 +18,6 @@ export function CiStatus({ ci, variant = 'bar' }: { ci: CiSummary; variant?: 'ba
   ]
     .filter(Boolean)
     .join('\n');
-
-  if (variant === 'icon') {
-    const [icon, tone, label] =
-      total === 0
-        ? (['dash', 'subtle', 'No CI checks'] as const)
-        : ci.state === 'SUCCESS'
-          ? (['check-circle-fill', 'success', 'CI passed'] as const)
-          : ci.state === 'FAILURE' || ci.state === 'CANCELLED'
-            ? (['x-circle-fill', 'danger', 'CI failed'] as const)
-            : ci.state === 'PENDING'
-              ? (['clock', 'attention', 'CI running'] as const)
-              : (['dash', 'subtle', 'No CI verdict'] as const);
-    return (
-      <span className={`gg-status-icon gg-status-icon--${tone}`}>
-        <Icon name={icon} size={16} title={total === 0 ? label : `${label}\n${title}`} />
-      </span>
-    );
-  }
 
   if (variant === 'compact') {
     const [icon, tone] =

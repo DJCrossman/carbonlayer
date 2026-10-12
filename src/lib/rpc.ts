@@ -6,15 +6,19 @@ import type { PrDetail, PrEnrichment, PrSummary, RepoCandidate, RepoRef, Reviewe
 
 export type MergeMethod = 'MERGE' | 'SQUASH' | 'REBASE';
 
+/** What enriching an inbox row goes by (`inbox.enrich`). */
+export type InboxRowToEnrich = Pick<PrSummary, 'repo' | 'number' | 'state' | 'isDraft' | 'author'> & { ci: Pick<PrSummary['ci'], 'state'> };
+
 export interface RpcMethods {
   'inbox.fetch': { args: { views: View[]; force?: boolean }; result: ViewResult[] };
   /** Page `page` of a view's rows, whole, as GitHub pages its search or section: what "Load more" adds to a section. */
   'inbox.fetchMore': { args: { view: View; page: number }; result: ViewResult };
   /**
-   * What GitHub's dashboard leaves out of these inbox rows (mergeability, reviewers, line counts), in the same order. A
-   * row's state and draft flag say whether its merge box is worth asking.
+   * What GitHub's dashboard leaves out of these inbox rows (mergeability, reviewers, line counts, failing checks), in the
+   * same order. A row's state and draft flag say whether its merge box is worth asking, its CI rollup whether its checks
+   * are, and its author is no reviewer.
    */
-  'inbox.enrich': { args: { prs: Array<Pick<PrSummary, 'repo' | 'number' | 'state' | 'isDraft'>> }; result: PrEnrichment[] };
+  'inbox.enrich': { args: { prs: InboxRowToEnrich[] }; result: PrEnrichment[] };
   /** The repositories GitHub's repository picker offers for `query` (what the user typed; empty for its first list). */
   'repos.search': { args: { query: string }; result: RepoCandidate[] };
   'pr.fetch': { args: { repo: RepoRef; number: number; force?: boolean }; result: PrDetail };

@@ -48,7 +48,11 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
     inbox.results?.map((result) => {
       const { by, descending } = sorts[result.view.id] ?? LATEST_UPDATED_FIRST;
       const added = moreRows.addedTo(result.view, settings?.inboxScope ?? '')?.prs.filter((pr) => !result.prs.some((first) => first.id === pr.id)) ?? [];
-      const enriched = [...result.prs, ...added].map((pr) => ({ ...pr, ...enrichment.found.get(pr.id)?.enrichment }));
+      const enriched = [...result.prs, ...added].map((pr) => {
+        const found = enrichment.found.get(pr.id)?.enrichment;
+        // The checks found describe a failure; once GitHub's rollup has moved on, the rollup speaks.
+        return { ...pr, ...found, ci: found?.ci && pr.ci.state === 'FAILURE' ? found.ci : pr.ci };
+      });
       const prs = enriched.toSorted((a, b) => {
         const ascending =
           by === 'title' ? a.title.localeCompare(b.title) : by === 'changes' ? a.additions + a.deletions - (b.additions + b.deletions) : Date.parse(a.updatedAt) - Date.parse(b.updatedAt);
@@ -310,7 +314,8 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
                   sort={sorts[view.id] ?? LATEST_UPDATED_FIRST}
                   selectedPrId={selected?.viewId === view.id ? selected.prId : null}
                   overdueAfterHours={view.id === 'graphite-needs-your-review' ? 48 : undefined}
-                  isEnriched={(pr) => enrichment.found.has(pr.id)}
+                  viewerLogin={null}
+                  enrichmentOf={(pr) => enrichment.found.get(pr.id)?.enrichment}
                   more={more}
                   onSort={(by) => sortSection(view.id, by)}
                   onRowShown={enrichment.want}
@@ -494,10 +499,11 @@ function useMoreRows(source: DataSource) {
 }
 
 /**
- * What GitHub's dashboard leaves out of the rows (mergeability, reviewers, line counts), by PR id, asked for as rows
- * come within 200px of view: up to 10 rows a request and one request at a time, so with the content script asking
- * GitHub about 3 PRs at once (and keeping each answer 2 minutes) the inbox never has more than that in flight. A PR is
- * asked again once it has been updated since; an answer that misses something keeps what was found before.
+ * What GitHub's dashboard leaves out of the rows (mergeability, reviewers, line counts, failing checks), by PR id, asked
+ * for as rows come within 200px of view: up to 10 rows a request and one request at a time, so with the content script
+ * asking GitHub about 3 PRs at once (and keeping each answer 2 minutes) the inbox never has more than that in flight. A
+ * PR is asked again once it has been updated, or its checks have changed, since; an answer that misses something keeps
+ * what was found before.
  */
 function useRowEnrichment(source: DataSource) {
   const [found, setFound] = useState<ReadonlyMap<string, { updatedAt: string; enrichment: PrEnrichment }>>(new Map());
@@ -510,7 +516,7 @@ function useRowEnrichment(source: DataSource) {
       const batch = queue.current.splice(0, 10);
       let answers: PrEnrichment[] = [];
       try {
-        answers = await source.enrichInbox(batch.map(({ repo, number, state, isDraft }) => ({ repo, number, state, isDraft })));
+        answers = await source.enrichInbox(batch.map(({ repo, number, state, isDraft, author, ci }) => ({ repo, number, state, isDraft, author, ci: { state: ci.state } })));
       } catch (error) {
         console.debug('[gg]', 'enriching inbox rows failed; they keep what the dashboard said:', error instanceof Error ? error.message : error);
       }
@@ -524,7 +530,7 @@ function useRowEnrichment(source: DataSource) {
   }
 
   function want(pr: PrSummary) {
-    const key = `${pr.id}@${pr.updatedAt}`;
+    const key = `${pr.id}@${pr.updatedAt}@${pr.ci.state}`;
     if (asked.current.has(key)) return;
     asked.current.add(key);
     queue.current.push(pr);

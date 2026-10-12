@@ -26,6 +26,11 @@ describe('checksFrom', () => {
     expect(requiredCheckNames).toEqual(['build', 'lint']);
   });
 
+  it('says whether the rows mark which checks are required', () => {
+    expect(checksFrom({ statusChecks: [{ displayName: 'lint', state: 'FAILURE', isRequired: false }] })).toMatchObject({ requiredCheckNames: [], marksRequired: true });
+    expect(checksFrom({ statusChecks: [{ displayName: 'lint', state: 'FAILURE' }] })).toMatchObject({ requiredCheckNames: [], marksRequired: false });
+  });
+
   it('names the workflow run of each GitHub Actions job (link shape as on cli/cli#14320), for re-runs', () => {
     const { ci } = checksFrom({
       statusChecks: [
