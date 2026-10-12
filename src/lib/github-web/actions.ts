@@ -87,6 +87,11 @@ export function dynamicWorkflowChecks(repo: RepoRef, headRefName: string, headOi
     return [];
   });
   dynamicChecksByHead.set(key, { expiresAt: Date.now() + 5 * 60_000, checks });
+  // A run still going is asked about again soon, so a row does not read "running" for minutes after it finished.
+  void checks.then((found) => {
+    const kept = dynamicChecksByHead.get(key);
+    if (kept?.checks === checks && found.some((check) => check.state === 'PENDING')) kept.expiresAt = Date.now() + 30_000;
+  });
   return checks;
 }
 
