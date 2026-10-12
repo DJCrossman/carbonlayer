@@ -43,6 +43,7 @@ describe('the CI column', () => {
     ['no checks', ci([]), null, ['dash', 'subtle', 'No checks']],
     ['every check passed', ci([check('build', 'SUCCESS'), check('lint', 'SUCCESS')]), null, ['check-circle-fill', 'success', 'All checks passed']],
     ['checks still running', ci([check('build', 'SUCCESS'), check('e2e', 'PENDING'), check('lint', 'PENDING')]), null, ['clock', 'severe', 'Checks running (1/3)']],
+    ['running with an optional failure so far', { ...ci([check('build', 'SUCCESS'), check('preview', 'FAILURE'), check('e2e', 'PENDING')]), state: 'PENDING' }, ['build'], ['clock', 'severe', 'Checks running (2/3); failing so far: preview']],
     ['a required check failing', ci([check('build', 'FAILURE'), check('preview', 'FAILURE')]), ['build'], ['x-circle-fill', 'danger', 'Required checks failing: build']],
     ['only optional checks failing', ci([check('build', 'SUCCESS'), check('preview', 'FAILURE')]), ['build'], ['check-circle-fill', 'attention', 'Non-required checks failing: preview']],
     ['a failure before GitHub says which are required', ci([check('preview', 'FAILURE')]), null, ['x-circle-fill', 'danger', 'Checks failing (1 of 1): preview']],

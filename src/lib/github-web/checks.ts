@@ -66,11 +66,24 @@ export function checksFrom(data: unknown): { ci: CiSummary; requiredCheckNames: 
   // GitHub's own verdict, for when the rows are missing: PASSED, PENDING*, SOME_FAILED, FAILED, PENDING_FAILED.
   const combined = response.statusRollup?.combinedState?.toUpperCase() ?? '';
   const combinedState: CheckState = combined === 'PASSED' ? 'SUCCESS' : /FAILED/.test(combined) ? 'FAILURE' : /PENDING/.test(combined) ? 'PENDING' : 'NONE';
-  const state: CheckState =
-    counts.failure > 0 ? 'FAILURE' : counts.pending > 0 ? 'PENDING' : counts.success > 0 ? 'SUCCESS' : listed ? 'NONE' : combinedState;
+  // A required failure is final; otherwise, as in Graphite, the checks are running until the last one is done, and only
+  // then do optional failures count (a failing check among running ones may still be re-run or superseded).
+  const requiredCheckNames = rows.flatMap((row, i) => ((row.isRequired ?? row.required) ? [checks[i]!.name] : []));
+  const requiredFailed = checks.some((check) => check.state === 'FAILURE' && requiredCheckNames.includes(check.name));
+  const state: CheckState = requiredFailed
+    ? 'FAILURE'
+    : counts.pending > 0
+      ? 'PENDING'
+      : counts.failure > 0
+        ? 'FAILURE'
+        : counts.success > 0
+          ? 'SUCCESS'
+          : listed
+            ? 'NONE'
+            : combinedState;
   return {
     ci: { state, checks, counts },
-    requiredCheckNames: rows.flatMap((row, i) => ((row.isRequired ?? row.required) ? [checks[i]!.name] : [])),
+    requiredCheckNames,
     marksRequired: rows.some((row) => typeof (row.isRequired ?? row.required) === 'boolean'),
     listed,
   };

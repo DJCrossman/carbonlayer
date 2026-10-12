@@ -71,7 +71,8 @@ export function ciStatusIcon(ci: CiSummary, requiredCheckNames: string[] | null)
       return { icon: 'check-circle-fill', tone: 'success', tooltip: 'All checks passed' };
     case 'PENDING': {
       const running = ci.checks.length > 0 ? ci.checks.filter((check) => check.state === 'PENDING').length : pending;
-      return { icon: 'clock', tone: 'severe', tooltip: `Checks running (${total - running}/${total})` };
+      const failing = ci.checks.filter((check) => check.state === 'FAILURE').map((check) => check.name);
+      return { icon: 'clock', tone: 'severe', tooltip: `Checks running (${total - running}/${total})${failing.length > 0 ? `; failing so far: ${failing.join(', ')}` : ''}` };
     }
     case 'FAILURE':
     case 'CANCELLED': {

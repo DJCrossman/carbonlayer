@@ -46,6 +46,22 @@ describe('checksFrom', () => {
     expect(ci.checks.map((check) => check.runId)).toEqual(['34362049624', null]);
   });
 
+  it('is still running while checks run and only optional ones have failed; a required failure is final', () => {
+    const running = checksFrom({
+      statusChecks: [
+        { displayName: 'build', state: 'SUCCESS', isRequired: true },
+        { displayName: 'preview', state: 'FAILURE', isRequired: false },
+        { displayName: 'e2e', state: 'IN_PROGRESS', isRequired: true },
+      ],
+    });
+    expect(running.ci.state).toBe('PENDING');
+    expect(running.ci.counts).toEqual({ success: 1, failure: 1, pending: 1, other: 0 });
+    const done = checksFrom({ statusChecks: [{ displayName: 'build', state: 'SUCCESS', isRequired: true }, { displayName: 'preview', state: 'FAILURE', isRequired: false }] });
+    expect(done.ci.state).toBe('FAILURE');
+    const required = checksFrom({ statusChecks: [{ displayName: 'build', state: 'FAILURE', isRequired: true }, { displayName: 'e2e', state: 'IN_PROGRESS', isRequired: true }] });
+    expect(required.ci.state).toBe('FAILURE');
+  });
+
   it("leaves Graphite's mergeability check out: a stacked PR whose other checks passed has passed", () => {
     const { ci, listed } = checksFrom({
       statusRollup: { combinedState: 'PENDING', summary: [] },
