@@ -2,18 +2,26 @@
 // scroll. Review threads, comments batched for the pending review and the inline composer render as
 // line annotations inside the diffs. `useFileReview` holds the reviewer's position in the files (current
 // file and thread, collapsed files, the open composer) so page-level keybindings can drive it.
+// Until the file list arrives the section shows the header's file count over skeleton cards; then each file
+// shows a skeleton until its diff arrives.
 import { FileDiff, type FileDiffOptions } from '@pierre/diffs/react';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReviewThreadDraft } from '../app/data-source';
-import type { ChangedFile, PrDetail } from '../lib/model';
+import type { ChangedFile, PrDetail, PrStages } from '../lib/model';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
+import { Skeleton } from '../ui/Skeleton';
 import { fileNotes, filesInTreeOrder, fileTree, renderableDiff, type ComposerAnchor, type DiffNote, type FileTreeNode } from './diff';
+import type { StageState } from './page-data';
+import { StageError } from './primitives';
 import { DiffNoteView, type NoteActions } from './Threads';
 import './files.css';
 
 export function FilesSection({
   pr,
+  listed,
+  threads,
+  onRetry,
   review,
   batch,
   diffStyle,
@@ -22,6 +30,10 @@ export function FilesSection({
   noteActions,
 }: {
   pr: PrDetail;
+  /** The file list and the diffs that have arrived so far. */
+  listed: StageState<PrStages['files']>;
+  threads: StageState<PrStages['threads']>;
+  onRetry: (stage: 'files' | 'threads') => void;
   review: FileReview;
   batch: ReviewThreadDraft[];
   diffStyle: 'unified' | 'split';
@@ -32,6 +44,10 @@ export function FilesSection({
   const themeType = useDocumentTheme();
   const viewedCount = pr.files.filter((file) => file.viewerViewedState === 'VIEWED').length;
   const allCollapsed = review.order.every((file) => review.isCollapsed(file));
+  // Before the list arrives, the header's count; a failed batch of diffs leaves its files without one.
+  const fileCount = listed.value ? pr.files.length : pr.changedFiles;
+  const diffs = listed.value?.diffs;
+  const missingDiff = listed.status === 'error' ? 'failed' : 'loading';
 
   return (
     <section className="pr-files" id="pr-files" aria-label="Files changed">
@@ -47,7 +63,7 @@ export function FilesSection({
           <Icon name="sidebar" size={14} />
         </Button>
         <strong>
-          {pr.files.length} {pr.files.length === 1 ? 'file' : 'files'} changed
+          {fileCount} {fileCount === 1 ? 'file' : 'files'} changed
         </strong>
         <span className="files-progress" title={`${viewedCount} of ${pr.files.length} files viewed`}>
           <span className="files-progress-bar">
@@ -67,13 +83,19 @@ export function FilesSection({
           {allCollapsed ? 'Expand all' : 'Collapse all'}
         </Button>
       </div>
+      {listed.status === 'error' && (
+        <StageError what={listed.value ? 'some of the diffs' : 'the changed files'} error={listed.error} onRetry={() => onRetry('files')} />
+      )}
+      {threads.status === 'error' && <StageError what="the review threads" error={threads.error} onRetry={() => onRetry('threads')} />}
       <div className={`files-body ${review.treeOpen ? 'has-tree' : ''}`}>
         {review.treeOpen && <FileTree pr={pr} review={review} />}
         <div className="files-diffs">
+          {!listed.value && listed.status === 'loading' && <FilesSkeleton count={Math.min(Math.max(pr.changedFiles, 1), 6)} />}
           {review.order.map((file) => (
             <FileCard
               key={file.path}
               file={file}
+              missingDiff={diffs && !(file.path in diffs) ? missingDiff : null}
               pr={pr}
               batch={batch}
               review={review}
@@ -282,6 +304,7 @@ function FileTree({ pr, review }: { pr: PrDetail; review: FileReview }) {
 
 function FileCard({
   file,
+  missingDiff,
   pr,
   batch,
   review,
@@ -291,6 +314,8 @@ function FileCard({
   noteActions,
 }: {
   file: ChangedFile;
+  /** Why the file has no diff yet: it is on its way, or its batch failed. */
+  missingDiff: 'loading' | 'failed' | null;
   pr: PrDetail;
   batch: ReviewThreadDraft[];
   review: FileReview;
@@ -340,6 +365,29 @@ function FileCard({
       Viewed
     </label>
   );
+
+  if (missingDiff) {
+    return (
+      <div className={`file-card is-stub ${current ? 'is-current' : ''}`} id={`gg-file:${file.path}`} aria-busy={missingDiff === 'loading'}>
+        <div className="file-stub-header">
+          <span className={`file-status is-${file.status}`}>{STATUS_LETTERS[file.status]}</span>
+          <span className="file-stub-name">{file.path}</span>
+          <span className="files-toolbar-spacer" />
+          {viewedToggle}
+        </div>
+        {/* A collapsed file (one already viewed) shows its header alone, as it will once its diff is in. */}
+        {collapsed ? null : missingDiff === 'failed' ? (
+          <div className="file-stub-body">The diff did not load; retry above.</div>
+        ) : (
+          <div className="file-diff-skeleton" aria-hidden="true">
+            {['40%', '65%', '55%', '30%'].map((width, index) => (
+              <Skeleton key={index} width={width} height={10} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   if (!fileDiff) {
     return (
@@ -399,6 +447,22 @@ function FileCard({
       />
     </div>
   );
+}
+
+/** Cards the shape of a file's while the list of changed files is on its way. */
+function FilesSkeleton({ count }: { count: number }) {
+  return Array.from({ length: count }, (_, index) => (
+    <div key={index} className="file-card is-stub" aria-busy="true" aria-label={index === 0 ? 'Loading the changed files' : undefined}>
+      <div className="file-stub-header">
+        <Skeleton width={16} height={16} />
+        <Skeleton width={`${30 + ((index * 17) % 30)}%`} height={12} />
+      </div>
+      <div className="file-diff-skeleton" aria-hidden="true">
+        <Skeleton width="45%" height={10} />
+        <Skeleton width="60%" height={10} />
+      </div>
+    </div>
+  ));
 }
 
 /** The app's theme (set on <html> by the parent page or the harness), for the diff highlighter. */

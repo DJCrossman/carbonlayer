@@ -104,3 +104,10 @@
   margin-top: 8px;
   font-size: 12px;
 }
+
+.timeline-skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0;
+}

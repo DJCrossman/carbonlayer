@@ -229,6 +229,17 @@
   color: var(--gg-fg-muted);
   text-align: center;
 }
+/* A collapsed file waiting for its diff: the header is the whole card. */
+.file-card.is-stub > .file-stub-header:last-child { border-bottom: 0; border-radius: var(--gg-radius); }
+/* A file's diff on its way. */
+.file-diff-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+}
+/* An error line between the toolbar and the files. */
+.pr-files > .pr-stage-error { margin: 8px 0; }
 
 @media (max-width: 1100px) {
   .files-body.has-tree { grid-template-columns: minmax(0, 1fr); }

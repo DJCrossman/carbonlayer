@@ -1,7 +1,7 @@
 // Everything the UI needs from the outside world, behind one interface so the same pages render
 // from the content script's RPC in the extension and from fixtures in the dev harness (`?fixtures=1`).
 
-import type { Organization, PrDetail, PrEnrichment, PrSummary, RepoCandidate, RepoRef, ReviewerCandidate, View, ViewResult } from '../lib/model';
+import type { ChangedFileDiff, Organization, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, RepoCandidate, RepoRef, ReviewerCandidate, View, ViewResult } from '../lib/model';
 import { rpc, type InboxRowToEnrich, type MergeMethod } from '../lib/rpc';
 import { getSettings, setSettings, watchSettings, type Settings, type SettingsStorage } from '../lib/settings';
 
@@ -28,7 +28,10 @@ export interface DataSource {
   searchRepos(query: string, owner?: Organization | null): Promise<RepoCandidate[]>;
   /** The organizations the viewer belongs to, then their own account: whose pull requests the inbox can show. */
   listOrgs(): Promise<Organization[]>;
-  fetchPr(repo: RepoRef, number: number, force?: boolean): Promise<PrDetail>;
+  /** One stage of a PR's page (PrStages); `force` asks GitHub again instead of reusing what the content script has. */
+  fetchPrStage<S extends PrStage>(stage: S, repo: RepoRef, number: number, force?: boolean): Promise<PrStages[S]>;
+  /** The diffs of up to 20 of a PR's changed files, by path. */
+  fetchPrFileDiffs(repo: RepoRef, number: number, paths: string[], force?: boolean): Promise<Record<string, ChangedFileDiff>>;
   review(prId: string, event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT', body: string, threads?: ReviewThreadDraft[]): Promise<void>;
   comment(prId: string, body: string): Promise<void>;
   merge(prId: string, method: MergeMethod, expectedHeadOid: string): Promise<void>;
@@ -56,7 +59,8 @@ export function createRpcDataSource(): DataSource {
     enrichInbox: (prs) => rpc('inbox.enrich', { prs }),
     searchRepos: (query, owner) => rpc('repos.search', { query, owner: owner && { login: owner.login, isViewer: owner.isViewer } }),
     listOrgs: () => rpc('orgs.list', {}),
-    fetchPr: (repo, number, force) => rpc('pr.fetch', { repo, number, force }),
+    fetchPrStage: (stage, repo, number, force) => prStageRequests[stage]({ repo, number, force }),
+    fetchPrFileDiffs: (repo, number, paths, force) => rpc('pr.fetchFileDiffs', { repo, number, paths, force }),
     review: (prId, event, body, threads) => rpc('pr.review', { prId, event, body, threads }),
     comment: (prId, body) => rpc('pr.comment', { prId, body }),
     merge: (prId, method, expectedHeadOid) => rpc('pr.merge', { prId, method, expectedHeadOid }),
@@ -108,6 +112,11 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
   };
   const log = async (...args: unknown[]) => {
     console.info('[fixtures] mutation', ...args);
+  };
+  const fixturePr = (repo: RepoRef, number: number) => {
+    const pr = fixtures.prs.find((p) => p.repo.owner === repo.owner && p.repo.name === repo.name && p.number === number) ?? fixtures.prs[0];
+    if (!pr) throw new Error(`No fixture for ${repo.owner}/${repo.name}#${number}`);
+    return pr;
   };
   return {
     // Rows as GitHub's dashboard lists them: a CI rollup without its checks; their merge status, reviewers and line counts
@@ -162,10 +171,33 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
       await new Promise((resolve) => setTimeout(resolve, 200));
       return FIXTURE_ORGANIZATIONS;
     },
-    fetchPr: async (repo, number) => {
-      const pr = fixtures.prs.find((p) => p.repo.owner === repo.owner && p.repo.name === repo.name && p.number === number) ?? fixtures.prs[0];
-      if (!pr) throw new Error(`No fixture for ${repo.owner}/${repo.name}#${number}`);
-      return pr;
+    // Each stage of the fixture PR after a delay of its own, so the harness fills the page in as GitHub would. GitHub sends
+    // the first file's diff with the file list; the others follow a moment later.
+    fetchPrStage: async (stage, repo, number) => {
+      const pr = fixturePr(repo, number);
+      await new Promise((resolve) => setTimeout(resolve, FIXTURE_STAGE_DELAYS[stage]));
+      const { timeline, threads, unresolvedThreadCount, files, baseOid, stack, labels, assignees, ci, requiredCheckNames, unread, ...rest } = pr;
+      const { mergeStatus, reviewers, reviewDecision, viewerCanMerge, viewerCanEnableAutoMerge, allowedMergeMethods, defaultMergeMethod, autoMerge, isInMergeQueue, ...header } = rest;
+      const stages: PrStages = {
+        header: { ...header, viewerLogin: 'octocat', stackSource: stack.source },
+        activity: { timeline },
+        files: {
+          baseOid,
+          files: files.map(({ patch, previousPath, ...summary }) => summary),
+          diffs: Object.fromEntries(files.slice(0, 1).map((file) => [file.path, { patch: file.patch, previousPath: file.previousPath }])),
+        },
+        threads: { threads, unresolvedThreadCount },
+        mergeBox: { mergeStatus, reviewers, reviewDecision, viewerCanMerge, viewerCanEnableAutoMerge, allowedMergeMethods, defaultMergeMethod, autoMerge, isInMergeQueue },
+        checks: { ci, requiredCheckNames },
+        stack: { stack },
+        meta: { labels, assignees },
+      };
+      return stages[stage];
+    },
+    fetchPrFileDiffs: async (repo, number, paths) => {
+      const pr = fixturePr(repo, number);
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      return Object.fromEntries(pr.files.filter((file) => paths.includes(file.path)).map((file) => [file.path, { patch: file.patch, previousPath: file.previousPath }]));
     },
     review: (...args) => log('review', ...args),
     comment: (...args) => log('comment', ...args),
@@ -235,3 +267,18 @@ const FIXTURE_REVIEWER_CANDIDATES: ReviewerCandidate[] = [
   { id: '1004', login: 'priya', name: 'Priya Raman', avatarUrl: 'https://github.com/identicons/priya.png', kind: 'user' },
   { id: '7002', login: 'acme/platform-reviewers', name: 'Platform reviewers', avatarUrl: '', kind: 'team' },
 ];
+
+/** The request that loads each stage of the PR page. */
+const prStageRequests: { [S in PrStage]: (args: { repo: RepoRef; number: number; force?: boolean }) => Promise<PrStages[S]> } = {
+  header: (args) => rpc('pr.fetchHeader', args),
+  activity: (args) => rpc('pr.fetchActivity', args),
+  files: (args) => rpc('pr.fetchFiles', args),
+  threads: (args) => rpc('pr.fetchThreads', args),
+  mergeBox: (args) => rpc('pr.fetchMergeBox', args),
+  checks: (args) => rpc('pr.fetchChecks', args),
+  stack: (args) => rpc('pr.fetchStack', args),
+  meta: (args) => rpc('pr.fetchMeta', args),
+};
+
+/** How long the harness takes over each stage of the PR page: the header first, as GitHub's page would come. */
+const FIXTURE_STAGE_DELAYS: Record<PrStage, number> = { header: 200, stack: 450, meta: 500, activity: 600, files: 700, checks: 900, mergeBox: 1100, threads: 1300 };

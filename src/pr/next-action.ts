@@ -1,26 +1,31 @@
 // The single next step a pull request is waiting on, as shown in the sidebar's action card.
 
-import type { PrDetail, PrSummary } from '../lib/model';
+import type { PrDetail, PrStage, PrSummary } from '../lib/model';
 
 /**
  * What stands between this PR and being merged, most fundamental first: its state, then conflicts,
  * the stack below it, open conversations, CI, reviews, and finally branch protection. When nothing
- * does, it is ready to merge.
+ * does, it is ready to merge. While a stage that a step depends on has not arrived (`unknown`), the
+ * answer stops at that step: "Checking mergeability…".
  */
-export function nextActionFor(pr: PrDetail): NextAction {
+export function nextActionFor(pr: PrDetail, unknown: readonly PrStage[] = []): NextAction {
   if (pr.state === 'MERGED') return { kind: 'merged', tone: 'done', title: 'Merged', detail: null };
   if (pr.state === 'CLOSED') return { kind: 'closed', tone: 'neutral', title: 'Closed', detail: 'Closed without merging.' };
   if (pr.isDraft || pr.mergeStatus === 'DRAFT') {
     return { kind: 'draft', tone: 'neutral', title: 'Draft', detail: 'Mark ready for review when it is done.' };
   }
+  const checking: NextAction = { kind: 'checking', tone: 'neutral', title: 'Checking mergeability…', detail: null };
+  if (unknown.includes('mergeBox')) return checking;
   if (pr.mergeStatus === 'DIRTY') {
     return { kind: 'conflicts', tone: 'danger', title: `Conflicts with ${pr.baseRefName}`, detail: 'Resolve them before this PR can merge.' };
   }
+  if (unknown.includes('stack')) return checking;
   // The PR closest to trunk that is still open has to merge first.
   const downstack = pr.stack.entries.slice(0, pr.stack.currentIndex).find((entry) => entry.state === 'OPEN');
   if (downstack) {
     return { kind: 'downstack', tone: 'attention', title: `Waiting on downstack · #${downstack.number}`, detail: downstack.title, pr: downstack };
   }
+  if (unknown.includes('threads')) return checking;
   if (pr.unresolvedThreadCount > 0) {
     const count = pr.unresolvedThreadCount;
     return {
@@ -30,6 +35,7 @@ export function nextActionFor(pr: PrDetail): NextAction {
       detail: `${count} ${count === 1 ? 'thread needs' : 'threads need'} resolving`,
     };
   }
+  if (unknown.includes('checks')) return checking;
   if (pr.ci.state === 'FAILURE') {
     const failing = pr.ci.checks.find((check) => check.state === 'FAILURE');
     return { kind: 'checks-failed', tone: 'danger', title: 'Checks failed', detail: failing?.name ?? null };
@@ -68,6 +74,7 @@ type NextAction = {
         | 'merged'
         | 'closed'
         | 'draft'
+        | 'checking'
         | 'conflicts'
         | 'unresolved'
         | 'checks-failed'

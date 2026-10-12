@@ -232,3 +232,17 @@ a.check-row[href]:hover { background: var(--gg-bg-hover); }
   cursor: pointer;
 }
 .side-more:hover { text-decoration: underline; }
+
+/* A card whose stage is still loading. */
+.side-skeleton { display: flex; flex-direction: column; gap: 8px; }
+.side-skeleton .side-card-title { margin: 0; color: var(--gg-fg-muted); }
+.side-skeleton-row { display: flex; align-items: center; gap: 8px; }
+.side-action.is-checking { display: flex; flex-direction: column; gap: 8px; }
+.side-action-failed {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}

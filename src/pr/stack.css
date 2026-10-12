@@ -18,6 +18,9 @@
   cursor: pointer;
 }
 .stack-header:hover { background: var(--gg-bg-hover); }
+/* The header of the stack card while the stack loads: nothing to toggle yet. */
+.stack-header.is-loading { box-sizing: border-box; cursor: default; }
+.stack-header.is-loading:hover { background: none; }
 
 .stack-rail {
   position: relative;

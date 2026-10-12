@@ -152,6 +152,8 @@
   scroll-margin-top: 12px;
 }
 .pr-description-empty { margin: 0; font-style: italic; }
+/* A part of the conversation that failed to load (the stack, the header's reload) keeps the cards' spacing. */
+.pr-conversation > .pr-stage-error { margin-bottom: 16px; }
 .pr-section-title {
   margin: 0 0 8px;
   font-size: 14px;

@@ -1,22 +1,26 @@
 // The right sidebar: status (with Merge when ready), the one next step, checks, reviewers (Reviewers.tsx), labels and
-// assignees. Cards with nothing to show are left out.
+// assignees. Each card shows a skeleton until the stage it comes from arrives; cards with nothing to show are left out.
 import { useEffect, useState, type ReactNode } from 'react';
 import type { MergeMethod } from '../lib/rpc';
-import type { PrDetail } from '../lib/model';
+import type { PrDetail, PrStage } from '../lib/model';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Icon } from '../ui/Icon';
 import { LabelChip } from '../ui/LabelChip';
 import { RelativeTime } from '../ui/RelativeTime';
+import { Skeleton } from '../ui/Skeleton';
 import type { CheckReruns } from './check-reruns';
 import { goToPr } from './navigation';
 import { nextActionFor } from './next-action';
-import { StatePill } from './primitives';
+import type { PrPageData } from './page-data';
+import { StatePill, Staged } from './primitives';
 import './sidebar.css';
 
 export function Sidebar({
   pr,
+  data,
+  onRetry,
   mergeMethod,
   onAutoMerge,
   onMarkReady,
@@ -26,6 +30,9 @@ export function Sidebar({
   reviewersCard,
 }: {
   pr: PrDetail;
+  /** The stages the cards come from: the merge box (status, next step, reviewers), checks, labels and assignees. */
+  data: PrPageData;
+  onRetry: (stages: PrStage[]) => void;
   /** The method the viewer prefers, already narrowed to what the repository allows. */
   mergeMethod: MergeMethod;
   onAutoMerge: (enabled: boolean) => Promise<boolean>;
@@ -39,32 +46,52 @@ export function Sidebar({
   return (
     <aside className="pr-sidebar" aria-label="Status">
       <StatusCard pr={pr} mergeMethod={mergeMethod} onAutoMerge={onAutoMerge} />
-      <ActionCard pr={pr} mergeMethod={mergeMethod} onMarkReady={onMarkReady} onMerge={onMerge} onViewThreads={onViewThreads} />
-      {pr.ci.checks.length > 0 && <ChecksCard pr={pr} reruns={checkReruns} />}
-      {reviewersCard}
-      {pr.labels.length > 0 && (
-        <Card className="side-card">
-          <h3 className="side-card-title">Labels</h3>
-          <div className="side-labels">
-            {pr.labels.map((label) => (
-              <LabelChip key={label.name} label={label} />
-            ))}
-          </div>
-        </Card>
-      )}
-      {pr.assignees.length > 0 && (
-        <Card className="side-card">
-          <h3 className="side-card-title">Assignees</h3>
-          <ul className="side-list">
-            {pr.assignees.map((user) => (
-              <li key={user.login} className="side-person">
-                <Avatar user={user} size={20} />
-                <span className="side-person-name">{user.login}</span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
+      <ActionCard pr={pr} data={data} onRetry={onRetry} mergeMethod={mergeMethod} onMarkReady={onMarkReady} onMerge={onMerge} onViewThreads={onViewThreads} />
+      <Staged state={data.checks} what="the checks" onRetry={() => onRetry(['checks'])} skeleton={<SideCardSkeleton title="Checks" rows={3} />}>
+        {() => pr.ci.checks.length > 0 && <ChecksCard pr={pr} reruns={checkReruns} />}
+      </Staged>
+      <Staged state={data.mergeBox} what="the reviewers" onRetry={() => onRetry(['mergeBox'])} skeleton={<SideCardSkeleton title="Reviewers" rows={2} />}>
+        {() => reviewersCard}
+      </Staged>
+      <Staged
+        state={data.meta}
+        what="labels and assignees"
+        onRetry={() => onRetry(['meta'])}
+        skeleton={
+          <>
+            <SideCardSkeleton title="Labels" rows={1} />
+            <SideCardSkeleton title="Assignees" rows={1} />
+          </>
+        }
+      >
+        {() => (
+          <>
+            {pr.labels.length > 0 && (
+              <Card className="side-card">
+                <h3 className="side-card-title">Labels</h3>
+                <div className="side-labels">
+                  {pr.labels.map((label) => (
+                    <LabelChip key={label.name} label={label} />
+                  ))}
+                </div>
+              </Card>
+            )}
+            {pr.assignees.length > 0 && (
+              <Card className="side-card">
+                <h3 className="side-card-title">Assignees</h3>
+                <ul className="side-list">
+                  {pr.assignees.map((user) => (
+                    <li key={user.login} className="side-person">
+                      <Avatar user={user} size={20} />
+                      <span className="side-person-name">{user.login}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            )}
+          </>
+        )}
+      </Staged>
     </aside>
   );
 }
@@ -114,19 +141,54 @@ function StatusCard({ pr, mergeMethod, onAutoMerge }: { pr: PrDetail; mergeMetho
 
 function ActionCard({
   pr,
+  data,
+  onRetry,
   mergeMethod,
   onMarkReady,
   onMerge,
   onViewThreads,
 }: {
   pr: PrDetail;
+  data: PrPageData;
+  onRetry: (stages: PrStage[]) => void;
   mergeMethod: MergeMethod;
   onMarkReady: () => Promise<boolean>;
   onMerge: (method: MergeMethod) => Promise<boolean>;
   onViewThreads: () => void;
 }) {
-  const action = nextActionFor(pr);
+  // The stages the next step depends on that have not arrived, loading or failed.
+  const unknown = (['mergeBox', 'stack', 'threads', 'checks'] as const).filter((stage) => data[stage].value === null);
+  const action = nextActionFor(pr, unknown);
   const [busy, setBusy] = useState(false);
+  if (action.kind === 'checking') {
+    const failed = unknown.flatMap((stage) => {
+      const state = data[stage];
+      return state.status === 'error' ? [{ stage, error: state.error }] : [];
+    });
+    return (
+      <Card className={`side-card side-action ${failed.length > 0 ? 'is-danger' : 'is-neutral is-checking'}`}>
+        {failed.length > 0 ? (
+          <div className="side-action-title" role="alert">
+            <Icon name="alert" size={16} />
+            <span className="side-action-failed" title={failed[0]!.error}>
+              Could not check mergeability <span className="pr-muted">· {failed[0]!.error}</span>
+            </span>
+            <Button variant="ghost" size="sm" icon="sync" onClick={() => onRetry(failed.map(({ stage }) => stage))}>
+              Retry
+            </Button>
+          </div>
+        ) : (
+          <>
+            <div className="side-action-title pr-muted">
+              <Icon name="clock" size={16} />
+              <span>{action.title}</span>
+            </div>
+            <Skeleton width="70%" height={10} />
+          </>
+        )}
+      </Card>
+    );
+  }
   const failingCheck = pr.ci.checks.find((check) => check.state === 'FAILURE');
   const icon = ({ success: 'check-circle-fill', danger: 'x-circle-fill', attention: 'clock', neutral: 'git-pull-request-draft', done: 'git-merge' } as const)[action.tone];
   return (
@@ -341,6 +403,20 @@ function ChecksCard({ pr, reruns }: { pr: PrDetail; reruns: CheckReruns }) {
   );
 }
 
+/** A sidebar card while its stage loads: its title, and a line for each of a few rows. */
+function SideCardSkeleton({ title, rows }: { title: string; rows: number }) {
+  return (
+    <Card className="side-card side-skeleton">
+      <h3 className="side-card-title">{title}</h3>
+      {Array.from({ length: rows }, (_, index) => (
+        <div key={index} className="side-skeleton-row" aria-hidden="true">
+          <Skeleton width={16} height={16} />
+          <Skeleton width={`${70 - index * 15}%`} height={10} />
+        </div>
+      ))}
+    </Card>
+  );
+}
 
 const MERGE_LABELS = {
   SQUASH: { short: 'Squash', verb: 'Squash and merge' },

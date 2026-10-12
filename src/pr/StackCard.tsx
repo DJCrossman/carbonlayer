@@ -1,4 +1,5 @@
-// The stack card: every PR in the stack on a vertical rail, tip at the top and trunk at the bottom.
+// The stack card: every PR in the stack on a vertical rail, tip at the top and trunk at the bottom; and the card as it
+// looks while the stack loads.
 import type { PrSummary, Stack } from '../lib/model';
 import { Card } from '../ui/Card';
 import { CiStatus } from '../ui/CiStatus';
@@ -6,6 +7,7 @@ import { Icon } from '../ui/Icon';
 import { MergeStatus } from '../ui/MergeStatus';
 import { RelativeTime } from '../ui/RelativeTime';
 import { ReviewStatus } from '../ui/ReviewStatus';
+import { Skeleton } from '../ui/Skeleton';
 import { goToPr } from './navigation';
 import './stack.css';
 
@@ -33,6 +35,27 @@ export function StackCard({ stack, collapsed, onToggle }: { stack: Stack; collap
           </li>
         </ol>
       )}
+    </Card>
+  );
+}
+
+/** The stack card before its entries arrive: its header, and a row each for a few of them. */
+export function StackSkeleton() {
+  return (
+    <Card className="stack-card">
+      <div className="stack-header is-loading" aria-busy="true" aria-label="Loading the stack">
+        <Icon name="stack" size={14} className="pr-fg-muted" />
+        <span>Stack</span>
+      </div>
+      <ol className="stack-rail">
+        {['55%', '45%', '50%'].map((width, index) => (
+          <li key={index} className="stack-row">
+            <span className="stack-dot" />
+            <Skeleton width={28} height={10} />
+            <Skeleton width={width} height={10} />
+          </li>
+        ))}
+      </ol>
     </Card>
   );
 }

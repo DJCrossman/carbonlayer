@@ -1,12 +1,14 @@
 // The pull request page: header, stack, description, activity and every diff in one scroll, with status in
-// a sticky sidebar and Graphite's keybindings. Everything comes through `source`; each mutation is shown
-// optimistically where that matters (viewed, resolved, draft, auto-merge) and then refetched.
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+// a sticky sidebar and Graphite's keybindings. Everything comes through `source`, in stages (page-data.ts): the
+// header first, then each part as its stage arrives, each with its own skeleton. Each mutation is shown optimistically
+// where that matters (viewed, resolved, draft, auto-merge) and then reloads the stages it changed.
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { postToParent } from '../app/bridge';
 import type { DataSource, ReviewThreadDraft } from '../app/data-source';
 import type { AppRoute } from '../app/routes';
-import type { PrDetail } from '../lib/model';
-import type { MergeMethod } from '../lib/rpc';
+import { SIGNED_OUT } from '../lib/github-web/session';
+import type { PrDetail, PrStage, PrStages } from '../lib/model';
+import { STAGES_A_WRITE_CHANGES, type MergeMethod } from '../lib/rpc';
 import type { Settings } from '../lib/settings';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
@@ -20,25 +22,20 @@ import { Markdown } from './Comment';
 import { FilesSection, useFileReview } from './Files';
 import { usePrKeybindings } from './keybindings';
 import { goToPr, openOnGitHub } from './navigation';
-import { StatePill } from './primitives';
+import { prDetailFrom, usePrPageData, type PrPageData } from './page-data';
+import { StageError, Staged, StatePill } from './primitives';
 import { QuickApproveDialog, ReviewComposer, type ReviewEvent } from './ReviewComposer';
 import { ReviewersCard } from './Reviewers';
 import { ShortcutHelp, ShortcutLegend } from './ShortcutHelp';
 import { Sidebar } from './Sidebar';
-import { StackCard } from './StackCard';
+import { StackCard, StackSkeleton } from './StackCard';
 import type { NoteActions } from './Threads';
 import './page.css';
 
 export function PrPage({ source, route }: { source: DataSource; route: Extract<AppRoute, { page: 'pr' }> }) {
   const { owner, name } = route.repo;
-  const { number } = route;
-  const key = `${owner}/${name}#${number}`;
-  const [loaded, setLoaded] = useState<{ key: string; pr: PrDetail } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
-  // A refetch that lands after the route moved on must not replace the new PR.
-  const currentKey = useRef(key);
-  currentKey.current = key;
 
   useEffect(() => {
     let cancelled = false;
@@ -56,45 +53,44 @@ export function PrPage({ source, route }: { source: DataSource; route: Extract<A
     };
   }, [source]);
 
-  useEffect(() => {
-    setError(null);
-    source.fetchPr({ owner, name }, number).then(
-      (pr) => {
-        if (currentKey.current === key) setLoaded({ key, pr });
-      },
-      (reason: unknown) => {
-        if (currentKey.current === key) setError(reason instanceof Error ? reason.message : String(reason));
-      },
-    );
-  }, [source, owner, name, number, key]);
-
-  const refetch = useCallback(async () => {
-    const pr = await source.fetchPr({ owner, name }, number, true);
-    if (currentKey.current === key) setLoaded({ key, pr });
-  }, [source, owner, name, number, key]);
-
   if (error) return <PrError message={error} />;
-  if (!settings || loaded?.key !== key) return <PrSkeleton />;
-  return <PrView key={key} fetched={loaded.pr} settings={settings} source={source} section={route.section} refetch={refetch} />;
+  // Another PR starts its stages over.
+  return <PrStagesView key={`${owner}/${name}#${route.number}`} source={source} route={route} settings={settings} />;
+}
+
+/** The PR's stages as they arrive: a page skeleton until the header does, which only signing in can stop. */
+function PrStagesView({ source, route, settings }: { source: DataSource; route: Extract<AppRoute, { page: 'pr' }>; settings: Settings | null }) {
+  const { data, reload } = usePrPageData(source, route.repo, route.number);
+  const header = data.header;
+  if (header.status === 'error' && header.error === SIGNED_OUT) return <PrError message={header.error} />;
+  if (!header.value || !settings) {
+    const retry = () => void reload(['header'], true).catch(() => {});
+    return <PrSkeleton headerError={header.status === 'error' ? <StageError what="this pull request" error={header.error} onRetry={retry} /> : null} />;
+  }
+  return <PrView header={header.value} data={data} reload={reload} settings={settings} source={source} section={route.section} />;
 }
 
 function PrView({
-  fetched,
+  header,
+  data,
+  reload,
   settings,
   source,
   section,
-  refetch,
 }: {
-  fetched: PrDetail;
+  header: PrStages['header'];
+  data: PrPageData;
+  reload: (stages: readonly PrStage[], force?: boolean) => Promise<void>;
   settings: Settings;
   source: DataSource;
   section: Extract<AppRoute, { page: 'pr' }>['section'];
-  refetch: () => Promise<void>;
 }) {
   const [edits, setEdits] = useState<PendingEdits>({ viewed: {}, resolved: {}, isDraft: null, autoMerge: null });
-  const pr = useMemo(() => optimisticPr(fetched, edits), [fetched, edits]);
+  const pr = useMemo(() => optimisticPr(prDetailFrom(header, data), edits), [header, data, edits]);
   const files = useFileReview(pr);
-  const checkReruns = useCheckReruns(pr, source, refetch);
+  const checkReruns = useCheckReruns(pr, source, () => reload(STAGES_A_WRITE_CHANGES['pr.rerunFailedJobs']));
+  /** A section's retry: its stages again, asked of GitHub rather than the content script's memory. */
+  const retry = (stages: PrStage[]) => void reload(stages, true).catch(() => {});
   const [batch, setBatch] = useState<ReviewThreadDraft[]>([]);
   const [review, setReview] = useState<{ open: boolean; event: ReviewEvent; body: string }>({ open: false, event: 'COMMENT', body: '' });
   const [quickApprove, setQuickApprove] = useState(false);
@@ -144,8 +140,16 @@ function PrView({
     }
   }, [legendHidden]);
 
-  /** Runs a change against GitHub, then refetches. A failure is reported and its optimistic edit undone. */
-  async function mutate(work: () => Promise<void>, failure: string, { success, undo }: { success?: string; undo?: () => void } = {}): Promise<boolean> {
+  /**
+   * Runs a change against GitHub, then reloads the stages it changed (STAGES_A_WRITE_CHANGES), which the content script
+   * has already forgotten. A failure is reported and its optimistic edit undone.
+   */
+  async function mutate(
+    changed: readonly PrStage[],
+    work: () => Promise<void>,
+    failure: string,
+    { success, undo }: { success?: string; undo?: () => void } = {},
+  ): Promise<boolean> {
     try {
       await work();
     } catch (reason) {
@@ -155,7 +159,7 @@ function PrView({
     }
     if (success) showToast(success);
     try {
-      await refetch();
+      await reload(changed);
     } catch (reason) {
       showToast(`Saved, but reloading the PR failed: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger');
     }
@@ -169,12 +173,13 @@ function PrView({
       files.setCollapsed(path, value);
     };
     apply(viewed);
-    void mutate(() => source.markFileViewed(pr.id, path, viewed), 'Could not update the viewed state', { undo: () => apply(!viewed) });
+    // The file shows its new state already; reloading every file and diff for it would only be slow.
+    void mutate([], () => source.markFileViewed(pr.id, path, viewed), 'Could not update the viewed state', { undo: () => apply(!viewed) });
   }
 
   function setDraft(draft: boolean) {
     setEdits((current) => ({ ...current, isDraft: draft }));
-    return mutate(() => source.setDraft(pr.id, draft), draft ? 'Could not convert to draft' : 'Could not mark ready for review', {
+    return mutate(STAGES_A_WRITE_CHANGES['pr.setDraft'], () => source.setDraft(pr.id, draft), draft ? 'Could not convert to draft' : 'Could not mark ready for review', {
       success: draft ? 'Converted to draft' : 'Marked ready for review',
       undo: () => setEdits((current) => ({ ...current, isDraft: null })),
     });
@@ -187,16 +192,18 @@ function PrView({
   const closeReview = useCallback(() => setReview((current) => ({ ...current, open: false })), []);
 
   const noteActions: NoteActions = {
-    reply: (threadId, body) => mutate(() => source.replyThread(threadId, body), 'Could not reply'),
+    reply: (threadId, body) => mutate(STAGES_A_WRITE_CHANGES['pr.replyThread'], () => source.replyThread(threadId, body), 'Could not reply'),
     resolve: (threadId, resolved) => {
       setEdits((current) => ({ ...current, resolved: { ...current.resolved, [threadId]: resolved } }));
-      return mutate(() => source.resolveThread(threadId, resolved), resolved ? 'Could not resolve the thread' : 'Could not unresolve the thread', {
+      return mutate(STAGES_A_WRITE_CHANGES['pr.resolveThread'], () => source.resolveThread(threadId, resolved), resolved ? 'Could not resolve the thread' : 'Could not unresolve the thread', {
         undo: () => setEdits((current) => ({ ...current, resolved: { ...current.resolved, [threadId]: !resolved } })),
       });
     },
     addToReview: (draft) => setBatch((current) => [...current, draft]),
     commentNow: (draft) =>
-      mutate(() => source.addThread(pr.id, draft.path, draft.line, draft.side, draft.body), 'Could not post the comment', { success: 'Comment posted' }),
+      mutate(STAGES_A_WRITE_CHANGES['pr.addThread'], () => source.addThread(pr.id, draft.path, draft.line, draft.side, draft.body), 'Could not post the comment', {
+        success: 'Comment posted',
+      }),
     removePending: (index) => setBatch((current) => current.filter((_, at) => at !== index)),
     closeComposer: files.closeComposer,
   };
@@ -279,7 +286,9 @@ function PrView({
                 onClose={closeReview}
                 onSubmit={async () => {
                   const verdict = { COMMENT: 'Review submitted', REQUEST_CHANGES: 'Changes requested', APPROVE: 'Approved' }[review.event];
-                  const ok = await mutate(() => source.review(pr.id, review.event, review.body, batch), 'Could not submit the review', { success: verdict });
+                  const ok = await mutate(STAGES_A_WRITE_CHANGES['pr.review'], () => source.review(pr.id, review.event, review.body, batch), 'Could not submit the review', {
+                    success: verdict,
+                  });
                   if (ok) {
                     setBatch([]);
                     setReview({ open: false, event: 'COMMENT', body: '' });
@@ -290,29 +299,37 @@ function PrView({
             )
           }
         />
-        {pr.stack.source !== 'none' && (
-          <StackCard stack={pr.stack} collapsed={stackCollapsed} onToggle={() => setStackCollapsed((collapsed) => !collapsed)} />
+        {data.header.status === 'error' && <StageError what="the header again" error={data.header.error} onRetry={() => retry(['header'])} />}
+        {/* No stack card, not even its skeleton, when the page shows no stack. */}
+        {(header.stackSource !== 'none' || pr.stack.source !== 'none') && (
+          <Staged state={data.stack} what="the stack" onRetry={() => retry(['stack'])} skeleton={<StackSkeleton />}>
+            {() => pr.stack.source !== 'none' && <StackCard stack={pr.stack} collapsed={stackCollapsed} onToggle={() => setStackCollapsed((collapsed) => !collapsed)} />}
+          </Staged>
         )}
         <section className="pr-description" id="pr-description" aria-label="Description">
           {pr.bodyHtml.trim() ? <Markdown html={pr.bodyHtml} /> : <p className="pr-muted pr-description-empty">No description provided.</p>}
         </section>
         <Activity
           pr={pr}
+          stage={data.activity}
+          onRetry={() => retry(['activity'])}
           onRevealThread={files.revealThread}
-          onComment={(body) => mutate(() => source.comment(pr.id, body), 'Could not post the comment', { success: 'Comment posted' })}
+          onComment={(body) => mutate(STAGES_A_WRITE_CHANGES['pr.comment'], () => source.comment(pr.id, body), 'Could not post the comment', { success: 'Comment posted' })}
         />
       </div>
       <Sidebar
         pr={pr}
+        data={data}
+        onRetry={retry}
         mergeMethod={mergeMethod}
         onAutoMerge={(enabled) => {
           setEdits((current) => ({ ...current, autoMerge: enabled ? mergeMethod : false }));
-          return mutate(() => source.setAutoMerge(pr.id, enabled, mergeMethod), 'Could not change Merge when ready', {
+          return mutate(STAGES_A_WRITE_CHANGES['pr.setAutoMerge'], () => source.setAutoMerge(pr.id, enabled, mergeMethod), 'Could not change Merge when ready', {
             undo: () => setEdits((current) => ({ ...current, autoMerge: null })),
           });
         }}
         onMarkReady={() => setDraft(false)}
-        onMerge={(method) => mutate(() => source.merge(pr.id, method, pr.headOid), 'Could not merge', { success: `Merged #${pr.number}` })}
+        onMerge={(method) => mutate(STAGES_A_WRITE_CHANGES['pr.merge'], () => source.merge(pr.id, method, pr.headOid), 'Could not merge', { success: `Merged #${pr.number}` })}
         onViewThreads={() => files.stepThread(1)}
         checkReruns={checkReruns}
         reviewersCard={
@@ -321,15 +338,22 @@ function PrView({
             pickerOpen={reviewerPickerOpen}
             onPickerOpenChange={setReviewerPickerOpen}
             searchReviewers={(query) => source.reviewerCandidates(pr.id, query)}
-            onModify={(add, remove) => mutate(() => source.modifyReviewers(pr.id, add, remove), 'Could not change the reviewers', { success: 'Reviewers updated' })}
+            onModify={(add, remove) =>
+              mutate(STAGES_A_WRITE_CHANGES['pr.modifyReviewers'], () => source.modifyReviewers(pr.id, add, remove), 'Could not change the reviewers', { success: 'Reviewers updated' })
+            }
             onReRequest={(reviewer) =>
-              mutate(() => source.reRequestReview(pr.id, reviewer.id), 'Could not re-request the review', { success: `Asked ${reviewer.user.login} to review again` })
+              mutate(STAGES_A_WRITE_CHANGES['pr.reRequestReview'], () => source.reRequestReview(pr.id, reviewer.id), 'Could not re-request the review', {
+                success: `Asked ${reviewer.user.login} to review again`,
+              })
             }
           />
         }
       />
       <FilesSection
         pr={pr}
+        listed={data.files}
+        threads={data.threads}
+        onRetry={(stage) => retry([stage])}
         review={files}
         batch={batch}
         diffStyle={settings.diffLayout}
@@ -345,7 +369,7 @@ function PrView({
         <QuickApproveDialog
           pr={pr}
           onClose={() => setQuickApprove(false)}
-          onConfirm={() => mutate(() => source.review(pr.id, 'APPROVE', ''), 'Could not approve', { success: `Approved #${pr.number}` })}
+          onConfirm={() => mutate(STAGES_A_WRITE_CHANGES['pr.review'], () => source.review(pr.id, 'APPROVE', ''), 'Could not approve', { success: `Approved #${pr.number}` })}
         />
       )}
       <ToastHost />
@@ -456,13 +480,18 @@ function PrHeader({
   );
 }
 
-function PrSkeleton() {
+/** The page until its header arrives (one round trip); a header that failed says so in its place, with a retry. */
+function PrSkeleton({ headerError }: { headerError: ReactNode }) {
   return (
     <div className="pr-page pr-skeleton" aria-busy="true" aria-label="Loading pull request">
       <div className="pr-conversation">
-        <Skeleton width={160} height={12} />
-        <Skeleton width="60%" height={26} />
-        <Skeleton width="45%" height={14} />
+        {headerError ?? (
+          <>
+            <Skeleton width={160} height={12} />
+            <Skeleton width="60%" height={26} />
+            <Skeleton width="45%" height={14} />
+          </>
+        )}
         <Skeleton width="100%" height={110} />
         <Skeleton width="100%" height={220} />
       </div>

@@ -59,4 +59,18 @@ describe('nextActionFor', () => {
     expect(nextActionFor({ ...pr42, mergeStatus: 'DIRTY' })).toMatchObject({ kind: 'conflicts', title: 'Conflicts with mona/parcs-client' });
     expect(nextActionFor({ ...pr42, state: 'MERGED' })).toMatchObject({ kind: 'merged' });
   });
+
+  it('stops at "Checking mergeability…" while a stage the answer depends on has not arrived', () => {
+    expect(nextActionFor(ready, ['mergeBox'])).toMatchObject({ kind: 'checking', title: 'Checking mergeability…' });
+    expect(nextActionFor(ready, ['checks'])).toMatchObject({ kind: 'checking' });
+    expect(nextActionFor({ ...ready, unresolvedThreadCount: 2 }, ['threads'])).toMatchObject({ kind: 'checking' });
+  });
+
+  it('answers as far as the stages that arrived allow', () => {
+    // The header alone knows a merged PR or a draft; the merge box alone knows about conflicts.
+    expect(nextActionFor({ ...ready, state: 'MERGED' }, ['mergeBox', 'stack', 'threads', 'checks'])).toMatchObject({ kind: 'merged' });
+    expect(nextActionFor({ ...ready, isDraft: true }, ['mergeBox', 'stack', 'threads', 'checks'])).toMatchObject({ kind: 'draft' });
+    expect(nextActionFor({ ...ready, mergeStatus: 'DIRTY' }, ['stack', 'threads', 'checks'])).toMatchObject({ kind: 'conflicts' });
+    expect(nextActionFor({ ...ready, unresolvedThreadCount: 1 }, ['checks'])).toMatchObject({ kind: 'unresolved' });
+  });
 });

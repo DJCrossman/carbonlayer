@@ -30,3 +30,23 @@
 }
 .pr-textarea:focus { outline: none; border-color: var(--gg-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gg-accent) 25%, transparent); }
 .pr-textarea::placeholder { color: var(--gg-fg-subtle); }
+
+/* A stage of the page's data that failed to load: one line where its part would be, with a retry. */
+.pr-stage-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 2px 4px 2px 10px;
+  border: 1px solid color-mix(in srgb, var(--gg-danger) 35%, var(--gg-border));
+  border-radius: var(--gg-radius);
+  background: var(--gg-danger-bg);
+  font-size: 12px;
+}
+.pr-stage-error-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
