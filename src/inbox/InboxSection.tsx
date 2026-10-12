@@ -242,7 +242,9 @@ function PrRow({
         <StatusIcon {...reviewStatusIcon({ ...pr, reviewers: enrichment?.reviewers ?? null, viewerReview: enrichment?.viewerReview }, viewerLogin)} />
       </span>
       <span className="gg-row__status">
-        <StatusIcon {...ciStatusIcon(pr.ci, enrichment?.requiredCheckNames ?? null)} />
+        {/* The dashboard's rollup says only that checks fail; whether a required one does comes with the row's checks, so a
+            failing row keeps a placeholder until then rather than turning red and then amber. */}
+        {!enriched && pr.ci.state === 'FAILURE' ? <Skeleton width={16} height={16} /> : <StatusIcon {...ciStatusIcon(pr.ci, enrichment?.requiredCheckNames ?? null)} />}
       </span>
       <span className="gg-row__status">
         <StatusIcon {...mergeStatusIcon(pr, enrichment?.mergeBlockedReason)} />
