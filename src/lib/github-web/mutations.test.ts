@@ -124,7 +124,7 @@ function pullRequest({ id, number = 1, stackSource }: { id: string; number?: num
     number,
     headOid: 'head',
     baseOid: 'base',
-    stack: { entries: [], currentIndex: 0, trunk: 'main', source: stackSource },
+    nativeStack: stackSource === 'native' ? { position: 2, size: 2 } : null,
     threads: [{ id: `${number}00`, path: 'src/a.ts', comments: [{ id: '9001' }, { id: '9002' }] }],
   } as unknown as PrDetail;
 }

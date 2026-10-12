@@ -2,7 +2,7 @@
 // GitHub with the user's session. Inside github.com the app posts requests to its parent window, the
 // content script answers them with same-origin fetches (cookies included); see src/lib/github-web/.
 
-import type { PrDetail, PrEnrichment, PrSummary, RepoCandidate, RepoRef, ReviewerCandidate, View, ViewResult } from './model';
+import type { ChangedFileDiff, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, RepoCandidate, RepoRef, ReviewerCandidate, View, ViewResult } from './model';
 
 export type MergeMethod = 'MERGE' | 'SQUASH' | 'REBASE';
 
@@ -21,7 +21,19 @@ export interface RpcMethods {
   'inbox.enrich': { args: { prs: InboxRowToEnrich[] }; result: PrEnrichment[] };
   /** The repositories GitHub's repository picker offers for `query` (what the user typed; empty for its first list). */
   'repos.search': { args: { query: string }; result: RepoCandidate[] };
+  /** The whole PR at once, all its stages put together (the PR page itself loads them one by one, below). */
   'pr.fetch': { args: { repo: RepoRef; number: number; force?: boolean }; result: PrDetail };
+  // The PR page, a stage at a time (PrStages in model.ts). `force` repeats the requests the stage itself makes to GitHub.
+  'pr.fetchHeader': { args: PrPageRequest; result: PrStages['header'] };
+  'pr.fetchActivity': { args: PrPageRequest; result: PrStages['activity'] };
+  'pr.fetchFiles': { args: PrPageRequest; result: PrStages['files'] };
+  /** The diffs of up to 20 of the PR's changed files, by path: one of GitHub's diff_entries requests. */
+  'pr.fetchFileDiffs': { args: PrPageRequest & { paths: string[] }; result: Record<string, ChangedFileDiff> };
+  'pr.fetchThreads': { args: PrPageRequest; result: PrStages['threads'] };
+  'pr.fetchMergeBox': { args: PrPageRequest; result: PrStages['mergeBox'] };
+  'pr.fetchChecks': { args: PrPageRequest; result: PrStages['checks'] };
+  'pr.fetchStack': { args: PrPageRequest; result: PrStages['stack'] };
+  'pr.fetchMeta': { args: PrPageRequest; result: PrStages['meta'] };
   'pr.review': {
     args: {
       prId: string;
@@ -57,6 +69,27 @@ export interface RpcMethods {
 }
 
 export type RpcMethod = keyof RpcMethods;
+
+/**
+ * The stages of the PR page each write changes. When a write succeeds, the content script forgets what it knew about
+ * them and the page loads them again; every other stage stays as it is.
+ */
+export const STAGES_A_WRITE_CHANGES = {
+  'pr.review': ['activity', 'mergeBox', 'threads'],
+  'pr.comment': ['activity'],
+  // The header and the activity both read the PR page, which the header's reload fetches anyway.
+  'pr.merge': ['header', 'activity', 'mergeBox'],
+  'pr.addThread': ['threads', 'activity'],
+  'pr.replyThread': ['threads'],
+  'pr.resolveThread': ['threads'],
+  'pr.markFileViewed': ['files'],
+  'pr.setDraft': ['header', 'activity', 'mergeBox'],
+  'pr.setAutoMerge': ['mergeBox'],
+  'pr.modifyReviewers': ['mergeBox'],
+  'pr.reRequestReview': ['mergeBox'],
+  'pr.rerunFailedJobs': ['checks'],
+  'pr.rerunAllJobs': ['checks'],
+} as const satisfies { [M in RpcMethod]?: readonly PrStage[] };
 
 export interface RpcRequest<M extends RpcMethod = RpcMethod> {
   kind: 'gg-rpc';
@@ -110,4 +143,11 @@ export function rpc<M extends RpcMethod>(method: M, args: RpcMethods[M]['args'])
 
 function isRpcResponse(data: unknown): data is RpcResponse {
   return typeof data === 'object' && data !== null && (data as { kind?: unknown }).kind === 'gg-rpc-result';
+}
+
+/** Which PR page a stage request is for. */
+interface PrPageRequest {
+  repo: RepoRef;
+  number: number;
+  force?: boolean;
 }

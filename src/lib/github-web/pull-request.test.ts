@@ -1,8 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_SETTINGS } from '../settings';
+import { forgetPrStages } from './pr-stages';
 import { fetchPullRequestPage } from './pull-request';
 import { SIGNED_OUT } from './session';
 
+vi.mock('../settings', async (original) => ({ ...(await original<typeof import('../settings')>()), getSettings: vi.fn(async () => DEFAULT_SETTINGS) }));
+
 afterEach(() => {
+  forgetPrStages(['header', 'activity', 'files', 'threads', 'mergeBox', 'checks', 'stack', 'meta']);
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -12,7 +17,7 @@ describe('fetchPullRequestPage', () => {
     serveGitHub({ viewer: 'ana' });
     const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
 
-    const pr = await fetchPullRequestPage({ owner: 'o', name: 'r' }, 1, 'MERGE');
+    const pr = await fetchPullRequestPage({ owner: 'o', name: 'r' }, 1);
 
     expect(pr).toMatchObject({
       title: 'Fix the widget',
@@ -27,7 +32,7 @@ describe('fetchPullRequestPage', () => {
       additions: 3,
       deletions: 1,
     });
-    for (const route of ['merge_box', 'status_checks', 'description', 'review_requests', 'labels', 'assignees']) {
+    for (const route of ['merge_box', 'status_checks', 'review_requests', 'labels', 'assignees']) {
       expect(debug).toHaveBeenCalledWith('[gg]', expect.stringContaining(`page_data/${route} failed`), `GitHub answered 404 for /o/r/pull/1/page_data/${route}`);
     }
   });
@@ -35,7 +40,7 @@ describe('fetchPullRequestPage', () => {
   it('asks a signed-out viewer to sign in, whatever else GitHub answered', async () => {
     serveGitHub({ viewer: '' });
     vi.spyOn(console, 'debug').mockImplementation(() => {});
-    await expect(fetchPullRequestPage({ owner: 'o', name: 'r' }, 1, 'MERGE')).rejects.toThrow(SIGNED_OUT);
+    await expect(fetchPullRequestPage({ owner: 'o', name: 'r' }, 1)).rejects.toThrow(SIGNED_OUT);
   });
 });
 

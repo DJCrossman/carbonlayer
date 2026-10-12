@@ -8,7 +8,7 @@ import { rerunWorkflowJobs } from './actions';
 import type { MergeBox } from './merge-box';
 import { getJson, send } from './session';
 
-export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox.fetchMore' | 'inbox.enrich' | 'repos.search' | 'pr.fetch' | 'pr.reviewerCandidates'>]: (args: RpcMethods[M]['args']) => Promise<RpcMethods[M]['result']> } = {
+export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox.fetchMore' | 'inbox.enrich' | 'repos.search' | `pr.fetch${string}` | 'pr.reviewerCandidates'>]: (args: RpcMethods[M]['args']) => Promise<RpcMethods[M]['result']> } = {
   'pr.review': async ({ prId, event, body, threads }) => {
     const pull = pullRequestFor(prId);
     // Batched inline comments join the viewer's pending review; submitting the review publishes them.
@@ -25,7 +25,7 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
   },
   'pr.replyThread': async ({ threadId, body }) => {
     const thread = threadFor(threadId);
-    const pull = pullRequestFor(thread.prId);
+    const pull = pullRequests.get(thread.pullPath)!;
     await send(`${pull.path}/page_data/create_review_comment`, 'POST', {
       text: body,
       submitBatch: true,
@@ -36,8 +36,7 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
     });
   },
   'pr.resolveThread': async ({ threadId, resolved }) => {
-    const pull = pullRequestFor(threadFor(threadId).prId);
-    await send(`${pull.path}/page_data/${resolved ? 'resolve_thread' : 'unresolve_thread'}`, 'POST', { threadId });
+    await send(`${threadFor(threadId).pullPath}/page_data/${resolved ? 'resolve_thread' : 'unresolve_thread'}`, 'POST', { threadId });
   },
   'pr.merge': async ({ prId, method, expectedHeadOid }) => {
     // The app gives up on an answer after 60 s; stop waiting for a stack merge well before that.
@@ -93,23 +92,26 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
   'pr.rerunAllJobs': ({ prId, runId }) => rerunWorkflowJobs(pullRequestFor(prId).repoPath, runId, 'all'),
 };
 
-/** Remembers a loaded PR (and its threads) so later writes can address it. */
-export function rememberPullRequest(detail: PrDetail): void {
-  pullRequests.set(detail.id, {
-    path: `/${detail.repo.owner}/${detail.repo.name}/pull/${detail.number}`,
-    repoPath: `/${detail.repo.owner}/${detail.repo.name}`,
-    headOid: detail.headOid,
-    baseOid: detail.baseOid,
-    isNativeStack: detail.stack.source === 'native',
-  });
-  for (const thread of detail.threads) {
-    threads.set(thread.id, { prId: detail.id, path: thread.path, lastCommentDatabaseId: thread.comments.at(-1)?.id ?? '' });
+/**
+ * Remembers what later writes about a PR need, from whichever part of it has loaded: the page's id, head and stack, the
+ * comparison's base, the threads (the PR page loads them in stages, pr-stages.ts).
+ */
+export function rememberPullRequest(loaded: Pick<PrDetail, 'repo' | 'number'> & Partial<Pick<PrDetail, 'id' | 'headOid' | 'baseOid' | 'nativeStack' | 'threads'>>): void {
+  const path = `/${loaded.repo.owner}/${loaded.repo.name}/pull/${loaded.number}`;
+  const known = pullRequests.get(path) ?? { path, repoPath: `/${loaded.repo.owner}/${loaded.repo.name}`, headOid: '', baseOid: '', isNativeStack: false };
+  if (loaded.headOid !== undefined) known.headOid = loaded.headOid;
+  if (loaded.baseOid !== undefined) known.baseOid = loaded.baseOid;
+  if (loaded.nativeStack !== undefined) known.isNativeStack = loaded.nativeStack !== null;
+  pullRequests.set(path, known);
+  if (loaded.id) pullPaths.set(loaded.id, path);
+  for (const thread of loaded.threads ?? []) {
+    threads.set(thread.id, { pullPath: path, path: thread.path, lastCommentDatabaseId: thread.comments.at(-1)?.id ?? '' });
   }
 }
 
 /** What a request about a loaded PR needs to address it; throws when the app has not loaded it here. */
 export function pullRequestFor(prId: string): KnownPullRequest {
-  const pull = pullRequests.get(prId);
+  const pull = pullRequests.get(pullPaths.get(prId) ?? '');
   if (!pull) throw new Error('Open the pull request first');
   return pull;
 }
@@ -176,11 +178,14 @@ interface KnownPullRequest {
 }
 
 interface KnownThread {
-  prId: string;
+  /** The PR's `/{owner}/{repo}/pull/{n}`. */
+  pullPath: string;
   path: string;
   /** Replies name the comment they answer by its database id. */
   lastCommentDatabaseId: string;
 }
 
+/** By the PR's path; `pullPaths` finds that path by the PR's id. */
 const pullRequests = new Map<string, KnownPullRequest>();
+const pullPaths = new Map<string, string>();
 const threads = new Map<string, KnownThread>();

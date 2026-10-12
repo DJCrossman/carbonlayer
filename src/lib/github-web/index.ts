@@ -1,11 +1,13 @@
 // Answers the app's RPC requests with the user's github.com session: same-origin requests from the content
 // script to the endpoints GitHub's own React UI uses (docs/research/github-web-*.md). No token, no api.github.com.
-// Reads are cached briefly in the content script's memory; any successful write clears that cache.
+// Reads are cached briefly in the content script's memory; any successful write clears that cache, and forgets the
+// stages of the PR page it changes (pr-stages.ts keeps those).
 
-import type { RpcMethod, RpcMethods, RpcRequest, RpcResponse } from '../rpc';
+import { STAGES_A_WRITE_CHANGES, type RpcMethod, type RpcMethods, type RpcRequest, type RpcResponse } from '../rpc';
 import { getSettings } from '../settings';
 import { enrichPull, fetchInbox, fetchViewPage } from './inbox';
 import { mutations, pullRequestFor, rememberPullRequest } from './mutations';
+import { fetchFileDiffs, fetchPrStage, forgetPrStages } from './pr-stages';
 import { fetchPullRequestPage } from './pull-request';
 import { repositoryCandidatesFrom, repositoryPickerPath } from './repositories';
 import { reviewerCandidatesFrom } from './reviews';
@@ -17,7 +19,10 @@ export async function handleRpc(request: RpcRequest): Promise<RpcResponse> {
     // The table is typed per method; this one call site cannot express the method/args correlation.
     const handler = handlers[request.method] as (args: unknown) => Promise<RpcMethods[RpcMethod]['result']>;
     const result = await handler(request.args);
-    if (Object.hasOwn(mutations, request.method)) cache.clear();
+    if (Object.hasOwn(mutations, request.method)) {
+      cache.clear();
+      forgetPrStages(STAGES_A_WRITE_CHANGES[request.method as keyof typeof mutations]);
+    }
     return { kind: 'gg-rpc-result', id: request.id, ok: true, result };
   } catch (error) {
     return { kind: 'gg-rpc-result', id: request.id, ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -59,10 +64,20 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
   'pr.fetch': async ({ repo, number, force }) => {
     const { mergeMethod } = await getSettings();
     const key = `pr:${repo.owner}/${repo.name}#${number}:${mergeMethod}`.toLowerCase();
-    const detail = await cached(key, 30_000, force, () => fetchPullRequestPage(repo, number, mergeMethod));
+    const detail = await cached(key, 30_000, force, () => fetchPullRequestPage(repo, number));
     rememberPullRequest(detail);
     return detail;
   },
+  // The PR page, a stage at a time; pr-stages.ts keeps GitHub's answers, shared between the stages.
+  'pr.fetchHeader': (args) => fetchPrStage('header', args),
+  'pr.fetchActivity': (args) => fetchPrStage('activity', args),
+  'pr.fetchFiles': (args) => fetchPrStage('files', args),
+  'pr.fetchFileDiffs': (args) => fetchFileDiffs(args),
+  'pr.fetchThreads': (args) => fetchPrStage('threads', args),
+  'pr.fetchMergeBox': (args) => fetchPrStage('mergeBox', args),
+  'pr.fetchChecks': (args) => fetchPrStage('checks', args),
+  'pr.fetchStack': (args) => fetchPrStage('stack', args),
+  'pr.fetchMeta': (args) => fetchPrStage('meta', args),
   'pr.reviewerCandidates': async ({ prId, query }) => {
     const { path } = pullRequestFor(prId);
     const q = query.trim();

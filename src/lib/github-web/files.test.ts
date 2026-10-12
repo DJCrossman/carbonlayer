@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { changedFiles, patchOf, type DiffEntry } from './files';
+import { changedFileList, fileDiffs, patchOf, type DiffEntry } from './files';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -24,9 +24,29 @@ describe('patchOf', () => {
   });
 });
 
-describe('changedFiles', () => {
-  it('keeps the embedded diffs and fetches the rest 20 paths at a time, in GitHub’s file order', async () => {
-    const paths = Array.from({ length: 22 }, (_, i) => `src/file ${i}.ts`);
+describe('changedFileList', () => {
+  it('lists every file in GitHub’s order, with the diffs GitHub sent along', () => {
+    const { files, diffs } = changedFileList(
+      { owner: 'o', name: 'r' },
+      {
+        diffSummaries: [
+          { path: 'src/file 1.ts', changeType: 'ADDED', linesAdded: 1, linesDeleted: 0 },
+          { path: 'old.ts', changeType: 'DELETED', markedAsViewed: true },
+        ],
+        diffContents: [{ path: 'src/file 1.ts', diffLines: [{ type: 'HUNK', text: '@@ -0,0 +1 @@' }, { type: 'ADDITION', text: '+x' }] }],
+        comparison: { fullDiff: { baseOid: 'base', headOid: 'head' } },
+      },
+    );
+    expect(files).toEqual([
+      { path: 'src/file 1.ts', status: 'added', additions: 1, deletions: 0, viewerViewedState: 'UNVIEWED', blobUrl: 'https://github.com/o/r/blob/head/src/file%201.ts' },
+      { path: 'old.ts', status: 'removed', additions: 0, deletions: 0, viewerViewedState: 'VIEWED', blobUrl: 'https://github.com/o/r/blob/base/old.ts' },
+    ]);
+    expect(diffs).toEqual({ 'src/file 1.ts': { patch: '@@ -0,0 +1 @@\n+x', previousPath: null } });
+  });
+});
+
+describe('fileDiffs', () => {
+  it('asks for the paths in one request, as GitHub’s UI does, and names a renamed file’s old path', async () => {
     const requested: URL[] = [];
     vi.stubGlobal(
       'fetch',
@@ -34,29 +54,18 @@ describe('changedFiles', () => {
         const parsed = new URL(url, 'https://github.com');
         requested.push(parsed);
         const asked = parsed.searchParams.get('paths')!.split(',').map(decodeURIComponent);
-        return Response.json(asked.map((path) => ({ path, diffLines: [{ type: 'HUNK', text: '@@ -0,0 +1 @@' }, { type: 'ADDITION', text: '+x' }] })));
+        return Response.json(asked.map((path) => ({ path, oldTreeEntry: { path: path === 'new.ts' ? 'old.ts' : path }, diffLines: [{ type: 'HUNK', text: '@@ -1 +1 @@' }] })));
       }),
     );
-    const files = await changedFiles(
-      '/o/r/pull/1',
-      { owner: 'o', name: 'r' },
-      {
-        diffSummaries: [
-          ...paths.map((path) => ({ path, changeType: 'ADDED', linesAdded: 1, linesDeleted: 0 })),
-          { path: 'old.ts', changeType: 'DELETED', markedAsViewed: true },
-        ],
-        diffContents: [{ path: 'src/file 0.ts', diffLines: [{ type: 'HUNK', text: '@@ -0,0 +1 @@' }] }],
-        comparison: { fullDiff: { baseOid: 'base', headOid: 'head' } },
-      },
-    );
+    const headOid = vi.fn(async () => 'head');
+    const diffs = await fileDiffs('/o/r/pull/1', ['src/a b.ts', 'new.ts'], headOid);
 
-    expect(requested).toHaveLength(2);
+    expect(requested).toHaveLength(1);
     expect(requested[0]!.pathname).toBe('/o/r/pull/1/page_data/diff_entries');
-    expect(requested[0]!.searchParams.get('paths')!.split(',')).toHaveLength(20);
-    expect(requested[0]!.searchParams.get('ctx')).toBe(':'.repeat(19));
+    expect(requested[0]!.searchParams.get('paths')!.split(',')).toEqual(['src%2Fa%20b.ts', 'new.ts']);
+    expect(requested[0]!.searchParams.get('ctx')).toBe(':');
     expect(requested[0]!.searchParams.has('range')).toBe(false);
-    expect(files.map((file) => file.path)).toEqual([...paths, 'old.ts']);
-    expect(files[1]).toMatchObject({ status: 'added', patch: '@@ -0,0 +1 @@\n+x', viewerViewedState: 'UNVIEWED', blobUrl: 'https://github.com/o/r/blob/head/src/file%201.ts' });
-    expect(files.at(-1)).toMatchObject({ status: 'removed', viewerViewedState: 'VIEWED', blobUrl: 'https://github.com/o/r/blob/base/old.ts' });
+    expect(diffs).toEqual({ 'src/a b.ts': { patch: '@@ -1 +1 @@', previousPath: null }, 'new.ts': { patch: '@@ -1 +1 @@', previousPath: 'old.ts' } });
+    expect(headOid).not.toHaveBeenCalled();
   });
 });

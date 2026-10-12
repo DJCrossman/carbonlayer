@@ -212,6 +212,62 @@ export interface PrDetail extends PrSummary {
   unresolvedThreadCount: number;
 }
 
+/** A changed file as GitHub lists it, before its diff arrives. */
+export type ChangedFileSummary = Omit<ChangedFile, 'patch' | 'previousPath'>;
+
+/** What a changed file's diff adds to its summary: the patch, and the path it had before a rename or copy. */
+export type ChangedFileDiff = Pick<ChangedFile, 'patch' | 'previousPath'>;
+
+/**
+ * The PR page, stage by stage: each is loaded on its own (`pr.fetch<Stage>`, src/lib/github-web/pr-stages.ts) and
+ * rendered as soon as it arrives. Together they make a PrDetail.
+ */
+export interface PrStages {
+  /** The PR page's HTML with its file and line counts: everything the header and the description need. */
+  header: Pick<
+    PrDetail,
+    | 'id'
+    | 'repo'
+    | 'number'
+    | 'title'
+    | 'url'
+    | 'author'
+    | 'state'
+    | 'isDraft'
+    | 'createdAt'
+    | 'updatedAt'
+    | 'mergedAt'
+    | 'headRefName'
+    | 'baseRefName'
+    | 'additions'
+    | 'deletions'
+    | 'changedFiles'
+    | 'commentCount'
+    | 'nativeStack'
+    | 'bodyHtml'
+    | 'headOid'
+    | 'viewerCanUpdate'
+    | 'viewerDidAuthor'
+  > & {
+    viewerLogin: string;
+    /** Where the page shows a stack coming from (GitHub's own, or Graphite's comment); the `stack` stage has the final word. */
+    stackSource: Stack['source'];
+  };
+  activity: Pick<PrDetail, 'timeline'>;
+  /** Every changed file, and the diffs GitHub sent along with the list; the others come a batch at a time (`pr.fetchFileDiffs`). */
+  files: { baseOid: string; files: ChangedFileSummary[]; diffs: Record<string, ChangedFileDiff> };
+  threads: Pick<PrDetail, 'threads' | 'unresolvedThreadCount'>;
+  mergeBox: Pick<
+    PrDetail,
+    'mergeStatus' | 'reviewers' | 'reviewDecision' | 'viewerCanMerge' | 'viewerCanEnableAutoMerge' | 'allowedMergeMethods' | 'defaultMergeMethod' | 'autoMerge' | 'isInMergeQueue'
+  >;
+  checks: Pick<PrDetail, 'ci' | 'requiredCheckNames'>;
+  stack: Pick<PrDetail, 'stack'>;
+  meta: Pick<PrDetail, 'labels' | 'assignees'>;
+}
+
+export type PrStage = keyof PrStages;
+
 export interface View {
   id: string;
   name: string;

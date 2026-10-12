@@ -1,22 +1,15 @@
 // Changed files and their patches. page_data/base_comparison_info lists every file (`diffSummaries`) and
-// carries the first diffs (`diffContents`); the rest come from page_data/diff_entries, 20 paths per request.
+// carries the first diffs (`diffContents`); the rest come from page_data/diff_entries, up to 20 paths per request.
 
-import type { ChangedFile, RepoRef } from '../model';
-import { getJson, politely } from './session';
+import type { ChangedFileDiff, ChangedFileSummary, RepoRef } from '../model';
+import { getJson } from './session';
 
-/** Every changed file in GitHub's order, with a unified patch rebuilt from GitHub's diff lines. */
-export async function changedFiles(pullPath: string, repo: RepoRef, comparison: BaseComparison): Promise<ChangedFile[]> {
-  const entries = new Map((comparison.diffContents ?? []).map((entry) => [entry.path, entry]));
-  const missing = comparison.diffSummaries.map((summary) => summary.path).filter((path) => !entries.has(path));
-  const batches = Array.from({ length: Math.ceil(missing.length / 20) }, (_, i) => missing.slice(i * 20, i * 20 + 20));
+/** Every changed file in GitHub's order, and the diffs GitHub sent along with the list, by path. */
+export function changedFileList(repo: RepoRef, comparison: BaseComparison): { files: ChangedFileSummary[]; diffs: Record<string, ChangedFileDiff> } {
   const fullDiff = comparison.comparison?.fullDiff ?? null;
-  const fetched = await politely(batches, 4, (paths) => diffEntries(pullPath, paths, fullDiff));
-  for (const entry of fetched.flat()) entries.set(entry.path, entry);
-
-  return comparison.diffSummaries.map((summary): ChangedFile => {
-    const entry = entries.get(summary.path);
-    const changeType = (summary.changeType ?? entry?.status ?? 'MODIFIED').toUpperCase();
-    const status: ChangedFile['status'] =
+  const files = comparison.diffSummaries.map((summary): ChangedFileSummary => {
+    const changeType = (summary.changeType ?? 'MODIFIED').toUpperCase();
+    const status: ChangedFileSummary['status'] =
       changeType === 'ADDED'
         ? 'added'
         : changeType === 'DELETED' || changeType === 'REMOVED'
@@ -28,39 +21,46 @@ export async function changedFiles(pullPath: string, repo: RepoRef, comparison: 
               : changeType === 'CHANGED'
                 ? 'changed'
                 : 'modified';
-    const oldPath = entry?.oldTreeEntry?.path;
     // A deleted file only exists at the base commit.
     const blobOid = (status === 'removed' ? fullDiff?.baseOid : fullDiff?.headOid) ?? 'HEAD';
     return {
       path: summary.path,
-      previousPath: (status === 'renamed' || status === 'copied') && oldPath && oldPath !== summary.path ? oldPath : null,
       status,
-      additions: summary.linesAdded ?? entry?.linesAdded ?? 0,
-      deletions: summary.linesDeleted ?? entry?.linesDeleted ?? 0,
-      patch: entry ? patchOf(entry) : null,
+      additions: summary.linesAdded ?? 0,
+      deletions: summary.linesDeleted ?? 0,
       viewerViewedState: summary.markedAsViewed ? 'VIEWED' : 'UNVIEWED',
       blobUrl: `https://github.com/${repo.owner}/${repo.name}/blob/${blobOid}/${summary.path.split('/').map(encodeURIComponent).join('/')}`,
     };
   });
+  return { files, diffs: Object.fromEntries((comparison.diffContents ?? []).map((entry) => [entry.path, diffOf(entry)])) };
 }
 
 /**
- * Full-PR diff entries for up to 20 paths. Without `range` GitHub answers with the whole PR's diff (observed);
- * if it ever refuses, the request is retried with the head OID as `range`, as GitHub's own UI sends it.
+ * The diffs of up to 20 changed files, by path, from one of GitHub's diff_entries requests. Without `range` GitHub
+ * answers with the whole PR's diff (observed); if it ever refuses, the request is retried with the head OID as `range`,
+ * as GitHub's own UI sends it, which `headOid` is only asked for then.
  */
-async function diffEntries(pullPath: string, paths: string[], fullDiff: { baseOid: string; headOid: string } | null): Promise<DiffEntry[]> {
+export async function fileDiffs(pullPath: string, paths: string[], headOid: () => Promise<string | null>): Promise<Record<string, ChangedFileDiff>> {
   // As GitHub's UI does: each path encoded, joined with commas, the whole encoded again as one value;
   // `ctx` carries one (empty) context-range slot per path.
   const params = new URLSearchParams({ paths: paths.map(encodeURIComponent).join(','), ctx: paths.map(() => '').join(':'), w: '0' });
+  let entries: DiffEntry[];
   try {
-    return await getJson<DiffEntry[]>(`${pullPath}/page_data/diff_entries?${params}`);
+    entries = await getJson<DiffEntry[]>(`${pullPath}/page_data/diff_entries?${params}`);
   } catch (error) {
-    if (!fullDiff) throw error;
-    params.set('range', fullDiff.headOid);
-    const entries = await getJson<DiffEntry[]>(`${pullPath}/page_data/diff_entries?${params}`);
+    const range = await headOid();
+    if (!range) throw error;
+    params.set('range', range);
+    entries = await getJson<DiffEntry[]>(`${pullPath}/page_data/diff_entries?${params}`);
     console.debug('[gg] diff_entries needed range=<head OID>');
-    return entries;
   }
+  return Object.fromEntries(entries.map((entry) => [entry.path, diffOf(entry)]));
+}
+
+/** The diff a GitHub diff entry carries: its patch and, for a renamed or copied file, the path it had before. */
+function diffOf(entry: DiffEntry): ChangedFileDiff {
+  const oldPath = entry.oldTreeEntry?.path;
+  return { patch: patchOf(entry), previousPath: oldPath && oldPath !== entry.path ? oldPath : null };
 }
 
 /**
@@ -92,7 +92,6 @@ export interface BaseComparison {
   }>;
   diffContents?: DiffEntry[];
   comparison?: { fullDiff?: { baseOid: string; headOid: string } };
-  commits?: Array<{ oid: string; createdAt: string; actorLogin?: string | null; messageHeadline?: string }>;
 }
 
 export interface DiffEntry {
