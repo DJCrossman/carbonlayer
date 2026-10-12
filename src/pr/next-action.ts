@@ -4,7 +4,7 @@ import type { PrDetail, PrStage, PrSummary } from '../lib/model';
 
 /**
  * What stands between this PR and being merged, most fundamental first: its state, then conflicts,
- * the stack below it, open conversations, CI, reviews, and finally branch protection. When nothing
+ * the stack below it, open conversations, required checks, reviews, and finally branch protection. When nothing
  * does, it is ready to merge. While a stage that a step depends on has not arrived (`unknown`), the
  * answer stops at that step: "Checking mergeability…".
  */
@@ -36,10 +36,10 @@ export function nextActionFor(pr: PrDetail, unknown: readonly PrStage[] = []): N
     };
   }
   if (unknown.includes('checks')) return checking;
-  if (pr.ci.state === 'FAILURE') {
-    const failing = pr.ci.checks.find((check) => check.state === 'FAILURE');
-    return { kind: 'checks-failed', tone: 'danger', title: 'Checks failed', detail: failing?.name ?? null };
-  }
+  // Only a required check's failure stands in the way: GitHub merges over optional ones, and so does Graphite.
+  const failing = pr.ci.checks.filter((check) => check.state === 'FAILURE');
+  const requiredFailing = failing.find((check) => pr.requiredCheckNames.includes(check.name));
+  if (requiredFailing) return { kind: 'checks-failed', tone: 'danger', title: 'Checks failed', detail: requiredFailing.name };
   if (pr.reviewDecision === 'CHANGES_REQUESTED') {
     const requester = pr.reviewers.find((reviewer) => reviewer.state === 'CHANGES_REQUESTED');
     return {
@@ -61,7 +61,12 @@ export function nextActionFor(pr: PrDetail, unknown: readonly PrStage[] = []): N
     return { kind: 'behind', tone: 'attention', title: `Behind ${pr.baseRefName}`, detail: 'Update the branch on GitHub.' };
   }
   if (pr.mergeStatus === 'BLOCKED') return { kind: 'blocked', tone: 'danger', title: 'Blocked by branch protection', detail: null };
-  return { kind: 'ready', tone: 'success', title: 'Ready to merge', detail: null };
+  return {
+    kind: 'ready',
+    tone: 'success',
+    title: 'Ready to merge',
+    detail: failing.length > 0 ? `${failing.length === 1 ? 'An optional check is' : `${failing.length} optional checks are`} failing: ${failing.map((check) => check.name).join(', ')}` : null,
+  };
 }
 
 type NextAction = {

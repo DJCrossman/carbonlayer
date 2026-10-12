@@ -12,7 +12,12 @@ const failingCheck = pr42.ci.checks.find((check) => check.state === 'FAILURE')!;
 
 describe('nextActionFor', () => {
   it('is ready to merge when nothing blocks the PR', () => {
-    expect(nextActionFor(ready)).toMatchObject({ kind: 'ready', tone: 'success', title: 'Ready to merge' });
+    expect(nextActionFor(ready)).toMatchObject({ kind: 'ready', tone: 'success', title: 'Ready to merge', detail: null });
+  });
+
+  it('merges over a failing optional check, as GitHub and Graphite do, and says so', () => {
+    const optional = { ...ready, ci: { ...pr42.ci }, requiredCheckNames: ready.requiredCheckNames.filter((name) => name !== failingCheck.name), mergeStatus: 'UNSTABLE' as const };
+    expect(nextActionFor(optional)).toMatchObject({ kind: 'ready', detail: `An optional check is failing: ${failingCheck.name}` });
   });
 
   it.each([
@@ -21,7 +26,7 @@ describe('nextActionFor', () => {
     ['draft', { isDraft: true }, 'Draft'],
     ['conflicts', { mergeStatus: 'DIRTY' }, 'Conflicts with main'],
     ['unresolved', { unresolvedThreadCount: 2 }, 'Unresolved comments'],
-    ['checks-failed', { ci: { ...pr42.ci } }, 'Checks failed'],
+    ['checks-failed', { ci: { ...pr42.ci }, requiredCheckNames: [failingCheck.name] }, 'Checks failed'],
     ['changes-requested', { reviewDecision: 'CHANGES_REQUESTED', reviewers: pr42.reviewers }, 'Changes requested by jlord'],
     ['review-required', { reviewDecision: 'REVIEW_REQUIRED', reviewers: pr42.reviewers }, 'Waiting for review'],
     ['behind', { mergeStatus: 'BEHIND' }, 'Behind main'],
