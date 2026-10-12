@@ -45,7 +45,13 @@ describe('fetchInbox', () => {
         if (url.startsWith('/pulls/inbox/queries')) return Response.json({ results: [pull(1), pull(2), pull(3)], totalCount: 3 });
         if (url.startsWith('/pulls/inbox/deferred')) return Response.json([{ id: 'PR_1', reviewDecisionState: 'APPROVED' }]);
         if (url.startsWith('/pulls/search')) return Response.json({ payload: { pullsDashboardSurfaceContentRoute: { results: [pull(9)], pageInfo: { totalCount: 40 } } } });
-        if (url.startsWith('/pulls/deferred')) return Response.json({ results: [{ id: 'PR_9', statusCheckRollup: { state: 'SUCCESS', totalCount: 2, successCount: 2 } }] });
+        // A search's deferred rows come wrapped, keyed by index rather than listed (the shape GitHub's dashboard answers).
+        if (url.startsWith('/pulls/deferred')) {
+          return Response.json({
+            meta: { title: 'Pull requests' },
+            payload: { pullsDashboardSurfaceContentDeferredData: { results: { '0': { id: 'PR_9', statusCheckRollup: { state: 'SUCCESS', totalCount: 2, successCount: 2 } } } } },
+          });
+        }
         return new Response('', { status: 500 });
       }),
     );

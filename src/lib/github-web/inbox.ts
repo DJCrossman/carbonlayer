@@ -83,13 +83,14 @@ export async function deferredFields(pulls: Pull[], search: { section: GitHubInb
     return new Map();
   }
   noteShape('deferred', data);
-  // Expected an array of rows or { results | pulls: rows }; also accepts an object keyed by PR id.
-  const record = (data ?? {}) as Record<string, unknown>;
-  const rows = Array.isArray(data) ? data : Array.isArray(record.results) ? record.results : Array.isArray(record.pulls) ? record.pulls : null;
-  if (!rows) {
-    return new Map(Object.entries(record).filter((entry): entry is [string, Partial<Pull>] => typeof entry[1] === 'object' && entry[1] !== null));
-  }
-  return new Map(rows.filter((row): row is Pull => typeof (row as Partial<Pull> | null)?.id === 'string').map((row) => [row.id, row]));
+  // The rows sit wherever GitHub nests them: a search answers `{ meta, payload: { pullsDashboardSurfaceContentDeferredData:
+  // { results: { "0": row, … } } } }` (an object keyed by index, not an array); a section's answer is flatter. Each row
+  // carries its PR's relay id.
+  const holdsRows = (value: unknown) =>
+    typeof value === 'object' && value !== null && Object.values(value).some((row) => typeof (row as Partial<Pull> | null)?.id === 'string');
+  const found = holdsRows(data) ? data : findInPayload(data, (_, value) => holdsRows(value));
+  const rows = Object.values((found ?? {}) as Record<string, unknown>).filter((row): row is Pull => typeof (row as Partial<Pull> | null)?.id === 'string');
+  return new Map(rows.map((row) => [row.id, row]));
 }
 
 /** A dashboard row as the inbox shows it: the section or search fields plus its deferred fields. */

@@ -26,8 +26,12 @@ Then `GET /pulls/inbox/deferred?page=1&ids[]=<id>&ids[]=…` fills the deferred 
 ### Any search query (custom views)
 `GET /pulls/search?q=<query>` returns HTML whose embedded `payload.pullsDashboardSurfaceContentRoute` is
 `{ results: Pull[], pageInfo: { currentPage, totalPages, totalCount, openCount, closedCount }, error }`
-(`page=N` for more). Then `GET /pulls/deferred?q=<query>&page=1&ids[]=…` (same ids) returns the deferred
-fields. Try `Accept: application/json` first; fall back to parsing the HTML.
+(`page=N` for more). Then `GET /pulls/deferred?q=<query>&page=1&ids[]=…` (same relay ids) returns the deferred
+fields as `{ meta: { title }, payload: { pullsDashboardSurfaceContentDeferredData: { results: { "0": row, "1": row, … } } } }`
+— `results` is an object keyed by index, not an array (VERIFIED signed in 2026-10-12 from GitHub's React Query cache;
+GitHub's own search sends `q` with ` sort:updated-desc` appended). Each row is `{ id, reviewDecisionState,
+statusCheckRollup, approvedReviewsCount, changesRequestedReviewsCount }`; the inbox sections' `/pulls/inbox/deferred`
+rows have the same fields (GitHub caches them per id). Try `Accept: application/json` first; fall back to parsing the HTML.
 
 ### Pull (search result / inbox row)
 ```
