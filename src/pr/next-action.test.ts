@@ -42,8 +42,8 @@ describe('nextActionFor', () => {
     expect(action).toMatchObject({ kind: 'checks-running', title: 'Checks running · 5/7' });
   });
 
-  it('names the first failing check and the pending reviewers', () => {
-    expect(nextActionFor({ ...ready, ci: pr42.ci })).toMatchObject({ detail: 'e2e / portal' });
+  it('names the failing required check and the pending reviewers', () => {
+    expect(nextActionFor({ ...ready, ci: pr42.ci, requiredCheckNames: ['e2e / portal'] })).toMatchObject({ detail: 'e2e / portal' });
     expect(nextActionFor({ ...ready, reviewDecision: 'REVIEW_REQUIRED', reviewers: pr42.reviewers })).toMatchObject({ detail: 'acme/parcs' });
     expect(nextActionFor({ ...ready, unresolvedThreadCount: 1 })).toMatchObject({ detail: '1 thread needs resolving' });
   });
