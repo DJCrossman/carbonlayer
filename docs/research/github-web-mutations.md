@@ -63,12 +63,19 @@ Returned 200 signed out (curl), keys confirmed:
   `participants`, `labels`, `assignees`, `development`, `deployments`, `code_button`, `annotations?end_commit_oid=`.
 Need a session (404 signed out): `status_checks`, `merge_box`, `stack_mergeability`, `pending_review`,
 `merge_instructions`, `stack_rebase_status`, `user_diff_view_settings`; `catch_up` → 422.
-- `status_checks` (no params; INFERRED from the bundle's validator): `{ statusRollup: { combinedState,
-  summary[], pendingWorkflowApprovalRollup: { viewerCanApproveWorkflowRuns, hasExpiredWorkflowRuns,
-  approvalRequiredMessage } | null } }`.
-- `merge_box` (INFERRED): `{ pullRequest: { state, isDraft, isInMergeQueue, mergeStateStatus, autoMergeRequest,
-  viewerMergeActions, viewerCanDisableAutoMerge, mergeBoxAliveChannels, … }, mergeRequirements: { state,
-  conditions, commitMessageHeadline, commitMessageBody, defaultCommitAuthorEmail, possibleCommitAuthorEmails } }`.
+- `status_checks` (no params; VERIFIED signed in on 2026-10-12 from the React Query cache of GitHub's own PR page):
+  `{ aliveChannels: { commitHeadShaChannel }, statusChecks: [{ displayName, state, isRequired, targetUrl, description,
+  additionalContext, stateChangedAt, durationInSeconds, avatarUrl, avatarBackgroundColor, copilotCheckRunFailureContext }],
+  statusRollup: { combinedState, summary[], pendingWorkflowApprovalRollup } }`. GitHub's own request for it is
+  `verifiedFetchJSON`: `Accept: application/json`, `Content-Type: application/json` (on the GET), `GitHub-Is-React: true`,
+  `GitHub-Verified-Fetch: true`, `X-Requested-With: XMLHttpRequest`, `X-Fetch-Nonce: <meta fetch-nonce>`,
+  `X-GitHub-Client-Version: <meta release>`; the page fetches it once the merge box mounts, cached by head SHA.
+- `merge_box?merge_method=SQUASH&bypass_requirements=false` (VERIFIED signed in 2026-10-12, same source): `{ pullRequest: {
+  id, state, isDraft, isInMergeQueue, isCrossRepo, mergeStateStatus, autoMergeRequest, headRefName, headRefOid,
+  baseRefName, latestOpinionatedReviews, pendingReviewRequests, mergeBoxUserPreferences, mergeQueue, mergeQueueEntry,
+  numberOfCommits, viewerCanAddAndRemoveFromMergeQueue, viewerCanAdminBypassMergeRequirements, viewerCanClose,
+  viewerCanConvertToDraft, viewerCanDeleteHeadRef, … }, mergeRequirements: { state, conditions, commitMessageHeadline,
+  defaultCommitAuthorEmail, … } }`. `merge_method` is the viewer's preferred method, upper case.
 - `diff_entries`: `paths` = each path `encodeURIComponent`-ed, joined with commas (single-encoded also works);
   `ctx` = context-line ranges per path `start-end,…` joined with `:`; `w` = 0|1; `range` = head OID when the
   range starts at the PR base, else `startOid..endOid` within the PR's commits; **without `range` you get the

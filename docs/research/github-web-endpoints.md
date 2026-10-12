@@ -91,9 +91,10 @@ Data endpoints (all `page_data/*` need a session; `tab_counts` and `diffstat` al
   counts the dashboard rows lack (`enrichPull` in `src/lib/github-web/inbox.ts`). Whether the merge box names reviewers
   (`latestOpinionatedReviews`, `pendingReviewRequests` / `pendingRequestedReviews`) has not been seen signed in; without
   them the row shows no reviewer avatars.
-- `GET …/page_data/status_checks` → the checks list (`ChecksSection` has `sectionStatus: 'PASSED'`, grouping
-  preference). **Shape unconfirmed**: log it and map tolerantly (expect check name, status/conclusion,
-  details URL, app/workflow name, required flag, durations).
+- `GET …/page_data/status_checks` → the checks list: `{ statusChecks: [{ displayName, state, isRequired, targetUrl,
+  description, additionalContext, stateChangedAt, durationInSeconds, avatarUrl, … }], statusRollup: { combinedState,
+  summary, pendingWorkflowApprovalRollup }, aliveChannels }` (verified signed in, 2026-10-12; headers in
+  github-web-mutations.md). GitHub's merge box shows its checks section when `statusRollup.summary` is non-empty.
 - `GET …/page_data/stack_mergeability?merge_method=MERGE&bypass_requirements=false` → stack entries:
   `[{ pull: { number, title, state, url, headBranch, headOid, isInAutoMergeRange, isUnstackable },
   position: 'CURRENT'|…, status: 'NEEDS_MERGE_STATE'|…, failedSubConditions, channels }]` (called for every
