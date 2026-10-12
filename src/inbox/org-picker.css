@@ -83,7 +83,8 @@
   overflow: auto;
   list-style: none;
 }
-.gg-org-picker__item {
+/* Two classes deep, over the options page's own button style. */
+.gg-org-picker__list .gg-org-picker__item {
   display: flex;
   align-items: center;
   gap: var(--gg-space-2);
@@ -91,16 +92,17 @@
   height: 32px;
   padding: 0 var(--gg-space-3);
   border: 0;
+  border-radius: 0;
   background: none;
   color: var(--gg-fg);
   font: inherit;
   text-align: left;
   cursor: pointer;
 }
-.gg-org-picker__item:hover {
+.gg-org-picker__list .gg-org-picker__item:hover {
   background: var(--gg-bg-hover);
 }
-.gg-org-picker__item:focus-visible {
+.gg-org-picker__list .gg-org-picker__item:focus-visible {
   outline: 2px solid var(--gg-accent);
   outline-offset: -2px;
 }
@@ -152,7 +154,7 @@
   color: var(--gg-fg-muted);
   font-size: 12px;
 }
-.gg-org-chooser .gg-org-picker__item {
+.gg-org-chooser .gg-org-picker__list .gg-org-picker__item {
   padding: 0 var(--gg-space-4);
 }
 .gg-org-chooser__keep {
