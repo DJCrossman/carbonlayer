@@ -16,19 +16,23 @@ export function mergeState(data: unknown, pr: { isDraft: boolean; isOpen: boolea
   const conditions = Array.isArray(box.mergeRequirements?.conditions) ? box.mergeRequirements.conditions : [];
   const failed = (type: string) => conditions.some((condition) => condition.type === type && condition.result === 'FAILED');
 
+  // A draft's box says DRAFT and fails the PULL_REQUEST_STATE condition; the other conditions still tell whether it
+  // conflicts or is blocked, which is what the inbox shows for drafts like for any other PR.
   const reported = pullRequest.mergeStateStatus?.toUpperCase();
-  const mergeStatus: MergeStatus =
-    pr.isDraft || pullRequest.isDraft
-      ? 'DRAFT'
-      : reported && ['CLEAN', 'HAS_HOOKS', 'UNSTABLE', 'BLOCKED', 'BEHIND', 'DIRTY', 'DRAFT', 'UNKNOWN'].includes(reported)
-        ? (reported as MergeStatus)
-        : box.mergeRequirements?.state === 'MERGEABLE'
+  const fromConditions = (): MergeStatus =>
+    failed('PULL_REQUEST_MERGE_CONFLICT_STATE')
+      ? 'DIRTY'
+      : failed('PULL_REQUEST_RULES') || failed('STACK')
+        ? 'BLOCKED'
+        : box.mergeRequirements?.state === 'MERGEABLE' || conditions.some((condition) => condition.result === 'PASSED')
           ? 'CLEAN'
-          : failed('PULL_REQUEST_MERGE_CONFLICT_STATE')
-            ? 'DIRTY'
-            : failed('PULL_REQUEST_RULES') || failed('STACK')
-              ? 'BLOCKED'
-              : 'UNKNOWN';
+          : 'UNKNOWN';
+  const mergeStatus: MergeStatus =
+    pr.isDraft || pullRequest.isDraft || reported === 'DRAFT'
+      ? fromConditions()
+      : reported && ['CLEAN', 'HAS_HOOKS', 'UNSTABLE', 'BLOCKED', 'BEHIND', 'DIRTY', 'UNKNOWN'].includes(reported)
+        ? (reported as MergeStatus)
+        : fromConditions();
 
   // viewerMergeActions: [{ name: DIRECT_MERGE | AUTO_MERGE | MERGE_QUEUE, mergeMethods: [{ name, allowableStatus, isDefault }] }]
   const actions = Array.isArray(pullRequest.viewerMergeActions) ? pullRequest.viewerMergeActions : [];

@@ -38,11 +38,17 @@ describe('mergeState', () => {
     });
   });
 
-  it('derives the state from the requirements when GitHub does not name it, and drafts are DRAFT', () => {
+  it('derives the state from the requirements when GitHub does not name it, and for drafts', () => {
     const conflict = { mergeRequirements: { state: 'UNMERGEABLE', conditions: [{ type: 'PULL_REQUEST_MERGE_CONFLICT_STATE', result: 'FAILED' }] } };
     expect(mergeState(conflict, open).mergeStatus).toBe('DIRTY');
     expect(mergeState({ mergeRequirements: { state: 'MERGEABLE', conditions: [] } }, open).mergeStatus).toBe('CLEAN');
-    expect(mergeState({ pullRequest: { mergeStateStatus: 'CLEAN' } }, { isDraft: true, isOpen: true }).mergeStatus).toBe('DRAFT');
+    // A draft's box says DRAFT and fails the state condition; the other conditions still say how it would merge.
+    const draft = { isDraft: true, isOpen: true };
+    const draftBox = (conditions: Array<{ type: string; result: string }>) => ({ pullRequest: { mergeStateStatus: 'DRAFT' }, mergeRequirements: { state: 'UNMERGEABLE', conditions } });
+    expect(mergeState(draftBox([{ type: 'PULL_REQUEST_STATE', result: 'FAILED' }, { type: 'PULL_REQUEST_MERGE_CONFLICT_STATE', result: 'FAILED' }]), draft).mergeStatus).toBe('DIRTY');
+    expect(mergeState(draftBox([{ type: 'PULL_REQUEST_STATE', result: 'FAILED' }, { type: 'PULL_REQUEST_RULES', result: 'FAILED' }]), draft).mergeStatus).toBe('BLOCKED');
+    expect(mergeState(draftBox([{ type: 'PULL_REQUEST_STATE', result: 'FAILED' }, { type: 'PULL_REQUEST_MERGE_CONFLICT_STATE', result: 'PASSED' }]), draft).mergeStatus).toBe('CLEAN');
+    expect(mergeState({ pullRequest: { mergeStateStatus: 'DRAFT' } }, draft).mergeStatus).toBe('UNKNOWN');
   });
 
   it('assumes every merge method and asks the user-state condition when the actions are missing', () => {

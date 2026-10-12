@@ -29,7 +29,7 @@ describe('summarisePull', () => {
   it("lets GitHub's own sections vouch for mergeability and the merge queue", () => {
     expect(summarisePull(pull(1), 'ready-to-merge').mergeStatus).toBe('CLEAN');
     expect(summarisePull(pull(1, { category: 'READY_TO_MERGE' }), null).mergeStatus).toBe('CLEAN');
-    expect(summarisePull(pull(1, { isDraft: true }), 'ready-to-merge').mergeStatus).toBe('DRAFT');
+    expect(summarisePull(pull(1, { isDraft: true }), null).mergeStatus).toBe('UNKNOWN');
     expect(summarisePull(pull(1), 'merge-queue').isInMergeQueue).toBe(true);
     expect(summarisePull(pull(1, { mergedAt: '2026-10-01T00:00:00Z' }), null).state).toBe('MERGED');
   });
@@ -213,7 +213,6 @@ describe('enrichPull', () => {
   });
 
   it.each([
-    ['a draft', { state: 'OPEN', isDraft: true }, { mergeStatus: 'DRAFT', additions: 4, deletions: 1 }],
     ['a merged pull request', { state: 'MERGED', isDraft: false }, { additions: 4, deletions: 1 }],
     ['a closed pull request', { state: 'CLOSED', isDraft: false }, { additions: 4, deletions: 1 }],
   ] as const)('asks no merge box for %s', async (_, pr, found) => {

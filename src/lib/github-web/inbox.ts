@@ -139,7 +139,7 @@ export function summarisePull(pull: Pull, section: GitHubInboxFilter | null): Pr
       },
     },
     // The dashboard does not expose mergeability; GitHub's own ready-to-merge section vouches for it.
-    mergeStatus: isDraft ? 'DRAFT' : pull.category === 'READY_TO_MERGE' || section === 'ready-to-merge' ? 'CLEAN' : 'UNKNOWN',
+    mergeStatus: pull.category === 'READY_TO_MERGE' || section === 'ready-to-merge' ? 'CLEAN' : 'UNKNOWN',
     // Not in the dashboard data: 0 means unknown here.
     additions: 0,
     deletions: 0,
@@ -158,12 +158,13 @@ export function summarisePull(pull: Pull, section: GitHubInboxFilter | null): Pr
  * from its merge box (`page_data/merge_box`, read as the PR page reads it); reviewers, and the viewer's own review, from
  * `page_data/review_requests`, else from what the merge box names (`latestOpinionatedReviews`, pending requests); line
  * counts from `page_data/diffstat`; and for a failing CI rollup, which checks fail and which are required, from
- * `page_data/status_checks`. A draft's merge status is DRAFT and a merged or closed PR's is its state, so neither asks the
- * merge box. A route that fails is logged and leaves its fields out: the row keeps what it had.
+ * `page_data/status_checks`. A merged or closed PR's merge status is its state, so it does not ask the merge box; a
+ * draft does, and shows how it would merge. A route that fails is logged and leaves its fields out: the row keeps what
+ * it had.
  */
 export async function enrichPull(pr: InboxRowToEnrich, mergeMethod: MergeMethod, viewerLogin: string | null): Promise<PrEnrichment> {
   const data = `/${pr.repo.owner}/${pr.repo.name}/pull/${pr.number}/page_data`;
-  const asksMergeBox = pr.state === 'OPEN' && !pr.isDraft;
+  const asksMergeBox = pr.state === 'OPEN';
   const asksChecks = pr.ci.state === 'FAILURE';
   const [mergeBox, diffstat, reviewRequests, statusChecks] = await Promise.allSettled([
     asksMergeBox ? getJson<unknown>(`${data}/merge_box?merge_method=${mergeMethod}&bypass_requirements=false`) : null,
@@ -172,10 +173,10 @@ export async function enrichPull(pr: InboxRowToEnrich, mergeMethod: MergeMethod,
     asksChecks ? getJson<unknown>(`${data}/status_checks`) : null,
   ]);
   const where = `${pr.repo.owner}/${pr.repo.name}#${pr.number}`;
-  const found: PrEnrichment = pr.state === 'OPEN' && pr.isDraft ? { mergeStatus: 'DRAFT' } : {};
+  const found: PrEnrichment = {};
   let named: { latestOpinionatedReviews: unknown; pendingReviewRequests: unknown } | null = null;
   if (asksMergeBox && mergeBox.status === 'fulfilled') {
-    const merge = mergeState(mergeBox.value, { isDraft: false, isOpen: true });
+    const merge = mergeState(mergeBox.value, { isDraft: pr.isDraft, isOpen: true });
     found.mergeStatus = merge.mergeStatus;
     // The first requirement the merge box says is unmet, e.g. "At least 1 approving review is required".
     const { mergeRequirements } = (mergeBox.value ?? {}) as { mergeRequirements?: { conditions?: Array<{ result?: string; message?: string; description?: string; displayName?: string }> } };

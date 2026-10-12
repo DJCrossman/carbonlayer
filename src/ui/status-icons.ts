@@ -13,7 +13,7 @@ export function reviewStatusIcon(
   pr: { isDraft: boolean; reviewDecision: ReviewDecision; reviewers: ReviewerSummary[] | null; viewerReview?: ReviewerSummary['state'] | null },
   viewerLogin: string | null,
 ): StatusIcon {
-  if (pr.isDraft) return { icon: 'dash', tone: 'subtle', tooltip: 'Draft: no review yet' };
+  if (pr.isDraft) return { icon: 'pencil', tone: 'subtle', tooltip: 'Draft' };
   if (pr.reviewers === null) {
     switch (pr.reviewDecision) {
       case 'APPROVED':
@@ -84,7 +84,7 @@ export function ciStatusIcon(ci: CiSummary, requiredCheckNames: string[] | null)
 }
 
 /**
- * Where merging stands: merged, closed, a draft, queued or set to auto-merge, mergeable, conflicting, or blocked, with the
+ * Where merging stands: merged, closed, queued or set to auto-merge, mergeable, conflicting, or blocked, with the
  * merge box's reason when GitHub gave one. Unknown until GitHub has said (the dashboard does not).
  */
 export function mergeStatusIcon(
@@ -93,7 +93,6 @@ export function mergeStatusIcon(
 ): StatusIcon {
   if (pr.state === 'MERGED') return { icon: 'git-merge', tone: 'done', tooltip: 'Merged' };
   if (pr.state === 'CLOSED') return { icon: 'git-pull-request-closed', tone: 'danger', tooltip: 'Closed' };
-  if (pr.isDraft || pr.mergeStatus === 'DRAFT') return { icon: 'git-pull-request-draft', tone: 'subtle', tooltip: 'Draft' };
   if (pr.isInMergeQueue) return { icon: 'git-merge', tone: 'accent', tooltip: 'Queued in the merge queue' };
   if (pr.autoMerge) return { icon: 'git-merge', tone: 'accent', tooltip: `Auto-merge (${pr.autoMerge.method.toLowerCase()}) once requirements are met` };
   switch (pr.mergeStatus) {
@@ -108,6 +107,7 @@ export function mergeStatusIcon(
       return { icon: 'alert', tone: 'severe', tooltip: `Blocked: ${blockedReason ?? 'the branch is behind its base'}` };
     case 'UNSTABLE':
       return { icon: 'alert', tone: 'severe', tooltip: `Blocked: ${blockedReason ?? 'some checks are failing'}` };
+    case 'DRAFT':
     case 'UNKNOWN':
       return { icon: 'dash', tone: 'subtle', tooltip: 'Unknown' };
   }

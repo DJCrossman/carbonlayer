@@ -19,11 +19,11 @@ describe('the Review column', () => {
     expect(reviewStatusIcon({ ...open, reviewers: [...reviewers], viewerReview }, 'octocat')).toEqual({ icon, tone, tooltip });
   });
 
-  it('shows a dash for a draft, whatever its reviews say', () => {
+  it('shows a grey pencil for a draft, whatever its reviews say', () => {
     expect(reviewStatusIcon({ isDraft: true, reviewDecision: 'APPROVED', reviewers: [reviewer('jlord', 'APPROVED')] }, 'octocat')).toEqual({
-      icon: 'dash',
+      icon: 'pencil',
       tone: 'subtle',
-      tooltip: 'Draft: no review yet',
+      tooltip: 'Draft',
     });
   });
 
@@ -67,7 +67,8 @@ describe('the Merge column', () => {
     ['blocked', { mergeStatus: 'BLOCKED' }, ['alert', 'severe', 'Blocked: required reviews or checks are missing']],
     ['behind its base', { mergeStatus: 'BEHIND' }, ['alert', 'severe', 'Blocked: the branch is behind its base']],
     ['unstable', { mergeStatus: 'UNSTABLE' }, ['alert', 'severe', 'Blocked: some checks are failing']],
-    ['a draft', { isDraft: true, mergeStatus: 'DRAFT' }, ['git-pull-request-draft', 'subtle', 'Draft']],
+    ['a conflicting draft, like any other PR', { isDraft: true, mergeStatus: 'DIRTY' }, ['x-circle-fill', 'danger', 'Merge conflict']],
+    ['a draft GitHub has not described', { isDraft: true, mergeStatus: 'DRAFT' }, ['dash', 'subtle', 'Unknown']],
     ['not known yet', { mergeStatus: 'UNKNOWN' }, ['dash', 'subtle', 'Unknown']],
     ['in the merge queue', { isInMergeQueue: true }, ['git-merge', 'accent', 'Queued in the merge queue']],
   ] as const)('%s', (_, fields, [icon, tone, tooltip]) => {
