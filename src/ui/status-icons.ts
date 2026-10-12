@@ -3,13 +3,6 @@
 import type { CiSummary, PrSummary, ReviewDecision, ReviewerSummary } from '../lib/model';
 import type { IconName } from './Icon';
 
-export interface StatusIcon {
-  icon: IconName;
-  /** green, yellow, orange, red, purple, blue, grey */
-  tone: 'success' | 'attention' | 'severe' | 'danger' | 'done' | 'accent' | 'subtle';
-  tooltip: string;
-}
-
 /**
  * Where the reviews stand, from the viewer's side: changes requested by anyone first, then the viewer's own approval,
  * then others' reviews (approvals and comments), then requests nobody has answered, then none at all. `reviewers` is
@@ -118,4 +111,12 @@ export function mergeStatusIcon(
     case 'UNKNOWN':
       return { icon: 'dash', tone: 'subtle', tooltip: 'Unknown' };
   }
+}
+
+/** What a status column shows: an icon, in a tone, and why on hover. */
+export interface StatusIcon {
+  icon: IconName;
+  /** green, yellow, orange, red, purple, blue, grey */
+  tone: 'success' | 'attention' | 'severe' | 'danger' | 'done' | 'accent' | 'subtle';
+  tooltip: string;
 }

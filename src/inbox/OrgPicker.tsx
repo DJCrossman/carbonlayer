@@ -107,7 +107,7 @@ export function OrgChooser({
 }
 
 /** The organizations as loaded (`useOrganizations`): the list, or why it did not load and a way to ask again, or null while loading. */
-export type OrganizationsLoad = { list: Organization[] | null; error: string | null; retry: () => void };
+type OrganizationsLoad = { list: Organization[] | null; error: string | null; retry: () => void };
 
 /** The viewer's organizations, asked for once (the content script keeps them 10 minutes), and again on `retry`. */
 export function useOrganizations(listOrgs: () => Promise<Organization[]>): OrganizationsLoad {

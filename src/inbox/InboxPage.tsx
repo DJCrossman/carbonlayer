@@ -32,8 +32,6 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   const moreRows = useMoreRows(source);
   const { settings, org } = inbox;
   const viewerLogin = organizations.list?.find((candidate) => candidate.isViewer)?.login ?? null;
-  // The picker lists the organization's repositories only.
-  const searchRepos = (query: string) => source.searchRepos(query, org);
   const [selected, setSelected] = useState<SelectedRow | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [graphiteOpen, setGraphiteOpen] = useState(false);
@@ -246,7 +244,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
               selected={settings.inboxRepos}
               emptyLabel="All repositories"
               title={`Every section searches ${settings.inboxRepos.length > 0 ? 'these of' : 'all of'} ${org.login}'s repositories, unless it names repositories of its own`}
-              searchRepos={searchRepos}
+              searchRepos={(query) => source.searchRepos(query, org)}
               onChange={(inboxRepos) => void inbox.saveSettings({ inboxRepos })}
             />
           )}
@@ -378,7 +376,8 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
       {helpOpen && <ShortcutHelp onClose={() => setHelpOpen(false)} />}
       {editing && (
         <SectionEditor
-          searchRepos={searchRepos}
+          // The organization's repositories only.
+          searchRepos={(query) => source.searchRepos(query, org)}
           key={editing === 'new' ? 'new' : editing.id}
           view={editing === 'new' ? null : editing}
           onSave={saveSection}
