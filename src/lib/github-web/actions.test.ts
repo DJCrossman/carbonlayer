@@ -94,7 +94,7 @@ describe('dynamicRunsIn', () => {
 
 describe('runHeadShaIn', () => {
   it("reads the commit a run ran on from its page's title, short or whole", () => {
-    expect(runHeadShaIn('<html><head><title>Running Copilot Code Review · offstreetparking/core@9824bb7</title></head></html>')).toBe('9824bb7');
+    expect(runHeadShaIn('<html><head><title>Running Copilot Code Review · acme/widgets@9824bb7</title></head></html>')).toBe('9824bb7');
     expect(runHeadShaIn(`<title>Running Copilot Code Review · acme/widgets@${'ab'.repeat(20)}</title>`)).toBe('ab'.repeat(20));
     expect(runHeadShaIn('<title>Actions · acme/widgets</title>')).toBeNull();
   });
