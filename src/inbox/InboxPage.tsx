@@ -54,8 +54,9 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
       const added = moreRows.addedTo(result.view, settings?.inboxScope ?? '')?.prs.filter((pr) => !result.prs.some((first) => first.id === pr.id)) ?? [];
       const enriched = [...result.prs, ...added].map((pr) => {
         const found = enrichment.found.get(pr.id)?.enrichment;
-        // The checks found describe a failure; once GitHub's rollup has moved on, the rollup speaks.
-        return { ...pr, ...found, ci: found?.ci && pr.ci.state === 'FAILURE' ? found.ci : pr.ci };
+        // The checks found describe a failing or pending rollup (which checks fail; whether only Graphite's mergeability
+        // check is still running); once GitHub's rollup has moved on, the rollup speaks.
+        return { ...pr, ...found, ci: found?.ci && (pr.ci.state === 'FAILURE' || pr.ci.state === 'PENDING') ? found.ci : pr.ci };
       });
       const prs = enriched.toSorted((a, b) => {
         const ascending =
