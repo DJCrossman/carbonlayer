@@ -114,8 +114,10 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
   // A style sheet rather than inline styles on GitHub's elements: it hides `main` before the parser reaches it and
   // whatever `main` a Turbo visit brings. Like the app's wrapper below, it sits on <html>, outside the <head> and
   // <body> Turbo replaces.
+  // GitHub paints its whole page as one stacking context (`body > div { isolation: isolate }`), which would put the
+  // app's frame over the header's menus and overlays as well; without the isolation they keep their own z-index (1000).
   const hideGitHub = document.createElement('style');
-  hideGitHub.textContent = 'main { display: none !important; } html { overflow: hidden !important; }';
+  hideGitHub.textContent = 'main { display: none !important; } html { overflow: hidden !important; } body > div { isolation: auto !important; }';
   html.append(hideGitHub);
   window.scrollTo(0, 0);
 
@@ -133,8 +135,8 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
     anchor: 'html',
     append: 'last',
     onBeforeMount(wrapper, iframe) {
-      // Below GitHub's own menus and dialogs (z-index 100+), above everything else on the page; hidden until it can
-      // sit below GitHub's header.
+      // Below GitHub's own menus and overlays (z-index 1000 once the page's isolation is lifted above), above everything
+      // else on the page; hidden until it can sit below GitHub's header.
       wrapper.style.cssText = 'position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; visibility: hidden;';
       iframe.style.cssText = 'display: block; width: 100%; height: 100%; border: 0; background: var(--bgColor-default, #fff);';
       iframe.title = 'Pull requests';

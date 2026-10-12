@@ -19,6 +19,11 @@ describe('checksFrom', () => {
       ['docs', 'SKIPPED'],
     ]);
     expect(ci.checks[0]).toMatchObject({ url: 'https://ci/1', description: 'Successful in 2m', group: 'GitHub Actions', completedAt: '2026-10-01T10:00:00Z' });
+    // GitHub links its Actions jobs by path; the link must work from the app's own origin.
+    expect(checksFrom({ statusChecks: [{ displayName: 'build', state: 'SUCCESS', targetUrl: '/acme/widgets/actions/runs/12/job/34' }] }).ci.checks[0]).toMatchObject({
+      url: 'https://github.com/acme/widgets/actions/runs/12/job/34',
+      runId: '12',
+    });
     expect(ci.checks[1]?.description).toBe('Failing after 1m');
     expect(ci.checks[2]?.startedAt).toBe('2026-10-01T10:05:00Z');
     expect(ci.counts).toEqual({ success: 1, failure: 1, pending: 1, other: 1 });

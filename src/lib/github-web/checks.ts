@@ -23,7 +23,7 @@ export function checksFrom(data: unknown): { ci: CiSummary; requiredCheckNames: 
     });
   const found = Array.isArray(response.statusChecks) ? response.statusChecks : findInPayload(data, (_, value) => looksLikeChecks(value));
   const listed = Array.isArray(found);
-  const rows = (listed ? found : []).filter((row: CheckRow) => !(/mergeability_check/i.test(row.displayName ?? row.name ?? row.context ?? '') && /graphite/i.test(`${row.displayName ?? row.name ?? row.context ?? ''} ${row.avatarDescription ?? row.workflowName ?? row.app?.name ?? ''}`)));
+  const rows = (listed ? found : []).filter((row: CheckRow) => !/mergeability_check/i.test(row.displayName ?? row.name ?? row.context ?? ''));
   noteShape('page_data/status_checks row', rows);
 
   const checks = rows.map((row): CheckRunSummary => {
@@ -42,10 +42,12 @@ export function checksFrom(data: unknown): { ci: CiSummary; requiredCheckNames: 
               : outcome === 'CANCELLED' || outcome === 'SKIPPED'
                 ? outcome
                 : 'NEUTRAL';
+    // GitHub links its own checks by path; the app lives on another origin, so every link is made absolute here.
+    const link = row.targetUrl ?? row.detailsUrl ?? row.url ?? null;
     return {
       name: row.displayName ?? row.name ?? row.context ?? '',
       state,
-      url: row.targetUrl ?? row.detailsUrl ?? row.url ?? null,
+      url: link ? new URL(link, 'https://github.com').href : null,
       description: row.description || row.additionalContext || row.title || null,
       group: row.avatarDescription ?? row.workflowName ?? row.app?.name ?? null,
       startedAt: row.startedAt ?? (state === 'PENDING' ? (row.stateChangedAt ?? null) : null),
