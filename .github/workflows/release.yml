@@ -1,0 +1,84 @@
+# Every push to main becomes a release: typecheck and tests, a build, a GitHub Release carrying the zip, and, once the
+# Chrome Web Store secrets are set (docs/deploy.md), that zip uploaded and submitted to the store through its REST API.
+# Only GitHub's own actions are used; pnpm comes from corepack and the store calls are plain curl.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install pnpm (the version package.json pins) and the dependencies
+        run: |
+          npm install -g "pnpm@$(node -p "require('./package.json').packageManager.split('@')[1]")"
+          pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+      - run: pnpm test
+
+      # The store needs every upload to carry a higher version than the last. package.json holds the major and minor;
+      # the run number makes the patch, so nothing has to be committed for a release.
+      - name: Set the release version
+        id: version
+        run: |
+          base=$(node -p "require('./package.json').version.split('.').slice(0, 2).join('.')")
+          version="$base.${{ github.run_number }}"
+          npm pkg set version="$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build and zip the extension
+        run: |
+          pnpm zip
+          echo "zip=$(ls .output/*-chrome.zip)" >> "$GITHUB_ENV"
+
+      - name: Publish the GitHub Release with the zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.version.outputs.version }}" "$zip" \
+            --title "v${{ steps.version.outputs.version }}" \
+            --notes "Built from ${{ github.sha }}. Load unpacked from the zip, or wait for the Chrome Web Store update."
+
+      - name: Upload to the Chrome Web Store and submit it for review
+        if: env.CWS_EXTENSION_ID != ''
+        env:
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          token=$(curl -sS --fail-with-body -X POST https://oauth2.googleapis.com/token \
+            -d client_id="$CWS_CLIENT_ID" -d client_secret="$CWS_CLIENT_SECRET" \
+            -d refresh_token="$CWS_REFRESH_TOKEN" -d grant_type=refresh_token | jq -r .access_token)
+          test -n "$token" && test "$token" != null
+
+          upload=$(curl -sS --fail-with-body -X PUT \
+            -H "Authorization: Bearer $token" -H "x-goog-api-version: 2" \
+            -T "$zip" "https://www.googleapis.com/upload/chromewebstore/v1.1/items/$CWS_EXTENSION_ID")
+          echo "$upload"
+          test "$(echo "$upload" | jq -r .uploadState)" = SUCCESS
+
+          publish=$(curl -sS --fail-with-body -X POST \
+            -H "Authorization: Bearer $token" -H "x-goog-api-version: 2" -H "Content-Length: 0" \
+            "https://www.googleapis.com/chromewebstore/v1.1/items/$CWS_EXTENSION_ID/publish")
+          echo "$publish"
+          echo "$publish" | jq -e '.status | index("OK")' > /dev/null

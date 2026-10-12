@@ -22,6 +22,12 @@ GitHub's own page is one click away: a "GitHub | CarbonLayer" switch in GitHub's
 place. It changes only the tab you are in, and that choice becomes the default for tabs you open afterwards (per
 surface, like the popup's switches). Add `?gh=1` to any URL to see GitHub's page just once.
 
+## Releases
+
+Every push to `main` runs the Release workflow: tests, a build, a GitHub Release with the zip, and an upload to the
+Chrome Web Store once its secrets are set. The one-time setup (store item, Google OAuth client, four repository
+secrets) is in [docs/deploy.md](docs/deploy.md).
+
 ## Install (unpacked, for development)
 
 ```bash
