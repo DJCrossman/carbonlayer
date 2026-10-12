@@ -11,7 +11,8 @@ A Chrome extension that makes GitHub's pull requests look and work like [Graphit
   (`inbox:<section>`) or a GitHub search query, with review, CI and merge status per row. Views are
   stored in your browser profile and can be shared as a link. "Import from Graphite…" copies every section from
   your signed-in Graphite inbox in one click (or takes pasted "Share section" links): each becomes a view whose
-  search approximates Graphite's filter, and the preview lists what GitHub's search cannot express.
+  search approximates Graphite's filter, and the preview lists what GitHub's search cannot express. The inbox shows
+  one organization at a time (or your own account), chosen in its top bar, each with its own views and repositories.
 - **Pull request page**: the stack at the top, one vertical scroll (description → activity → diff),
   CI checks, reviewers and a single "next step" merge card in a right sidebar, diffs rendered with
   [`@pierre/diffs`](https://diffs.com), and Graphite's keyboard shortcuts.
@@ -30,7 +31,8 @@ pnpm build
 Then in Chrome open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and
 pick the `.output/chrome-mv3` folder. There is no token to set up: the extension reads and writes
 through your github.com session, so sign in to github.com in that browser profile and visit
-`https://github.com/`. The extension's **Options** page holds the inbox views and scope, the
+`https://github.com/`, then choose an organization. The extension's **Options** page holds each organization's inbox
+views and repositories, the
 merge method, diff layout and theme, and the on/off switches.
 
 ## Develop

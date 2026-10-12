@@ -9,9 +9,10 @@ import { enrichPull, fetchInbox, fetchViewPage } from './inbox';
 import { mutations, pullRequestFor, rememberPullRequest } from './mutations';
 import { fetchFileDiffs, fetchPrStage, forgetPrStages } from './pr-stages';
 import { fetchPullRequestPage } from './pull-request';
-import { repositoryCandidatesFrom, repositoryPickerPath } from './repositories';
+import { listOrganizations } from './organizations';
+import { pickableRepositories } from './repositories';
 import { reviewerCandidatesFrom } from './reviews';
-import { getJson, noteShape, politely } from './session';
+import { getJson, getPage, noteShape, politely } from './session';
 
 export async function handleRpc(request: RpcRequest): Promise<RpcResponse> {
   try {
@@ -54,13 +55,18 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
       ),
     );
   },
-  'repos.search': async ({ query }) => {
+  'repos.search': async ({ query, owner }) =>
     // The picker asks again after every pause in typing; what it asked in the last minute is answered from memory.
-    const path = repositoryPickerPath(query.trim());
-    const data = await cached(`repos:${path}`, 60_000, false, () => getJson<unknown>(path));
-    noteShape('repositories/picker/search', data);
-    return repositoryCandidatesFrom(data);
-  },
+    pickableRepositories(query.trim(), owner ?? null, async (path) => {
+      const data = await cached(`repos:${path}`, 60_000, false, () => getJson<unknown>(path));
+      noteShape('repositories/picker/search', data);
+      return data;
+    }),
+  'orgs.list': () =>
+    // Who is signed in is the github.com page's own business; the list is asked for once in 10 minutes.
+    cached('orgs', 600_000, false, () =>
+      listOrganizations({ json: getJson, page: getPage }, document.querySelector('meta[name="user-login"]')?.getAttribute('content') || null),
+    ),
   'pr.fetch': async ({ repo, number, force }) => {
     const { mergeMethod } = await getSettings();
     const key = `pr:${repo.owner}/${repo.name}#${number}:${mergeMethod}`.toLowerCase();

@@ -147,3 +147,10 @@ returns the repositories the picker lists; each item is `{ id, nodeId, name, own
 envelope unconfirmed (parse tolerantly: an array, or `{ repositories }`/`{ items }`). CarbonLayer's picker asks it with
 `q=contributed-by:@me <typed text>` and reads an array or `{ repositories | items | results }`
 (`src/lib/github-web/repositories.ts`); not yet observed signed in.
+
+Per organization (2026-10-12, **not yet observed signed in**): the inbox asks the picker `q=contributed-by:@me
+org:<login> <text>` (`user:<login>` for the viewer's own account), on the guess that it takes search qualifiers, and,
+when that brings none of the owner's repositories, asks again without the qualifier and keeps the owner's. The
+organizations themselves come from `GET /settings/organizations` (HTML; parsed for `/orgs/<login>`,
+`/organizations/<login>/…` and rows' `/<login>` links, markup unconfirmed), else from the picker's distinct
+`ownerLogin`s (`src/lib/github-web/organizations.ts`).

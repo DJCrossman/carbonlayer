@@ -2,7 +2,20 @@
 // own picker opens with `q=contributed-by:@me`. The envelope of its answer is unconfirmed (docs/research/
 // graphite-sections.md, "GitHub's repository picker"), so it is read tolerantly.
 
-import type { RepoCandidate } from '../model';
+import type { Organization, RepoCandidate } from '../model';
+
+/**
+ * The repositories GitHub's repository picker offers for `text` among those the viewer contributed to, only `owner`'s when
+ * given. The picker is asked with search's own `org:` / `user:` qualifier, and asked again without it, keeping the owner's,
+ * should that bring none of theirs (GitHub's picker may not take qualifiers). `load` reaches github.com with the user's
+ * session.
+ */
+export async function pickableRepositories(text: string, owner: Pick<Organization, 'login' | 'isViewer'> | null, load: (path: string) => Promise<unknown>): Promise<RepoCandidate[]> {
+  if (!owner) return repositoryCandidatesFrom(await load(repositoryPickerPath(text)));
+  const owned = (data: unknown) => repositoryCandidatesFrom(data).filter((repo) => repo.owner.toLowerCase() === owner.login.toLowerCase());
+  const qualified = await load(repositoryPickerPath(`${owner.isViewer ? 'user' : 'org'}:${owner.login} ${text}`)).then(owned, () => []);
+  return qualified.length > 0 ? qualified : owned(await load(repositoryPickerPath(text)));
+}
 
 /** The picker request for the repositories matching `text` among those the viewer contributed to, as GitHub's own asks. */
 export function repositoryPickerPath(text: string): string {

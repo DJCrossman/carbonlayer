@@ -88,6 +88,64 @@ describe('views in synced storage', () => {
   });
 });
 
+describe('organizations', () => {
+  const acme = { login: 'acme', avatarUrl: 'https://github.com/acme.png?size=40', isViewer: false };
+  const globex = { login: 'globex', avatarUrl: 'https://github.com/globex.png?size=40', isViewer: false };
+  const mine: View = { id: 'mine', name: 'Mine', query: 'is:pr author:@me' };
+  const theirs: View = { id: 'theirs', name: 'Theirs', query: 'is:pr -author:@me' };
+  const beforeOrganizations = () => ({
+    settings: { theme: 'dark', viewOrder: ['mine'], inboxRepos: [{ owner: 'acme', name: 'web' }, { owner: 'globex', name: 'api' }], inboxScope: '(repo:acme/web OR repo:globex/api)' },
+    'view:mine': mine,
+  });
+
+  it('offers the views saved before organizations to the first one chosen, which keeps them with its own repositories', async () => {
+    sync.items = beforeOrganizations();
+    const before = await getSettings();
+    expect(before).toMatchObject({ currentOrg: null, views: [mine], viewsUnassigned: true });
+    expect(await setSettings({ currentOrg: acme, views: before.views, inboxRepos: before.inboxRepos })).toMatchObject({
+      currentOrg: acme,
+      views: [mine],
+      viewsUnassigned: false,
+      inboxRepos: [{ owner: 'acme', name: 'web' }],
+      inboxScope: 'repo:acme/web',
+      theme: 'dark',
+    });
+    expect(sync.items).toEqual({
+      settings: { theme: 'dark', currentOrg: acme, viewsByOrg: { acme: { viewOrder: ['mine'] } }, reposByOrg: { acme: [{ owner: 'acme', name: 'web' }] } },
+      'view:acme/mine': mine,
+    });
+  });
+
+  it("gives an organization Graphite's defaults, stored nowhere, when the views from before are not kept", async () => {
+    sync.items = beforeOrganizations();
+    expect(await setSettings({ currentOrg: acme })).toMatchObject({ currentOrg: acme, views: DEFAULT_VIEWS, inboxRepos: [], inboxScope: 'org:acme', viewsUnassigned: false });
+    expect(sync.items).toEqual({ settings: { theme: 'dark', currentOrg: acme } });
+  });
+
+  it('keeps each organization its own views, order, collapsed state and repositories', async () => {
+    await setSettings({ currentOrg: acme, views: [mine, theirs], inboxRepos: [{ owner: 'acme', name: 'web' }] });
+    await setSettings({ views: [{ ...theirs, collapsed: true }, mine] });
+    expect(await setSettings({ currentOrg: globex })).toMatchObject({ views: DEFAULT_VIEWS, inboxRepos: [], inboxScope: 'org:globex' });
+    await setSettings({ views: [theirs] });
+    expect(await setSettings({ currentOrg: acme })).toMatchObject({ views: [{ ...theirs, collapsed: true }, mine], inboxScope: 'repo:acme/web' });
+    expect(Object.keys(sync.items).sort()).toEqual(['settings', 'view:acme/mine', 'view:acme/theirs', 'view:globex/theirs']);
+  });
+
+  it('writes only the views of the organization that changed, and removes the ones deleted', async () => {
+    await setSettings({ currentOrg: acme, views: [mine, theirs] });
+    await setSettings({ currentOrg: globex, views: [mine] });
+    await setSettings({ currentOrg: acme });
+    sync.writes = [];
+    await setSettings({ views: [{ ...mine, collapsed: true }] });
+    expect(sync.writes).toEqual([['settings', 'view:acme/mine']]);
+    expect(Object.keys(sync.items).sort()).toEqual(['settings', 'view:acme/mine', 'view:globex/mine']);
+  });
+
+  it("searches the viewer's own account as a user", async () => {
+    expect((await setSettings({ currentOrg: { login: 'octocat', avatarUrl: '', isViewer: true } })).inboxScope).toBe('user:octocat');
+  });
+});
+
 describe('views saved by earlier versions', () => {
   it("swap the earlier defaults for Graphite's, once", async () => {
     sync.items = {

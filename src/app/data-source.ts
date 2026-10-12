@@ -1,10 +1,9 @@
 // Everything the UI needs from the outside world, behind one interface so the same pages render
 // from the content script's RPC in the extension and from fixtures in the dev harness (`?fixtures=1`).
 
-import type { PrDetail, PrEnrichment, PrSummary, RepoCandidate, RepoRef, ReviewerCandidate, View, ViewResult } from '../lib/model';
+import type { Organization, PrDetail, PrEnrichment, PrSummary, RepoCandidate, RepoRef, ReviewerCandidate, View, ViewResult } from '../lib/model';
 import { rpc, type InboxRowToEnrich, type MergeMethod } from '../lib/rpc';
-import { DEFAULT_SETTINGS, getSettings, setSettings, watchSettings, type Settings } from '../lib/settings';
-import { repositoryScope } from '../lib/views';
+import { getSettings, setSettings, watchSettings, type Settings, type SettingsStorage } from '../lib/settings';
 
 export interface ReviewThreadDraft {
   path: string;
@@ -25,8 +24,10 @@ export interface DataSource {
   fetchInboxPage(view: View, page: number): Promise<ViewResult>;
   /** What GitHub's dashboard leaves out of these inbox rows (mergeability, reviewers, line counts, failing checks), in the same order. */
   enrichInbox(prs: InboxRowToEnrich[]): Promise<PrEnrichment[]>;
-  /** The repositories GitHub's repository picker offers for what the user typed (nothing: its first list). */
-  searchRepos(query: string): Promise<RepoCandidate[]>;
+  /** The repositories GitHub's repository picker offers for what the user typed (nothing: its first list), only `owner`'s when given. */
+  searchRepos(query: string, owner?: Organization | null): Promise<RepoCandidate[]>;
+  /** The organizations the viewer belongs to, then their own account: whose pull requests the inbox can show. */
+  listOrgs(): Promise<Organization[]>;
   fetchPr(repo: RepoRef, number: number, force?: boolean): Promise<PrDetail>;
   review(prId: string, event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT', body: string, threads?: ReviewThreadDraft[]): Promise<void>;
   comment(prId: string, body: string): Promise<void>;
@@ -53,7 +54,8 @@ export function createRpcDataSource(): DataSource {
     fetchInbox: (views, force) => rpc('inbox.fetch', { views, force }),
     fetchInboxPage: (view, page) => rpc('inbox.fetchMore', { view, page }),
     enrichInbox: (prs) => rpc('inbox.enrich', { prs }),
-    searchRepos: (query) => rpc('repos.search', { query }),
+    searchRepos: (query, owner) => rpc('repos.search', { query, owner: owner && { login: owner.login, isViewer: owner.isViewer } }),
+    listOrgs: () => rpc('orgs.list', {}),
     fetchPr: (repo, number, force) => rpc('pr.fetch', { repo, number, force }),
     review: (prId, event, body, threads) => rpc('pr.review', { prId, event, body, threads }),
     comment: (prId, body) => rpc('pr.comment', { prId, body }),
@@ -85,29 +87,47 @@ export interface Fixtures {
 /** An inbox row with its check list and what only its enrichment says: which checks are required, why it is blocked. */
 export type InboxFixtureRow = PrSummary & Pick<PrEnrichment, 'requiredCheckNames' | 'mergeBlockedReason'>;
 
-/** Serves fixture data and logs mutations; settings live in memory. */
+/** Serves fixture data as octocat, a member of acme and globex, and logs mutations; settings live in memory. */
 export function createFixtureDataSource(fixtures: Fixtures): DataSource {
-  // The fixtures' own views, which may carry Graphite filters the defaults do not.
-  let settings: Settings = { ...DEFAULT_SETTINGS, views: fixtures.inbox.map((result) => result.view) };
+  // Settings as src/lib/settings.ts keeps them, in memory: at first the fixtures' own views (which may carry Graphite
+  // filters the defaults do not), saved before views belonged to an organization.
+  const views = fixtures.inbox.map((result) => result.view);
+  const stored: Record<string, unknown> = { settings: { viewOrder: views.map((view) => view.id) }, ...Object.fromEntries(views.map((view) => [`view:${view.id}`, view])) };
+  const memory: SettingsStorage = {
+    get: async () => structuredClone(stored),
+    set: async (items) => void Object.assign(stored, structuredClone(items)),
+    remove: async (keys) => keys.forEach((key) => delete stored[key]),
+  };
   const listeners = new Set<(settings: Settings) => void>();
+  // The rows the organization's inbox searches: its chosen repositories', or the view's own, else all of its own.
+  const searched = async (view: View) => {
+    const { currentOrg, inboxRepos } = await getSettings(memory);
+    const repos = view.repos?.length ? view.repos : inboxRepos;
+    return (pr: PrSummary) =>
+      repos.length > 0 ? repos.some((repo) => repo.owner === pr.repo.owner && repo.name === pr.repo.name) : pr.repo.owner.toLowerCase() === currentOrg?.login.toLowerCase();
+  };
   const log = async (...args: unknown[]) => {
     console.info('[fixtures] mutation', ...args);
   };
   return {
     // Rows as GitHub's dashboard lists them: a CI rollup without its checks; their merge status, reviewers and line counts
     // come later, from enrichInbox.
-    fetchInbox: async (views) =>
-      views.map((view) => {
-        const result = fixtures.inbox.find((r) => r.view.id === view.id) ?? { view, prs: [], totalCount: 0, fetchedAt: new Date().toISOString() };
-        return {
-          ...result,
-          prs: result.prs.map((pr) => ({ ...pr, ci: { ...pr.ci, checks: [] }, mergeStatus: pr.isDraft ? 'DRAFT' : 'UNKNOWN', reviewers: [], additions: 0, deletions: 0 })),
-        };
-      }),
+    fetchInbox: (views) =>
+      Promise.all(
+        views.map(async (view) => {
+          const result = fixtures.inbox.find((r) => r.view.id === view.id) ?? { view, prs: [], totalCount: 0, fetchedAt: new Date().toISOString() };
+          const prs = result.prs.filter(await searched(view));
+          return {
+            ...result,
+            totalCount: prs.length === result.prs.length ? result.totalCount : prs.length,
+            prs: prs.map((pr) => ({ ...pr, ci: { ...pr.ci, checks: [] }, mergeStatus: pr.isDraft ? 'DRAFT' : 'UNKNOWN', reviewers: [], additions: 0, deletions: 0 })),
+          };
+        }),
+      ),
     fetchInboxPage: async (view, page) => {
       await new Promise((resolve) => setTimeout(resolve, 300));
       const first = fixtures.inbox.find((r) => r.view.id === view.id);
-      const prs = fixtures.inboxPages[view.id]?.[page - 2] ?? [];
+      const prs = (fixtures.inboxPages[view.id]?.[page - 2] ?? []).filter(await searched(view));
       return {
         view,
         totalCount: first?.totalCount ?? 0,
@@ -134,9 +154,13 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
         };
       });
     },
-    searchRepos: async (query) => {
+    searchRepos: async (query, owner) => {
       const needle = query.trim().toLowerCase();
-      return FIXTURE_REPOSITORIES.filter((repo) => `${repo.owner}/${repo.name}`.includes(needle));
+      return FIXTURE_REPOSITORIES.filter((repo) => `${repo.owner}/${repo.name}`.includes(needle) && (!owner || repo.owner === owner.login));
+    },
+    listOrgs: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      return FIXTURE_ORGANIZATIONS;
     },
     fetchPr: async (repo, number) => {
       const pr = fixtures.prs.find((p) => p.repo.owner === repo.owner && p.repo.name === repo.name && p.number === number) ?? fixtures.prs[0];
@@ -167,12 +191,11 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
       await log('rerunAllJobs', ...args);
       return { offered: true };
     },
-    getSettings: async () => settings,
+    getSettings: () => getSettings(memory),
     setSettings: async (patch) => {
-      // The inbox scope is the chosen repositories whenever they are chosen, as in src/lib/settings.ts.
-      settings = { ...settings, ...patch, ...(patch.inboxRepos && { inboxScope: repositoryScope(patch.inboxRepos) }) };
-      for (const listener of listeners) listener(settings);
-      return settings;
+      const saved = await setSettings(patch, memory);
+      for (const listener of listeners) listener(saved);
+      return saved;
     },
     watchSettings: (onChange) => {
       listeners.add(onChange);
@@ -180,6 +203,13 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     },
   };
 }
+
+/** The harness's viewer's organizations, then their own account. */
+const FIXTURE_ORGANIZATIONS: Organization[] = [
+  { login: 'acme', avatarUrl: '', isViewer: false },
+  { login: 'globex', avatarUrl: '', isViewer: false },
+  { login: 'octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/583231?v=4', isViewer: true },
+];
 
 /** What the harness's repository picker offers: the fixture PRs' repositories and a few more. */
 const FIXTURE_REPOSITORIES: RepoCandidate[] = [
@@ -191,6 +221,8 @@ const FIXTURE_REPOSITORIES: RepoCandidate[] = [
   { owner: 'acme', name: 'docs', isPrivate: false },
   { owner: 'octocat', name: 'hello-world', isPrivate: false },
   { owner: 'octocat', name: 'spoon-knife', isPrivate: false },
+  { owner: 'globex', name: 'billing', isPrivate: true },
+  { owner: 'globex', name: 'storefront', isPrivate: true },
 ];
 
 /** Whom the harness's reviewer picker offers: the fixture PRs' reviewers and a few more, two of them as suggestions. */

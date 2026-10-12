@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { importGraphiteSections, searchForFilter, type GraphiteInboxSnapshot } from './graphite';
 import userInbox from './graphite-inbox.fixture.json';
-import { DEFAULT_VIEWS, decodeViewsShareHash, encodeViewsShareLink, inboxFilterOf, resolveViewQuery, sectionCount } from './views';
+import { DEFAULT_VIEWS, decodeViewsShareHash, encodeViewsShareLink, inboxFilterOf, organizationScope, resolveViewQuery, sectionCount } from './views';
 
 describe('the default views', () => {
   const imported = importGraphiteSections(userInbox as GraphiteInboxSnapshot).views.map(({ view }) => view);
@@ -93,6 +93,15 @@ describe('resolveViewQuery', () => {
     expect(inboxFilterOf({ id: 'x', name: 'X', query: 'inbox:bogus' })).toBeNull();
     expect(inboxFilterOf({ id: 'y', name: 'Y', query: 'is:pr inbox:review-requested' })).toBeNull();
     expect(resolveViewQuery(view, 'org:acme')).toBe('inbox:review-requested');
+  });
+});
+
+describe('organizationScope', () => {
+  it("searches the organization's repositories, or the viewer's own, unless repositories are chosen", () => {
+    expect(organizationScope({ login: 'acme', isViewer: false }, [])).toBe('org:acme');
+    expect(organizationScope({ login: 'octocat', isViewer: true }, [])).toBe('user:octocat');
+    expect(organizationScope({ login: 'acme', isViewer: false }, [{ owner: 'acme', name: 'web' }])).toBe('repo:acme/web');
+    expect(organizationScope({ login: 'acme', isViewer: false }, [{ owner: 'acme', name: 'web' }, { owner: 'acme', name: 'api' }])).toBe('(repo:acme/web OR repo:acme/api)');
   });
 });
 

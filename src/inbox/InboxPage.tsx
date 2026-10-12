@@ -1,12 +1,13 @@
-// The inbox (the github.com homepage): Graphite's sections sidebar beside one collapsible card per saved view,
-// Graphite-dense rows, j/k keyboard navigation, shareable view lists, and Graphite's section editor in a drawer. Data comes through the DataSource; navigation goes through the parent page
-// (src/app/bridge.ts).
+// The inbox (the github.com homepage): one organization's pull requests at a time, chosen in the top bar (or, before any
+// is chosen, on a first screen of its own), with Graphite's sections sidebar beside one collapsible card per saved view,
+// Graphite-dense rows, j/k keyboard navigation, shareable view lists, and Graphite's section editor in a drawer. Data
+// comes through the DataSource; navigation goes through the parent page (src/app/bridge.ts).
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { postToParent } from '../app/bridge';
 import type { DataSource } from '../app/data-source';
 import { toGitHubUrl, type AppRoute } from '../app/routes';
-import type { PrEnrichment, PrSummary, View, ViewResult } from '../lib/model';
+import type { Organization, PrEnrichment, PrSummary, RepoRef, View, ViewResult } from '../lib/model';
 import type { Settings } from '../lib/settings';
 import { encodeViewsShareLink, sectionCount } from '../lib/views';
 import { Button } from '../ui/Button';
@@ -16,6 +17,7 @@ import { showToast, ToastHost } from '../ui/Toast';
 import { GraphiteImport } from './GraphiteImport';
 import { importViews } from './import-views';
 import { InboxSection, type SectionSort } from './InboxSection';
+import { OrgChooser, OrgPicker, useOrganizations } from './OrgPicker';
 import { RepoPicker } from './RepoPicker';
 import { SectionEditor } from './SectionEditor';
 import { SectionsSidebar } from './SectionsSidebar';
@@ -24,10 +26,14 @@ import { ShortcutHelp } from './ShortcutHelp';
 import './inbox.css';
 
 export function InboxPage({ source, route }: { source: DataSource; route: Extract<AppRoute, { page: 'inbox' }> }) {
-  const inbox = useInbox(source);
+  const organizations = useOrganizations(source.listOrgs);
+  const inbox = useInbox(source, organizations.list);
   const enrichment = useRowEnrichment(source);
   const moreRows = useMoreRows(source);
-  const { settings } = inbox;
+  const { settings, org } = inbox;
+  const viewerLogin = organizations.list?.find((candidate) => candidate.isViewer)?.login ?? null;
+  // The picker lists the organization's repositories only.
+  const searchRepos = (query: string) => source.searchRepos(query, org);
   const [selected, setSelected] = useState<SelectedRow | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [graphiteOpen, setGraphiteOpen] = useState(false);
@@ -186,6 +192,26 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
     }
   }
 
+  function chooseOrg(chosen: Organization, keepViews = false) {
+    if (!settings) return;
+    setSelected(null);
+    // The views saved before views belonged to an organization, kept, take their repositories along (those the
+    // organization owns, settings.ts sees to that).
+    void inbox.saveSettings({ currentOrg: chosen, ...(keepViews && { views: settings.views, inboxRepos: settings.inboxRepos }) });
+  }
+
+  async function importFromGraphite(views: View[], mode: 'replace' | 'append', destination?: { org: Organization; inboxRepos?: RepoRef[] }) {
+    setGraphiteOpen(false);
+    if (!settings || !org) return;
+    // Sections whose repositories all belong to another of the viewer's organizations go there, and the inbox with them.
+    const into = destination?.org ?? org;
+    const target = into.login === org.login ? settings : await inbox.saveSettings({ currentOrg: into });
+    if (!target) return;
+    const saved = await inbox.saveSettings({ views: importViews(target.views, views, mode), ...(destination?.inboxRepos && { inboxRepos: destination.inboxRepos }) });
+    const count = `${views.length} ${views.length === 1 ? 'view' : 'views'}`;
+    if (saved) showToast(mode === 'replace' ? `Views replaced in ${into.login}` : `Imported ${count} into ${into.login}`);
+  }
+
   function openOptions() {
     // Only the extension has an options page; in the standalone harness this is a no-op.
     if (browser?.runtime?.id) void browser.runtime.openOptionsPage();
@@ -197,45 +223,54 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
     <div className="gg-inbox">
       <header className="gg-inbox__bar">
         <div className="gg-inbox__bar-inner">
-          <Button
-            variant="ghost"
-            size="sm"
-            icon="sidebar"
-            className={settings.sidebarCollapsed ? 'gg-inbox__sidebar-toggle is-collapsed' : 'gg-inbox__sidebar-toggle'}
-            aria-label="Sections"
-            aria-expanded={sidebarOpen}
-            title="Show sections"
-            onClick={toggleSidebar}
-          />
+          {org && (
+            <Button
+              variant="ghost"
+              size="sm"
+              icon="sidebar"
+              className={settings.sidebarCollapsed ? 'gg-inbox__sidebar-toggle is-collapsed' : 'gg-inbox__sidebar-toggle'}
+              aria-label="Sections"
+              aria-expanded={sidebarOpen}
+              title="Show sections"
+              onClick={toggleSidebar}
+            />
+          )}
           <h1 className="gg-inbox__title">
             <Icon name="logo" className="gg-inbox__logo" />
             Pull requests
           </h1>
-          <RepoPicker
-            chip
-            selected={settings.inboxRepos}
-            emptyLabel={settings.inboxScope || 'All repositories'}
-            title={settings.inboxScope ? `Every section searches ${settings.inboxScope}, unless it names repositories of its own` : 'Every section searches all repositories'}
-            searchRepos={source.searchRepos}
-            onChange={(inboxRepos) => void inbox.saveSettings({ inboxRepos })}
-          />
+          <OrgPicker chip organizations={organizations} current={org} onChange={(chosen) => chooseOrg(chosen)} />
+          {org && (
+            <RepoPicker
+              chip
+              selected={settings.inboxRepos}
+              emptyLabel="All repositories"
+              title={`Every section searches ${settings.inboxRepos.length > 0 ? 'these of' : 'all of'} ${org.login}'s repositories, unless it names repositories of its own`}
+              searchRepos={searchRepos}
+              onChange={(inboxRepos) => void inbox.saveSettings({ inboxRepos })}
+            />
+          )}
           <div className="gg-inbox__actions">
-            <Button
-              variant="ghost"
-              size="sm"
-              icon="sync"
-              className={inbox.refreshing ? 'is-spinning' : undefined}
-              title="Refresh (r)"
-              onClick={() => void inbox.refresh(true)}
-            >
-              {inbox.fetchedAt === null ? 'Loading…' : <>Updated <RelativeTime date={new Date(inbox.fetchedAt).toISOString()} ago /></>}
-            </Button>
-            <Button size="sm" icon="link" title="Copy a link that shares these views" onClick={() => void copyShareLink()}>
-              Share
-            </Button>
-            <Button size="sm" icon="stack" title="Copy your sections from Graphite, or paste section links" onClick={() => setGraphiteOpen(true)}>
-              Import from Graphite…
-            </Button>
+            {org && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon="sync"
+                  className={inbox.refreshing ? 'is-spinning' : undefined}
+                  title="Refresh (r)"
+                  onClick={() => void inbox.refresh(true)}
+                >
+                  {inbox.fetchedAt === null ? 'Loading…' : <>Updated <RelativeTime date={new Date(inbox.fetchedAt).toISOString()} ago /></>}
+                </Button>
+                <Button size="sm" icon="link" title="Copy a link that shares these views" onClick={() => void copyShareLink()}>
+                  Share
+                </Button>
+                <Button size="sm" icon="stack" title="Copy your sections from Graphite, or paste section links" onClick={() => setGraphiteOpen(true)}>
+                  Import from Graphite…
+                </Button>
+              </>
+            )}
             <Button size="sm" icon="gear" title="Views and other settings" onClick={openOptions}>
               Configure
             </Button>
@@ -244,99 +279,106 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
         </div>
       </header>
 
-      <div className={settings.sidebarCollapsed ? 'gg-inbox__layout is-sidebar-collapsed' : 'gg-inbox__layout'}>
-        {(!settings.sidebarCollapsed || sidebarOpen) && (
-          <SectionsSidebar
-            views={settings.views}
-            resultsByView={resultsByView}
-            currentViewId={currentViewId}
-            open={sidebarOpen}
-            onSelect={goToSection}
-            onMove={moveSection}
-            onEdit={(view) => {
-              setEditing(view);
-              setSidebarOpen(false);
-            }}
-            onAdd={() => {
-              setEditing('new');
-              setSidebarOpen(false);
-            }}
-            onHide={toggleSidebar}
-          />
-        )}
-        <main className="gg-inbox__body">
-          {pendingImport && (
-            <div className="gg-inbox__notice gg-inbox__notice--accent" role="region" aria-label="Import shared views">
-              <Icon name="link" />
-              <span className="gg-inbox__notice-text">
-                <strong>
-                  Import {pendingImport.length} {pendingImport.length === 1 ? 'view' : 'views'} from this link
-                </strong>
-                <span className="gg-inbox__notice-detail">{pendingImport.map((view) => view.name).join(' · ')}</span>
-              </span>
-              <span className="gg-inbox__notice-actions">
-                <Button size="sm" variant="primary" onClick={() => answerImport('replace')}>
-                  Replace
-                </Button>
-                <Button size="sm" onClick={() => answerImport('append')}>
-                  Append
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => answerImport('dismiss')}>
-                  Dismiss
-                </Button>
-              </span>
-            </div>
+      {org ? (
+        <div className={settings.sidebarCollapsed ? 'gg-inbox__layout is-sidebar-collapsed' : 'gg-inbox__layout'}>
+          {(!settings.sidebarCollapsed || sidebarOpen) && (
+            <SectionsSidebar
+              org={org}
+              views={settings.views}
+              resultsByView={resultsByView}
+              currentViewId={currentViewId}
+              open={sidebarOpen}
+              onSelect={goToSection}
+              onMove={moveSection}
+              onEdit={(view) => {
+                setEditing(view);
+                setSidebarOpen(false);
+              }}
+              onAdd={() => {
+                setEditing('new');
+                setSidebarOpen(false);
+              }}
+              onHide={toggleSidebar}
+            />
           )}
-
-          {inbox.error && (
-            <div className="gg-inbox__notice gg-inbox__notice--danger" role="alert">
-              <Icon name="alert" />
-              <span className="gg-inbox__notice-text">{inbox.error}</span>
-            </div>
-          )}
-
-          {settings.views.length === 0 && <p className="gg-inbox__muted">No sections yet: Add section in the sidebar adds one.</p>}
-
-          {settings.views.map((view) => {
-            const result = resultsByView.get(view.id);
-            // GitHub has more rows than shown, until one of its pages comes back empty.
-            const more = moreRows.loading.has(view.id)
-              ? 'loading'
-              : result && result.prs.length < result.totalCount && !moreRows.addedTo(view, settings.inboxScope)?.done
-                ? 'more'
-                : 'none';
-            return (
-              <div key={view.id} className="gg-inbox__section" data-view-id={view.id}>
-                <InboxSection
-                  view={view}
-                  result={result}
-                  loading={inbox.error === null}
-                  sort={sorts[view.id] ?? LATEST_UPDATED_FIRST}
-                  selectedPrId={selected?.viewId === view.id ? selected.prId : null}
-                  overdueAfterHours={view.id === 'graphite-needs-your-review' ? 48 : undefined}
-                  viewerLogin={null}
-                  enrichmentOf={(pr) => enrichment.found.get(pr.id)?.enrichment}
-                  more={more}
-                  onSort={(by) => sortSection(view.id, by)}
-                  onRowShown={enrichment.want}
-                  onLoadMore={() => void moreRows.loadMore(view, settings.inboxScope, result?.prs ?? [])}
-                  onToggleCollapsed={() => toggleCollapsed(view.id)}
-                  onEdit={() => setEditing(view)}
-                  onOpen={(pr, newTab) => {
-                    setSelected({ viewId: view.id, prId: pr.id });
-                    openPullRequest(pr.url, newTab);
-                  }}
-                />
+          <main className="gg-inbox__body">
+            {pendingImport && (
+              <div className="gg-inbox__notice gg-inbox__notice--accent" role="region" aria-label="Import shared views">
+                <Icon name="link" />
+                <span className="gg-inbox__notice-text">
+                  <strong>
+                    Import {pendingImport.length} {pendingImport.length === 1 ? 'view' : 'views'} from this link
+                  </strong>
+                  <span className="gg-inbox__notice-detail">{pendingImport.map((view) => view.name).join(' · ')}</span>
+                </span>
+                <span className="gg-inbox__notice-actions">
+                  <Button size="sm" variant="primary" onClick={() => answerImport('replace')}>
+                    Replace
+                  </Button>
+                  <Button size="sm" onClick={() => answerImport('append')}>
+                    Append
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => answerImport('dismiss')}>
+                    Dismiss
+                  </Button>
+                </span>
               </div>
-            );
-          })}
+            )}
+
+            {inbox.error && (
+              <div className="gg-inbox__notice gg-inbox__notice--danger" role="alert">
+                <Icon name="alert" />
+                <span className="gg-inbox__notice-text">{inbox.error}</span>
+              </div>
+            )}
+
+            {settings.views.length === 0 && <p className="gg-inbox__muted">No sections yet: Add section in the sidebar adds one.</p>}
+
+            {settings.views.map((view) => {
+              const result = resultsByView.get(view.id);
+              // GitHub has more rows than shown, until one of its pages comes back empty.
+              const more = moreRows.loading.has(view.id)
+                ? 'loading'
+                : result && result.prs.length < result.totalCount && !moreRows.addedTo(view, settings.inboxScope)?.done
+                  ? 'more'
+                  : 'none';
+              return (
+                <div key={view.id} className="gg-inbox__section" data-view-id={view.id}>
+                  <InboxSection
+                    view={view}
+                    result={result}
+                    loading={inbox.error === null}
+                    sort={sorts[view.id] ?? LATEST_UPDATED_FIRST}
+                    selectedPrId={selected?.viewId === view.id ? selected.prId : null}
+                    overdueAfterHours={view.id === 'graphite-needs-your-review' ? 48 : undefined}
+                    viewerLogin={viewerLogin}
+                    enrichmentOf={(pr) => enrichment.found.get(pr.id)?.enrichment}
+                    more={more}
+                    onSort={(by) => sortSection(view.id, by)}
+                    onRowShown={enrichment.want}
+                    onLoadMore={() => void moreRows.loadMore(view, settings.inboxScope, result?.prs ?? [])}
+                    onToggleCollapsed={() => toggleCollapsed(view.id)}
+                    onEdit={() => setEditing(view)}
+                    onOpen={(pr, newTab) => {
+                      setSelected({ viewId: view.id, prId: pr.id });
+                      openPullRequest(pr.url, newTab);
+                    }}
+                  />
+                </div>
+              );
+            })}
+          </main>
+        </div>
+      ) : (
+        <main className="gg-inbox__body">
+          <OrgChooser organizations={organizations} viewsUnassigned={settings.viewsUnassigned} onChoose={chooseOrg} />
         </main>
-      </div>
+      )}
 
       {helpOpen && <ShortcutHelp onClose={() => setHelpOpen(false)} />}
       {editing && (
         <SectionEditor
-          searchRepos={source.searchRepos}
+          searchRepos={searchRepos}
           key={editing === 'new' ? 'new' : editing.id}
           view={editing === 'new' ? null : editing}
           onSave={saveSection}
@@ -360,13 +402,8 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
             <div className="gg-inbox__graphite-body">
               <GraphiteImport
                 autoFocus
-                currentInboxScope={settings.inboxScope}
-                onImport={(views, mode, inboxRepos) => {
-                  void inbox
-                    .saveSettings({ views: importViews(settings.views, views, mode), ...(inboxRepos !== undefined && { inboxRepos }) })
-                    .then((done) => done && showToast(mode === 'replace' ? 'Views replaced' : `Imported ${views.length} ${views.length === 1 ? 'view' : 'views'}`));
-                  setGraphiteOpen(false);
-                }}
+                inbox={org ? { org, repos: settings.inboxRepos, organizations: organizations.list ?? [] } : undefined}
+                onImport={(views, mode, destination) => void importFromGraphite(views, mode, destination)}
               />
             </div>
           </div>
@@ -378,10 +415,12 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
 }
 
 /**
- * Settings plus every view's results, kept fresh: refetched when what GitHub is asked changes (not on rename or
- * collapse), every 2 minutes while the tab is visible, and on returning to the tab when older than a minute.
+ * Settings, the organization the inbox shows (the one chosen, unless the viewer's organizations, once known, no longer
+ * include it) and every view's results for it, kept fresh: refetched when what GitHub is asked changes (not on rename or
+ * collapse), every 2 minutes while the tab is visible, and on returning to the tab when older than a minute. Nothing is
+ * fetched while no organization is shown.
  */
-function useInbox(source: DataSource) {
+function useInbox(source: DataSource, organizations: Organization[] | null) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [results, setResults] = useState<ViewResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -402,8 +441,11 @@ function useInbox(source: DataSource) {
     };
   }, [source]);
 
+  const chosen = settings?.currentOrg ?? null;
+  const org = chosen && (organizations === null || organizations.some((candidate) => candidate.login.toLowerCase() === chosen.login.toLowerCase())) ? chosen : null;
+
   async function refresh(force: boolean) {
-    if (!settings) return;
+    if (!settings || !org) return;
     const request = ++latestRequest.current;
     setRefreshing(true);
     try {
@@ -419,18 +461,25 @@ function useInbox(source: DataSource) {
     }
   }
 
-  /** Whether `patch` was saved; when not, a toast has said why. */
-  async function saveSettings(patch: Partial<Settings>): Promise<boolean> {
+  /** The settings as saved with `patch`; null when they were not, and a toast has said why. */
+  async function saveSettings(patch: Partial<Settings>): Promise<Settings | null> {
     try {
-      setSettings(await source.setSettings(patch));
-      return true;
+      const saved = await source.setSettings(patch);
+      setSettings(saved);
+      return saved;
     } catch (cause) {
       showToast(`Could not save: ${cause instanceof Error ? cause.message : String(cause)}`, 'danger');
-      return false;
+      return null;
     }
   }
 
-  const queriesKey = settings && JSON.stringify([settings.inboxScope, settings.views.map(({ id, query, limit }) => [id, query, limit])]);
+  // Another organization's results are no one's to see.
+  useEffect(() => {
+    setResults(null);
+    setFetchedAt(null);
+  }, [org?.login]);
+
+  const queriesKey = settings && org && JSON.stringify([settings.inboxScope, settings.views.map(({ id, query, limit }) => [id, query, limit])]);
   const keepFresh = useEffectEvent((trigger: 'queries' | 'timer' | 'visible') => {
     if (trigger !== 'queries' && document.visibilityState !== 'visible') return;
     if (trigger === 'visible' && fetchedAt !== null && Date.now() - fetchedAt < 60_000) return;
@@ -451,7 +500,7 @@ function useInbox(source: DataSource) {
     };
   }, []);
 
-  return { settings, results, error, fetchedAt, refreshing, refresh, saveSettings };
+  return { settings, org, results, error, fetchedAt, refreshing, refresh, saveSettings };
 }
 
 /**

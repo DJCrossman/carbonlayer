@@ -1,9 +1,9 @@
 // Inbox fixtures for the dev harness (`app.html?fixtures=1#/inbox`): every default view (Graphite's sections, with the
 // filters the section editor shows), covering each review, CI and merge state a row can show, native stack positions,
-// unread rows, long titles, labels, team and bot reviewers. The viewer is octocat. Ages are relative to page load so the
-// harness always looks current. Each row has its checks, which the fixture source hands out only as GitHub would: the
-// dashboard's rollup at first, the list (with the required ones) when enriching a failing rollup. The rows in "Needs
-// anyone's review" have no line counts and no merge state.
+// unread rows, long titles, labels, team and bot reviewers, and one row of globex's, the viewer's other organization. The
+// viewer is octocat. Ages are relative to page load so the harness always looks current. Each row has its checks, which
+// the fixture source hands out only as GitHub would: the dashboard's rollup at first, the list (with the required ones)
+// when enriching a failing rollup. The rows in "Needs anyone's review" have no line counts and no merge state.
 import type { Fixtures, InboxFixtureRow } from '../app/data-source';
 import type { CheckRunSummary, CheckState, CiSummary, UserRef } from '../lib/model';
 import { DEFAULT_VIEWS } from '../lib/views';
@@ -149,6 +149,19 @@ function prsFor(viewId: string): InboxFixtureRow[] {
           additions: 88,
           deletions: 141,
           commentCount: 2,
+        }),
+        // Another of octocat's organizations: shown when the inbox shows globex.
+        pr({
+          repo: 'globex/billing',
+          number: 77,
+          title: 'Prorate plan changes mid-cycle',
+          author: jdoe,
+          updated: 4 * HOUR,
+          unread: true,
+          reviewers: [{ kind: 'user', user: octocat, state: 'PENDING' }],
+          ci: ci({ passed: 6 }),
+          additions: 133,
+          deletions: 21,
         }),
       ];
     case 'graphite-needs-anyones-review':

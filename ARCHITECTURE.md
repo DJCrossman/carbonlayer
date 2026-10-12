@@ -27,7 +27,7 @@ CSP. The content script is a thin bridge.
 | `app/` | The React app (`entrypoints/app/main.tsx`): hash router → `InboxPage` (`src/inbox/`) or `PrPage` (`src/pr/`). Data comes through a `DataSource` (`src/app/data-source.ts`): the RPC-backed one in the extension, a fixture-backed one when opened with `?fixtures=1` (the dev harness). Listed in `web_accessible_resources` for `https://github.com/*`. |
 | `background.ts` | Brokers the one-click copy from Graphite: opens `app.graphite.com` next to the inbox's tab, remembers both tabs in `storage.session`, stores the copied sections under `graphiteImport` in `storage.local`, then closes the Graphite tab and re-activates the inbox. Nothing else. |
 | `graphite.content.ts` / `graphite-sections.content.ts` | On `app.graphite.com`, only in the tab the background opened: the isolated script asks the page-world script (`world: 'MAIN'`) for the inbox's sections; that one waits for the inbox to render, walks React's internal state above a sidebar item to the inbox `snapshot` (`inboxSnapshotOf` in `src/lib/graphite.ts`) and posts the sections, the inbox's repositories and the signed-in login back. A banner in the tab reports the result. |
-| `options/` | Options page: inbox scope and views editor, merge method, diff layout, theme, on/off switches. |
+| `options/` | Options page: the inbox's organization, its repositories and views editor, merge method, diff layout, theme, on/off switches. |
 | `popup/` | Toolbar popup: on/off toggles, links to inbox and options. |
 
 ## Data flow: the user's github.com session, no token
@@ -51,6 +51,29 @@ the cache and the page refetches with `force`.
 Stacks: GitHub-native `stack` from the PR page's embedded data first; otherwise Graphite's stack
 comment in the timeline, enriched through a `/pulls/search` query on the author's open PRs.
 
+## Organizations (inbox)
+
+The inbox shows one organization's pull requests at a time (`currentOrg` in settings: an organization the viewer belongs
+to, or their own account). The list comes from the `orgs.list` RPC, which the content script answers with
+`listOrganizations` (`src/lib/github-web/organizations.ts`): the organizations `GET /settings/organizations` lists (its
+rows' `/orgs/<login>`, `/organizations/<login>/…` or `/<login>` links; HTML, signed in), else the distinct owners of the
+repositories GitHub's repository picker offers for `contributed-by:@me`, then the viewer's own account
+(`meta[name="user-login"]`, of the settings page or of the github.com page the script runs in), last; kept 10 minutes.
+The options page, no github.com page, asks github.com for both itself. Until an organization is chosen, or once the list
+no longer has the chosen one, the inbox shows a centred "Choose an organization" card (`OrgChooser` in
+`src/inbox/OrgPicker.tsx`) and fetches nothing; after that, a chip with the organization's avatar beside the repository
+chip switches it (`OrgPicker`), the sections sidebar is headed by it, and the options page shows the same selector at
+the top of its Inbox section and edits that organization's repositories and views. Each organization has its own views
+(their order, collapsed state, filters) and repositories; one nobody has changed has Graphite's default views.
+
+The inbox scope, prepended to every search, is compiled from the organization in `getSettings` (`organizationScope` in
+`src/lib/views.ts`): the repositories chosen for it as one `(repo:a OR repo:b)`, else `org:<login>`, or `user:<login>`
+for the viewer's own account. `inbox.fetch` reads it from settings as before. The repository picker lists only the
+organization's repositories (`repos.search` with an `owner`: GitHub's picker is asked `contributed-by:@me org:<login>
+<text>`, and, should that bring none of the owner's, again without the qualifier, keeping the owner's;
+`pickableRepositories` in `src/lib/github-web/repositories.ts`), and `setSettings` keeps only repositories the
+organization owns.
+
 ## Views (inbox)
 
 ```ts
@@ -58,8 +81,13 @@ type View = { id: string; name: string; query: string; filter?: GraphiteFilter; 
 ```
 
 Stored in `chrome.storage.sync`, which holds at most 8 KB an item and 100 KB in all: each view is an item of its own,
-`view:<id>`, and the `settings` item holds the rest with the views' order (`viewOrder`); a save writes only the views
-that changed, and a write Chrome refuses reaches the UI as an error (`src/lib/settings.ts`). The default views are Graphite's default sections as the Graphite import translates
+`view:<org>/<id>`, and the `settings` item holds the rest: `currentOrg`, each organization's views' order
+(`viewsByOrg: { [login]: { viewOrder } }`) and repositories (`reposByOrg`); a save writes only the views that changed,
+and a write Chrome refuses reaches the UI as an error (`src/lib/settings.ts`). Views saved before views belonged to an
+organization (`view:<id>` items in `viewOrder`, with `inboxRepos` / `inboxScope`) stay until the first organization is
+chosen: the chooser offers "Keep my current views for this organization" (on by default), which moves them, and their
+repositories that organization owns, to it; otherwise it starts from the defaults. Either way the old items go. The
+default views are Graphite's default sections as the Graphite import translates
 them (`DEFAULT_VIEWS` in `src/lib/views.ts`: each with its Graphite `filter`, the viewer as `@me`, and the query compiled
 from it); settings whose views are all an earlier version's defaults (GitHub's own inbox sections) get them once, in
 `getSettings`. A query `inbox:<filter>` is one of GitHub's own inbox sections (`/pulls/inbox/queries`), anything else a
@@ -124,10 +152,9 @@ page comes back empty.
 
 Repositories are picked, not typed (`src/inbox/RepoPicker.tsx`): the inbox's top-bar chip, the options page and the
 section editor's Repositories field open a popover with a search box, "Select all / none" and checkboxes, fed by GitHub's
-own repository picker (`repos.search` RPC → `GET /repositories/picker/search?q=contributed-by:@me <text>`, read by
-`src/lib/github-web/repositories.ts`; the options page, no github.com page, asks github.com directly under the
-extension's host permission). The inbox's choice is stored as `inboxRepos`, and `setSettings` keeps `inboxScope` the
-compiled `(repo:a OR repo:b)` that is prepended; a scope saved earlier as bare `repo:` terms reads back as those
+own repository picker, narrowed to the organization shown (above; the options page, no github.com page, asks github.com
+directly under the extension's host permission). The inbox's choice is the organization's `inboxRepos`, compiled into
+the `inboxScope` that is prepended; a scope saved before organizations as bare `repo:` terms reads back as those
 repositories chosen. Sharing: "Share" encodes
 the view list into `https://github.com/#views=<base64url json>`; opening such a link with the
 extension installed offers to import (replace or append; appending a view named like one already there, case aside,
@@ -145,7 +172,10 @@ the rest are ORed as `((g1) OR (g2))` (GitHub's dashboard search accepts that; a
 into numbered views). A positive rule GitHub cannot search for (Merging, counts, forks, source, some review states)
 drops its group, a negated one only itself, each with a note under the view. Several repositories are always one
 `(repo:a OR repo:b)`: the dashboard search ANDs repeated `repo:` terms. Sections on the inbox's default repositories
-carry no `repo:` terms; the dialog offers to set the inbox scope to those repositories instead. Relative times
+carry no `repo:` terms; the dialog offers to search those repositories instead (`placeGraphiteImport` in
+`src/inbox/import-views.ts`): when one of the viewer's organizations owns them all, they become its repositories and the
+sections its views (the inbox switches to it); otherwise the sections join the current organization, each that searched
+them carrying them as its own `repos`. Relative times
 (`{{7d}}`) resolve to an ISO timestamp, not a date. See `docs/research/graphite-sections.md`.
 
 ## Verification

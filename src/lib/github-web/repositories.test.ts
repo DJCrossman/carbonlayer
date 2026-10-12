@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { repositoryCandidatesFrom, repositoryPickerPath } from './repositories';
+import { describe, expect, it, vi } from 'vitest';
+import { pickableRepositories, repositoryCandidatesFrom, repositoryPickerPath } from './repositories';
 
 describe("GitHub's repository picker", () => {
   it('asks for the repositories the viewer contributed to, narrowed by what was typed', () => {
@@ -29,5 +29,18 @@ describe("GitHub's repository picker", () => {
     expect(repositoryCandidatesFrom([{ nameWithOwner: 'acme/api', isPrivate: false }])).toEqual([{ owner: 'acme', name: 'api', isPrivate: false }]);
     expect(repositoryCandidatesFrom({ error: 'Not Found' })).toEqual([]);
     expect(repositoryCandidatesFrom(null)).toEqual([]);
+  });
+
+  it("narrows the picker to one organization's repositories with a qualifier, else by owner", async () => {
+    const answers: Record<string, unknown> = {
+      [repositoryPickerPath('org:acme web')]: [{ name: 'web', ownerLogin: 'acme' }],
+      [repositoryPickerPath('user:octocat web')]: [],
+      [repositoryPickerPath('web')]: [{ name: 'web', ownerLogin: 'acme' }, { name: 'webby', ownerLogin: 'octocat' }],
+    };
+    const load = vi.fn(async (path: string) => answers[path]);
+    expect(await pickableRepositories('web', { login: 'acme', isViewer: false }, load)).toEqual([{ owner: 'acme', name: 'web', isPrivate: false }]);
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(await pickableRepositories('web', { login: 'octocat', isViewer: true }, load)).toEqual([{ owner: 'octocat', name: 'webby', isPrivate: false }]);
+    expect(await pickableRepositories('web', null, load)).toHaveLength(2);
   });
 });

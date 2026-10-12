@@ -10,24 +10,26 @@
 import { Fragment, useEffect, useId, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { importGraphiteSections, type GraphiteInboxSnapshot } from '../lib/graphite';
-import type { RepoRef, View } from '../lib/model';
+import type { Organization, RepoRef, View } from '../lib/model';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
 import { RelativeTime } from '../ui/RelativeTime';
+import { placeGraphiteImport } from './import-views';
 import './graphite-import.css';
 
 /**
- * `currentInboxScope`, when given, offers to set the inbox's repositories to the Graphite inbox's; `onImport` then gets
- * them to save, if they change.
+ * `inbox`, when given (the organization the inbox shows, its chosen repositories, and the viewer's organizations), offers
+ * to search the Graphite inbox's repositories (`placeGraphiteImport`): `onImport` then gets the organization the views go
+ * to, and its repositories to save, if they change.
  */
 export function GraphiteImport({
   autoFocus,
-  currentInboxScope,
+  inbox,
   onImport,
 }: {
   autoFocus?: boolean;
-  currentInboxScope?: string;
-  onImport: (views: View[], mode: 'replace' | 'append', inboxRepos?: RepoRef[]) => void;
+  inbox?: { org: Organization; repos: RepoRef[]; organizations: Organization[] };
+  onImport: (views: View[], mode: 'replace' | 'append', destination?: { org: Organization; inboxRepos?: RepoRef[] }) => void;
 }) {
   const inputId = useId();
   const [input, setInput] = useState('');
@@ -40,7 +42,10 @@ export function GraphiteImport({
   // Who is signed in to Graphite, from its inbox page: pasted links search that login as @me too.
   const [viewerLogin, setViewerLogin] = useState<string | undefined>();
   const unnamed = preview?.views.some(({ view }) => !view.name.trim()) ?? false;
-  const offeredRepos = currentInboxScope !== undefined ? preview?.inboxRepos : null;
+  const offeredRepos = inbox ? preview?.inboxRepos : null;
+  const placed = inbox && preview && offeredRepos ? placeGraphiteImport(preview.views.map(({ view }) => view), offeredRepos, inbox.org, inbox.organizations) : null;
+  // Adding views to the inbox's own organization keeps the repositories already chosen for it.
+  const keepsRepos = placed?.org.login === inbox?.org.login && (inbox?.repos.length ?? 0) > 0;
 
   useEffect(() => {
     // Standalone (the harness) no extension copies anything.
@@ -99,12 +104,12 @@ export function GraphiteImport({
   function finish(mode: 'replace' | 'append' | 'dismiss') {
     if (!preview || (mode !== 'dismiss' && unnamed)) return;
     if (mode !== 'dismiss') {
-      // Adding views to an inbox that already has a scope keeps it.
-      const inboxRepos = offeredRepos && setScope && (mode === 'replace' || !currentInboxScope?.trim()) ? offeredRepos : undefined;
+      const named = new Map(preview.views.map(({ view }) => [view.id, view.name.trim()]));
+      const views = placed && setScope ? placed.views : preview.views.map(({ view }) => view);
       onImport(
-        preview.views.map(({ view }) => ({ ...view, name: view.name.trim() })),
+        views.map((view) => ({ ...view, name: named.get(view.id) ?? view.name })),
         mode,
-        inboxRepos,
+        placed && setScope ? { org: placed.org, inboxRepos: placed.inboxRepos && !(mode === 'append' && keepsRepos) ? placed.inboxRepos : undefined } : undefined,
       );
       setInput('');
     }
@@ -174,12 +179,15 @@ export function GraphiteImport({
               ))}
             </ul>
           )}
-          {offeredRepos && (
+          {offeredRepos && placed && inbox && (
             <label className="gg-graphite-import__scope">
               <input type="checkbox" checked={setScope} onChange={(event) => setSetScope(event.target.checked)} />
               <span>
-                Search these repositories in the inbox: <code>{offeredRepos.map((repo) => `${repo.owner}/${repo.name}`).join(', ')}</code>
-                {currentInboxScope?.trim() && <span className="gg-graphite-import__status"> (Add views keeps the current scope, {currentInboxScope.trim()})</span>}
+                {placed.inboxRepos
+                  ? `Search these repositories in ${placed.org.login}'s inbox${placed.org.login === inbox.org.login ? '' : ', and add the sections there'}: `
+                  : 'Search these repositories in each section that searched them in Graphite: '}
+                <code>{offeredRepos.map((repo) => `${repo.owner}/${repo.name}`).join(', ')}</code>
+                {placed.inboxRepos && keepsRepos && <span className="gg-graphite-import__status"> (Add views keeps the repositories chosen now)</span>}
               </span>
             </label>
           )}

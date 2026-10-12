@@ -3,7 +3,7 @@
 // (`https://github.com/#views=<base64url json>`).
 
 import { isGraphiteFilter } from './graphite';
-import type { View, ViewResult } from './model';
+import type { Organization, RepoRef, View, ViewResult } from './model';
 
 /**
  * Graphite's default inbox sections, as its import translates them (the filters of the user's own Graphite inbox,
@@ -288,6 +288,14 @@ export function resolveViewQuery(view: View, scope: string, now = new Date()): s
   const resolved = view.query.replace(/\{\{(\d+)d\}\}/g, (_, days: string) => `${new Date(now.getTime() - Number(days) * 86_400_000).toISOString().slice(0, 19)}Z`);
   const ownRepositories = /(^|[\s(])repo:/.test(view.query);
   return [ownRepositories ? '' : anyRepository(scope), anyRepository(resolved)].filter(Boolean).join(' ');
+}
+
+/**
+ * What an organization's inbox searches: the repositories chosen for it, or else every repository the organization owns
+ * (`org:`), or, for the viewer's own account, every one they own (`user:`).
+ */
+export function organizationScope(org: Pick<Organization, 'login' | 'isViewer'>, repos: RepoRef[]): string {
+  return repos.length > 0 ? repositoryScope(repos) : `${org.isViewer ? 'user' : 'org'}:${org.login}`;
 }
 
 /**

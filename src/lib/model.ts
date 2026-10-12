@@ -13,6 +13,14 @@ export interface RepoCandidate extends RepoRef {
   isPrivate: boolean;
 }
 
+/** An account whose pull requests an inbox shows: an organization the viewer belongs to, or the viewer's own account. */
+export interface Organization {
+  login: string;
+  avatarUrl: string;
+  /** The viewer's own account, searched as `user:` rather than `org:`. */
+  isViewer: boolean;
+}
+
 export interface UserRef {
   login: string;
   avatarUrl: string;

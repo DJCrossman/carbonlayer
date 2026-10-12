@@ -23,6 +23,22 @@
   font-size: 12px;
   font-weight: 600;
 }
+.gg-sidebar__org {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--gg-fg);
+  font-size: 13px;
+}
+.gg-sidebar__org.is-organization .gg-avatar {
+  border-radius: 4px;
+}
+.gg-sidebar__org-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .gg-sidebar__list {
   margin: 0;
   padding: 0;

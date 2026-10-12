@@ -2,7 +2,7 @@
 // GitHub with the user's session. Inside github.com the app posts requests to its parent window, the
 // content script answers them with same-origin fetches (cookies included); see src/lib/github-web/.
 
-import type { ChangedFileDiff, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, RepoCandidate, RepoRef, ReviewerCandidate, View, ViewResult } from './model';
+import type { ChangedFileDiff, Organization, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, RepoCandidate, RepoRef, ReviewerCandidate, View, ViewResult } from './model';
 
 export type MergeMethod = 'MERGE' | 'SQUASH' | 'REBASE';
 
@@ -19,8 +19,13 @@ export interface RpcMethods {
    * are, and its author is no reviewer.
    */
   'inbox.enrich': { args: { prs: InboxRowToEnrich[] }; result: PrEnrichment[] };
-  /** The repositories GitHub's repository picker offers for `query` (what the user typed; empty for its first list). */
-  'repos.search': { args: { query: string }; result: RepoCandidate[] };
+  /**
+   * The repositories GitHub's repository picker offers for `query` (what the user typed; empty for its first list), only
+   * `owner`'s when given.
+   */
+  'repos.search': { args: { query: string; owner?: Pick<Organization, 'login' | 'isViewer'> | null }; result: RepoCandidate[] };
+  /** The organizations the viewer belongs to, then their own account: whose pull requests the inbox can show. */
+  'orgs.list': { args: Record<string, never>; result: Organization[] };
   /** The whole PR at once, all its stages put together (the PR page itself loads them one by one, below). */
   'pr.fetch': { args: { repo: RepoRef; number: number; force?: boolean }; result: PrDetail };
   // The PR page, a stage at a time (PrStages in model.ts). `force` repeats the requests the stage itself makes to GitHub.

@@ -1,12 +1,15 @@
-// Graphite's sections sidebar: every inbox section with its count, the one in view highlighted; a click scrolls to it.
-// Each row has ↑ / ↓ to reorder and a gear for the section editor; "Add section" at the bottom opens it for a new one.
-import type { View, ViewResult } from '../lib/model';
+// Graphite's sections sidebar: every inbox section of the organization shown, which heads it, with its count, the one in
+// view highlighted; a click scrolls to it. Each row has ↑ / ↓ to reorder and a gear for the section editor; "Add section"
+// at the bottom opens it for a new one.
+import type { Organization, View, ViewResult } from '../lib/model';
 import { sectionCount } from '../lib/views';
+import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
 import './sections-sidebar.css';
 
 export function SectionsSidebar({
+  org,
   views,
   resultsByView,
   currentViewId,
@@ -17,6 +20,8 @@ export function SectionsSidebar({
   onAdd,
   onHide,
 }: {
+  /** Whose sections these are. */
+  org: Organization;
   views: View[];
   resultsByView: Map<string, ViewResult>;
   currentViewId: string | null;
@@ -31,7 +36,10 @@ export function SectionsSidebar({
   return (
     <aside className={open ? 'gg-sidebar is-open' : 'gg-sidebar'} aria-label="Sections">
       <header className="gg-sidebar__header">
-        Sections
+        <span className={org.isViewer ? 'gg-sidebar__org' : 'gg-sidebar__org is-organization'} title={`${org.login}'s sections`}>
+          <Avatar user={{ login: org.login, avatarUrl: org.avatarUrl, url: `https://github.com/${org.login}` }} size={16} title={org.login} />
+          <span className="gg-sidebar__org-name">{org.login}</span>
+        </span>
         <Button variant="ghost" size="sm" icon="sidebar" aria-label="Hide sections" title="Hide sections" onClick={onHide} />
       </header>
       <ol className="gg-sidebar__list">
