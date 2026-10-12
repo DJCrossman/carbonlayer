@@ -43,7 +43,7 @@ describe('prDetailFrom', () => {
     const pr = prDetailFrom(header, {
       ...nothingYet,
       stack: { status: 'ready', value: { stack } },
-      checks: { status: 'ready', value: { ci, requiredCheckNames } },
+      checks: { status: 'ready', value: { ci, requiredCheckNames, emptyReason: null } },
     });
     expect(pr.stack.entries[pr.stack.currentIndex]).toMatchObject({ number: 42, ci: { state: 'FAILURE' } });
     expect(pr.stack.entries.map((entry) => entry.number)).toEqual([41, 42, 43]);

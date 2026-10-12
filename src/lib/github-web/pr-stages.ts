@@ -125,7 +125,18 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
     };
   },
 
-  checks: async (github) => checksFrom(await github.statusChecks()),
+  checks: async (github) => {
+    const answer = await github.statusChecks();
+    const checks = checksFrom(answer);
+    // What the card says when it has no checks to show; an answer without rows is named by its keys.
+    const emptyReason =
+      answer === null
+        ? 'GitHub answered 404 for page_data/status_checks'
+        : checks.ci.checks.length === 0
+          ? `GitHub sent no checks (keys: ${Object.keys(answer ?? {}).join(', ') || 'none'})`
+          : null;
+    return { ...checks, emptyReason };
+  },
 
   stack: async (github, pull) => {
     const [header, page] = await Promise.all([stages.header(github, pull), github.page()]);

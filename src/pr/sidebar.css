@@ -166,6 +166,9 @@
   gap: 4px;
 }
 
+/* Why the checks card is empty. */
+.side-checks-empty { margin: 0; font-size: 12px; }
+
 .checks-bar {
   display: flex;
   gap: 2px;

@@ -10,7 +10,7 @@ import { defineContentScript } from 'wxt/utils/define-content-script';
 import { isBridgeMessage, type AppToParentMessage, type ParentToAppMessage } from '../src/app/bridge';
 import { parseGitHubLocation, toAppHash, type AppRoute } from '../src/app/routes';
 import { handleRpc } from '../src/lib/github-web';
-import { isRpcRequest, type RpcResponse } from '../src/lib/rpc';
+import { isRpcRequest, type RpcRequest, type RpcResponse } from '../src/lib/rpc';
 import { getSettings, setSettings, watchSettings } from '../src/lib/settings';
 
 export default defineContentScript({
@@ -65,6 +65,22 @@ export default defineContentScript({
         pageViewSwitch.show(route.page === 'inbox' ? 'inboxEnabled' : 'prEnabled', enabled);
       }
     };
+
+    // A console probe for checking GitHub's routes with the signed-in session from DevTools, which the app's iframe keeps
+    // browser tooling from seeing (ARCHITECTURE.md): `gg:probe` runs a read through handleRpc and `gg:probe-result`
+    // brings the answer back. Both carry JSON strings, since objects do not cross between the page's world and this one.
+    ctx.addEventListener(document, 'gg:probe', async (event: Event) => {
+      let answer: RpcResponse;
+      try {
+        const { id, method, args } = JSON.parse((event as CustomEvent<string>).detail) as Omit<RpcRequest, 'kind'>;
+        answer = /^(pr\.fetch|inbox\.|repos\.|orgs\.)/.test(method)
+          ? await handleRpc({ kind: 'gg-rpc', id, method, args })
+          : { kind: 'gg-rpc-result', id, ok: false, error: 'Only read requests can be probed' };
+      } catch (error) {
+        answer = { kind: 'gg-rpc-result', id: '?', ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+      document.dispatchEvent(new CustomEvent('gg:probe-result', { detail: JSON.stringify(answer) }));
+    });
 
     sync(new URL(location.href));
     ctx.addEventListener(window, 'wxt:locationchange', (event) => sync(event.newUrl));
@@ -189,8 +205,15 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
       if (event.origin !== appOrigin || event.source !== ui.iframe.contentWindow) return;
       if (isRpcRequest(event.data)) {
         // Data requests run here, not in the app: only a github.com document can fetch with the user's session.
-        // handleRpc answers every request, failures included.
-        void handleRpc(event.data).then(post);
+        // handleRpc answers every request, failures included; an answer that cannot be cloned is answered with why, so the
+        // app does not wait 60 s for it.
+        void handleRpc(event.data).then((answer) => {
+          try {
+            post(answer);
+          } catch (error) {
+            post({ kind: 'gg-rpc-result', id: answer.id, ok: false, error: `The answer could not be posted: ${error instanceof Error ? error.message : String(error)}` });
+          }
+        });
         return;
       }
       if (!isBridgeMessage<AppToParentMessage>(event.data)) return;

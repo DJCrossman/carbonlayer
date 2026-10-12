@@ -13,13 +13,16 @@ export const SIGNED_OUT = 'Sign in to github.com in this tab, then reload.';
  * scripts' requests, as its JSON routes and the HTML partials its classic pages load into dialogs are.
  */
 export async function request(path: string, accept: 'application/json' | 'text/html', { xhr = accept === 'application/json' } = {}): Promise<Response> {
-  // JSON routes get the headers GitHub's React page sends with its own page_data reads (the nonce and client version
-  // come from the page's metas when the content script has a page); without them some routes answer 404.
+  // JSON routes get the headers GitHub's React page sends with its own page_data reads, Content-Type included on a GET
+  // (the nonce and client version come from the page's metas when the content script has a page, so a read made while
+  // GitHub's <head> is still being parsed waits for them); without them some routes answer 404.
+  if (xhr) await untilHeadParsed();
   const nonce = typeof document === 'undefined' ? null : document.querySelector('meta[name="fetch-nonce"]')?.getAttribute('content');
   const release = typeof document === 'undefined' ? null : document.querySelector('meta[name="release"]')?.getAttribute('content');
   const headers: Record<string, string> = xhr
     ? {
         Accept: accept,
+        ...(accept === 'application/json' && { 'Content-Type': 'application/json' }),
         'X-Requested-With': 'XMLHttpRequest',
         'GitHub-Verified-Fetch': 'true',
         'GitHub-Is-React': 'true',
@@ -174,6 +177,27 @@ export function noteShape(label: string, data: unknown): void {
         ? [`array(${data.length})`, ...Object.keys(data[0] ?? {})]
         : Object.keys(data);
   console.debug('[gg]', label, keys);
+}
+
+/**
+ * Resolves once GitHub's <head> is parsed as far as its fetch nonce: at once, unless this document is still loading with
+ * neither the nonce nor a <body> (which means the head is done) yet; then as soon as one of them appears, or at
+ * DOMContentLoaded.
+ */
+function untilHeadParsed(): Promise<void> {
+  const parsed = () => document.readyState !== 'loading' || !!document.body || !!document.querySelector('meta[name="fetch-nonce"]');
+  if (typeof document === 'undefined' || parsed()) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      if (!parsed()) return;
+      observer.disconnect();
+      document.removeEventListener('DOMContentLoaded', done);
+      resolve();
+    };
+    const observer = new MutationObserver(done);
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    document.addEventListener('DOMContentLoaded', done);
+  });
 }
 
 interface EmbeddedData {

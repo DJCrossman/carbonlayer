@@ -45,8 +45,8 @@ Signed-in state comes from the fetched PR page's `meta[name="user-login"]`: empt
 shows "Sign in to github.com in this tab". Signed in, the routes behind the sidebar (`merge_box`,
 `status_checks`, `stack_mergeability`, `review_requests`, `labels`, `assignees`, `description`) and
 the inbox's deferred fields are side details: on the PR page a 404 from one is logged with `console.debug('[gg]', …)`
-and leaves that card empty, and any other failure shows in the card with a retry. Reads are cached in the content
-script for 30–60 s; a successful write clears the cache.
+and leaves that card empty (an open PR's checks card says why), and any other failure shows in the card with a retry.
+Reads are cached in the content script for 30–60 s; a successful write clears the cache.
 
 The PR page loads in stages (`PrStages` in `src/lib/model.ts`, `src/lib/github-web/pr-stages.ts`), all requested at
 once and each rendered as it arrives (`src/pr/page-data.ts`): `pr.fetchHeader` (the page's HTML, `tab_counts`,
@@ -66,6 +66,17 @@ stages again, the others untouched; marking a file viewed only changes it in pla
 
 Stacks: GitHub-native `stack` from the PR page's embedded data first; otherwise Graphite's stack
 comment in the timeline, enriched through a `/pulls/search` query on the author's open PRs.
+
+The app's iframe keeps DevTools and browser tooling from seeing the content script, so to check a route with the
+signed-in session the content script answers a console probe on every github.com page: a `gg:probe` event on `document`
+whose `detail` is a JSON string `{ id, method, args }` runs that RPC method through `handleRpc` (reads only: `pr.fetch*`,
+`inbox.*`, `repos.*`, `orgs.*`), and the answer comes back as a `gg:probe-result` event, JSON too, since objects do not
+cross from the page's world to the content script's. From the page's console:
+
+```js
+document.addEventListener('gg:probe-result', (e) => console.log(JSON.parse(e.detail)));
+document.dispatchEvent(new CustomEvent('gg:probe', { detail: JSON.stringify({ id: '1', method: 'pr.fetchChecks', args: { repo: { owner: 'o', name: 'r' }, number: 1 } }) }));
+```
 
 ## Organizations (inbox)
 

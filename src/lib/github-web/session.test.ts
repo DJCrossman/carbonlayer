@@ -31,6 +31,7 @@ describe('reading with the session', () => {
     expect(fetch).toHaveBeenCalledWith('/pulls/inbox/queries?filter=review-requested', {
       headers: {
         Accept: 'application/json',
+        'Content-Type': 'application/json',
         'X-Requested-With': 'XMLHttpRequest',
         'GitHub-Verified-Fetch': 'true',
         'GitHub-Is-React': 'true',
@@ -40,6 +41,25 @@ describe('reading with the session', () => {
       credentials: 'same-origin',
     });
     document.head.innerHTML = '';
+  });
+
+  it('waits for the page’s nonce when a read starts while GitHub’s <head> is still being parsed', async () => {
+    const fetch = vi.fn(async () => Response.json({ ok: 1 }));
+    vi.stubGlobal('fetch', fetch);
+    // Before the parser reaches <body>.
+    const body = document.body;
+    body.remove();
+    Object.defineProperty(document, 'readyState', { value: 'loading', configurable: true });
+    try {
+      const reading = getJson('/o/r/pull/1/page_data/status_checks');
+      expect(fetch).not.toHaveBeenCalled();
+      document.head.innerHTML = '<meta name="fetch-nonce" content="v2:late">';
+      await expect(reading).resolves.toEqual({ ok: 1 });
+      expect(fetch).toHaveBeenCalledWith('/o/r/pull/1/page_data/status_checks', expect.objectContaining({ headers: expect.objectContaining({ 'X-Fetch-Nonce': 'v2:late' }) }));
+    } finally {
+      Reflect.deleteProperty(document, 'readyState');
+      document.documentElement.append(body);
+    }
   });
 
   it('recognises a signed-out session by the login redirect or GitHub saying it cannot authenticate', async () => {

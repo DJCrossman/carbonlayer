@@ -106,7 +106,7 @@ export function prDetailFrom(header: PrStages['header'], data: PrPageData): PrDe
     autoMerge: null,
     isInMergeQueue: false,
   };
-  const checks: PrStages['checks'] = data.checks.value ?? { ci: { state: 'NONE', checks: [], counts: { success: 0, failure: 0, pending: 0, other: 0 } }, requiredCheckNames: [] };
+  const checks: PrStages['checks'] = data.checks.value ?? { ci: { state: 'NONE', checks: [], counts: { success: 0, failure: 0, pending: 0, other: 0 } }, requiredCheckNames: [], emptyReason: null };
   const meta: PrStages['meta'] = data.meta.value ?? { labels: [], assignees: [] };
   const listed = data.files.value;
   const stack = data.stack.value?.stack;

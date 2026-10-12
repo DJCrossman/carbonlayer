@@ -100,6 +100,17 @@ describe('the PR page in stages', () => {
     await expect(loadStage('checks')).rejects.toThrow('GitHub answered 502');
   });
 
+  it('says the checks card is empty because GitHub answered 404', async () => {
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+    requests = serveGitHub({ status_checks: 404 });
+    expect(await loadStage('checks')).toMatchObject({ ci: { checks: [] }, emptyReason: 'GitHub answered 404 for page_data/status_checks' });
+  });
+
+  it('says the checks card is empty because GitHub sent no check rows, naming what it sent', async () => {
+    vi.mocked(fetch).mockImplementationOnce(async () => Response.json({ statusRollup: { combinedState: 'PASSED', summary: [] }, statusChecks: [] }));
+    expect(await loadStage('checks')).toMatchObject({ ci: { checks: [] }, emptyReason: 'GitHub sent no checks (keys: statusRollup, statusChecks)' });
+  });
+
   it('asks a signed-out viewer to sign in from the header', async () => {
     requests = serveGitHub({}, '');
     await expect(loadStage('header')).rejects.toThrow(SIGNED_OUT);

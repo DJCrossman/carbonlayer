@@ -269,7 +269,10 @@ export interface PrStages {
     PrDetail,
     'mergeStatus' | 'reviewers' | 'reviewDecision' | 'viewerCanMerge' | 'viewerCanEnableAutoMerge' | 'allowedMergeMethods' | 'defaultMergeMethod' | 'autoMerge' | 'isInMergeQueue'
   >;
-  checks: Pick<PrDetail, 'ci' | 'requiredCheckNames'>;
+  checks: Pick<PrDetail, 'ci' | 'requiredCheckNames'> & {
+    /** Why the checks list is empty when it is (GitHub answered 404, or sent no rows): the card shows it, so an empty card is never a mystery. */
+    emptyReason: string | null;
+  };
   stack: Pick<PrDetail, 'stack'>;
   meta: Pick<PrDetail, 'labels' | 'assignees'>;
 }

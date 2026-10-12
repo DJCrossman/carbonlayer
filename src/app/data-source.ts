@@ -188,7 +188,7 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
         },
         threads: { threads, unresolvedThreadCount },
         mergeBox: { mergeStatus, reviewers, reviewDecision, viewerCanMerge, viewerCanEnableAutoMerge, allowedMergeMethods, defaultMergeMethod, autoMerge, isInMergeQueue },
-        checks: { ci, requiredCheckNames },
+        checks: { ci, requiredCheckNames, emptyReason: null },
         stack: { stack },
         meta: { labels, assignees },
       };

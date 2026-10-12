@@ -1,5 +1,6 @@
 // The right sidebar: status (with Merge when ready), the one next step, checks, reviewers (Reviewers.tsx), labels and
-// assignees. Each card shows a skeleton until the stage it comes from arrives; cards with nothing to show are left out.
+// assignees. Each card shows a skeleton until the stage it comes from arrives; cards with nothing to show are left out,
+// except an open PR's checks, which says why it has none.
 import { useEffect, useState, type ReactNode } from 'react';
 import type { MergeMethod } from '../lib/rpc';
 import type { PrDetail, PrStage } from '../lib/model';
@@ -48,7 +49,20 @@ export function Sidebar({
       <StatusCard pr={pr} mergeMethod={mergeMethod} onAutoMerge={onAutoMerge} />
       <ActionCard pr={pr} data={data} onRetry={onRetry} mergeMethod={mergeMethod} onMarkReady={onMarkReady} onMerge={onMerge} onViewThreads={onViewThreads} />
       <Staged state={data.checks} what="the checks" onRetry={() => onRetry(['checks'])} skeleton={<SideCardSkeleton title="Checks" rows={3} />}>
-        {() => pr.ci.checks.length > 0 && <ChecksCard pr={pr} reruns={checkReruns} />}
+        {({ emptyReason }) =>
+          pr.ci.checks.length > 0 ? (
+            <ChecksCard pr={pr} reruns={checkReruns} />
+          ) : (
+            pr.state === 'OPEN' && (
+              <Card className="side-card">
+                <h3 className="side-card-title">
+                  Checks <span className="pr-muted">· none</span>
+                </h3>
+                {emptyReason && <p className="pr-muted side-checks-empty">{emptyReason}</p>}
+              </Card>
+            )
+          )
+        }
       </Staged>
       <Staged state={data.mergeBox} what="the reviewers" onRetry={() => onRetry(['mergeBox'])} skeleton={<SideCardSkeleton title="Reviewers" rows={2} />}>
         {() => reviewersCard}
