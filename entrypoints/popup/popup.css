@@ -72,14 +72,3 @@
   background: var(--gg-accent);
   border-color: transparent;
 }
-
-.support {
-  display: flex;
-  justify-content: center;
-  margin-top: var(--gg-space-3);
-}
-
-.support img {
-  height: 36px;
-  border-radius: 6px;
-}

@@ -72,9 +72,6 @@ export function SectionsSidebar({
         <Icon name="plus" size={14} />
         Add section
       </button>
-      <a className="gg-sidebar__support" href="https://buymeacoffee.com/djcrossman" target="_blank" rel="noopener">
-        <img src="/buymeacoffee.png" alt="Buy me a coffee" height={32} />
-      </a>
     </aside>
   );
 }

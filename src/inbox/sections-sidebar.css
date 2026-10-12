@@ -169,15 +169,3 @@
     box-shadow: var(--gg-shadow-overlay);
   }
 }
-
-.gg-sidebar__support {
-  display: block;
-  margin-top: var(--gg-space-3);
-  padding: 0 var(--gg-space-2);
-}
-
-.gg-sidebar__support img {
-  display: block;
-  height: 32px;
-  border-radius: 6px;
-}
