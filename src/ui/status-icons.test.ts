@@ -7,14 +7,15 @@ describe('the Review column', () => {
 
   it.each([
     ['no reviewers at all', [], undefined, ['dash', 'subtle', 'No reviewers requested']],
-    ['others approved or commented', [reviewer('jlord', 'APPROVED'), reviewer('copilot', 'COMMENTED')], undefined, ['person-check', 'success', 'Reviewed by jlord, copilot']],
+    ['others approved; a comment is not a review', [reviewer('jlord', 'APPROVED'), reviewer('copilot', 'COMMENTED')], undefined, ['person-check', 'success', 'Reviewed by jlord']],
+    ['only a bot commented', [reviewer('copilot', 'COMMENTED')], undefined, ['dash', 'subtle', 'No reviews yet (copilot commented)']],
     ['the viewer approved', [reviewer('octocat', 'APPROVED'), reviewer('jlord', 'COMMENTED')], undefined, ['check-circle-fill', 'success', 'Approved by you']],
     ['the enrichment says the viewer approved', [reviewer('jlord', 'COMMENTED')], 'APPROVED', ['check-circle-fill', 'success', 'Approved by you']],
     ['someone requested changes, whoever approved', [reviewer('octocat', 'APPROVED'), reviewer('mona', 'CHANGES_REQUESTED')], undefined, ['pencil', 'severe', 'Changes requested by mona']],
     ['requests nobody answered', [reviewer('acme/parcs', 'PENDING'), reviewer('octocat', 'PENDING')], undefined, ['clock', 'severe', 'Waiting for acme/parcs, you']],
     ['the viewer requested changes', [reviewer('octocat', 'CHANGES_REQUESTED')], undefined, ['pencil', 'severe', 'Changes requested by you']],
     ['some reviewed, some still asked', [reviewer('jlord', 'APPROVED'), reviewer('acme/parcs', 'PENDING')], undefined, ['person-check', 'success', 'Reviewed by jlord; waiting for acme/parcs']],
-    ['only the viewer commented', [reviewer('octocat', 'COMMENTED')], undefined, ['dash', 'subtle', 'No reviews yet']],
+    ['only the viewer commented', [reviewer('octocat', 'COMMENTED')], undefined, ['dash', 'subtle', 'No reviews yet (you commented)']],
   ] as const)('%s', (_, reviewers, viewerReview, [icon, tone, tooltip]) => {
     expect(reviewStatusIcon({ ...open, reviewers: [...reviewers], viewerReview }, 'octocat')).toEqual({ icon, tone, tooltip });
   });
@@ -64,9 +65,9 @@ describe('the Merge column', () => {
     ['merged', { state: 'MERGED', mergeStatus: 'UNKNOWN' }, ['git-merge', 'done', 'Merged']],
     ['closed', { state: 'CLOSED', mergeStatus: 'UNKNOWN' }, ['git-pull-request-closed', 'danger', 'Closed']],
     ['conflicting', { mergeStatus: 'DIRTY' }, ['x-circle-fill', 'danger', 'Merge conflict']],
-    ['blocked', { mergeStatus: 'BLOCKED' }, ['alert', 'severe', 'Blocked: required reviews or checks are missing']],
-    ['behind its base', { mergeStatus: 'BEHIND' }, ['alert', 'severe', 'Blocked: the branch is behind its base']],
-    ['unstable', { mergeStatus: 'UNSTABLE' }, ['alert', 'severe', 'Blocked: some checks are failing']],
+    ['held back by reviews or checks, like Graphite: no conflict', { mergeStatus: 'BLOCKED' }, ['check-circle-fill', 'success', 'No merge conflicts; blocked on GitHub: required reviews or checks are missing']],
+    ['behind its base', { mergeStatus: 'BEHIND' }, ['check-circle-fill', 'success', 'No merge conflicts; blocked on GitHub: the branch is behind its base']],
+    ['optional checks failing', { mergeStatus: 'UNSTABLE' }, ['check-circle-fill', 'success', 'No merge conflicts; blocked on GitHub: some checks are failing']],
     ['a conflicting draft, like any other PR', { isDraft: true, mergeStatus: 'DIRTY' }, ['x-circle-fill', 'danger', 'Merge conflict']],
     ['a draft GitHub has not described', { isDraft: true, mergeStatus: 'DRAFT' }, ['dash', 'subtle', 'Unknown']],
     ['not known yet', { mergeStatus: 'UNKNOWN' }, ['dash', 'subtle', 'Unknown']],
@@ -76,7 +77,7 @@ describe('the Merge column', () => {
   });
 
   it("says why a pull request is blocked when the merge box did", () => {
-    expect(mergeStatusIcon({ ...pr, mergeStatus: 'BLOCKED' }, 'At least 1 approving review is required').tooltip).toBe('Blocked: At least 1 approving review is required');
+    expect(mergeStatusIcon({ ...pr, mergeStatus: 'BLOCKED' }, 'At least 1 approving review is required').tooltip).toBe('No merge conflicts; blocked on GitHub: At least 1 approving review is required');
   });
 });
 

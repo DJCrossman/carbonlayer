@@ -33,9 +33,15 @@ export function reviewStatusIcon(
     .filter((reviewer) => reviewer.state === 'CHANGES_REQUESTED')
     .map((reviewer) => (isViewer(reviewer) ? 'you' : reviewer.user.login))
     .join(', ');
+  // As in Graphite, a review is an approval or a request for changes; a comment-only review (Copilot's, a drive-by)
+  // leaves the column empty and is only named on hover.
   const reviewedBy = reviewers
-    .filter((reviewer) => (reviewer.state === 'APPROVED' || reviewer.state === 'COMMENTED') && !isViewer(reviewer))
+    .filter((reviewer) => reviewer.state === 'APPROVED' && !isViewer(reviewer))
     .map((reviewer) => reviewer.user.login)
+    .join(', ');
+  const commentedBy = reviewers
+    .filter((reviewer) => reviewer.state === 'COMMENTED')
+    .map((reviewer) => (isViewer(reviewer) ? 'you' : reviewer.user.login))
     .join(', ');
   const waitingFor = reviewers
     .filter((reviewer) => reviewer.state === 'PENDING')
@@ -48,7 +54,7 @@ export function reviewStatusIcon(
   if (reviewedBy) return { icon: 'person-check', tone: 'success', tooltip: `Reviewed by ${reviewedBy}${waitingFor ? `; waiting for ${waitingFor}` : ''}` };
   if (waitingFor) return { icon: 'clock', tone: 'severe', tooltip: `Waiting for ${waitingFor}` };
   if (reviewers.length === 0) return { icon: 'dash', tone: 'subtle', tooltip: 'No reviewers requested' };
-  return { icon: 'dash', tone: 'subtle', tooltip: 'No reviews yet' };
+  return { icon: 'dash', tone: 'subtle', tooltip: commentedBy ? `No reviews yet (${commentedBy} commented)` : 'No reviews yet' };
 }
 
 /**
@@ -101,12 +107,14 @@ export function mergeStatusIcon(
       return { icon: 'check-circle-fill', tone: 'success', tooltip: 'Mergeable' };
     case 'DIRTY':
       return { icon: 'x-circle-fill', tone: 'danger', tooltip: 'Merge conflict' };
+    // As in Graphite, the column is about conflicts: a PR GitHub still holds back (reviews, checks, a stale base) is
+    // mergeable here, and the hover says what GitHub still blocks on; the review and CI columns carry the rest.
     case 'BLOCKED':
-      return { icon: 'alert', tone: 'severe', tooltip: `Blocked: ${blockedReason ?? 'required reviews or checks are missing'}` };
+      return { icon: 'check-circle-fill', tone: 'success', tooltip: `No merge conflicts; blocked on GitHub: ${blockedReason ?? 'required reviews or checks are missing'}` };
     case 'BEHIND':
-      return { icon: 'alert', tone: 'severe', tooltip: `Blocked: ${blockedReason ?? 'the branch is behind its base'}` };
+      return { icon: 'check-circle-fill', tone: 'success', tooltip: `No merge conflicts; blocked on GitHub: ${blockedReason ?? 'the branch is behind its base'}` };
     case 'UNSTABLE':
-      return { icon: 'alert', tone: 'severe', tooltip: `Blocked: ${blockedReason ?? 'some checks are failing'}` };
+      return { icon: 'check-circle-fill', tone: 'success', tooltip: `No merge conflicts; blocked on GitHub: ${blockedReason ?? 'some checks are failing'}` };
     case 'DRAFT':
     case 'UNKNOWN':
       return { icon: 'dash', tone: 'subtle', tooltip: 'Unknown' };
