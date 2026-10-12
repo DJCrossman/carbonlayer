@@ -171,6 +171,11 @@ function OptionsPage() {
           Replace pull request pages
         </label>
       </section>
+      <footer className="support">
+        <a href="https://buymeacoffee.com/djcrossman" target="_blank" rel="noopener">
+          ☕ Buy me a coffee
+        </a>
+      </footer>
     </main>
   );
 }

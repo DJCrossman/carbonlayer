@@ -169,3 +169,17 @@
     box-shadow: var(--gg-shadow-overlay);
   }
 }
+
+.gg-sidebar__support {
+  display: block;
+  margin-top: var(--gg-space-2);
+  padding: 0 var(--gg-space-2);
+  font-size: 12px;
+  color: var(--gg-fg-muted);
+  text-decoration: none;
+}
+
+.gg-sidebar__support:hover {
+  color: var(--gg-fg);
+  text-decoration: underline;
+}

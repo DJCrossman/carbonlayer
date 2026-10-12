@@ -202,3 +202,18 @@ body {
   font-size: 12px;
   color: var(--gg-danger);
 }
+
+.support {
+  margin-top: var(--gg-space-4);
+  font-size: 12px;
+}
+
+.support a {
+  color: var(--gg-fg-muted);
+  text-decoration: none;
+}
+
+.support a:hover {
+  color: var(--gg-fg);
+  text-decoration: underline;
+}

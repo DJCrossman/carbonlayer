@@ -70,7 +70,7 @@ function Popup() {
           Could not save: {problem}
         </p>
       )}
-      <p className="hint">Uses your github.com sign-in. Switches apply to open GitHub tabs at once.</p>
+      <p className="hint">Uses your github.com sign-in. A switch changes the tab in view and what new tabs start with.</p>
       <div className="actions">
         <button
           type="button"
@@ -86,6 +86,9 @@ function Popup() {
           Options
         </button>
       </div>
+      <a className="support" href="https://buymeacoffee.com/djcrossman" target="_blank" rel="noopener">
+        ☕ Buy me a coffee
+      </a>
     </main>
   );
 }

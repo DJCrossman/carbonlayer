@@ -2,6 +2,8 @@
 
 We have Graphite at home.
 
+If it saves you a Graphite seat, [buy me a coffee](https://buymeacoffee.com/djcrossman).
+
 A Chrome extension that makes GitHub's pull requests look and work like [Graphite](https://graphite.dev):
 
 - **Inbox** on the GitHub homepage (`github.com`, when signed in; signed out it stays GitHub's own page, and so does
