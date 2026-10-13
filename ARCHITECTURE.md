@@ -92,7 +92,7 @@ the top of its Inbox section and edits that organization's repositories and view
 
 The inbox scope, prepended to every search, is compiled from the organization in `getSettings` (`organizationScope` in
 `src/lib/views.ts`): the repositories chosen for it as one `(repo:a OR repo:b)`, else `org:<login>`, or `user:<login>`
-for the viewer's own account. `inbox.fetch` reads it from settings as before. The repository picker lists only the
+for the viewer's own account. `inbox.fetch` reads it from settings as before. The inbox asks `inbox.fetch` twice per load: the open sections first, then the folded ones, which show only a count until opened, so what is on screen is never queued behind them. The repository picker lists only the
 organization's repositories (`repos.search` with an `owner`: GitHub's picker is asked `contributed-by:@me org:<login>
 <text>`, and, should that bring none of the owner's, again without the qualifier, keeping the owner's;
 `pickableRepositories` in `src/lib/github-web/repositories.ts`), and `setSettings` keeps only repositories the

@@ -487,11 +487,18 @@ function useInbox(source: DataSource, organizations: Organization[] | null) {
     if (!settings || !org) return;
     const request = ++latestRequest.current;
     setRefreshing(true);
+    // The open sections first, so what is on screen fills in before GitHub is asked about the folded ones, which show
+    // only a count until opened. Each answer replaces those sections' rows; sections no longer in the views go.
+    const views = new Set(settings.views.map((view) => view.id));
     try {
-      const fresh = await source.fetchInbox(settings.views, force);
-      if (request !== latestRequest.current) return;
-      setResults(fresh);
-      setError(null);
+      for (const batch of [settings.views.filter((view) => !view.collapsed), settings.views.filter((view) => view.collapsed)]) {
+        if (batch.length === 0) continue;
+        const fresh = await source.fetchInbox(batch, force);
+        if (request !== latestRequest.current) return;
+        const answered = new Set(batch.map((view) => view.id));
+        setResults((shown) => [...(shown ?? []).filter((result) => views.has(result.view.id) && !answered.has(result.view.id)), ...fresh]);
+        setError(null);
+      }
       setFetchedAt(Date.now());
     } catch (cause) {
       if (request === latestRequest.current) setError(cause instanceof Error ? cause.message : String(cause));
