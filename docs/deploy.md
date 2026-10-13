@@ -82,7 +82,9 @@ workflow and publishes the GitHub Release; the store steps are skipped until the
 | `CWS_CLIENT_SECRET` | from step 3.4 |
 | `CWS_REFRESH_TOKEN` | from step 4.3 |
 
-From the next push to `main` the workflow uploads and submits each release. **Actions → Release** shows the store's
+The store step stays off until the repository **variable** `CWS_PUBLISH` is set to `true` (same page, **Variables**
+tab). Set it, and from the next push to `main` the workflow uploads and submits each release; set it to anything else
+to pause store uploads while GitHub Releases continue. **Actions → Release** shows the store's
 answers: an upload answers `"uploadState": "SUCCESS"`, a submission `"status": ["OK"]`; `PUBLISHED_WITH_FRICTION_WARNING`
 in the status is fine too. Run it by hand from the same page (**Run workflow**) to release without a push.
 

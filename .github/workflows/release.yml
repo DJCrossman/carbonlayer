@@ -1,5 +1,6 @@
 # Every push to main becomes a release: typecheck and tests, a build, a GitHub Release carrying the zip, and, once the
-# Chrome Web Store secrets are set (docs/deploy.md), that zip uploaded and submitted to the store through its REST API.
+# Chrome Web Store secrets are set and the CWS_PUBLISH variable is "true" (docs/deploy.md), that zip uploaded and
+# submitted to the store through its REST API.
 # Only GitHub's own actions are used; pnpm comes from corepack and the store calls are plain curl.
 name: Release
 
@@ -58,8 +59,9 @@ jobs:
             --title "v${{ steps.version.outputs.version }}" \
             --notes "Built from ${{ github.sha }}. Load unpacked from the zip, or wait for the Chrome Web Store update."
 
+      # Off until the repository variable CWS_PUBLISH is "true" (Settings → Secrets and variables → Actions → Variables).
       - name: Upload to the Chrome Web Store and submit it for review
-        if: env.CWS_EXTENSION_ID != ''
+        if: vars.CWS_PUBLISH == 'true' && env.CWS_EXTENSION_ID != ''
         env:
           CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
           CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}

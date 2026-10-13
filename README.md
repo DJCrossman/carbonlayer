@@ -2,9 +2,7 @@
 
 We have Graphite at home.
 
-If it saves you a Graphite seat:
-
-[![Buy me a coffee](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://buymeacoffee.com/djcrossman)
+If it saves you a Graphite seat: <a href="https://buymeacoffee.com/djcrossman"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy me a coffee" height="28" align="absmiddle"></a>
 
 A Chrome extension that makes GitHub's pull requests look and work like [Graphite](https://graphite.dev):
 
