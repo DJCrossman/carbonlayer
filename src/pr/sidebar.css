@@ -33,13 +33,18 @@
 }
 .side-status-into { font-size: 12px; }
 
-.side-switch {
+.side-switch-row {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--gg-border-muted);
+}
+.side-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   cursor: pointer;
   user-select: none;
 }
@@ -73,7 +78,7 @@
 .side-switch input:checked + .side-switch-track::after { transform: translateX(12px); }
 .side-switch input:focus-visible + .side-switch-track { outline: 2px solid var(--gg-accent); outline-offset: 1px; }
 .side-switch input:disabled + .side-switch-track { opacity: 0.6; }
-.side-switch-method { margin-left: auto; font-size: 12px; }
+.side-switch-method { margin-left: auto; height: 24px; }
 
 .side-action { border-left-width: 3px; }
 .side-action.is-success { border-left-color: var(--gg-success); }

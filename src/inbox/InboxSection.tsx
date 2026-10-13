@@ -249,7 +249,12 @@ function PrRow({
         )}
       </span>
       <span className="gg-row__status">
-        <StatusIcon {...reviewStatusIcon({ ...pr, reviewers: enrichment?.reviewers ?? null, viewerReview: enrichment?.viewerReview }, viewerLogin)} />
+        {/* Who reviewed comes with the row's details; a draft's pencil does not wait for them. */}
+        {!enriched && !pr.isDraft ? (
+          <Skeleton width={16} height={16} />
+        ) : (
+          <StatusIcon {...reviewStatusIcon({ ...pr, reviewers: enrichment?.reviewers ?? null, viewerReview: enrichment?.viewerReview }, viewerLogin)} />
+        )}
       </span>
       <span className="gg-row__status">
         {/* The dashboard's rollup says only that checks fail, run or pass; whether a required one fails, anything but
@@ -258,7 +263,8 @@ function PrRow({
         {!enriched && pr.state === 'OPEN' ? <Skeleton width={16} height={16} /> : <StatusIcon {...ciStatusIcon(pr.ci, enrichment?.requiredCheckNames ?? null)} />}
       </span>
       <span className="gg-row__status">
-        <StatusIcon {...mergeStatusIcon(pr, enrichment?.mergeBlockedReason)} />
+        {/* An open row's mergeability comes with its merge box; a merged or closed row says so at once. */}
+        {!enriched && pr.state === 'OPEN' ? <Skeleton width={16} height={16} /> : <StatusIcon {...mergeStatusIcon(pr, enrichment?.mergeBlockedReason)} />}
       </span>
       {/* GitHub's dashboard reports no line counts; they come with the row's enrichment (its diffstat), else stay hidden. */}
       <span className="gg-row__diff" title={pr.changedFiles > 0 ? `${pr.changedFiles} files changed` : undefined}>

@@ -322,11 +322,19 @@ function PrView({
         data={data}
         onRetry={retry}
         mergeMethod={mergeMethod}
-        onAutoMerge={(enabled) => {
-          setEdits((current) => ({ ...current, autoMerge: enabled ? mergeMethod : false }));
-          return mutate(STAGES_A_WRITE_CHANGES['pr.setAutoMerge'], () => source.setAutoMerge(pr.id, enabled, mergeMethod), 'Could not change Merge when ready', {
-            undo: () => setEdits((current) => ({ ...current, autoMerge: null })),
-          });
+        onAutoMerge={(enabled, method) => {
+          // Another method for an auto-merge already on: turned off, then on again with it.
+          const switching = enabled && pr.autoMerge !== null && pr.autoMerge.method !== method;
+          setEdits((current) => ({ ...current, autoMerge: enabled ? method : false }));
+          return mutate(
+            STAGES_A_WRITE_CHANGES['pr.setAutoMerge'],
+            async () => {
+              if (switching) await source.setAutoMerge(pr.id, false, method);
+              await source.setAutoMerge(pr.id, enabled, method);
+            },
+            'Could not change Merge when ready',
+            { undo: () => setEdits((current) => ({ ...current, autoMerge: null })) },
+          );
         }}
         onMarkReady={() => setDraft(false)}
         onMerge={(method) => mutate(STAGES_A_WRITE_CHANGES['pr.merge'], () => source.merge(pr.id, method, pr.headOid), 'Could not merge', { success: `Merged #${pr.number}` })}

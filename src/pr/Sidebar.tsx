@@ -36,7 +36,7 @@ export function Sidebar({
   onRetry: (stages: PrStage[]) => void;
   /** The method the viewer prefers, already narrowed to what the repository allows. */
   mergeMethod: MergeMethod;
-  onAutoMerge: (enabled: boolean) => Promise<boolean>;
+  onAutoMerge: (enabled: boolean, method: MergeMethod) => Promise<boolean>;
   onMarkReady: () => Promise<boolean>;
   onMerge: (method: MergeMethod) => Promise<boolean>;
   onViewThreads: () => void;
@@ -110,8 +110,12 @@ export function Sidebar({
   );
 }
 
-function StatusCard({ pr, mergeMethod, onAutoMerge }: { pr: PrDetail; mergeMethod: MergeMethod; onAutoMerge: (enabled: boolean) => Promise<boolean> }) {
+function StatusCard({ pr, mergeMethod, onAutoMerge }: { pr: PrDetail; mergeMethod: MergeMethod; onAutoMerge: (enabled: boolean, method: MergeMethod) => Promise<boolean> }) {
   const [busy, setBusy] = useState(false);
+  // The method Merge when ready merges with: auto-merge's own while it is on, else the one picked here.
+  const [picked, setPicked] = useState<MergeMethod>(mergeMethod);
+  const method = pr.autoMerge?.method ?? picked;
+  const methods = pr.allowedMergeMethods.length > 0 ? pr.allowedMergeMethods : (['SQUASH', 'MERGE', 'REBASE'] as const);
   // Who merged or closed it comes from the last such event in the timeline.
   const ending = pr.state === 'OPEN' ? undefined : pr.timeline.findLast((item) => item.kind === (pr.state === 'MERGED' ? 'merged' : 'closed'));
   const endedBy = ending && 'actor' in ending ? ending.actor : null;
@@ -132,22 +136,44 @@ function StatusCard({ pr, mergeMethod, onAutoMerge }: { pr: PrDetail; mergeMetho
         )}
       </div>
       {pr.state === 'OPEN' && (pr.viewerCanEnableAutoMerge || pr.autoMerge !== null) && (
-        <label className="side-switch">
-          <input
-            type="checkbox"
-            role="switch"
-            checked={pr.autoMerge !== null}
+        <div className="side-switch-row">
+          <label className="side-switch">
+            <input
+              type="checkbox"
+              role="switch"
+              checked={pr.autoMerge !== null}
+              disabled={busy}
+              onChange={async (event) => {
+                setBusy(true);
+                await onAutoMerge(event.target.checked, method);
+                setBusy(false);
+              }}
+            />
+            <span className="side-switch-track" aria-hidden="true" />
+            <span>Merge when ready</span>
+          </label>
+          <select
+            className="pr-select side-switch-method"
+            value={method}
             disabled={busy}
+            aria-label="Merge when ready with"
             onChange={async (event) => {
+              const chosen = event.target.value as MergeMethod;
+              setPicked(chosen);
+              // While it is on, a new method applies at once.
+              if (pr.autoMerge === null) return;
               setBusy(true);
-              await onAutoMerge(event.target.checked);
+              await onAutoMerge(true, chosen);
               setBusy(false);
             }}
-          />
-          <span className="side-switch-track" aria-hidden="true" />
-          <span>Merge when ready</span>
-          <span className="pr-muted side-switch-method">{MERGE_LABELS[pr.autoMerge?.method ?? mergeMethod].short}</span>
-        </label>
+          >
+            {methods.map((allowed) => (
+              <option key={allowed} value={allowed}>
+                {MERGE_LABELS[allowed].short}
+              </option>
+            ))}
+          </select>
+        </div>
       )}
     </Card>
   );
