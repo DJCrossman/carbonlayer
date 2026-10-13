@@ -43,8 +43,10 @@
 }
 .side-switch {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
   cursor: pointer;
   user-select: none;
 }
@@ -78,7 +80,8 @@
 .side-switch input:checked + .side-switch-track::after { transform: translateX(12px); }
 .side-switch input:focus-visible + .side-switch-track { outline: 2px solid var(--gg-accent); outline-offset: 1px; }
 .side-switch input:disabled + .side-switch-track { opacity: 0.6; }
-.side-switch-method { margin-left: auto; height: 24px; }
+/* The label keeps its line; the select gives way when the card is narrow. */
+.side-switch-method { min-width: 0; margin-left: auto; }
 
 .side-action { border-left-width: 3px; }
 .side-action.is-success { border-left-color: var(--gg-success); }
@@ -115,14 +118,26 @@
   gap: 6px;
   margin-top: 8px;
 }
+/* GitHub's select: the native arrow replaced by a chevron with room of its own. */
 .pr-select {
   height: 28px;
-  padding: 0 6px;
+  padding: 0 28px 0 10px;
   border: 1px solid var(--gg-border);
   border-radius: var(--gg-radius);
-  background: var(--gg-bg);
+  background: var(--gg-bg)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%238b949e' d='M12.78 5.22a.749.749 0 0 1 0 1.06l-4.25 4.25a.749.749 0 0 1-1.06 0L3.22 6.28a.749.749 0 1 1 1.06-1.06L8 8.939l3.72-3.719a.749.749 0 0 1 1.06 0Z'/%3E%3C/svg%3E")
+    no-repeat right 8px center / 12px;
   color: var(--gg-fg);
   font: 12px var(--gg-font);
+  cursor: pointer;
+  appearance: none;
+}
+.pr-select:hover:not(:disabled) {
+  background-color: var(--gg-bg-hover);
+}
+.pr-select:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 .merge-row .pr-select { flex: 1; min-width: 0; }
 /* Graphite's merge button is purple. */
