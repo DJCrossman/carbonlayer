@@ -163,7 +163,8 @@ export function summarisePull(pull: Pull, section: GitHubInboxFilter | null): Pr
  * whether anything but Graphite's mergeability check is still running) from `page_data/status_checks`, with GitHub's own
  * dynamic workflow runs on the head commit, which only the branch's Actions list names. A merged or closed PR's merge
  * status is its state, so it does not ask the merge box; a draft does, and shows how it would merge. A route that fails
- * is logged and leaves its fields out: the row keeps what it had.
+ * is logged and leaves its fields out: the row keeps what it had. The merge box also names the branches, which chain the
+ * inbox's stacks (a fork's head branch left out).
  */
 export async function enrichPull(pr: InboxRowToEnrich, mergeMethod: MergeMethod, viewerLogin: string | null): Promise<PrEnrichment> {
   const data = `/${pr.repo.owner}/${pr.repo.name}/pull/${pr.number}/page_data`;
@@ -191,6 +192,10 @@ export async function enrichPull(pr: InboxRowToEnrich, mergeMethod: MergeMethod,
     if (reason && (merge.mergeStatus === 'BLOCKED' || merge.mergeStatus === 'BEHIND' || merge.mergeStatus === 'UNSTABLE')) found.mergeBlockedReason = reason;
     const pendingReviewRequests = findInPayload(mergeBox.value, (key) => key === 'pendingReviewRequests' || key === 'pendingRequestedReviews');
     if (merge.latestOpinionatedReviews != null || pendingReviewRequests !== undefined) named = { latestOpinionatedReviews: merge.latestOpinionatedReviews, pendingReviewRequests };
+    // A fork's head branch says nothing about this repository's stacks.
+    const branches = (mergeBox.value as { pullRequest?: { headRefName?: unknown; baseRefName?: unknown; isCrossRepo?: unknown } } | null)?.pullRequest;
+    if (typeof branches?.baseRefName === 'string' && branches.baseRefName) found.baseRefName = branches.baseRefName;
+    if (typeof branches?.headRefName === 'string' && branches.headRefName && branches.isCrossRepo !== true) found.headRefName = branches.headRefName;
   } else if (mergeBox.status === 'rejected') {
     const reason: unknown = mergeBox.reason;
     console.debug('[gg]', `page_data/merge_box for ${where} failed; the row keeps its merge status:`, reason instanceof Error ? reason.message : reason);

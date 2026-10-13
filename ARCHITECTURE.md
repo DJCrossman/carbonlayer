@@ -171,6 +171,12 @@ each answer kept 2 minutes (`enrichPull` in `src/lib/github-web/inbox.ts`). A ro
 its rollup changed; the checks it found are its CI. Until a row's answer arrives its Reviewers and Changes columns show a
 skeleton dash, an open row's CI column a placeholder and its Merge column "Unknown"; a failure leaves the row as it was.
 
+"Group by stack", a switch beside the top bar's repository chip (`inboxGroupByStack` in settings), shows each stack's rows
+together (`rowsByStack` in `src/inbox/stacks.ts`): a PR whose base branch is another row's head branch in the same
+repository (in any section) sits on it, and a section shows the stack where the first of its rows sorts, its top first
+and the rest indented under it, top down; the branches come from each open row's merge box (a fork's head branch left
+out), which, while the switch is on, the inbox asks for every open row at once rather than as rows near view.
+
 Section counts read `sectionCount` (`99+` above 99, `<limit>+` for a view cut short below that). A section shows
 GitHub's first page of rows (cut to the view's `limit`, default 50); while GitHub counts more, "Load more" at its foot
 asks `inbox.fetchMore` for the next of GitHub's pages (`/pulls/search?…&page=N` with its `/pulls/deferred`, or

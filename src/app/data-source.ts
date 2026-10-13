@@ -122,8 +122,8 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     return pr;
   };
   return {
-    // Rows as GitHub's dashboard lists them: a CI rollup without its checks; their merge status, reviewers and line counts
-    // come later, from enrichInbox.
+    // Rows as GitHub's dashboard lists them: a CI rollup without its checks, and no branches; their merge status, reviewers,
+    // line counts and branches come later, from enrichInbox.
     fetchInbox: (views) =>
       Promise.all(
         views.map(async (view) => {
@@ -132,7 +132,7 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
           return {
             ...result,
             totalCount: prs.length === result.prs.length ? result.totalCount : prs.length,
-            prs: prs.map((pr) => ({ ...pr, ci: { ...pr.ci, checks: [] }, mergeStatus: pr.isDraft ? 'DRAFT' : 'UNKNOWN', reviewers: [], additions: 0, deletions: 0 })),
+            prs: prs.map((pr) => ({ ...pr, ci: { ...pr.ci, checks: [] }, mergeStatus: pr.isDraft ? 'DRAFT' : 'UNKNOWN', reviewers: [], additions: 0, deletions: 0, headRefName: '', baseRefName: '' })),
           };
         }),
       ),
@@ -144,11 +144,11 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
         view,
         totalCount: first?.totalCount ?? 0,
         fetchedAt: new Date().toISOString(),
-        prs: prs.map((pr) => ({ ...pr, ci: { ...pr.ci, checks: [] }, reviewers: [], additions: 0, deletions: 0 })),
+        prs: prs.map((pr) => ({ ...pr, ci: { ...pr.ci, checks: [] }, reviewers: [], additions: 0, deletions: 0, headRefName: '', baseRefName: '' })),
       };
     },
     // The fixture rows' own values, a moment later, as GitHub's page data would give them: the checks only for a failing
-    // rollup, the viewer's review as octocat's.
+    // rollup, the viewer's review as octocat's, the branches only for an open PR (its merge box).
     enrichInbox: async (prs) => {
       await new Promise((resolve) => setTimeout(resolve, 400));
       const rows = [...fixtures.inbox.flatMap((result) => result.prs), ...Object.values(fixtures.inboxPages).flat(2)];
@@ -163,6 +163,7 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
           deletions: pr.deletions,
           ...(pr.ci.state === 'FAILURE' && { ci: pr.ci, requiredCheckNames: pr.requiredCheckNames ?? [] }),
           ...(pr.mergeBlockedReason && { mergeBlockedReason: pr.mergeBlockedReason }),
+          ...(pr.state === 'OPEN' && { headRefName: pr.headRefName, baseRefName: pr.baseRefName }),
         };
       });
     },

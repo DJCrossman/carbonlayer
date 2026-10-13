@@ -23,6 +23,7 @@ import { SectionEditor } from './SectionEditor';
 import { SectionsSidebar } from './SectionsSidebar';
 import { moveSelection, type SelectedRow } from './selection';
 import { ShortcutHelp } from './ShortcutHelp';
+import { rowsByStack } from './stacks';
 import './inbox.css';
 
 export function InboxPage({ source, route }: { source: DataSource; route: Extract<AppRoute, { page: 'inbox' }> }) {
@@ -49,7 +50,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   const [sorts, setSorts] = useState<Record<string, SectionSort>>({});
   // Each section's rows, those "Load more" added after the first page's, with what enrichment has found, in the order the
   // section shows them, which j / k follow too.
-  const resultsByView = new Map(
+  const sections =
     inbox.results?.map((result) => {
       const { by, descending } = sorts[result.view.id] ?? LATEST_UPDATED_FIRST;
       const added = moreRows.addedTo(result.view, settings?.inboxScope ?? '')?.prs.filter((pr) => !result.prs.some((first) => first.id === pr.id)) ?? [];
@@ -64,7 +65,18 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
           by === 'title' ? a.title.localeCompare(b.title) : by === 'changes' ? a.additions + a.deletions - (b.additions + b.deletions) : Date.parse(a.updatedAt) - Date.parse(b.updatedAt);
         return descending ? -ascending : ascending;
       });
-      return [result.view.id, { ...result, prs }];
+      return { ...result, prs };
+    }) ?? [];
+  // Grouped by stack, a section shows each stack's rows together, the top first and the others hanging under it (their
+  // ids, by view id); a stack joins through a PR another section shows.
+  const known = sections.flatMap((result) => result.prs);
+  const stackedByView = new Map<string, ReadonlySet<string>>();
+  const resultsByView = new Map(
+    sections.map((result) => {
+      if (!settings?.inboxGroupByStack) return [result.view.id, result];
+      const rows = rowsByStack(result.prs, known);
+      stackedByView.set(result.view.id, new Set(rows.filter((row) => row.stacked).map((row) => row.pr.id)));
+      return [result.view.id, { ...result, prs: rows.map((row) => row.pr) }];
     }),
   );
   const firstResult = settings?.views[0] && resultsByView.get(settings.views[0].id);
@@ -120,6 +132,15 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
     document.addEventListener('keydown', listener);
     return () => document.removeEventListener('keydown', listener);
   }, []);
+
+  // A row's branches come with its enrichment, asked as it nears view; grouped by stack, every open row is asked at once
+  // (as the inbox loads, and once "Load more" has added rows), so stacks form without scrolling.
+  const askForBranches = useEffectEvent(() => {
+    for (const result of resultsByView.values()) for (const pr of result.prs) if (pr.state === 'OPEN') enrichment.want(pr);
+  });
+  useEffect(() => {
+    if (settings?.inboxGroupByStack) askForBranches();
+  }, [inbox.results, moreRows.loading, settings?.inboxGroupByStack]);
 
   function toggleCollapsed(viewId: string) {
     if (!settings) return;
@@ -250,6 +271,13 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
               onChange={(inboxRepos) => void inbox.saveSettings({ inboxRepos })}
             />
           )}
+          {org && (
+            <label className="gg-inbox__switch" title="Show each stack's pull requests together, the top of the stack first">
+              <input type="checkbox" role="switch" checked={settings.inboxGroupByStack} onChange={(event) => void inbox.saveSettings({ inboxGroupByStack: event.target.checked })} />
+              <span className="gg-inbox__switch-track" aria-hidden="true" />
+              Group by stack
+            </label>
+          )}
           <div className="gg-inbox__actions">
             {org && (
               <>
@@ -356,6 +384,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
                     overdueAfterHours={view.id === 'graphite-needs-your-review' ? 48 : undefined}
                     viewerLogin={viewerLogin}
                     enrichmentOf={(pr) => enrichment.found.get(pr.id)?.enrichment}
+                    stackedPrIds={stackedByView.get(view.id)}
                     more={more}
                     onSort={(by) => sortSection(view.id, by)}
                     onRowShown={enrichment.want}

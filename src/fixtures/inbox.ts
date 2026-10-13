@@ -3,7 +3,8 @@
 // unread rows, long titles, labels, team and bot reviewers, and one row of globex's, the viewer's other organization. The
 // viewer is octocat. Ages are relative to page load so the harness always looks current. Each row has its checks, which
 // the fixture source hands out only as GitHub would: the dashboard's rollup at first, the list (with the required ones)
-// when enriching a failing rollup. The rows in "Needs anyone's review" have no line counts and no merge state.
+// when enriching a failing rollup. The rows in "Needs anyone's review" have no line counts and no merge state. The native
+// stacks' rows chain by branch, which only enriching an open row names ("Group by stack").
 import type { Fixtures, InboxFixtureRow } from '../app/data-source';
 import type { CheckRunSummary, CheckState, CiSummary, UserRef } from '../lib/model';
 import { DEFAULT_VIEWS } from '../lib/views';
@@ -130,6 +131,8 @@ function prsFor(viewId: string): InboxFixtureRow[] {
           author: nat,
           updated: 2 * DAY + 4 * HOUR,
           nativeStack: { position: 2, size: 4 },
+          headRefName: 'nat/extract-date-picker',
+          baseRefName: 'nat/date-picker-tokens',
           reviewers: [{ kind: 'user', user: octocat, state: 'PENDING' }],
           ci: ci({ passed: 10 }),
           additions: 320,
@@ -144,6 +147,8 @@ function prsFor(viewId: string): InboxFixtureRow[] {
           author: nat,
           updated: 3 * DAY,
           nativeStack: { position: 3, size: 4 },
+          headRefName: 'nat/booking-date-picker',
+          baseRefName: 'nat/extract-date-picker',
           reviewers: [{ kind: 'user', user: octocat, state: 'PENDING' }],
           ci: ci({ passed: 9, skipped: ['deploy-preview'] }),
           additions: 88,
@@ -267,6 +272,7 @@ function prsFor(viewId: string): InboxFixtureRow[] {
           author: octocat,
           updated: 6 * HOUR,
           nativeStack: { position: 1, size: 3 },
+          headRefName: 'octocat/stack-layout-primitives',
           reviewDecision: 'APPROVED',
           reviewers: [{ kind: 'user', user: mona, state: 'APPROVED' }],
           ci: ci({ passed: 8, pending: ['e2e (webkit)'] }),
@@ -299,6 +305,8 @@ function prsFor(viewId: string): InboxFixtureRow[] {
           updated: 6 * HOUR,
           isDraft: true,
           nativeStack: { position: 3, size: 3 },
+          headRefName: 'octocat/stack-layout-settings',
+          baseRefName: 'octocat/stack-layout-account',
           reviewDecision: 'NONE',
           ci: ci({ passed: 4, failed: ['e2e (chromium)'] }),
           requiredCheckNames: ['build'],
@@ -341,6 +349,8 @@ function prsFor(viewId: string): InboxFixtureRow[] {
           author: octocat,
           updated: 6 * HOUR,
           nativeStack: { position: 2, size: 3 },
+          headRefName: 'octocat/stack-layout-account',
+          baseRefName: 'octocat/stack-layout-primitives',
           reviewers: [{ kind: 'user', user: mona, state: 'PENDING' }],
           ci: ci({ passed: 9, skipped: ['deploy-preview'] }),
           additions: 140,

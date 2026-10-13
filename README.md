@@ -15,6 +15,7 @@ A Chrome extension that makes GitHub's pull requests look and work like [Graphit
   your signed-in Graphite inbox in one click (or takes pasted "Share section" links): each becomes a view whose
   search approximates Graphite's filter, and the preview lists what GitHub's search cannot express. The inbox shows
   one organization at a time (or your own account), chosen in its top bar, each with its own views and repositories.
+  "Group by stack" in the top bar shows each stack's pull requests together, the top of the stack first.
 - **Pull request page**: the stack at the top, one vertical scroll (description → activity → diff),
   CI checks, reviewers and a single "next step" merge card in a right sidebar, diffs rendered with
   [`@pierre/diffs`](https://diffs.com), and Graphite's keyboard shortcuts.

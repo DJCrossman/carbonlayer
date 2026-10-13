@@ -32,6 +32,8 @@ export interface Settings {
   inboxRepos: RepoRef[];
   /** Whether the inbox's sections sidebar is hidden (on a wide window; a narrow one shows it on demand). */
   sidebarCollapsed: boolean;
+  /** Whether each inbox section shows a stack's pull requests together, the top of the stack first. */
+  inboxGroupByStack: boolean;
   inboxEnabled: boolean;
   prEnabled: boolean;
   diffLayout: 'unified' | 'split';
@@ -46,6 +48,7 @@ export const DEFAULT_SETTINGS: Settings = {
   inboxScope: '',
   inboxRepos: [],
   sidebarCollapsed: false,
+  inboxGroupByStack: false,
   inboxEnabled: true,
   prEnabled: true,
   diffLayout: 'unified',

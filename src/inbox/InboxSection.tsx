@@ -23,6 +23,7 @@ export function InboxSection({
   overdueAfterHours,
   viewerLogin,
   enrichmentOf,
+  stackedPrIds,
   more,
   onSort,
   onRowShown,
@@ -45,6 +46,8 @@ export function InboxSection({
    * checks); undefined until it arrives, when the reviewer and Changes columns show a skeleton dash.
    */
   enrichmentOf: (pr: PrSummary) => PrEnrichment | undefined;
+  /** Grouped by stack, the ids of the rows below the top of their stack, which hang under the row above. */
+  stackedPrIds?: ReadonlySet<string>;
   /** Whether GitHub has rows beyond those shown ("Load more"), and whether they are on their way. */
   more: 'more' | 'loading' | 'none';
   onSort: (by: SectionSort['by']) => void;
@@ -102,6 +105,7 @@ export function InboxSection({
                 enrichment={enrichmentOf(pr)}
                 viewerLogin={viewerLogin}
                 selected={pr.id === selectedPrId}
+                stacked={stackedPrIds?.has(pr.id) === true}
                 overdueAfterHours={overdueAfterHours}
                 onShown={onRowShown}
                 onOpen={onOpen}
@@ -156,6 +160,7 @@ function PrRow({
   enrichment,
   viewerLogin,
   selected,
+  stacked,
   overdueAfterHours,
   onShown,
   onOpen,
@@ -165,6 +170,8 @@ function PrRow({
   enrichment: PrEnrichment | undefined;
   viewerLogin: string | null;
   selected: boolean;
+  /** Below the top of its stack: indented, hanging from the row above. */
+  stacked: boolean;
   overdueAfterHours: number | undefined;
   onShown: (pr: PrSummary) => void;
   onOpen: (pr: PrSummary, newTab: boolean) => void;
@@ -205,7 +212,7 @@ function PrRow({
   const reviewersTitle = pr.reviewers.map((reviewer) => `${reviewer.user.login} · ${REVIEWER_STATE_WORDS[reviewer.state]}`).join('\n');
 
   return (
-    <div ref={row} className={selected ? 'gg-row is-selected' : 'gg-row'} onClick={open}>
+    <div ref={row} className={`gg-row${stacked ? ' gg-row--stacked' : ''}${selected ? ' is-selected' : ''}`} onClick={open}>
       <span className="gg-row__unread">{pr.unread && <span className="gg-row__dot" title="Unread" />}</span>
       <Avatar user={pr.author} size={20} />
       <div className="gg-row__main">

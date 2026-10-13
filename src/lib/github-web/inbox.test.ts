@@ -187,6 +187,23 @@ describe('enrichPull', () => {
     expect(found).not.toHaveProperty('mergeBlockedReason');
   });
 
+  it("names an open PR's branches from its merge box, and only the base of a fork's", async () => {
+    let isCrossRepo = false;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url.includes('/page_data/merge_box')
+          ? Response.json({ pullRequest: { mergeStateStatus: 'CLEAN', headRefName: 'nat/booking-date-picker', baseRefName: 'nat/date-picker', isCrossRepo } })
+          : Response.json({}),
+      ),
+    );
+    expect(await enrichPull(row, 'MERGE', null)).toMatchObject({ headRefName: 'nat/booking-date-picker', baseRefName: 'nat/date-picker' });
+    isCrossRepo = true;
+    const fork = await enrichPull(row, 'MERGE', null);
+    expect(fork.baseRefName).toBe('nat/date-picker');
+    expect(fork).not.toHaveProperty('headRefName');
+  });
+
   it('asks a failing rollup which checks fail and which of them are required', async () => {
     const requested: string[] = [];
     let marked = true;
