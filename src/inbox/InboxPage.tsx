@@ -7,7 +7,7 @@ import { browser } from 'wxt/browser';
 import { postToParent } from '../app/bridge';
 import type { DataSource } from '../app/data-source';
 import { toGitHubUrl, type AppRoute } from '../app/routes';
-import type { Organization, PrEnrichment, PrSummary, RepoRef, TopRepository, View, ViewResult } from '../lib/model';
+import type { Organization, PrEnrichment, PrSummary, RepoRef, StackBranches, TopRepository, View, ViewResult } from '../lib/model';
 import type { Settings } from '../lib/settings';
 import { encodeViewsShareLink, sectionCount } from '../lib/views';
 import { Button } from '../ui/Button';
@@ -48,6 +48,12 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
 
   // How each section orders its rows, as its column headers were last clicked (this visit only).
   const [sorts, setSorts] = useState<Record<string, SectionSort>>({});
+  // The open rows' branches, "Load more"'s too, looked up or remembered before grouping by stack shows the rows.
+  const stackBranches = useStackBranches(
+    source,
+    settings?.inboxGroupByStack === true,
+    inbox.results?.flatMap((result) => [...result.prs, ...(moreRows.addedTo(result.view, settings?.inboxScope ?? '')?.prs ?? [])]).filter((pr) => pr.state === 'OPEN') ?? [],
+  );
   // Each section's rows, those "Load more" added after the first page's, with what enrichment has found, in the order the
   // section shows them, which j / k follow too.
   // Enrichment is asked about rows as GitHub's dashboard gave them, by id: its key follows the dashboard's own CI rollup,
@@ -60,9 +66,11 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
       for (const pr of [...result.prs, ...added]) dashboardRows.set(pr.id, pr);
       const enriched = [...result.prs, ...added].map((pr) => {
         const found = enrichment.found.get(pr.id)?.enrichment;
+        const branches = stackBranches.branchesOf(pr.id);
         // The checks found speak for the row whenever there are some: the rollup leaves out GitHub's own dynamic workflow
-        // runs (Copilot's review), and a row is asked again once its rollup moves on (`want`).
-        return { ...pr, ...found, ci: found?.ci ?? pr.ci };
+        // runs (Copilot's review), and a row is asked again once its rollup moves on (`want`). The branches its merge box
+        // named are fresher than those looked up or remembered.
+        return { ...pr, ...(branches && { baseRefName: branches.baseRefName, headRefName: branches.headRefName ?? '' }), ...found, ci: found?.ci ?? pr.ci };
       });
       const prs = enriched.toSorted((a, b) => {
         const ascending =
@@ -136,15 +144,6 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
     document.addEventListener('keydown', listener);
     return () => document.removeEventListener('keydown', listener);
   }, []);
-
-  // A row's branches come with its enrichment, asked as it nears view; grouped by stack, every open row is asked at once
-  // (as the inbox loads, and once "Load more" has added rows), so stacks form without scrolling.
-  const askForBranches = useEffectEvent(() => {
-    for (const pr of dashboardRows.values()) if (pr.state === 'OPEN') enrichment.want(pr);
-  });
-  useEffect(() => {
-    if (settings?.inboxGroupByStack) askForBranches();
-  }, [inbox.results, moreRows.loading, settings?.inboxGroupByStack]);
 
   function toggleCollapsed(viewId: string) {
     if (!settings) return;
@@ -389,6 +388,9 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
                     viewerLogin={viewerLogin}
                     enrichmentOf={(pr) => enrichment.found.get(pr.id)?.enrichment}
                     stackedPrIds={stackedByView.get(view.id)}
+                    // Until the first lookup of the branches has settled, a section with open rows shows skeleton rows, so
+                    // it appears already grouped.
+                    awaitingStacks={settings.inboxGroupByStack && !stackBranches.settled && result?.prs.some((pr) => pr.state === 'OPEN') === true}
                     more={more}
                     onSort={(by) => sortSection(view.id, by)}
                     onRowShown={(pr) => enrichment.want(dashboardRows.get(pr.id) ?? pr)}
@@ -630,6 +632,109 @@ function useRowEnrichment(source: DataSource) {
 }
 
 /**
+ * The open rows' branches, by PR id, by which "Group by stack" chains them before (and whether or not) a row is enriched.
+ * What GitHub named is remembered in storage.local (`stackBranches`) for a week after it last did; while `enabled`, GitHub
+ * is asked (each PR's page header) about every open row with nothing remembered, or nothing from the last day, 25 rows a
+ * request and one request at a time, each row once a page load. `settled` once every open row given so far has its
+ * branches, or GitHub had none for it, or 4 s after the first question, whichever comes first; it stays so, and rows given
+ * later join their stacks as their branches arrive. Without storage (the harness) nothing is remembered.
+ */
+function useStackBranches(source: DataSource, enabled: boolean, openRows: PrSummary[]) {
+  // Null until the remembered copy has been read; a row GitHub named no branches for maps to null.
+  const [found, setFound] = useState<ReadonlyMap<string, StackBranches | null> | null>(null);
+  const [firstAskedAt, setFirstAskedAt] = useState<number | null>(null);
+  const [settledBefore, setSettledBefore] = useState(false);
+  const remembered = useRef<Record<string, StackBranches & { seenAt: string }>>({});
+  const asked = useRef(new Set<string>());
+  const queue = useRef<PrSummary[]>([]);
+  const asking = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      let stored: Array<[string, StackBranches & { seenAt: string }]> = [];
+      try {
+        const { stackBranches } = await browser.storage.local.get('stackBranches');
+        // Branches GitHub has not named for a week belong to pull requests long gone from the inbox.
+        stored = Object.entries((stackBranches ?? {}) as Record<string, StackBranches & { seenAt: string }>).filter(([, branches]) => Date.now() - Date.parse(branches.seenAt) < 7 * DAY);
+      } catch (error) {
+        console.debug('[gg]', 'no branches remembered; every open row is looked up:', error instanceof Error ? error.message : error);
+      }
+      if (!active) return;
+      remembered.current = Object.fromEntries(stored);
+      setFound(new Map(stored));
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function askInTurn() {
+    while (queue.current.length > 0) {
+      const batch = queue.current.splice(0, 25);
+      let answers: Array<StackBranches | null> = [];
+      try {
+        answers = await source.branchesOf(batch.map(({ repo, number }) => ({ repo, number })));
+      } catch (error) {
+        console.debug('[gg]', "looking up inbox rows' branches failed; they wait for their merge boxes:", error instanceof Error ? error.message : error);
+      }
+      const seenAt = new Date().toISOString();
+      batch.forEach((pr, index) => {
+        const branches = answers[index];
+        if (branches) remembered.current[pr.id] = { ...branches, seenAt };
+      });
+      // A row GitHub did not answer for keeps what was remembered of it.
+      setFound((current) => {
+        const next = new Map(current);
+        batch.forEach((pr, index) => next.set(pr.id, answers[index] ?? next.get(pr.id) ?? null));
+        return next;
+      });
+      try {
+        await browser.storage.local.set({ stackBranches: remembered.current });
+      } catch (error) {
+        console.debug('[gg]', 'the branches looked up could not be remembered:', error instanceof Error ? error.message : error);
+      }
+    }
+    asking.current = false;
+  }
+
+  const askAboutRows = useEffectEvent(() => {
+    if (!found) return;
+    const wanted: PrSummary[] = [];
+    for (const pr of openRows) {
+      const seenAt = remembered.current[pr.id]?.seenAt;
+      if (asked.current.has(pr.id) || (seenAt !== undefined && Date.now() - Date.parse(seenAt) < DAY)) continue;
+      asked.current.add(pr.id);
+      wanted.push(pr);
+    }
+    if (wanted.length === 0) return;
+    queue.current.push(...wanted);
+    setFirstAskedAt((at) => at ?? Date.now());
+    if (asking.current) return;
+    asking.current = true;
+    void askInTurn();
+  });
+  const openKey = openRows.map((pr) => pr.id).join(' ');
+  useEffect(() => {
+    if (enabled) askAboutRows();
+  }, [enabled, openKey, found === null]);
+
+  // Every open row given so far has its branches, or GitHub had none for it.
+  const answered = found !== null && openRows.length > 0 && openRows.every((pr) => found.has(pr.id));
+  useEffect(() => {
+    if (answered) setSettledBefore(true);
+  }, [answered]);
+  // A slow GitHub holds the rows back 4 s at most.
+  useEffect(() => {
+    if (firstAskedAt === null) return;
+    const timer = setTimeout(() => setSettledBefore(true), Math.max(0, firstAskedAt + 4000 - Date.now()));
+    return () => clearTimeout(timer);
+  }, [firstAskedAt]);
+
+  return { branchesOf: (prId: string) => found?.get(prId) ?? undefined, settled: settledBefore || answered };
+}
+
+/**
  * The repositories GitHub's homepage lists under "Top repositories": the first page as the inbox opens, then each page
  * "Show more" asks for, appended. A failure keeps what is shown, with GitHub's reason for the sidebar to say.
  */
@@ -708,6 +813,8 @@ function useSectionInView(views: View[] | undefined): [string | null, (viewId: s
 
 /** Graphite's default order for a section's rows. */
 const LATEST_UPDATED_FIRST: SectionSort = { by: 'updated', descending: true };
+
+const DAY = 24 * 60 * 60 * 1000;
 
 /**
  * Opens a page on GitHub (a PR, a repository, the organization) the way a link would: the github.com page navigates (or

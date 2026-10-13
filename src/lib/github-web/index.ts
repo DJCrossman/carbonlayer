@@ -5,7 +5,7 @@
 
 import { STAGES_A_WRITE_CHANGES, type RpcMethod, type RpcMethods, type RpcRequest, type RpcResponse } from '../rpc';
 import { getSettings } from '../settings';
-import { enrichPull, fetchInbox, fetchViewPage } from './inbox';
+import { branchesIn, enrichPull, fetchInbox, fetchViewPage } from './inbox';
 import { mutations, pullRequestFor, rememberPullRequest } from './mutations';
 import { fetchFileDiffs, fetchPrStage, forgetPrStages } from './pr-stages';
 import { fetchPullRequestPage } from './pull-request';
@@ -55,6 +55,16 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
       ),
     );
   },
+  'inbox.branches': ({ prs }) =>
+    // Six pull requests at a time, each header asked once in 10 minutes; one GitHub does not answer has no branches.
+    politely(prs, 6, ({ repo, number }) =>
+      cached(`branches:${repo.owner}/${repo.name}#${number}`.toLowerCase(), 600_000, false, async () =>
+        branchesIn(await getJson<unknown>(`/${repo.owner}/${repo.name}/pull/${number}/page_data/header`), repo),
+      ).catch((error: unknown) => {
+        console.debug('[gg]', `page_data/header for ${repo.owner}/${repo.name}#${number} failed; the row waits for its merge box to name its branches:`, error instanceof Error ? error.message : error);
+        return null;
+      }),
+    ),
   'repos.search': async ({ query, owner }) =>
     // The picker asks again after every pause in typing; what it asked in the last minute is answered from memory.
     pickableRepositories(query.trim(), owner ?? null, async (path) => {

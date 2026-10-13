@@ -147,6 +147,15 @@ export type PrEnrichment = Partial<Pick<PrSummary, 'mergeStatus' | 'reviewers' |
   mergeBlockedReason?: string;
 };
 
+/**
+ * A PR's branches as its page header names them, by which "Group by stack" chains the inbox's rows before they are
+ * enriched. `headRefName` is null for a PR from a fork: its head branch says nothing about this repository's stacks.
+ */
+export interface StackBranches {
+  baseRefName: string;
+  headRefName: string | null;
+}
+
 export interface Stack {
   /** Ordered from the PR closest to trunk (index 0) to the top of the stack. */
   entries: PrSummary[];

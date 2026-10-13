@@ -78,7 +78,7 @@ elements. A comment: `.timeline-comment` (`#issuecomment-N`, the PR body is `#pu
 `.TimelineItem` with a `.TimelineItem-badge svg.octicon-<name>` (seen: repo-push, git-commit, eye =
 review requested, stack = added to stack, cross-reference). Graphite's stack comment is one of the comments.
 
-Data endpoints (all `page_data/*` need a session; `tab_counts` and `diffstat` also work signed out):
+Data endpoints (all `page_data/*` need a session; `tab_counts`, `diffstat` and `header` also work signed out):
 - `GET …/page_data/tab_counts` → `{ annotationsCount, checksCount, conversationCount, filesChangedCount,
   filesChangedCountLimitExceeded, unresolvedConversationCount, findingsCount }`
 - `GET …/page_data/diffstat` → `{ diffstat: { linesAdded, linesDeleted, linesChanged } }`
@@ -95,6 +95,10 @@ Data endpoints (all `page_data/*` need a session; `tab_counts` and `diffstat` al
   counts the dashboard rows lack (`enrichPull` in `src/lib/github-web/inbox.ts`). Whether the merge box names reviewers
   (`latestOpinionatedReviews`, `pendingReviewRequests` / `pendingRequestedReviews`) has not been seen signed in; without
   them the row shows no reviewer avatars.
+- `GET …/page_data/header` → `{ pullRequest: { baseBranch, headBranch, headRepositoryOwnerLogin, headRepositoryName,
+  headSha, number, state, … }, stack, … }`, lighter than the merge box. A PR from a fork has a head repository other
+  than its own, whose head branch says nothing about this repository's stacks. `pr.merge` reads `headSha` here to refuse
+  a merge after a push; "Group by stack" reads the branches (`branchesIn` in `src/lib/github-web/inbox.ts`).
 - `GET …/page_data/status_checks` → the checks list: `{ statusChecks: [{ displayName, state, isRequired, targetUrl,
   description, additionalContext, stateChangedAt, durationInSeconds, avatarUrl, … }], statusRollup: { combinedState,
   summary, pendingWorkflowApprovalRollup }, aliveChannels }` (verified signed in, 2026-10-12; headers in

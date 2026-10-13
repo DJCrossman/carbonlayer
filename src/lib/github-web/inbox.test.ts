@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { enrichPull, fetchInbox, fetchViewPage, summarisePull, type Pull } from './inbox';
+import { branchesIn, enrichPull, fetchInbox, fetchViewPage, summarisePull, type Pull } from './inbox';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -305,6 +305,35 @@ describe('enrichPull', () => {
 
     vi.stubGlobal('fetch', vi.fn(async (url: string) => (url.includes('/diffstat') ? Response.json({ diffstat: { linesAdded: 1, linesDeleted: 0 } }) : new Response('', { status: 404 }))));
     expect(await enrichPull({ ...row, number: 9 }, 'MERGE', null)).toEqual({ additions: 1, deletions: 0 });
+  });
+});
+
+describe('branchesIn', () => {
+  const repo = { owner: 'acme', name: 'widgets' };
+  const header = (pullRequest: Record<string, unknown>) => ({
+    pullRequest: { number: 12, state: 'OPEN', headSha: 'abc123', baseBranch: 'nat/date-picker', headBranch: 'nat/booking-date-picker', ...pullRequest },
+    stack: null,
+  });
+
+  it("names a PR's base and head branches when its head is in the same repository", () => {
+    expect(branchesIn(header({ headRepositoryOwnerLogin: 'acme', headRepositoryName: 'widgets' }), repo)).toEqual({
+      baseRefName: 'nat/date-picker',
+      headRefName: 'nat/booking-date-picker',
+    });
+  });
+
+  it("leaves out a fork's head branch", () => {
+    expect(branchesIn(header({ headRepositoryOwnerLogin: 'nat-k', headRepositoryName: 'widgets' }), repo)).toEqual({ baseRefName: 'nat/date-picker', headRefName: null });
+  });
+
+  it('takes an owner spelled in another case for the same repository', () => {
+    expect(branchesIn(header({ headRepositoryOwnerLogin: 'ACME', headRepositoryName: 'Widgets' }), repo)?.headRefName).toBe('nat/booking-date-picker');
+  });
+
+  it('names nothing without a base branch', () => {
+    expect(branchesIn({}, repo)).toBeNull();
+    expect(branchesIn(null, repo)).toBeNull();
+    expect(branchesIn(header({ baseBranch: undefined, headRepositoryOwnerLogin: 'acme', headRepositoryName: 'widgets' }), repo)).toBeNull();
   });
 });
 

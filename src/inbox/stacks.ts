@@ -1,6 +1,7 @@
 // "Group by stack" in the inbox. A stack, Graphite's or GitHub's own, is a chain of branches in one repository: a PR whose
-// base branch is another open PR's head branch sits on top of it. GitHub's dashboard rows name no branches; an open
-// row's enrichment does (its merge box), so a row stands alone until then.
+// base branch is another open PR's head branch sits on top of it. GitHub's dashboard rows name no branches; the inbox
+// looks an open row's up (its page header; its merge box, once enriched, has the last word), so a row stands alone until
+// then.
 import type { PrSummary } from '../lib/model';
 
 /**

@@ -3,7 +3,7 @@
 // screen later what the dashboard has not at all (mergeability, reviewers, line counts, failing checks) from each PR's
 // page data.
 
-import type { CheckState, PrEnrichment, PrSummary, View, ViewResult } from '../model';
+import type { CheckState, PrEnrichment, PrSummary, RepoRef, StackBranches, View, ViewResult } from '../model';
 import type { InboxRowToEnrich, MergeMethod } from '../rpc';
 import { inboxFilterOf, resolveViewQuery, type GitHubInboxFilter } from '../views';
 import { dynamicWorkflowChecks } from './actions';
@@ -238,6 +238,22 @@ export async function enrichPull(pr: InboxRowToEnrich, mergeMethod: MergeMethod,
     console.debug('[gg]', `page_data/status_checks for ${where} failed; the row keeps its rollup:`, reason instanceof Error ? reason.message : reason);
   }
   return found;
+}
+
+/**
+ * The branches a PR's page header (`page_data/header`) names, by which "Group by stack" chains the inbox's rows before
+ * they are enriched: `pullRequest.baseBranch` and `headBranch`, the head only when its repository is `repo` (a fork's
+ * head branch says nothing about this repository's stacks). Null when the header names no base branch.
+ */
+export function branchesIn(header: unknown, repo: RepoRef): StackBranches | null {
+  const pull = (header as { pullRequest?: { baseBranch?: unknown; headBranch?: unknown; headRepositoryOwnerLogin?: unknown; headRepositoryName?: unknown } } | null)?.pullRequest;
+  if (typeof pull?.baseBranch !== 'string' || !pull.baseBranch) return null;
+  const sameRepository =
+    typeof pull.headRepositoryOwnerLogin === 'string' &&
+    typeof pull.headRepositoryName === 'string' &&
+    pull.headRepositoryOwnerLogin.toLowerCase() === repo.owner.toLowerCase() &&
+    pull.headRepositoryName.toLowerCase() === repo.name.toLowerCase();
+  return { baseRefName: pull.baseBranch, headRefName: sameRepository && typeof pull.headBranch === 'string' && pull.headBranch ? pull.headBranch : null };
 }
 
 /** A dashboard row ("Pull"), as GitHub's dashboard components receive it. */

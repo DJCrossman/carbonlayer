@@ -174,8 +174,14 @@ skeleton dash, an open row's CI column a placeholder and its Merge column "Unkno
 "Group by stack", a switch beside the top bar's repository chip (`inboxGroupByStack` in settings), shows each stack's rows
 together (`rowsByStack` in `src/inbox/stacks.ts`): a PR whose base branch is another row's head branch in the same
 repository (in any section) sits on it, and a section shows the stack where the first of its rows sorts, its top first
-and the rest indented under it, top down; the branches come from each open row's merge box (a fork's head branch left
-out), which, while the switch is on, the inbox asks for every open row at once rather than as rows near view.
+and the rest indented under it, top down. The branches come from each open PR's page header (`inbox.branches`:
+`page_data/header`'s `baseBranch` and `headBranch`, a fork's head branch left out, `branchesIn` in
+`src/lib/github-web/inbox.ts`; six PRs at a time, each kept 10 minutes), looked up first: while the switch is on, the
+inbox asks about every open row, 25 a request and one request at a time, and remembers the answers in `storage.local`
+(`stackBranches`) for a week, asking again after a day; a row's merge box, once enriched, has the last word. Until that
+first lookup has settled (every open row answered, or 4 s) a section with open rows shows skeleton rows, so it appears
+already grouped (at once when every row is remembered); rows that come later ("Load more", a refresh) join their stacks
+as their branches arrive.
 
 Section counts read `sectionCount` (`99+` above 99, `<limit>+` for a view cut short below that). A section shows
 GitHub's first page of rows (cut to the view's `limit`, default 50); while GitHub counts more, "Load more" at its foot

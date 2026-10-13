@@ -1,7 +1,7 @@
 // Everything the UI needs from the outside world, behind one interface so the same pages render
 // from the content script's RPC in the extension and from fixtures in the dev harness (`?fixtures=1`).
 
-import type { ChangedFileDiff, Organization, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, RepoCandidate, RepoRef, ReviewerCandidate, TopRepository, View, ViewResult } from '../lib/model';
+import type { ChangedFileDiff, Organization, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, TopRepository, View, ViewResult } from '../lib/model';
 import { rpc, type InboxRowToEnrich, type MergeMethod } from '../lib/rpc';
 import { getSettings, setSettings, watchSettings, type Settings, type SettingsStorage } from '../lib/settings';
 
@@ -24,6 +24,8 @@ export interface DataSource {
   fetchInboxPage(view: View, page: number): Promise<ViewResult>;
   /** What GitHub's dashboard leaves out of these inbox rows (mergeability, reviewers, line counts, failing checks), in the same order. */
   enrichInbox(prs: InboxRowToEnrich[]): Promise<PrEnrichment[]>;
+  /** The branches of these pull requests, in the same order, by which "Group by stack" chains them; null where GitHub did not say. */
+  branchesOf(prs: Array<{ repo: RepoRef; number: number }>): Promise<Array<StackBranches | null>>;
   /** The repositories GitHub's repository picker offers for what the user typed (nothing: its first list), only `owner`'s when given. */
   searchRepos(query: string, owner?: Organization | null): Promise<RepoCandidate[]>;
   /** The organizations the viewer belongs to, then their own account: whose pull requests the inbox can show. */
@@ -59,6 +61,7 @@ export function createRpcDataSource(): DataSource {
     fetchInbox: (views, force) => rpc('inbox.fetch', { views, force }),
     fetchInboxPage: (view, page) => rpc('inbox.fetchMore', { view, page }),
     enrichInbox: (prs) => rpc('inbox.enrich', { prs }),
+    branchesOf: (prs) => rpc('inbox.branches', { prs }),
     searchRepos: (query, owner) => rpc('repos.search', { query, owner: owner && { login: owner.login, isViewer: owner.isViewer } }),
     listOrgs: () => rpc('orgs.list', {}),
     listTopRepositories: (cursor) => rpc('repos.top', { cursor }),
@@ -122,8 +125,8 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     return pr;
   };
   return {
-    // Rows as GitHub's dashboard lists them: a CI rollup without its checks, and no branches; their merge status, reviewers,
-    // line counts and branches come later, from enrichInbox.
+    // Rows as GitHub's dashboard lists them: a CI rollup without its checks, and no branches; their branches come later,
+    // from branchesOf, and their merge status, reviewers and line counts from enrichInbox.
     fetchInbox: (views) =>
       Promise.all(
         views.map(async (view) => {
@@ -165,6 +168,15 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
           ...(pr.mergeBlockedReason && { mergeBlockedReason: pr.mergeBlockedReason }),
           ...(pr.state === 'OPEN' && { headRefName: pr.headRefName, baseRefName: pr.baseRefName }),
         };
+      });
+    },
+    // The fixture rows' own branches, a moment later, as their page headers would name them.
+    branchesOf: async (prs) => {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      const rows = [...fixtures.inbox.flatMap((result) => result.prs), ...Object.values(fixtures.inboxPages).flat(2)];
+      return prs.map(({ repo, number }) => {
+        const pr = rows.find((row) => row.repo.owner === repo.owner && row.repo.name === repo.name && row.number === number);
+        return pr?.baseRefName ? { baseRefName: pr.baseRefName, headRefName: pr.headRefName || null } : null;
       });
     },
     searchRepos: async (query, owner) => {

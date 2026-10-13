@@ -24,6 +24,7 @@ export function InboxSection({
   viewerLogin,
   enrichmentOf,
   stackedPrIds,
+  awaitingStacks,
   more,
   onSort,
   onRowShown,
@@ -48,6 +49,8 @@ export function InboxSection({
   enrichmentOf: (pr: PrSummary) => PrEnrichment | undefined;
   /** Grouped by stack, the ids of the rows below the top of their stack, which hang under the row above. */
   stackedPrIds?: ReadonlySet<string>;
+  /** Grouped by stack, the rows wait for their stacks to be known: skeleton rows show in their place. */
+  awaitingStacks?: boolean;
   /** Whether GitHub has rows beyond those shown ("Load more"), and whether they are on their way. */
   more: 'more' | 'loading' | 'none';
   onSort: (by: SectionSort['by']) => void;
@@ -97,7 +100,7 @@ export function InboxSection({
       )}
       {expanded &&
         !empty &&
-        (result
+        (result && !awaitingStacks
           ? result.prs.map((pr) => (
               <PrRow
                 key={pr.id}
@@ -111,8 +114,8 @@ export function InboxSection({
                 onOpen={onOpen}
               />
             ))
-          : loading && ['48%', '62%', '36%'].map((width) => <SkeletonRow key={width} titleWidth={width} />))}
-      {expanded && result && more !== 'none' && (
+          : (awaitingStacks || loading) && ['48%', '62%', '36%'].map((width) => <SkeletonRow key={width} titleWidth={width} />))}
+      {expanded && result && !awaitingStacks && more !== 'none' && (
         <button type="button" className="gg-section__more" disabled={more === 'loading'} onClick={onLoadMore}>
           {more === 'loading' ? 'Loading…' : 'Load more'}
         </button>

@@ -4,7 +4,7 @@
 // viewer is octocat. Ages are relative to page load so the harness always looks current. Each row has its checks, which
 // the fixture source hands out only as GitHub would: the dashboard's rollup at first, the list (with the required ones)
 // when enriching a failing rollup. The rows in "Needs anyone's review" have no line counts and no merge state. The native
-// stacks' rows chain by branch, which only enriching an open row names ("Group by stack").
+// stacks' rows chain by branch, which the fixture source names when asked for branches ("Group by stack").
 import type { Fixtures, InboxFixtureRow } from '../app/data-source';
 import type { CheckRunSummary, CheckState, CiSummary, UserRef } from '../lib/model';
 import { DEFAULT_VIEWS } from '../lib/views';

@@ -2,7 +2,7 @@
 // GitHub with the user's session. Inside github.com the app posts requests to its parent window, the
 // content script answers them with same-origin fetches (cookies included); see src/lib/github-web/.
 
-import type { ChangedFileDiff, Organization, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, RepoCandidate, RepoRef, ReviewerCandidate, TopRepository, View, ViewResult } from './model';
+import type { ChangedFileDiff, Organization, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, TopRepository, View, ViewResult } from './model';
 
 export type MergeMethod = 'MERGE' | 'SQUASH' | 'REBASE';
 
@@ -19,6 +19,8 @@ export interface RpcMethods {
    * are, and its author is no reviewer.
    */
   'inbox.enrich': { args: { prs: InboxRowToEnrich[] }; result: PrEnrichment[] };
+  /** The branches of these pull requests, in the same order, by which "Group by stack" chains them; null where GitHub did not say. */
+  'inbox.branches': { args: { prs: Array<{ repo: RepoRef; number: number }> }; result: Array<StackBranches | null> };
   /**
    * The repositories GitHub's repository picker offers for `query` (what the user typed; empty for its first list), only
    * `owner`'s when given.
