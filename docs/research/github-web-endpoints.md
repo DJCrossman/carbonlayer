@@ -148,6 +148,19 @@ viewerPendingReview, codeowners, fileFilter, markers, urls, user, pullRequest, r
 A unified patch for `@pierre/diffs` can be rebuilt from `diffLines` (HUNK lines are the `@@` headers; prefix
 ADDITION with `+`, DELETION with `-`, CONTEXT with a space).
 
+## Homepage's "Top repositories" (`/`, signed in) — classic HTML fragments (VERIFIED signed in 2026-10-13)
+- `GET /dashboard/my_top_repositories?location=left` → an HTML fragment (no `<html>` wrapper; `DOMParser` reads it):
+  `<h2 id="dashboard-top-repositories-heading">Top repositories</h2>`, `<a href="/new">New</a>`, then
+  `<ul class="list-style-none js-dashboard-repos-list">` with one `<li>` per repository (seven on the first page):
+  `li > div > a[href="/owner/name"] > img[src="https://avatars.githubusercontent.com/…"][alt="name"]` (the owner's
+  avatar; its `src` carries a query string), then `div > a[href="/owner/name"] > span` reading `owner/name` (the slash in
+  a span of its own, owner and name separate text pieces). Below the list, "Show more" is `<form class="ajax-pagination-form
+  js-ajax-pagination js-more-repos-form" method="get" action="/dashboard/ajax_my_repositories?location=left">` with
+  `<input type="hidden" name="repos_cursor" value="<integer>">`; `GET
+  /dashboard/ajax_my_repositories?location=left&repos_cursor=<value>` answers the next page's `<li>`s in the same shape,
+  with another such form while more remain (none on the last page). GitHub's own fragment loader sends
+  `X-Requested-With: XMLHttpRequest`; `topRepositories` in `src/lib/github-web/repositories.ts` does too.
+
 ## Writes
 Review submit, comment, inline comment, resolve, merge, auto-merge, viewed and draft: see
 `github-web-mutations.md` (read from GitHub's bundles; none sent yet).

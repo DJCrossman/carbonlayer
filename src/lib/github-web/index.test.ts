@@ -5,9 +5,11 @@ import { DEFAULT_SETTINGS } from '../settings';
 import { handleRpc } from './index';
 import { enrichPull, fetchInbox, fetchViewPage } from './inbox';
 import { fetchPullRequestPage } from './pull-request';
+import { topRepositories } from './repositories';
 
 vi.mock('../settings', async (original) => ({ ...(await original<typeof import('../settings')>()), getSettings: vi.fn(async () => DEFAULT_SETTINGS) }));
 vi.mock('./inbox', () => ({ fetchInbox: vi.fn(async () => [{ prs: [], totalCount: 0, fetchedAt: 'now' }]), enrichPull: vi.fn(), fetchViewPage: vi.fn() }));
+vi.mock('./repositories', async (original) => ({ ...(await original<typeof import('./repositories')>()), topRepositories: vi.fn(async () => ({ repos: [], nextCursor: 7 })) }));
 vi.mock('./pull-request', () => ({
   fetchPullRequestPage: vi.fn(async () => ({ id: 'PR_1', repo: { owner: 'o', name: 'r' }, number: 1, headOid: 'h', baseOid: 'b', stack: { source: 'none' }, threads: [] }) as unknown as PrDetail),
 }));
@@ -46,6 +48,16 @@ describe('handleRpc', () => {
     vi.mocked(fetchViewPage).mockResolvedValue({ view: { ...view, name: 'Earlier name' }, prs: [], totalCount: 40, fetchedAt: 'now' });
     expect(await call('inbox.fetchMore', { view, page: 2 })).toMatchObject({ ok: true, result: { view, totalCount: 40 } });
     expect(fetchViewPage).toHaveBeenCalledWith(view, DEFAULT_SETTINGS.inboxScope, 2);
+  });
+
+  it("keeps the first page of the homepage's top repositories, and asks GitHub for every later one", async () => {
+    await call('repos.top', {});
+    expect(await call('repos.top', { cursor: null })).toMatchObject({ ok: true, result: { repos: [], nextCursor: 7 } });
+    expect(topRepositories).toHaveBeenCalledTimes(1);
+    await call('repos.top', { cursor: 7 });
+    await call('repos.top', { cursor: 7 });
+    expect(topRepositories).toHaveBeenCalledTimes(3);
+    expect(topRepositories).toHaveBeenLastCalledWith(7);
   });
 
   it('enriches inbox rows three pull requests at a time, and keeps each answer', async () => {

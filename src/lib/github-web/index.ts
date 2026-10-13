@@ -10,7 +10,7 @@ import { mutations, pullRequestFor, rememberPullRequest } from './mutations';
 import { fetchFileDiffs, fetchPrStage, forgetPrStages } from './pr-stages';
 import { fetchPullRequestPage } from './pull-request';
 import { listOrganizations } from './organizations';
-import { pickableRepositories } from './repositories';
+import { pickableRepositories, topRepositories } from './repositories';
 import { reviewerCandidatesFrom } from './reviews';
 import { getJson, getPage, noteShape, politely } from './session';
 
@@ -62,6 +62,9 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
       noteShape('repositories/picker/search', data);
       return data;
     }),
+  'repos.top': ({ cursor }) =>
+    // The homepage's list changes slowly: its first page is asked for once in 10 minutes, every "Show more" afresh.
+    cursor === undefined || cursor === null ? cached('repos.top', 600_000, false, () => topRepositories()) : topRepositories(cursor),
   'orgs.list': () =>
     // Who is signed in is the github.com page's own business; the list is asked for once in 10 minutes.
     cached('orgs', 600_000, false, () =>

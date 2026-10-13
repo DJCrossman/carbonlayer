@@ -7,7 +7,7 @@ import { browser } from 'wxt/browser';
 import { postToParent } from '../app/bridge';
 import type { DataSource } from '../app/data-source';
 import { toGitHubUrl, type AppRoute } from '../app/routes';
-import type { Organization, PrEnrichment, PrSummary, RepoRef, View, ViewResult } from '../lib/model';
+import type { Organization, PrEnrichment, PrSummary, RepoRef, TopRepository, View, ViewResult } from '../lib/model';
 import type { Settings } from '../lib/settings';
 import { encodeViewsShareLink, sectionCount } from '../lib/views';
 import { Button } from '../ui/Button';
@@ -29,6 +29,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   const organizations = useOrganizations(source.listOrgs);
   const inbox = useInbox(source, organizations.list);
   const enrichment = useRowEnrichment(source);
+  const topRepositories = useTopRepositories(source);
   const moreRows = useMoreRows(source);
   const { settings, org } = inbox;
   const viewerLogin = organizations.list?.find((candidate) => candidate.isViewer)?.login ?? null;
@@ -102,7 +103,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
       if (event.key === 'Enter' && target instanceof Element && target.closest('a, button')) return;
       const pr = selected && resultsByView.get(selected.viewId)?.prs.find((candidate) => candidate.id === selected.prId);
       if (!pr) return;
-      openPullRequest(pr.url, event.shiftKey);
+      openOnGitHub(pr.url, event.shiftKey);
     } else if (event.key === 'r') {
       void inbox.refresh(true);
     } else if (event.key === 'c') {
@@ -298,6 +299,9 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
                 setSidebarOpen(false);
               }}
               onHide={toggleSidebar}
+              topRepositories={topRepositories}
+              onShowMoreRepositories={topRepositories.showMore}
+              onOpen={openOnGitHub}
             />
           )}
           <main className="gg-inbox__body">
@@ -360,7 +364,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
                     onEdit={() => setEditing(view)}
                     onOpen={(pr, newTab) => {
                       setSelected({ viewId: view.id, prId: pr.id });
-                      openPullRequest(pr.url, newTab);
+                      openOnGitHub(pr.url, newTab);
                     }}
                   />
                 </div>
@@ -593,6 +597,45 @@ function useRowEnrichment(source: DataSource) {
 }
 
 /**
+ * The repositories GitHub's homepage lists under "Top repositories": the first page as the inbox opens, then each page
+ * "Show more" asks for, appended. A failure keeps what is shown, with GitHub's reason for the sidebar to say.
+ */
+function useTopRepositories(source: DataSource) {
+  const [repos, setRepos] = useState<TopRepository[]>([]);
+  const [nextCursor, setNextCursor] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load(cursor: number | null) {
+    setLoading(true);
+    try {
+      const page = await source.listTopRepositories(cursor);
+      setRepos((shown) => [...shown, ...page.repos.filter((repo) => !shown.some((other) => other.url === repo.url))]);
+      setNextCursor(page.nextCursor);
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load(null);
+  }, [source]);
+
+  return {
+    repos,
+    canShowMore: nextCursor !== null,
+    loading,
+    error,
+    showMore: () => {
+      if (!loading && nextCursor !== null) void load(nextCursor);
+    },
+  };
+}
+
+/**
  * The section the reader is at: the first whose card reaches below the top bar, as the page scrolls, or the one just
  * gone to, until the reader scrolls on their own.
  */
@@ -633,8 +676,11 @@ function useSectionInView(views: View[] | undefined): [string | null, (viewId: s
 /** Graphite's default order for a section's rows. */
 const LATEST_UPDATED_FIRST: SectionSort = { by: 'updated', descending: true };
 
-/** Opens a PR the way a link would: the github.com page navigates (or opens a tab); the standalone harness opens a tab. */
-function openPullRequest(url: string, newTab: boolean) {
+/**
+ * Opens a page on GitHub (a PR, a repository, the organization) the way a link would: the github.com page navigates (or
+ * opens a tab); the standalone harness opens a tab.
+ */
+function openOnGitHub(url: string, newTab: boolean) {
   if (window.parent === window) window.open(url, '_blank');
   else postToParent({ type: 'gg:navigate', url, newTab });
 }

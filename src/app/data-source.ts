@@ -1,7 +1,7 @@
 // Everything the UI needs from the outside world, behind one interface so the same pages render
 // from the content script's RPC in the extension and from fixtures in the dev harness (`?fixtures=1`).
 
-import type { ChangedFileDiff, Organization, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, RepoCandidate, RepoRef, ReviewerCandidate, View, ViewResult } from '../lib/model';
+import type { ChangedFileDiff, Organization, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, RepoCandidate, RepoRef, ReviewerCandidate, TopRepository, View, ViewResult } from '../lib/model';
 import { rpc, type InboxRowToEnrich, type MergeMethod } from '../lib/rpc';
 import { getSettings, setSettings, watchSettings, type Settings, type SettingsStorage } from '../lib/settings';
 
@@ -28,6 +28,8 @@ export interface DataSource {
   searchRepos(query: string, owner?: Organization | null): Promise<RepoCandidate[]>;
   /** The organizations the viewer belongs to, then their own account: whose pull requests the inbox can show. */
   listOrgs(): Promise<Organization[]>;
+  /** A page of the repositories GitHub's homepage lists under "Top repositories": the first, or the one after `cursor`. */
+  listTopRepositories(cursor?: number | null): Promise<{ repos: TopRepository[]; nextCursor: number | null }>;
   /** One stage of a PR's page (PrStages); `force` asks GitHub again instead of reusing what the content script has. */
   fetchPrStage<S extends PrStage>(stage: S, repo: RepoRef, number: number, force?: boolean): Promise<PrStages[S]>;
   /** The diffs of up to 20 of a PR's changed files, by path. */
@@ -59,6 +61,7 @@ export function createRpcDataSource(): DataSource {
     enrichInbox: (prs) => rpc('inbox.enrich', { prs }),
     searchRepos: (query, owner) => rpc('repos.search', { query, owner: owner && { login: owner.login, isViewer: owner.isViewer } }),
     listOrgs: () => rpc('orgs.list', {}),
+    listTopRepositories: (cursor) => rpc('repos.top', { cursor }),
     fetchPrStage: (stage, repo, number, force) => prStageRequests[stage]({ repo, number, force }),
     fetchPrFileDiffs: (repo, number, paths, force) => rpc('pr.fetchFileDiffs', { repo, number, paths, force }),
     review: (prId, event, body, threads) => rpc('pr.review', { prId, event, body, threads }),
@@ -171,6 +174,11 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
       await new Promise((resolve) => setTimeout(resolve, 200));
       return FIXTURE_ORGANIZATIONS;
     },
+    // Five on the first page, then the rest after cursor 1, as GitHub's "Show more" would.
+    listTopRepositories: async (cursor) => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return cursor === 1 ? { repos: FIXTURE_TOP_REPOSITORIES.slice(5), nextCursor: null } : { repos: FIXTURE_TOP_REPOSITORIES.slice(0, 5), nextCursor: 1 };
+    },
     // Each stage of the fixture PR after a delay of its own, so the harness fills the page in as GitHub would. GitHub sends
     // the first file's diff with the file list; the others follow a moment later.
     fetchPrStage: async (stage, repo, number) => {
@@ -255,6 +263,18 @@ const FIXTURE_REPOSITORIES: RepoCandidate[] = [
   { owner: 'octocat', name: 'spoon-knife', isPrivate: false },
   { owner: 'globex', name: 'billing', isPrivate: true },
   { owner: 'globex', name: 'storefront', isPrivate: true },
+];
+
+/** What the harness's homepage lists under "Top repositories"; acme has no avatar, like its organization above. */
+const FIXTURE_TOP_REPOSITORIES: TopRepository[] = [
+  { owner: 'acme', name: 'widgets', url: 'https://github.com/acme/widgets', avatarUrl: null },
+  { owner: 'acme', name: 'platform', url: 'https://github.com/acme/platform', avatarUrl: null },
+  { owner: 'octocat', name: 'hello-world', url: 'https://github.com/octocat/hello-world', avatarUrl: 'https://avatars.githubusercontent.com/u/583231?v=4' },
+  { owner: 'acme', name: 'api', url: 'https://github.com/acme/api', avatarUrl: null },
+  { owner: 'acme', name: 'ui', url: 'https://github.com/acme/ui', avatarUrl: null },
+  { owner: 'acme', name: 'infra', url: 'https://github.com/acme/infra', avatarUrl: null },
+  { owner: 'octocat', name: 'spoon-knife', url: 'https://github.com/octocat/spoon-knife', avatarUrl: 'https://avatars.githubusercontent.com/u/583231?v=4' },
+  { owner: 'acme', name: 'docs', url: 'https://github.com/acme/docs', avatarUrl: null },
 ];
 
 /** Whom the harness's reviewer picker offers: the fixture PRs' reviewers and a few more, two of them as suggestions. */

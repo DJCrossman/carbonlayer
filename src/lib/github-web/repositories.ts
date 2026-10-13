@@ -1,8 +1,10 @@
 // GitHub's repository picker (the dashboard's repository filter): `GET /repositories/picker/search?q=`, which GitHub's
 // own picker opens with `q=contributed-by:@me`. The envelope of its answer is unconfirmed (docs/research/
-// graphite-sections.md, "GitHub's repository picker"), so it is read tolerantly.
+// graphite-sections.md, "GitHub's repository picker"), so it is read tolerantly. Also the homepage's "Top repositories",
+// which GitHub's dashboard loads as classic HTML fragments (docs/research/github-web-endpoints.md).
 
-import type { Organization, RepoCandidate } from '../model';
+import type { Organization, RepoCandidate, TopRepository } from '../model';
+import { request } from './session';
 
 /**
  * The repositories GitHub's repository picker offers for `text` among those the viewer contributed to, only `owner`'s when
@@ -47,4 +49,34 @@ export function repositoryCandidatesFrom(data: unknown): RepoCandidate[] {
       typeof repo.isPrivate === 'boolean' ? repo.isPrivate : typeof repo.private === 'boolean' ? repo.private : typeof repo.visibility === 'string' && repo.visibility.toLowerCase() !== 'public';
     return [{ owner, name, isPrivate }];
   });
+}
+
+/**
+ * A page of the repositories GitHub's homepage lists under "Top repositories": the first, or with `cursor` the one its
+ * "Show more" asks for next. Both are HTML fragments GitHub's dashboard loads with its own scripts' header.
+ */
+export async function topRepositories(cursor: number | null = null): Promise<{ repos: TopRepository[]; nextCursor: number | null }> {
+  const path = cursor === null ? '/dashboard/my_top_repositories?location=left' : `/dashboard/ajax_my_repositories?location=left&repos_cursor=${cursor}`;
+  return topRepositoriesIn(await (await request(path, 'text/html', { xhr: true })).text());
+}
+
+/**
+ * The repositories in a page of "Top repositories", one a list item (`ul.js-dashboard-repos-list > li`, which links to
+ * `/<owner>/<name>` from the owner's avatar and again from the name; owner and name come from that path, not the text),
+ * and the cursor the page's "Show more" form asks for the next with; null without that form, on the last page.
+ */
+export function topRepositoriesIn(html: string): { repos: TopRepository[]; nextCursor: number | null } {
+  const page = new DOMParser().parseFromString(html, 'text/html');
+  const repos = [...page.querySelectorAll('ul.js-dashboard-repos-list > li')].flatMap((item): TopRepository[] => {
+    const [owner, name] =
+      [...item.querySelectorAll('a[href]')]
+        .map((link) => new URL(link.getAttribute('href')!, 'https://github.com'))
+        .filter((url) => url.origin === 'https://github.com')
+        .map((url) => url.pathname.split('/').filter(Boolean))
+        .find((segments) => segments.length === 2) ?? [];
+    if (!owner || !name) return [];
+    return [{ owner, name, url: `https://github.com/${owner}/${name}`, avatarUrl: item.querySelector('img[src]')?.getAttribute('src') || null }];
+  });
+  const cursor = Number.parseInt(page.querySelector('form.js-more-repos-form input[name="repos_cursor"]')?.getAttribute('value') ?? '', 10);
+  return { repos, nextCursor: Number.isInteger(cursor) ? cursor : null };
 }

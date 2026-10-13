@@ -13,6 +13,14 @@ export interface RepoCandidate extends RepoRef {
   isPrivate: boolean;
 }
 
+/** A repository GitHub's homepage lists under "Top repositories", with its owner's avatar when GitHub showed one. */
+export interface TopRepository {
+  owner: string;
+  name: string;
+  url: string;
+  avatarUrl: string | null;
+}
+
 /** An account whose pull requests an inbox shows: an organization the viewer belongs to, or the viewer's own account. */
 export interface Organization {
   login: string;

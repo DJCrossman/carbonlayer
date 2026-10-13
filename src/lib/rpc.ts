@@ -2,7 +2,7 @@
 // GitHub with the user's session. Inside github.com the app posts requests to its parent window, the
 // content script answers them with same-origin fetches (cookies included); see src/lib/github-web/.
 
-import type { ChangedFileDiff, Organization, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, RepoCandidate, RepoRef, ReviewerCandidate, View, ViewResult } from './model';
+import type { ChangedFileDiff, Organization, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, RepoCandidate, RepoRef, ReviewerCandidate, TopRepository, View, ViewResult } from './model';
 
 export type MergeMethod = 'MERGE' | 'SQUASH' | 'REBASE';
 
@@ -24,6 +24,8 @@ export interface RpcMethods {
    * `owner`'s when given.
    */
   'repos.search': { args: { query: string; owner?: Pick<Organization, 'login' | 'isViewer'> | null }; result: RepoCandidate[] };
+  /** A page of the repositories GitHub's homepage lists under "Top repositories": the first, or the one after `cursor`. */
+  'repos.top': { args: { cursor?: number | null }; result: { repos: TopRepository[]; nextCursor: number | null } };
   /** The organizations the viewer belongs to, then their own account: whose pull requests the inbox can show. */
   'orgs.list': { args: Record<string, never>; result: Organization[] };
   /** The whole PR at once, all its stages put together (the PR page itself loads them one by one, below). */

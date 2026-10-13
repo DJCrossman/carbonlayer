@@ -1,5 +1,5 @@
-/* The sections sidebar (SectionsSidebar.tsx): a sticky 240px column beside the section cards, 30px rows; over the
-   inbox, from the top bar's toggle, below 900px. */
+/* The sections sidebar (SectionsSidebar.tsx): a sticky 240px column beside the section cards, 30px rows, the top
+   repositories below them; over the inbox, from the top bar's toggle, below 900px. */
 
 .gg-sidebar {
   position: sticky;
@@ -30,6 +30,20 @@
   min-width: 0;
   color: var(--gg-fg);
   font-size: 13px;
+}
+.gg-sidebar__org-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: inherit;
+}
+/* A link to the account on GitHub that keeps the heading's look: only the name underlines, on hover. */
+.gg-sidebar__org-link:hover {
+  text-decoration: none;
+}
+.gg-sidebar__org-link:hover .gg-sidebar__org-name {
+  text-decoration: underline;
 }
 .gg-sidebar__org.is-organization .gg-avatar {
   border-radius: 4px;
@@ -144,9 +158,81 @@
   text-align: left;
   cursor: pointer;
 }
-.gg-sidebar__add:hover {
+.gg-sidebar__add:hover:not(:disabled) {
   background: var(--gg-bg-hover);
   color: var(--gg-fg);
+}
+.gg-sidebar__add:disabled {
+  cursor: default;
+}
+
+/* Top repositories, as GitHub's homepage lists them: a muted heading with "New", rows of the add button's height. */
+.gg-sidebar__repos {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--gg-space-4);
+}
+.gg-sidebar__repos-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 24px;
+  padding: 0 var(--gg-space-2);
+  margin-bottom: var(--gg-space-1);
+}
+.gg-sidebar__repos-title {
+  margin: 0;
+  color: var(--gg-fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.gg-sidebar__repos-new {
+  color: var(--gg-fg-muted);
+  font-size: 12px;
+}
+.gg-sidebar__repos-new:hover {
+  color: var(--gg-fg);
+}
+.gg-sidebar__repo-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.gg-sidebar__repo,
+.gg-sidebar__repo-skeleton {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 var(--gg-space-2);
+  border-radius: var(--gg-radius);
+  color: var(--gg-fg);
+}
+.gg-sidebar__repo:hover {
+  background: var(--gg-bg-hover);
+  text-decoration: none;
+}
+.gg-sidebar__repo:focus-visible {
+  outline: 2px solid var(--gg-accent);
+  outline-offset: -2px;
+}
+.gg-sidebar__repo-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gg-sidebar__repo-owner {
+  color: var(--gg-fg-muted);
+}
+.gg-sidebar__repos-error {
+  margin: var(--gg-space-1) 0;
+  padding: 0 var(--gg-space-2);
+  overflow: hidden;
+  color: var(--gg-fg-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (max-width: 899px) {
