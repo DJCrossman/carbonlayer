@@ -76,6 +76,11 @@ Need a session (404 signed out): `status_checks`, `merge_box`, `stack_mergeabili
   numberOfCommits, viewerCanAddAndRemoveFromMergeQueue, viewerCanAdminBypassMergeRequirements, viewerCanClose,
   viewerCanConvertToDraft, viewerCanDeleteHeadRef, … }, mergeRequirements: { state, conditions, commitMessageHeadline,
   defaultCommitAuthorEmail, … } }`. `merge_method` is the viewer's preferred method, upper case.
+  Whether the viewer may turn on auto-merge is `pullRequest.viewerCanEnableAutoMerge` (and `viewerCanDisableAutoMerge`);
+  `viewerMergeActions` now lists only `DIRECT_MERGE` and `MERGE_QUEUE`, each with `allowableStatus` `ALLOWED` or
+  `BLOCKED` (verified on a BLOCKED pull request whose merge box offered "Enable auto-merge (squash)", 2026-10-13).
+  GitHub's merge box enables it with `POST page_data/enable_auto_merge` and body `{ mergeMethod, commitTitle,
+  commitMessage, authorEmail? }`, the same fields as a direct merge without `bypassBranchProtections`.
 - `diff_entries`: `paths` = each path `encodeURIComponent`-ed, joined with commas (single-encoded also works);
   `ctx` = context-line ranges per path `start-end,…` joined with `:`; `w` = 0|1; `range` = head OID when the
   range starts at the PR base, else `startOid..endOid` within the PR's commits; **without `range` you get the

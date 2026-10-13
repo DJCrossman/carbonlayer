@@ -38,6 +38,19 @@ describe('mergeState', () => {
     });
   });
 
+  it("offers auto-merge when GitHub's flag does, though its merge actions name none (as on GitHub today)", () => {
+    const box = (viewerCanEnableAutoMerge: boolean) => ({
+      pullRequest: {
+        mergeStateStatus: 'BLOCKED',
+        viewerCanEnableAutoMerge,
+        viewerMergeActions: [{ name: 'DIRECT_MERGE', mergeMethods: [{ name: 'SQUASH', allowableStatus: 'ALLOWED', isDefault: true }] }],
+      },
+    });
+    expect(mergeState(box(true), open).viewerCanEnableAutoMerge).toBe(true);
+    expect(mergeState(box(false), open).viewerCanEnableAutoMerge).toBe(false);
+    expect(mergeState(box(true), { isDraft: false, isOpen: false }).viewerCanEnableAutoMerge).toBe(false);
+  });
+
   it('derives the state from the requirements when GitHub does not name it, and for drafts', () => {
     const conflict = { mergeRequirements: { state: 'UNMERGEABLE', conditions: [{ type: 'PULL_REQUEST_MERGE_CONFLICT_STATE', result: 'FAILED' }] } };
     expect(mergeState(conflict, open).mergeStatus).toBe('DIRTY');

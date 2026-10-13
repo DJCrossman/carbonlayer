@@ -50,7 +50,9 @@ export function mergeState(data: unknown, pr: { isDraft: boolean; isOpen: boolea
     allowedMergeMethods: directMerge ? allowed : ['MERGE', 'SQUASH', 'REBASE'],
     defaultMergeMethod: (directMerge?.mergeMethods?.find((method) => method.isDefault)?.name as MergeMethod | undefined) ?? null,
     viewerCanMerge: pr.isOpen && (directMerge ? directMerge.isAllowable !== false && allowed.length > 0 : userCanMerge),
-    viewerCanEnableAutoMerge: actions.some((action) => action.name === 'AUTO_MERGE' && action.isAllowable !== false),
+    // GitHub says so in its own flag (verified 2026-10-13); the merge actions name AUTO_MERGE only in older answers.
+    viewerCanEnableAutoMerge:
+      pr.isOpen && (pullRequest.viewerCanEnableAutoMerge ?? actions.some((action) => action.name === 'AUTO_MERGE' && action.isAllowable !== false)),
     autoMerge: pullRequest.autoMergeRequest
       ? { method: autoMergeMethod === 'SQUASH' || autoMergeMethod === 'REBASE' ? autoMergeMethod : 'MERGE' }
       : null,
@@ -81,6 +83,7 @@ export interface MergeBox {
     isInMergeQueue?: boolean;
     mergeStateStatus?: string;
     autoMergeRequest?: { mergeMethod?: string } | null;
+    viewerCanEnableAutoMerge?: boolean;
     viewerMergeActions?: Array<{
       name: string;
       isAllowable?: boolean;

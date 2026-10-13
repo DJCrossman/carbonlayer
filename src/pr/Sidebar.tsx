@@ -131,7 +131,7 @@ function StatusCard({ pr, mergeMethod, onAutoMerge }: { pr: PrDetail; mergeMetho
           </span>
         )}
       </div>
-      {pr.state === 'OPEN' && pr.viewerCanEnableAutoMerge && (
+      {pr.state === 'OPEN' && (pr.viewerCanEnableAutoMerge || pr.autoMerge !== null) && (
         <label className="side-switch">
           <input
             type="checkbox"
