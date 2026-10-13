@@ -50,10 +50,14 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   const [sorts, setSorts] = useState<Record<string, SectionSort>>({});
   // Each section's rows, those "Load more" added after the first page's, with what enrichment has found, in the order the
   // section shows them, which j / k follow too.
+  // Enrichment is asked about rows as GitHub's dashboard gave them, by id: its key follows the dashboard's own CI rollup,
+  // which the enriched checks replace on screen, so the row is asked again when the rollup moves on and not before.
+  const dashboardRows = new Map<string, PrSummary>();
   const sections =
     inbox.results?.map((result) => {
       const { by, descending } = sorts[result.view.id] ?? LATEST_UPDATED_FIRST;
       const added = moreRows.addedTo(result.view, settings?.inboxScope ?? '')?.prs.filter((pr) => !result.prs.some((first) => first.id === pr.id)) ?? [];
+      for (const pr of [...result.prs, ...added]) dashboardRows.set(pr.id, pr);
       const enriched = [...result.prs, ...added].map((pr) => {
         const found = enrichment.found.get(pr.id)?.enrichment;
         // The checks found speak for the row whenever there are some: the rollup leaves out GitHub's own dynamic workflow
@@ -136,7 +140,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   // A row's branches come with its enrichment, asked as it nears view; grouped by stack, every open row is asked at once
   // (as the inbox loads, and once "Load more" has added rows), so stacks form without scrolling.
   const askForBranches = useEffectEvent(() => {
-    for (const result of resultsByView.values()) for (const pr of result.prs) if (pr.state === 'OPEN') enrichment.want(pr);
+    for (const pr of dashboardRows.values()) if (pr.state === 'OPEN') enrichment.want(pr);
   });
   useEffect(() => {
     if (settings?.inboxGroupByStack) askForBranches();
@@ -387,7 +391,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
                     stackedPrIds={stackedByView.get(view.id)}
                     more={more}
                     onSort={(by) => sortSection(view.id, by)}
-                    onRowShown={enrichment.want}
+                    onRowShown={(pr) => enrichment.want(dashboardRows.get(pr.id) ?? pr)}
                     onLoadMore={() => void moreRows.loadMore(view, settings.inboxScope, result?.prs ?? [])}
                     onToggleCollapsed={() => toggleCollapsed(view.id)}
                     onEdit={() => setEditing(view)}
