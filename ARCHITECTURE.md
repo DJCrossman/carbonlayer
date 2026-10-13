@@ -125,9 +125,11 @@ filter and its own `repos` on every save with the import's mapping (`searchForFi
 section cards, Graphite's sections sidebar (`src/inbox/SectionsSidebar.tsx`) lists every section with its count, the one
 in view highlighted; a click scrolls to the section (expanding it), ↑ / ↓ reorder, the gear opens the editor and "Add
 section" opens it for a new view. Its heading links to the organization on GitHub, and below "Add section" it lists the
-viewer's top repositories as GitHub's homepage does, each a link to it there (`repos.top`: `topRepositories` in
-`src/lib/github-web/repositories.ts` reads the HTML fragments GitHub's dashboard loads, the first page kept 10 minutes,
-"Show more" appending the next). It hides with `sidebarCollapsed` in settings, and below 900px it opens over the inbox
+organization's repositories, each a link to it there: the ones chosen in the repository picker when the inbox searches
+only those, else the viewer's top repositories as GitHub's homepage lists them, narrowed to the organization
+(`repos.top`: `topRepositories` in `src/lib/github-web/repositories.ts` reads the HTML fragments GitHub's dashboard
+loads, which span every owner, so `useTopRepositories` reads further pages until seven of the organization's show, the
+first page kept 10 minutes; "Show more" asks for seven more the same way). It hides with `sidebarCollapsed` in settings, and below 900px it opens over the inbox
 from the top bar's toggle.
 
 Rows follow Graphite's columns (`src/inbox/InboxSection.tsx`): unread dot, avatar, title with `author · owner/repo #N`,

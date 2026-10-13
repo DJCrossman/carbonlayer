@@ -30,7 +30,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   const organizations = useOrganizations(source.listOrgs);
   const inbox = useInbox(source, organizations.list);
   const enrichment = useRowEnrichment(source);
-  const topRepositories = useTopRepositories(source);
+  const topRepositories = useTopRepositories(source, inbox.org, inbox.settings?.inboxRepos ?? NO_REPOS);
   const moreRows = useMoreRows(source);
   const { settings, org } = inbox;
   const viewerLogin = organizations.list?.find((candidate) => candidate.isViewer)?.login ?? null;
@@ -738,40 +738,82 @@ function useStackBranches(source: DataSource, enabled: boolean, openRows: PrSumm
  * The repositories GitHub's homepage lists under "Top repositories": the first page as the inbox opens, then each page
  * "Show more" asks for, appended. A failure keeps what is shown, with GitHub's reason for the sidebar to say.
  */
-function useTopRepositories(source: DataSource) {
-  const [repos, setRepos] = useState<TopRepository[]>([]);
-  const [nextCursor, setNextCursor] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
+/**
+ * The repositories under the sections, for the organization the inbox shows: the repositories chosen in its picker when
+ * the inbox searches only those, else GitHub's own "Top repositories", which span every owner, narrowed to the
+ * organization. GitHub's list is read a page at a time until a page's worth of the organization's repositories shows,
+ * the list ends, or six pages have been read for nothing; "Show more" asks for the next page's worth the same way.
+ */
+function useTopRepositories(source: DataSource, org: Organization | null, chosen: RepoRef[]) {
+  // Every page GitHub has answered (for every owner), the cursor of its next page (undefined before the first), and how
+  // many of the organization's repositories to show and how many more pages may be read to find them.
+  const [fetched, setFetched] = useState<TopRepository[]>([]);
+  const [nextCursor, setNextCursor] = useState<number | null | undefined>(undefined);
+  const [wanted, setWanted] = useState(REPOSITORIES_PAGE);
+  const [pagesLeft, setPagesLeft] = useState(6);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const owner = org?.login.toLowerCase() ?? null;
+  const ofOrganization = fetched.filter((repo) => repo.owner.toLowerCase() === owner);
 
-  async function load(cursor: number | null) {
-    setLoading(true);
-    try {
-      const page = await source.listTopRepositories(cursor);
-      setRepos((shown) => [...shown, ...page.repos.filter((repo) => !shown.some((other) => other.url === repo.url))]);
-      setNextCursor(page.nextCursor);
-      setError(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setLoading(false);
-    }
-  }
+  // Another organization starts from a page's worth again; what GitHub answered still holds.
+  useEffect(() => {
+    setWanted(REPOSITORIES_PAGE);
+    setPagesLeft(6);
+  }, [owner]);
 
   useEffect(() => {
-    void load(null);
-  }, [source]);
+    if (chosen.length > 0 || !owner || loading || error !== null || pagesLeft <= 0) return;
+    if (nextCursor === null || (nextCursor !== undefined && ofOrganization.length >= wanted)) return;
+    setLoading(true);
+    setPagesLeft((left) => left - 1);
+    source.listTopRepositories(nextCursor ?? null).then(
+      (page) => {
+        setFetched((known) => [...known, ...page.repos.filter((repo) => !known.some((other) => other.url === repo.url))]);
+        setNextCursor(page.nextCursor);
+        setLoading(false);
+      },
+      (cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : String(cause));
+        setLoading(false);
+      },
+    );
+  }, [source, owner, chosen.length, loading, error, pagesLeft, nextCursor, ofOrganization.length, wanted]);
 
+  if (chosen.length > 0) {
+    return {
+      repos: chosen.map((repo): TopRepository => ({
+        owner: repo.owner,
+        name: repo.name,
+        url: `https://github.com/${repo.owner}/${repo.name}`,
+        avatarUrl:
+          fetched.find((known) => known.owner.toLowerCase() === repo.owner.toLowerCase())?.avatarUrl ??
+          (org && org.login.toLowerCase() === repo.owner.toLowerCase() && org.avatarUrl ? org.avatarUrl : null),
+      })),
+      canShowMore: false,
+      loading: false,
+      error: null,
+      showMore: () => {},
+    };
+  }
   return {
-    repos,
-    canShowMore: nextCursor !== null,
-    loading,
+    repos: ofOrganization.slice(0, wanted),
+    canShowMore: ofOrganization.length > wanted || nextCursor !== null,
+    loading: loading || (nextCursor === undefined && error === null),
     error,
     showMore: () => {
-      if (!loading && nextCursor !== null) void load(nextCursor);
+      if (loading) return;
+      setWanted((shown) => shown + REPOSITORIES_PAGE);
+      setPagesLeft(6);
     },
   };
 }
+
+/** How many of an organization's repositories the sidebar shows at first, and adds with "Show more". */
+const REPOSITORIES_PAGE = 7;
+
+/** No repositories chosen, as one list, so the sidebar's repositories are not worked out again for nothing. */
+const NO_REPOS: RepoRef[] = [];
 
 /**
  * The section the reader is at: the first whose card reaches below the top bar, as the page scrolls, or the one just
