@@ -346,6 +346,7 @@ const detail42: PrDetail = {
     { content: 'HOORAY', count: 2, viewerHasReacted: false },
     { content: 'ROCKET', count: 1, viewerHasReacted: true },
   ],
+  descriptionUrl: 'https://github.com/acme/widgets/pull/42#issue-4200',
   headOid: 'c0ffee42c0ffee42c0ffee42c0ffee42c0ffee42',
   baseOid: 'bead4141bead4141bead4141bead4141bead4141',
   assignees: [mona],
@@ -563,6 +564,8 @@ const detail41: PrDetail = {
   ...summary41,
   bodyHtml: '<p>A small typed wrapper around the PARCS REST API, so the adapter stops hand-rolling <code>fetch</code> calls.</p>',
   descriptionReactions: [],
+  // A conversation that names no permalink for its description: nothing to copy.
+  descriptionUrl: null,
   headOid: 'bead4141bead4141bead4141bead4141bead4141',
   baseOid: '0000aaaa0000aaaa0000aaaa0000aaaa0000aaaa',
   assignees: [mona],

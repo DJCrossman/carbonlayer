@@ -17,7 +17,7 @@ import { reviewDecisionOf, reviewersOf } from './reviews';
 import { SIGNED_OUT, embeddedPayload, getJson, getPage, githubUser } from './session';
 import { authorIn, graphiteStackComment, resolveStack, type NativeStack } from './stack';
 import { conversationsIn, reviewThreads } from './threads';
-import { reactionsIn, timelineFrom } from './timeline';
+import { descriptionPermalink, reactionsIn, timelineFrom } from './timeline';
 
 /** One stage of a PR's page. */
 export function fetchPrStage<S extends PrStage>(stage: S, { repo, number, force = false }: { repo: RepoRef; number: number; force?: boolean }): Promise<PrStages[S]> {
@@ -75,6 +75,7 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
       bodyHtml: description ? description.innerHTML.trim() : ((await github.description())?.bodyHtml ?? ''),
       // The conversation's reaction form that names the PR itself is the description's.
       descriptionReactions: [...page.querySelectorAll('form.js-pick-reaction')].map((form) => reactionsIn(form)).find(({ subjectId }) => subjectId === pr.relayId)?.reactions ?? [],
+      descriptionUrl: descriptionPermalink(page, `https://github.com${pull.path}`),
       headOid: pr.headSha,
       viewerCanUpdate: layout.user?.canEditTitle ?? false,
       viewerDidAuthor: viewerLogin === author.login,
@@ -153,7 +154,7 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
     const [header, page] = await Promise.all([stages.header(github, pull), github.page()]);
     const { stack } = layoutOf(page, pull);
     // The page puts everything it knows about this PR in its own entry; the header is what the stack itself needs.
-    const { bodyHtml, descriptionReactions, headOid, viewerCanUpdate, viewerDidAuthor, viewerLogin, stackSource, ...summary } = header;
+    const { bodyHtml, descriptionReactions, descriptionUrl, headOid, viewerCanUpdate, viewerDidAuthor, viewerLogin, stackSource, ...summary } = header;
     const current: PrSummary = {
       ...summary,
       reviewDecision: 'NONE',

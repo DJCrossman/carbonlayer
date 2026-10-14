@@ -258,6 +258,8 @@ export interface PrDetail extends PrSummary {
   bodyHtml: string;
   /** The description's reactions; a reaction names the description by the PR's own id. */
   descriptionReactions: Reaction[];
+  /** GitHub's permalink to the description (`…/pull/<n>#issue-<id>`); null when the conversation names none. */
+  descriptionUrl: string | null;
   headOid: string;
   baseOid: string;
   assignees: UserRef[];
@@ -310,6 +312,7 @@ export interface PrStages {
     | 'nativeStack'
     | 'bodyHtml'
     | 'descriptionReactions'
+    | 'descriptionUrl'
     | 'headOid'
     | 'viewerCanUpdate'
     | 'viewerDidAuthor'

@@ -3,7 +3,9 @@
 import type { MouseEvent, ReactNode } from 'react';
 import type { UserRef } from '../lib/model';
 import { Avatar } from '../ui/Avatar';
+import { Icon } from '../ui/Icon';
 import { RelativeTime } from '../ui/RelativeTime';
+import { showToast } from '../ui/Toast';
 import { followLink } from './navigation';
 import './comment.css';
 import './markdown.css';
@@ -32,10 +34,34 @@ export function Comment({ author, createdAt, bodyHtml, url, action, footer, comp
         ) : (
           <RelativeTime date={createdAt} />
         )}
+        {url && <CopyLink url={url} />}
       </div>
       {bodyHtml.trim() !== '' && <Markdown html={bodyHtml} />}
       {footer}
     </div>
+  );
+}
+
+/**
+ * Copies GitHub's permalink to a comment, as its "Copy link" does and Graphite's link icon: in the comment's header,
+ * seen while the pointer is on the comment or the button has the keyboard's focus (comment.css).
+ */
+export function CopyLink({ url, subject = 'comment' }: { url: string; subject?: 'comment' | 'description' }) {
+  return (
+    <button
+      type="button"
+      className="pr-comment-link"
+      aria-label={`Copy link to ${subject}`}
+      title="Copy link"
+      onClick={() =>
+        navigator.clipboard.writeText(url).then(
+          () => showToast(`Copied link to ${subject}`),
+          (reason: unknown) => showToast(`Could not copy link to ${subject}: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger'),
+        )
+      }
+    >
+      <Icon name="link" size={14} />
+    </button>
   );
 }
 

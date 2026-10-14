@@ -170,11 +170,18 @@
 
 /* Description and section headings */
 .pr-description {
+  position: relative;
   padding: 12px 16px;
   border: 1px solid var(--gg-border);
   border-radius: var(--gg-radius);
   scroll-margin-top: 12px;
 }
+/* The description has no header of its own: its Copy link sits in the top corner, over the text while it shows. */
+.pr-description > .pr-comment-link { position: absolute; top: 6px; right: 6px; background: var(--gg-bg); }
+.pr-description > .pr-comment-link:hover { background: var(--gg-bg-hover); }
+.pr-description:hover > .pr-comment-link { opacity: 1; }
+/* Opened from a link to it (PrPage's useLinkedComment), as GitHub marks the comment a link names. */
+.pr-description.is-linked { border-color: var(--gg-accent); box-shadow: 0 0 0 1px var(--gg-accent); }
 .pr-description-empty { margin: 0; font-style: italic; }
 /* A part of the conversation that failed to load (the stack, the header's reload) keeps the cards' spacing. */
 .pr-conversation > .pr-stage-error { margin-bottom: 16px; }

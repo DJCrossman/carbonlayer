@@ -21,7 +21,7 @@ import { Skeleton } from '../ui/Skeleton';
 import { showToast, ToastHost } from '../ui/Toast';
 import { Activity } from './Activity';
 import { useCheckReruns } from './check-reruns';
-import { Markdown } from './Comment';
+import { CopyLink, Markdown } from './Comment';
 import { CommentsDrawer } from './CommentsDrawer';
 import { FilesSection, useFileReview } from './Files';
 import { usePrKeybindings } from './keybindings';
@@ -79,7 +79,7 @@ function PrStagesView({ source, route, settings }: { source: DataSource; route: 
   }
   return (
     <MarkdownPreview value={previewMarkdown}>
-      <PrView header={header.value} data={data} reload={reload} settings={settings} source={source} section={route.section} />
+      <PrView header={header.value} data={data} reload={reload} settings={settings} source={source} section={route.section} comment={route.comment} />
     </MarkdownPreview>
   );
 }
@@ -91,6 +91,7 @@ function PrView({
   settings,
   source,
   section,
+  comment,
 }: {
   header: PrStages['header'];
   data: PrPageData;
@@ -98,6 +99,7 @@ function PrView({
   settings: Settings;
   source: DataSource;
   section: Extract<AppRoute, { page: 'pr' }>['section'];
+  comment: Extract<AppRoute, { page: 'pr' }>['comment'];
 }) {
   const [edits, setEdits] = useState<PendingEdits>({ viewed: {}, resolved: {}, isDraft: null, autoMerge: null, reactions: {} });
   const pr = useMemo(() => optimisticPr(prDetailFrom(header, data), edits), [header, data, edits]);
@@ -131,6 +133,7 @@ function PrView({
     }
   });
   const mergeMethod: MergeMethod = pr.allowedMergeMethods.includes(settings.mergeMethod) ? settings.mergeMethod : pr.defaultMergeMethod;
+  useLinkedComment(comment, pr, data, files.revealThread);
 
   useEffect(() => {
     const title = `${pr.title} · #${pr.number}`;
@@ -140,7 +143,8 @@ function PrView({
 
   useEffect(() => {
     const files = document.getElementById('pr-files');
-    if (section !== 'files' || !files) return;
+    // A link to a comment opens the page at that comment instead.
+    if (section !== 'files' || comment || !files) return;
     // The page may be too short to bring the files to the top until the diffs have rendered, so keep them
     // pinned there while the page grows, until the reader takes over or it has settled.
     const pin = () => files.scrollIntoView({ block: 'start' });
@@ -156,7 +160,7 @@ function PrView({
       clearTimeout(timer);
       for (const type of events) window.removeEventListener(type, stop);
     };
-  }, [section]);
+  }, [section, comment]);
 
   useEffect(() => {
     try {
@@ -357,6 +361,7 @@ function PrView({
             </Staged>
           )}
           <section className="pr-description" id="pr-description" aria-label="Description">
+            {pr.descriptionUrl && <CopyLink url={pr.descriptionUrl} subject="description" />}
             {pr.bodyHtml.trim() ? <Markdown html={pr.bodyHtml} /> : <p className="pr-muted pr-description-empty">No description provided.</p>}
             <Reactions subjectId={pr.id} reactions={pr.descriptionReactions} />
           </section>
@@ -724,4 +729,78 @@ function FinishReview({ batchCount, onToggle, popover, floating }: { batchCount:
           )}
     </div>
   );
+}
+
+/**
+ * Opens the page at the comment a GitHub link to the PR names (`route.comment`) and marks it, as GitHub's own page does:
+ * the description, a comment or review in the activity, or a comment in a diff thread, once the stage that has it has
+ * arrived. A link to a comment the page does not show (hidden, or gone) leaves the page as it is.
+ */
+function useLinkedComment(anchor: string | undefined, pr: PrDetail, data: PrPageData, revealThread: (threadId: string) => void) {
+  // Where the linked comment shows. Each link is looked up once, so a later reload of the stage leaves the reader be.
+  const [linked, setLinked] = useState<{ find: () => Element | null | undefined; block: ScrollLogicalPosition } | null>(null);
+  const lookedUp = useRef<string | null>(null);
+  // As a browser does with a link's anchor, the link gives up once the reader has scrolled, typed or clicked.
+  const readerMoved = useRef(false);
+
+  useEffect(() => {
+    if (!anchor) return;
+    readerMoved.current = false;
+    const moved = () => (readerMoved.current = true);
+    const events = ['wheel', 'keydown', 'pointerdown'] as const;
+    for (const type of events) window.addEventListener(type, moved, { passive: true });
+    return () => {
+      for (const type of events) window.removeEventListener(type, moved);
+    };
+  }, [anchor]);
+
+  useEffect(() => {
+    if (!anchor || lookedUp.current === anchor) return;
+    const isLinked = (url: string | null | undefined) => url?.endsWith(`#${anchor}`) ?? false;
+    // A comment's timestamp links to its permalink (Comment.tsx), so the permalink finds it on the page.
+    const commentIn = (scope: string, url: string) =>
+      [...document.querySelectorAll(`${scope} a.pr-comment-time`)].find((link) => link.getAttribute('href') === url)?.closest('.pr-comment');
+    if (anchor.startsWith('issue-')) {
+      lookedUp.current = anchor;
+      if (isLinked(pr.descriptionUrl)) setLinked({ find: () => document.getElementById('pr-description'), block: 'start' });
+    } else if (anchor.startsWith('discussion_r')) {
+      if (data.threads.status === 'loading') return;
+      lookedUp.current = anchor;
+      const thread = pr.threads.find((candidate) => candidate.comments.some((comment) => isLinked(comment.url)));
+      const url = thread?.comments.map((comment) => comment.url).find(isLinked);
+      if (!thread || !url) return;
+      // Its file expanded and the thread opened, resolved or not; its diff may still be on its way.
+      revealThread(thread.id);
+      setLinked({ find: () => commentIn(`[data-thread-id="${CSS.escape(thread.id)}"]`, url), block: 'center' });
+    } else {
+      if (data.activity.status === 'loading') return;
+      lookedUp.current = anchor;
+      const url = pr.timeline.map((entry) => (entry.kind === 'comment' || entry.kind === 'review' ? entry.url : null)).find(isLinked);
+      if (url) setLinked({ find: () => commentIn('.timeline', url)?.closest('.timeline-card'), block: 'start' });
+    }
+  }, [anchor, pr, data.threads.status, data.activity.status, revealThread]);
+
+  // Once it has a box, into view and marked until another link replaces it; for ten seconds at most.
+  useEffect(() => {
+    if (!linked) return;
+    let marked: Element | null = null;
+    let frame = 0;
+    const started = performance.now();
+    const land = () => {
+      if (readerMoved.current) return;
+      const element = linked.find();
+      if (element && element.getClientRects().length > 0) {
+        element.scrollIntoView({ block: linked.block });
+        element.classList.add('is-linked');
+        marked = element;
+      } else if (performance.now() - started < 10_000) {
+        frame = requestAnimationFrame(land);
+      }
+    };
+    frame = requestAnimationFrame(land);
+    return () => {
+      cancelAnimationFrame(frame);
+      marked?.classList.remove('is-linked');
+    };
+  }, [linked]);
 }

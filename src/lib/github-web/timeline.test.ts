@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { timelineFrom } from './timeline';
+import { descriptionPermalink, timelineFrom } from './timeline';
 
 // A conversation as GitHub renders it, cut down to the elements the parser reads (shapes from cli/cli#14320).
 const conversation = `
@@ -78,7 +78,13 @@ describe('timelineFrom', () => {
   });
 
   it('keeps who, when and what for each item', () => {
-    expect(timeline[0]).toMatchObject({ id: 'issuecomment-7', author: { login: 'bo' }, bodyHtml: '<p>Looks good</p>', createdAt: '2026-09-02T11:00:00.000Z' });
+    expect(timeline[0]).toMatchObject({
+      id: 'issuecomment-7',
+      author: { login: 'bo' },
+      bodyHtml: '<p>Looks good</p>',
+      createdAt: '2026-09-02T11:00:00.000Z',
+      url: 'https://github.com/o/r/pull/1#issuecomment-7',
+    });
     expect(timeline[1]).toMatchObject({ kind: 'review-requested', actor: { login: 'ana' }, requested: 'cy' });
     expect(timeline[2]).toMatchObject({
       kind: 'review',
@@ -114,5 +120,30 @@ describe('timelineFrom', () => {
     </div>`;
     const [item] = timelineFrom(new DOMParser().parseFromString(review, 'text/html'), { pageUrl: '', threadIdsByReview: new Map(), commits: new Map() });
     expect(item).toMatchObject({ kind: 'review', subjectId: null, reactions: [] });
+  });
+});
+
+describe('descriptionPermalink', () => {
+  it("is what GitHub's Copy link copies: the description header's link to #issue-<id>, not a link in its text", () => {
+    // The shape of a public PR's description on github.com (2026-10-13), cut down.
+    const page = new DOMParser().parseFromString(
+      `<div class="TimelineItem js-comment-container">
+        <div class="timeline-comment-group js-targetable-element TimelineItem-body" id="issue-555">
+          <div id="pullrequest-444" class="timeline-comment-group js-targetable-element timeline-comment">
+            <div class="timeline-comment-header"><h3><strong><a class="author" href="/ana">ana</a></strong> commented
+              <a href="#issue-555" id="issue-555-permalink" class="Link--secondary js-timestamp"><relative-time datetime="2026-10-12T06:46:34Z"></relative-time></a></h3>
+              <clipboard-copy aria-label="Copy link" for="issue-555-permalink" role="menuitem">Copy link</clipboard-copy></div>
+            <div class="comment-body"><p>See <a href="#issue-1">the other one</a></p></div>
+          </div>
+        </div>
+      </div>`,
+      'text/html',
+    );
+    expect(descriptionPermalink(page, 'https://github.com/o/r/pull/1')).toBe('https://github.com/o/r/pull/1#issue-555');
+  });
+
+  it('is none when the conversation names none', () => {
+    const page = new DOMParser().parseFromString(`<html><body>${conversation}</body></html>`, 'text/html');
+    expect(descriptionPermalink(page, 'https://github.com/o/r/pull/1')).toBeNull();
   });
 });

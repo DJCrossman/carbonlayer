@@ -26,6 +26,21 @@ describe('parseGitHubLocation', () => {
     expect(parseGitHubLocation(new URL('https://github.com/acme/widgets/pull/42/changes'))).toMatchObject({ page: 'pr', section: 'files' });
   });
 
+  it.each([
+    ['/acme/widgets/pull/42#issue-4200', 'conversation', 'issue-4200'],
+    ['/acme/widgets/pull/42#issuecomment-7', 'conversation', 'issuecomment-7'],
+    ['/acme/widgets/pull/42#pullrequestreview-9', 'conversation', 'pullrequestreview-9'],
+    ['/acme/widgets/pull/42#discussion_r501', 'conversation', 'discussion_r501'],
+    // GitHub's files view names the same diff comment r<id>.
+    ['/acme/widgets/pull/42/files#r501', 'files', 'discussion_r501'],
+  ])('carries the comment a link to %s names into the PR route', (path, section, comment) => {
+    expect(parseGitHubLocation(new URL(`https://github.com${path}`))).toEqual({ page: 'pr', repo: { owner: 'acme', name: 'widgets' }, number: 42, section, comment });
+  });
+
+  it.each(['#diff-0123abcd', '#diff-0123abcdR12', '#issue-', '#discussion_r', '#partial-pull-merging'])('names no comment for the anchor %s', (hash) => {
+    expect(parseGitHubLocation(new URL(`https://github.com/acme/widgets/pull/42${hash}`))).not.toHaveProperty('comment');
+  });
+
   it('leaves everything else, and opted-out pages, to GitHub', () => {
     expect(parseGitHubLocation(new URL('https://github.com/acme/widgets/pulls'))).toEqual({ page: 'none' });
     expect(parseGitHubLocation(new URL('https://github.com/pullsx'))).toEqual({ page: 'none' });
@@ -47,9 +62,15 @@ describe('app hash round trip', () => {
       parseGitHubLocation(new URL('https://github.com/')),
       parseGitHubLocation(new URL('https://github.com/acme/widgets/pull/42')),
       parseGitHubLocation(new URL('https://github.com/acme/widgets/pull/42/files')),
+      parseGitHubLocation(new URL('https://github.com/acme/widgets/pull/42#issuecomment-7')),
+      parseGitHubLocation(new URL('https://github.com/acme/widgets/pull/42/files#r501')),
       parseGitHubLocation(new URL(encodeViewsShareLink([{ id: 'a', name: 'A', query: 'is:pr' }]))),
     ];
     for (const route of routes) expect(parseAppHash(toAppHash(route))).toEqual(route);
+  });
+
+  it('drops a comment that is not one of GitHub’s anchors from the app hash', () => {
+    expect(parseAppHash('#/pr/acme/widgets/42?comment=javascript%3Aalert(1)')).not.toHaveProperty('comment');
   });
 
   it('drops malformed import payloads from the app hash', () => {

@@ -126,6 +126,15 @@ export function timelineFrom(
 }
 
 /**
+ * GitHub's permalink to the PR's description, as its "Copy link" copies it: the timestamp in the description's header
+ * links to `#issue-<id>` (the issue's id, not the pull request's), from an anchor with the id `issue-<id>-permalink`.
+ */
+export function descriptionPermalink(page: Document, pageUrl: string): string | null {
+  const anchor = page.querySelector('[id^="pullrequest-"] a[href^="#issue-"][id$="-permalink"]')?.getAttribute('href');
+  return anchor ? `${pageUrl}${anchor}` : null;
+}
+
+/**
  * What a comment's reaction form (`form.js-pick-reaction`) says: the subject a reaction names, and a button for each
  * reaction given, valued `<CONTENT> react`, or `<CONTENT> unreact` once the viewer gave it, reading its emoji and count.
  * Without a form there is nothing to react with.

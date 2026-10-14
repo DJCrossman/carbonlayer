@@ -84,6 +84,20 @@ as it was should that fail (`useRefreshOnReturn` in `src/app/refresh-on-return.t
 files load again only once the header finds the head commit moved or the base changed. `pr.fetch` still answers the
 whole `PrDetail` at once, composed from the stages.
 
+Comment links: every comment GitHub gives a permalink to has a Copy link (`CopyLink` in `src/pr/Comment.tsx`, a link
+icon at the end of its header, or in the description's top corner, out of sight until the pointer is on the comment or
+the keyboard reaches it) that puts the permalink on the clipboard and says so in a toast, as GitHub's "Copy link" and
+Graphite's link icon do: the description's `…/pull/<n>#issue-<id>`, the link in its header that GitHub's own "Copy link"
+copies (`descriptionPermalink` in `src/lib/github-web/timeline.ts`), a conversation comment's `#issuecomment-<id>` and a
+review's `#pullrequestreview-<id>` (their elements' ids), and a diff comment's `url` from `page_data/threads`
+(`#discussion_r<id>`), in the diff and in the comments drawer alike. A comment added to the review has none. Opening
+such a link opens the page at the comment: the content script carries its anchor in the app's route
+(`#/pr/<o>/<r>/<n>?comment=discussion_r<id>`, `comment` in `src/app/routes.ts`, GitHub's files-view `#r<id>` read as
+`#discussion_r<id>`), and the page (`useLinkedComment` in `src/pr/PrPage.tsx`) waits for the stage that has it, opens a
+diff comment's file and thread, scrolls the comment into view and marks it (`is-linked`) as GitHub marks a linked
+comment. A comment the page does not show (hidden, or gone) leaves the page as it is, as does the reader scrolling,
+typing or clicking first.
+
 Stacks: GitHub-native `stack` from the PR page's embedded data first; otherwise Graphite's stack
 comment in the timeline, enriched through a `/pulls/search` query on the author's open PRs. The stack card
 (`src/pr/StackCard.tsx`) shows each entry as Graphite does: its dot on the rail, its author's avatar, number and title,

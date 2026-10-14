@@ -6,7 +6,14 @@ import { decodeViewsShareHash, isView } from '../lib/views';
 
 export type AppRoute =
   | { page: 'inbox'; importViews: View[] | null }
-  | { page: 'pr'; repo: RepoRef; number: number; section: 'conversation' | 'files' | 'commits' | 'checks' }
+  | {
+      page: 'pr';
+      repo: RepoRef;
+      number: number;
+      section: 'conversation' | 'files' | 'commits' | 'checks';
+      /** The comment a GitHub link to the PR names, by its anchor (`discussion_r1`): the page opens at it. */
+      comment?: string;
+    }
   | { page: 'none' };
 
 /** Which surface, if any, a github.com URL belongs to. `?gh=1` opts out and yields 'none'. */
@@ -20,7 +27,9 @@ export function parseGitHubLocation(url: URL): AppRoute {
   if (match && match[1] && match[2] && match[3]) {
     const tab = match[4] ?? 'conversation';
     const section = tab === 'changes' ? 'files' : (tab as 'conversation' | 'files' | 'commits' | 'checks');
-    return { page: 'pr', repo: { owner: match[1], name: match[2] }, number: Number(match[3]), section };
+    // GitHub's files view names a diff comment `#r<id>`, the conversation `#discussion_r<id>`.
+    const comment = url.hash.slice(1).replace(/^r(?=\d+$)/, 'discussion_r');
+    return { page: 'pr', repo: { owner: match[1], name: match[2] }, number: Number(match[3]), section, ...(COMMENT_ANCHOR.test(comment) && { comment }) };
   }
   return { page: 'none' };
 }
@@ -35,8 +44,11 @@ export function toAppHash(route: AppRoute): string {
       return `#/inbox${query ? `?${query}` : ''}`;
     }
     case 'pr': {
-      const base = `#/pr/${route.repo.owner}/${route.repo.name}/${route.number}`;
-      return route.section === 'conversation' ? base : `${base}?section=${route.section}`;
+      const params = new URLSearchParams();
+      if (route.section !== 'conversation') params.set('section', route.section);
+      if (route.comment) params.set('comment', route.comment);
+      const query = params.toString();
+      return `#/pr/${route.repo.owner}/${route.repo.name}/${route.number}${query ? `?${query}` : ''}`;
     }
     case 'none':
       return '#/';
@@ -62,11 +74,13 @@ export function parseAppHash(hash: string): AppRoute {
   const match = /^\/pr\/([^/]+)\/([^/]+)\/(\d+)$/.exec(path);
   if (match && match[1] && match[2] && match[3]) {
     const section = params.get('section');
+    const comment = params.get('comment');
     return {
       page: 'pr',
       repo: { owner: match[1], name: match[2] },
       number: Number(match[3]),
       section: section === 'files' || section === 'commits' || section === 'checks' ? section : 'conversation',
+      ...(comment !== null && COMMENT_ANCHOR.test(comment) && { comment }),
     };
   }
   return { page: 'none' };
@@ -85,3 +99,9 @@ export function toGitHubUrl(route: AppRoute): string {
       return 'https://github.com/';
   }
 }
+
+/**
+ * The anchors of GitHub's links to a PR's comments: the description (`issue-<id>`), a conversation comment
+ * (`issuecomment-<id>`), a review (`pullrequestreview-<id>`) and a diff comment (`discussion_r<id>`).
+ */
+const COMMENT_ANCHOR = /^(?:issue-|issuecomment-|pullrequestreview-|discussion_r)\d+$/;

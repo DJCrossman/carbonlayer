@@ -25,7 +25,10 @@
   border: 1px solid var(--gg-border);
   border-radius: var(--gg-radius);
   background: var(--gg-bg);
+  scroll-margin-top: 12px;
 }
+/* Opened from a link to it (PrPage's useLinkedComment), as GitHub marks the comment a link names. */
+.timeline-card.is-linked { border-color: var(--gg-accent); box-shadow: 0 0 0 1px var(--gg-accent); }
 .timeline-card.is-review.is-approved { border-left: 3px solid var(--gg-success); }
 .timeline-card.is-review.is-changes-requested { border-left: 3px solid var(--gg-danger); }
 

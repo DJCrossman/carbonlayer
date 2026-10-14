@@ -11,3 +11,32 @@
 .pr-comment.is-compact .pr-comment-header + .markdown-body { margin-top: 4px; }
 .pr-comment-time { color: inherit; }
 .pr-comment-time:hover .gg-time { text-decoration: underline; }
+
+/* Copy link, at the header's end: out of sight, though still in the tab order, until the pointer is on the comment or
+   the keyboard reaches it. No taller than the header, so it never moves anything. */
+.pr-comment-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--gg-fg-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+.pr-comment:hover .pr-comment-link,
+.pr-comment-link:focus-visible { opacity: 1; }
+.pr-comment-link:hover { background: var(--gg-bg-hover); color: var(--gg-fg); }
+.pr-comment-link:focus-visible { outline: 2px solid var(--gg-accent); outline-offset: -1px; }
+
+/* A diff comment opened from a link to it (PrPage's useLinkedComment): the comment alone, its thread holding others. */
+.pr-comment.is-linked {
+  border-radius: 4px;
+  background: var(--gg-bg-selected);
+  box-shadow: 0 0 0 6px var(--gg-bg-selected);
+}
