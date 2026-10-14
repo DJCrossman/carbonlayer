@@ -1,14 +1,14 @@
 // The pull request page: header, stack, description, activity and every diff in one scroll, with status in
 // a sticky sidebar and Graphite's keybindings. Everything comes through `source`, in stages (page-data.ts): the
 // header first, then each part as its stage arrives, each with its own skeleton. Each mutation is shown optimistically
-// where that matters (viewed, resolved, draft, auto-merge) and then reloads the stages it changed.
+// where that matters (viewed, resolved, draft, auto-merge, reactions) and then reloads the stages it changed.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { postToParent } from '../app/bridge';
 import type { DataSource, ReviewThreadDraft } from '../app/data-source';
 import type { AppRoute } from '../app/routes';
 import { SIGNED_OUT } from '../lib/github-web/session';
-import type { PrDetail, PrStage, PrStages } from '../lib/model';
+import type { PrDetail, PrStage, PrStages, ReactionContent } from '../lib/model';
 import { STAGES_A_WRITE_CHANGES, type MergeMethod } from '../lib/rpc';
 import type { Settings } from '../lib/settings';
 import { Avatar } from '../ui/Avatar';
@@ -25,6 +25,7 @@ import { usePrKeybindings } from './keybindings';
 import { followLink, goToPr, openOnGitHub } from './navigation';
 import { prDetailFrom, usePrPageData, type PrPageData } from './page-data';
 import { MarkdownPreview, StageError, Staged, StatePill } from './primitives';
+import { PrReactions, Reactions, type ChangedReactions } from './Reactions';
 import { QuickApproveDialog, ReviewComposer, type ReviewEvent } from './ReviewComposer';
 import { ReviewersCard } from './Reviewers';
 import { ShortcutHelp, ShortcutLegend } from './ShortcutHelp';
@@ -93,7 +94,7 @@ function PrView({
   source: DataSource;
   section: Extract<AppRoute, { page: 'pr' }>['section'];
 }) {
-  const [edits, setEdits] = useState<PendingEdits>({ viewed: {}, resolved: {}, isDraft: null, autoMerge: null });
+  const [edits, setEdits] = useState<PendingEdits>({ viewed: {}, resolved: {}, isDraft: null, autoMerge: null, reactions: {} });
   const pr = useMemo(() => optimisticPr(prDetailFrom(header, data), edits), [header, data, edits]);
   const files = useFileReview(pr);
   const checkReruns = useCheckReruns(pr, source, () => reload(STAGES_A_WRITE_CHANGES['pr.rerunFailedJobs']));
@@ -199,6 +200,15 @@ function PrView({
     return mutate(STAGES_A_WRITE_CHANGES['pr.setDraft'], () => source.setDraft(pr.id, draft), draft ? 'Could not convert to draft' : 'Could not mark ready for review', {
       success: draft ? 'Converted to draft' : 'Marked ready for review',
       undo: () => setEdits((current) => ({ ...current, isDraft: null })),
+    });
+  }
+
+  function react(subjectId: string, content: ReactionContent, add: boolean) {
+    const mark = (given: boolean) =>
+      setEdits((current) => ({ ...current, reactions: { ...current.reactions, [subjectId]: { ...current.reactions[subjectId], [content]: given } } }));
+    mark(add);
+    void mutate(STAGES_A_WRITE_CHANGES['pr.react'], () => source.react(pr.id, subjectId, content, add), add ? 'Could not react' : 'Could not take back the reaction', {
+      undo: () => mark(!add),
     });
   }
 
@@ -308,121 +318,124 @@ function PrView({
   );
 
   return (
-    <div className={`pr-page ${legendHidden ? '' : 'has-legend'}`}>
-      <div className="pr-conversation">
-        <PrHeader
-          pr={pr}
-          batchCount={batch.length}
-          onFinishReview={() => (review.open ? closeReview() : openReview(review.event))}
-          onSetDraft={setDraft}
-          onCopied={() => showToast('Link copied')}
-          reviewPopover={finishReviewInView ? reviewPopover : null}
-        />
-        {data.header.status === 'error' && <StageError what="the header again" error={data.header.error} onRetry={() => retry(['header'])} />}
-        {/* No stack card, not even its skeleton, when the page shows no stack. */}
-        {(header.stackSource !== 'none' || pr.stack.source !== 'none') && (
-          <Staged state={data.stack} what="the stack" onRetry={() => retry(['stack'])} skeleton={<StackSkeleton />}>
-            {() => pr.stack.source !== 'none' && <StackCard stack={pr.stack} collapsed={stackCollapsed} onToggle={() => setStackCollapsed((collapsed) => !collapsed)} />}
-          </Staged>
-        )}
-        <section className="pr-description" id="pr-description" aria-label="Description">
-          {pr.bodyHtml.trim() ? <Markdown html={pr.bodyHtml} /> : <p className="pr-muted pr-description-empty">No description provided.</p>}
-        </section>
-        <Activity
-          pr={pr}
-          stage={data.activity}
-          onRetry={() => retry(['activity'])}
-          onRevealThread={files.revealThread}
-          onComment={(body) => mutate(STAGES_A_WRITE_CHANGES['pr.comment'], () => source.comment(pr.id, body), 'Could not post the comment', { success: 'Comment posted' })}
-        />
-      </div>
-      <Sidebar
-        pr={pr}
-        data={data}
-        onRetry={retry}
-        finishReview={
-          !finishReviewInView && (
-            <FinishReviewAgain
-              batchCount={batch.length}
-              open={review.open}
-              onToggle={() => (review.open ? closeReview() : openReview(review.event))}
-              popover={reviewPopover}
-            />
-          )
-        }
-        mergeMethod={mergeMethod}
-        onAutoMerge={(enabled, method) => {
-          // Another method for an auto-merge already on: turned off, then on again with it.
-          const switching = enabled && pr.autoMerge !== null && pr.autoMerge.method !== method;
-          setEdits((current) => ({ ...current, autoMerge: enabled ? method : false }));
-          return mutate(
-            STAGES_A_WRITE_CHANGES['pr.setAutoMerge'],
-            async () => {
-              if (switching) await source.setAutoMerge(pr.id, false, method);
-              await source.setAutoMerge(pr.id, enabled, method);
-            },
-            'Could not change Merge when ready',
-            { undo: () => setEdits((current) => ({ ...current, autoMerge: null })) },
-          );
-        }}
-        onRevert={async () => {
-          try {
-            const { url } = await source.revert(pr.id);
-            // GitHub's prefilled page for the revert pull request, where it is created.
-            if (url) followLink(url);
-            else showToast('GitHub made the revert branch; open its pull request from GitHub');
-            return true;
-          } catch (reason) {
-            showToast(`Could not revert: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger');
-            return false;
-          }
-        }}
-        onMarkReady={() => setDraft(false)}
-        onMerge={(method) => mutate(STAGES_A_WRITE_CHANGES['pr.merge'], () => source.merge(pr.id, method, pr.headOid), 'Could not merge', { success: `Merged #${pr.number}` })}
-        onViewThreads={() => files.stepThread(1)}
-        checkReruns={checkReruns}
-        reviewersCard={
-          <ReviewersCard
+    <PrReactions value={{ changed: edits.reactions, react }}>
+      <div className={`pr-page ${legendHidden ? '' : 'has-legend'}`}>
+        <div className="pr-conversation">
+          <PrHeader
             pr={pr}
-            pickerOpen={reviewerPickerOpen}
-            onPickerOpenChange={setReviewerPickerOpen}
-            searchReviewers={(query) => source.reviewerCandidates(pr.id, query)}
-            onModify={(add, remove) =>
-              mutate(STAGES_A_WRITE_CHANGES['pr.modifyReviewers'], () => source.modifyReviewers(pr.id, add, remove), 'Could not change the reviewers', { success: 'Reviewers updated' })
-            }
-            onReRequest={(reviewer) =>
-              mutate(STAGES_A_WRITE_CHANGES['pr.reRequestReview'], () => source.reRequestReview(pr.id, reviewer.id), 'Could not re-request the review', {
-                success: `Asked ${reviewer.user.login} to review again`,
-              })
-            }
+            batchCount={batch.length}
+            onFinishReview={() => (review.open ? closeReview() : openReview(review.event))}
+            onSetDraft={setDraft}
+            onCopied={() => showToast('Link copied')}
+            reviewPopover={finishReviewInView ? reviewPopover : null}
           />
-        }
-      />
-      <FilesSection
-        pr={pr}
-        listed={data.files}
-        threads={data.threads}
-        onRetry={(stage) => retry([stage])}
-        review={files}
-        batch={batch}
-        diffStyle={settings.diffLayout}
-        onDiffStyleChange={(diffLayout) =>
-          source.setSettings({ diffLayout }).catch((reason: unknown) => showToast(`Could not save: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger'))
-        }
-        onToggleViewed={toggleViewed}
-        noteActions={noteActions}
-      />
-      {legendHidden ? null : <ShortcutLegend onHide={() => setLegendHidden(true)} onShowAll={() => setHelpOpen(true)} />}
-      {helpOpen && <ShortcutHelp legendHidden={legendHidden} onShowLegend={() => setLegendHidden(false)} onClose={() => setHelpOpen(false)} />}
-      {quickApprove && (
-        <QuickApproveDialog
+          {data.header.status === 'error' && <StageError what="the header again" error={data.header.error} onRetry={() => retry(['header'])} />}
+          {/* No stack card, not even its skeleton, when the page shows no stack. */}
+          {(header.stackSource !== 'none' || pr.stack.source !== 'none') && (
+            <Staged state={data.stack} what="the stack" onRetry={() => retry(['stack'])} skeleton={<StackSkeleton />}>
+              {() => pr.stack.source !== 'none' && <StackCard stack={pr.stack} collapsed={stackCollapsed} onToggle={() => setStackCollapsed((collapsed) => !collapsed)} />}
+            </Staged>
+          )}
+          <section className="pr-description" id="pr-description" aria-label="Description">
+            {pr.bodyHtml.trim() ? <Markdown html={pr.bodyHtml} /> : <p className="pr-muted pr-description-empty">No description provided.</p>}
+            <Reactions subjectId={pr.id} reactions={pr.descriptionReactions} />
+          </section>
+          <Activity
+            pr={pr}
+            stage={data.activity}
+            onRetry={() => retry(['activity'])}
+            onRevealThread={files.revealThread}
+            onComment={(body) => mutate(STAGES_A_WRITE_CHANGES['pr.comment'], () => source.comment(pr.id, body), 'Could not post the comment', { success: 'Comment posted' })}
+          />
+        </div>
+        <Sidebar
           pr={pr}
-          onClose={() => setQuickApprove(false)}
-          onConfirm={() => mutate(STAGES_A_WRITE_CHANGES['pr.review'], () => source.review(pr.id, 'APPROVE', ''), 'Could not approve', { success: `Approved #${pr.number}` })}
+          data={data}
+          onRetry={retry}
+          finishReview={
+            !finishReviewInView && (
+              <FinishReviewAgain
+                batchCount={batch.length}
+                open={review.open}
+                onToggle={() => (review.open ? closeReview() : openReview(review.event))}
+                popover={reviewPopover}
+              />
+            )
+          }
+          mergeMethod={mergeMethod}
+          onAutoMerge={(enabled, method) => {
+            // Another method for an auto-merge already on: turned off, then on again with it.
+            const switching = enabled && pr.autoMerge !== null && pr.autoMerge.method !== method;
+            setEdits((current) => ({ ...current, autoMerge: enabled ? method : false }));
+            return mutate(
+              STAGES_A_WRITE_CHANGES['pr.setAutoMerge'],
+              async () => {
+                if (switching) await source.setAutoMerge(pr.id, false, method);
+                await source.setAutoMerge(pr.id, enabled, method);
+              },
+              'Could not change Merge when ready',
+              { undo: () => setEdits((current) => ({ ...current, autoMerge: null })) },
+            );
+          }}
+          onRevert={async () => {
+            try {
+              const { url } = await source.revert(pr.id);
+              // GitHub's prefilled page for the revert pull request, where it is created.
+              if (url) followLink(url);
+              else showToast('GitHub made the revert branch; open its pull request from GitHub');
+              return true;
+            } catch (reason) {
+              showToast(`Could not revert: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger');
+              return false;
+            }
+          }}
+          onMarkReady={() => setDraft(false)}
+          onMerge={(method) => mutate(STAGES_A_WRITE_CHANGES['pr.merge'], () => source.merge(pr.id, method, pr.headOid), 'Could not merge', { success: `Merged #${pr.number}` })}
+          onViewThreads={() => files.stepThread(1)}
+          checkReruns={checkReruns}
+          reviewersCard={
+            <ReviewersCard
+              pr={pr}
+              pickerOpen={reviewerPickerOpen}
+              onPickerOpenChange={setReviewerPickerOpen}
+              searchReviewers={(query) => source.reviewerCandidates(pr.id, query)}
+              onModify={(add, remove) =>
+                mutate(STAGES_A_WRITE_CHANGES['pr.modifyReviewers'], () => source.modifyReviewers(pr.id, add, remove), 'Could not change the reviewers', { success: 'Reviewers updated' })
+              }
+              onReRequest={(reviewer) =>
+                mutate(STAGES_A_WRITE_CHANGES['pr.reRequestReview'], () => source.reRequestReview(pr.id, reviewer.id), 'Could not re-request the review', {
+                  success: `Asked ${reviewer.user.login} to review again`,
+                })
+              }
+            />
+          }
         />
-      )}
-      <ToastHost />
-    </div>
+        <FilesSection
+          pr={pr}
+          listed={data.files}
+          threads={data.threads}
+          onRetry={(stage) => retry([stage])}
+          review={files}
+          batch={batch}
+          diffStyle={settings.diffLayout}
+          onDiffStyleChange={(diffLayout) =>
+            source.setSettings({ diffLayout }).catch((reason: unknown) => showToast(`Could not save: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger'))
+          }
+          onToggleViewed={toggleViewed}
+          noteActions={noteActions}
+        />
+        {legendHidden ? null : <ShortcutLegend onHide={() => setLegendHidden(true)} onShowAll={() => setHelpOpen(true)} />}
+        {helpOpen && <ShortcutHelp legendHidden={legendHidden} onShowLegend={() => setLegendHidden(false)} onClose={() => setHelpOpen(false)} />}
+        {quickApprove && (
+          <QuickApproveDialog
+            pr={pr}
+            onClose={() => setQuickApprove(false)}
+            onConfirm={() => mutate(STAGES_A_WRITE_CHANGES['pr.review'], () => source.review(pr.id, 'APPROVE', ''), 'Could not approve', { success: `Approved #${pr.number}` })}
+          />
+        )}
+        <ToastHost />
+      </div>
+    </PrReactions>
   );
 }
 
@@ -571,6 +584,8 @@ interface PendingEdits {
   resolved: Record<string, boolean>;
   isDraft: boolean | null;
   autoMerge: MergeMethod | false | null;
+  /** Shown by each reactions row (PrReactions) rather than applied over the PR, so the diffs keep their notes. */
+  reactions: ChangedReactions;
 }
 
 /** The fetched PR with this page's not-yet-confirmed changes applied. */

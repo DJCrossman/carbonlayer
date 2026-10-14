@@ -8,13 +8,15 @@ import { followLink } from './navigation';
 import './comment.css';
 import './markdown.css';
 
-export function Comment({ author, createdAt, bodyHtml, url, action, compact }: {
+export function Comment({ author, createdAt, bodyHtml, url, action, footer, compact }: {
   author: UserRef | null;
   createdAt: string;
   bodyHtml: string;
   url?: string;
   /** Shown after the author's login, e.g. "commented" or a review badge. */
   action?: ReactNode;
+  /** Shown under the body, e.g. its reactions. */
+  footer?: ReactNode;
   compact?: boolean;
 }) {
   return (
@@ -32,6 +34,7 @@ export function Comment({ author, createdAt, bodyHtml, url, action, compact }: {
         )}
       </div>
       {bodyHtml.trim() !== '' && <Markdown html={bodyHtml} />}
+      {footer}
     </div>
   );
 }

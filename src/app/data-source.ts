@@ -1,7 +1,7 @@
 // Everything the UI needs from the outside world, behind one interface so the same pages render
 // from the content script's RPC in the extension and from fixtures in the dev harness (`?fixtures=1`).
 
-import type { ChangedFileDiff, Organization, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, TopRepository, View, ViewResult } from '../lib/model';
+import type { ChangedFileDiff, Organization, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, TopRepository, View, ViewResult } from '../lib/model';
 import { rpc, type InboxRowToEnrich, type MergeMethod } from '../lib/rpc';
 import { getSettings, setSettings, watchSettings, type Settings, type SettingsStorage } from '../lib/settings';
 
@@ -56,6 +56,8 @@ export interface DataSource {
   /** `offered: false` when GitHub has no such re-run for the workflow run. */
   rerunFailedJobs(prId: string, runId: string): Promise<{ offered: boolean }>;
   rerunAllJobs(prId: string, runId: string): Promise<{ offered: boolean }>;
+  /** Adds the viewer's reaction to a comment (by its node id; the PR's own for the description), or takes it back. */
+  react(prId: string, subjectId: string, content: ReactionContent, add: boolean): Promise<void>;
   /** A comment's Markdown as GitHub renders it on the PR, as HTML: what a comment box's Preview tab shows. */
   previewMarkdown(text: string, prId: string): Promise<string>;
   getSettings(): Promise<Settings>;
@@ -89,6 +91,7 @@ export function createRpcDataSource(): DataSource {
     reRequestReview: (prId, reviewerId) => rpc('pr.reRequestReview', { prId, reviewerId }),
     rerunFailedJobs: (prId, runId) => rpc('pr.rerunFailedJobs', { prId, runId }),
     rerunAllJobs: (prId, runId) => rpc('pr.rerunAllJobs', { prId, runId }),
+    react: (prId, subjectId, content, add) => rpc('pr.react', { prId, subjectId, content, add }),
     previewMarkdown: async (text, prId) => (await rpc('markdown.preview', { text, prId })).html,
     getSettings,
     setSettings,
@@ -257,6 +260,7 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
       await log('rerunAllJobs', ...args);
       return { offered: true };
     },
+    react: (...args) => log('react', ...args),
     // No GitHub to render it: each paragraph as it was typed, escaped, a moment later.
     previewMarkdown: async (text) => {
       await new Promise((resolve) => setTimeout(resolve, 300));

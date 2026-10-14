@@ -2,7 +2,7 @@
 // base_comparison_info's `diffSummaries[].markersMap`. A thread with no anchor is outdated: its path and diff
 // excerpt are read from the thread as the conversation renders it.
 
-import type { ReviewThread } from '../model';
+import { REACTION_CONTENTS, type Reaction, type ReactionContent, type ReviewThread } from '../model';
 import type { BaseComparison } from './files';
 import { githubUser, noteShape } from './session';
 
@@ -48,6 +48,15 @@ export function reviewThreads(data: unknown, comparison: BaseComparison, page: D
           bodyHtml: comment.bodyHTML ?? '',
           createdAt: comment.publishedAt ?? comment.createdAt ?? '',
           url: comment.url ?? `https://github.com${comment.currentDiffResourcePath ?? ''}`,
+          // The node id (`PRRC_…`) is what a reaction names.
+          subjectId: comment.id ?? null,
+          // GitHub lists all eight reactions, given or not.
+          reactions: (comment.reactionGroups ?? []).flatMap(({ reaction, reactors, totalCount }): Reaction[] => {
+            const content = reaction?.content as ReactionContent;
+            const count = totalCount ?? reactors?.length ?? 0;
+            const viewerHasReacted = !!reaction?.viewerHasReacted;
+            return REACTION_CONTENTS.includes(content) && (count > 0 || viewerHasReacted) ? [{ content, count, viewerHasReacted }] : [];
+          }),
         })),
       },
     ];
@@ -97,6 +106,7 @@ interface RawThread {
       publishedAt?: string;
       url?: string;
       currentDiffResourcePath?: string;
+      reactionGroups?: Array<{ reaction?: { content?: string; viewerHasReacted?: boolean }; reactors?: unknown[]; totalCount?: number }>;
     }>;
   };
 }

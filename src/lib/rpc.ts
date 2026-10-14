@@ -2,7 +2,7 @@
 // GitHub with the user's session. Inside github.com the app posts requests to its parent window, the
 // content script answers them with same-origin fetches (cookies included); see src/lib/github-web/.
 
-import type { ChangedFileDiff, Organization, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, TopRepository, View, ViewResult } from './model';
+import type { ChangedFileDiff, Organization, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, TopRepository, View, ViewResult } from './model';
 
 export type MergeMethod = 'MERGE' | 'SQUASH' | 'REBASE';
 
@@ -80,6 +80,8 @@ export interface RpcMethods {
   /** `offered: false` when GitHub has no such re-run for the run; its page on GitHub is then the way to do it. */
   'pr.rerunFailedJobs': { args: { prId: string; runId: string }; result: { offered: boolean } };
   'pr.rerunAllJobs': { args: { prId: string; runId: string }; result: { offered: boolean } };
+  /** Adds the viewer's reaction to a comment, or takes it back; `subjectId` is the comment's node id (or the PR's, for its description). */
+  'pr.react': { args: { prId: string; subjectId: string; content: ReactionContent; add: boolean }; result: undefined };
 }
 
 export type RpcMethod = keyof RpcMethods;
@@ -105,6 +107,8 @@ export const STAGES_A_WRITE_CHANGES = {
   'pr.reRequestReview': ['mergeBox'],
   'pr.rerunFailedJobs': ['checks'],
   'pr.rerunAllJobs': ['checks'],
+  // The page shows the reaction at once; nothing else changes.
+  'pr.react': [],
 } as const satisfies { [M in RpcMethod]?: readonly PrStage[] };
 
 export interface RpcRequest<M extends RpcMethod = RpcMethod> {

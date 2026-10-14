@@ -11,6 +11,7 @@ import { Skeleton } from '../ui/Skeleton';
 import { Comment } from './Comment';
 import type { StageState } from './page-data';
 import { CommentInput, Staged } from './primitives';
+import { Reactions } from './Reactions';
 import './activity.css';
 
 export function Activity({
@@ -44,7 +45,14 @@ export function Activity({
                 case 'comment':
                   return (
                     <li key={entry.id} className="timeline-card">
-                      <Comment author={entry.author} createdAt={entry.createdAt} bodyHtml={entry.bodyHtml} url={entry.url} action={<span className="pr-muted">commented</span>} />
+                      <Comment
+                        author={entry.author}
+                        createdAt={entry.createdAt}
+                        bodyHtml={entry.bodyHtml}
+                        url={entry.url}
+                        action={<span className="pr-muted">commented</span>}
+                        footer={<Reactions subjectId={entry.subjectId} reactions={entry.reactions} />}
+                      />
                     </li>
                   );
                 case 'review': {
@@ -58,6 +66,7 @@ export function Activity({
                         bodyHtml={entry.bodyHtml}
                         url={entry.url}
                         action={<ReviewBadge state={entry.state} />}
+                        footer={<Reactions subjectId={entry.subjectId} reactions={entry.reactions} />}
                       />
                       {firstThread && (
                         <button className="timeline-threads" onClick={() => onRevealThread(firstThread)}>

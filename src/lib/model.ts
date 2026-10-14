@@ -166,7 +166,27 @@ export interface Stack {
   source: 'native' | 'graphite-comment' | 'none';
 }
 
-interface ReviewThreadComment {
+/** GitHub's eight reactions, in the order its reaction picker offers them. */
+export const REACTION_CONTENTS = ['THUMBS_UP', 'THUMBS_DOWN', 'LAUGH', 'HOORAY', 'CONFUSED', 'HEART', 'ROCKET', 'EYES'] as const;
+
+export type ReactionContent = (typeof REACTION_CONTENTS)[number];
+
+/** One of the reactions a comment has: how many gave it, and whether the viewer is one of them. */
+export interface Reaction {
+  content: ReactionContent;
+  count: number;
+  viewerHasReacted: boolean;
+}
+
+/** A comment the viewer can react to. */
+interface Reactable {
+  /** GitHub's node id for it (`IC_…`, `PRR_…`, `PRRC_…`), which a reaction names; null where GitHub's page offers no way to react. */
+  subjectId: string | null;
+  /** Only the reactions someone gave, in GitHub's order. */
+  reactions: Reaction[];
+}
+
+interface ReviewThreadComment extends Reactable {
   id: string;
   author: UserRef;
   bodyHtml: string;
@@ -188,8 +208,8 @@ export interface ReviewThread {
 }
 
 export type TimelineItem =
-  | { kind: 'comment'; id: string; author: UserRef; bodyHtml: string; createdAt: string; url: string }
-  | {
+  | ({ kind: 'comment'; id: string; author: UserRef; bodyHtml: string; createdAt: string; url: string } & Reactable)
+  | ({
       kind: 'review';
       id: string;
       author: UserRef;
@@ -199,7 +219,7 @@ export type TimelineItem =
       url: string;
       /** Thread ids opened by this review, so the UI can link review → threads. */
       threadIds: string[];
-    }
+    } & Reactable)
   | { kind: 'commit'; id: string; oid: string; abbreviatedOid: string; messageHeadline: string; author: UserRef | null; committedAt: string; url: string }
   | { kind: 'force-push'; id: string; actor: UserRef | null; createdAt: string; beforeOid: string; afterOid: string }
   | { kind: 'review-requested'; id: string; actor: UserRef | null; requested: string; createdAt: string }
@@ -219,6 +239,8 @@ export interface ChangedFile {
 
 export interface PrDetail extends PrSummary {
   bodyHtml: string;
+  /** The description's reactions; a reaction names the description by the PR's own id. */
+  descriptionReactions: Reaction[];
   headOid: string;
   baseOid: string;
   assignees: UserRef[];
@@ -270,6 +292,7 @@ export interface PrStages {
     | 'commentCount'
     | 'nativeStack'
     | 'bodyHtml'
+    | 'descriptionReactions'
     | 'headOid'
     | 'viewerCanUpdate'
     | 'viewerDidAuthor'

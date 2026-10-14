@@ -149,6 +149,8 @@ const threads42: ReviewThread[] = [
         bodyHtml: "<p>Should this throw instead? Callers can't tell a zone PARCS doesn't know from a lookup that failed.</p>",
         createdAt: '2026-10-08T10:14:00Z',
         url: 'https://github.com/acme/widgets/pull/42#discussion_r1',
+        subjectId: 'PRRC_fixture1',
+        reactions: [{ content: 'EYES', count: 1, viewerHasReacted: false }],
       },
       {
         id: 'PRRC_fixture2',
@@ -157,6 +159,8 @@ const threads42: ReviewThread[] = [
           '<p><code>listZones</code> already throws on transport errors, so <code>null</code> only ever means "unknown". I can add that to the doc comment.</p>',
         createdAt: '2026-10-08T11:02:00Z',
         url: 'https://github.com/acme/widgets/pull/42#discussion_r2',
+        subjectId: 'PRRC_fixture2',
+        reactions: [{ content: 'THUMBS_UP', count: 2, viewerHasReacted: true }],
       },
     ],
   },
@@ -176,6 +180,8 @@ const threads42: ReviewThread[] = [
         bodyHtml: '<p>The operator console still calls <code>setZone</code>.</p>',
         createdAt: '2026-10-08T10:16:00Z',
         url: 'https://github.com/acme/widgets/pull/42#discussion_r3',
+        subjectId: 'PRRC_fixture3',
+        reactions: [],
       },
       {
         id: 'PRRC_fixture4',
@@ -183,6 +189,8 @@ const threads42: ReviewThread[] = [
         bodyHtml: '<p>Moved it to <code>changeZone</code> in <a href="https://github.com/acme/widgets/pull/43">#43</a>.</p>',
         createdAt: '2026-10-08T11:05:00Z',
         url: 'https://github.com/acme/widgets/pull/42#discussion_r4',
+        subjectId: 'PRRC_fixture4',
+        reactions: [],
       },
     ],
   },
@@ -208,6 +216,8 @@ const threads42: ReviewThread[] = [
         bodyHtml: '<p>This TODO should be a ticket.</p>',
         createdAt: '2026-10-07T15:40:00Z',
         url: 'https://github.com/acme/widgets/pull/42#discussion_r5',
+        subjectId: 'PRRC_fixture5',
+        reactions: [],
       },
     ],
   },
@@ -308,6 +318,10 @@ const detail42: PrDetail = {
     '<div class="highlight highlight-source-ts"><pre><span class="pl-k">await</span> <span class="pl-s1">adapter</span><span class="pl-kos">.</span><span class="pl-en">changeZone</span><span class="pl-kos">(</span><span class="pl-s">\'north\'</span> <span class="pl-k">as</span> <span class="pl-smi">ZoneId</span><span class="pl-kos">)</span><span class="pl-kos">;</span></pre></div>',
     '<p>Stacked on <a href="https://github.com/acme/widgets/pull/41">#41</a>; the console change is <a href="https://github.com/acme/widgets/pull/43">#43</a>.</p>',
   ].join('\n'),
+  descriptionReactions: [
+    { content: 'HOORAY', count: 2, viewerHasReacted: false },
+    { content: 'ROCKET', count: 1, viewerHasReacted: true },
+  ],
   headOid: 'c0ffee42c0ffee42c0ffee42c0ffee42c0ffee42',
   baseOid: 'bead4141bead4141bead4141bead4141bead4141',
   assignees: [mona],
@@ -343,6 +357,11 @@ const detail42: PrDetail = {
       bodyHtml: '<p>Does this also cover the overnight zones? Their <code>closesAt</code> is before <code>opensAt</code>.</p>',
       createdAt: '2026-10-07T13:20:00Z',
       url: 'https://github.com/acme/widgets/pull/42#issuecomment-1',
+      subjectId: 'IC_fixture1',
+      reactions: [
+        { content: 'THUMBS_UP', count: 2, viewerHasReacted: true },
+        { content: 'EYES', count: 1, viewerHasReacted: false },
+      ],
     },
     {
       kind: 'review',
@@ -353,6 +372,8 @@ const detail42: PrDetail = {
       createdAt: '2026-10-07T15:41:00Z',
       url: 'https://github.com/acme/widgets/pull/42#pullrequestreview-1',
       threadIds: ['PRRT_fixture3'],
+      subjectId: 'PRR_fixture1',
+      reactions: [{ content: 'HOORAY', count: 1, viewerHasReacted: false }],
     },
     {
       kind: 'review',
@@ -363,6 +384,8 @@ const detail42: PrDetail = {
       createdAt: '2026-10-08T10:17:00Z',
       url: 'https://github.com/acme/widgets/pull/42#pullrequestreview-2',
       threadIds: ['PRRT_fixture1', 'PRRT_fixture2'],
+      subjectId: 'PRR_fixture2',
+      reactions: [],
     },
     {
       kind: 'force-push',
@@ -515,6 +538,7 @@ const detail42: PrDetail = {
 const detail41: PrDetail = {
   ...summary41,
   bodyHtml: '<p>A small typed wrapper around the PARCS REST API, so the adapter stops hand-rolling <code>fetch</code> calls.</p>',
+  descriptionReactions: [],
   headOid: 'bead4141bead4141bead4141bead4141bead4141',
   baseOid: '0000aaaa0000aaaa0000aaaa0000aaaa0000aaaa',
   assignees: [mona],
@@ -541,6 +565,9 @@ const detail41: PrDetail = {
       createdAt: '2026-10-08T16:20:00Z',
       url: 'https://github.com/acme/widgets/pull/41#pullrequestreview-41',
       threadIds: [],
+      // An approval without a body: GitHub offers nothing to react to.
+      subjectId: null,
+      reactions: [],
     },
   ],
   threads: [],

@@ -17,7 +17,7 @@ import { reviewDecisionOf, reviewersOf } from './reviews';
 import { SIGNED_OUT, embeddedPayload, getJson, getPage, githubUser } from './session';
 import { graphiteStackComment, resolveStack, type NativeStack } from './stack';
 import { reviewThreads } from './threads';
-import { timelineFrom } from './timeline';
+import { reactionsIn, timelineFrom } from './timeline';
 
 /** One stage of a PR's page. */
 export function fetchPrStage<S extends PrStage>(stage: S, { repo, number, force = false }: { repo: RepoRef; number: number; force?: boolean }): Promise<PrStages[S]> {
@@ -73,13 +73,21 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
       commentCount: tabCounts.conversationCount ?? 0,
       nativeStack: nativeStack && { position: nativeStack.position, size: nativeStack.size },
       bodyHtml: description ? description.innerHTML.trim() : ((await github.description())?.bodyHtml ?? ''),
+      // The conversation's reaction form that names the PR itself is the description's.
+      descriptionReactions: [...page.querySelectorAll('form.js-pick-reaction')].map((form) => reactionsIn(form)).find(({ subjectId }) => subjectId === pr.relayId)?.reactions ?? [],
       headOid: pr.headSha,
       viewerCanUpdate: layout.user?.canEditTitle ?? false,
       viewerDidAuthor: viewerLogin === author.login,
       viewerLogin,
       stackSource: nativeStack ? 'native' : graphiteStackComment(page) ? 'graphite-comment' : 'none',
     };
-    rememberPullRequest({ ...header, databaseId: pr.id, repositoryDatabaseId: layout.repository?.id });
+    rememberPullRequest({
+      ...header,
+      databaseId: pr.id,
+      repositoryDatabaseId: layout.repository?.id,
+      // Any of the conversation's reaction forms will do: their token serves every reaction in the repository.
+      reactionToken: page.querySelector('form.js-pick-reaction input[name="authenticity_token"]')?.getAttribute('value') ?? undefined,
+    });
     return header;
   },
 
@@ -145,7 +153,7 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
     const [header, page] = await Promise.all([stages.header(github, pull), github.page()]);
     const { stack } = layoutOf(page, pull);
     // The page puts everything it knows about this PR in its own entry; the header is what the stack itself needs.
-    const { bodyHtml, headOid, viewerCanUpdate, viewerDidAuthor, viewerLogin, stackSource, ...summary } = header;
+    const { bodyHtml, descriptionReactions, headOid, viewerCanUpdate, viewerDidAuthor, viewerLogin, stackSource, ...summary } = header;
     const current: PrSummary = {
       ...summary,
       reviewDecision: 'NONE',

@@ -6,7 +6,7 @@ import type { PrDetail } from '../model';
 import type { MergeMethod, RpcMethods } from '../rpc';
 import { rerunWorkflowJobs } from './actions';
 import type { MergeBox } from './merge-box';
-import { SIGNED_OUT, getJson, send } from './session';
+import { SIGNED_OUT, getJson, send, submitForm } from './session';
 
 export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox.fetchMore' | 'inbox.enrich' | 'inbox.branches' | 'repos.search' | 'repos.top' | 'orgs.list' | `pr.fetch${string}` | 'pr.reviewerCandidates' | 'markdown.preview'>]: (args: RpcMethods[M]['args']) => Promise<RpcMethods[M]['result']> } = {
   'pr.review': async ({ prId, event, body, threads }) => {
@@ -113,15 +113,27 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
   },
   'pr.rerunFailedJobs': ({ prId, runId }) => rerunWorkflowJobs(pullRequestFor(prId).repoPath, runId, 'failed'),
   'pr.rerunAllJobs': ({ prId, runId }) => rerunWorkflowJobs(pullRequestFor(prId).repoPath, runId, 'all'),
+  'pr.react': async ({ prId, subjectId, content, add }) => {
+    // GitHub's conversation page reacts with a classic form, its fields in this order, the clicked button's value last.
+    const pull = pullRequestFor(prId);
+    if (!pull.reactionToken) throw new Error('Reload the pull request to react');
+    await submitForm(`${pull.repoPath}/reactions`, [
+      ['_method', 'put'],
+      ['authenticity_token', pull.reactionToken],
+      ['input[subjectId]', subjectId],
+      ['input[content]', `${content} ${add ? 'react' : 'unreact'}`],
+    ]);
+  },
 };
 
 /**
  * Remembers what later writes about a PR need, from whichever part of it has loaded: the page's id, head and stack, the
- * comparison's base, the threads (the PR page loads them in stages, pr-stages.ts), and the database ids a preview names.
+ * comparison's base, the threads (the PR page loads them in stages, pr-stages.ts), the database ids a preview names, and
+ * the token GitHub's reaction forms carry.
  */
 export function rememberPullRequest(
   loaded: Pick<PrDetail, 'repo' | 'number'> &
-    Partial<Pick<PrDetail, 'id' | 'headOid' | 'baseOid' | 'nativeStack' | 'threads'>> & { databaseId?: number; repositoryDatabaseId?: number },
+    Partial<Pick<PrDetail, 'id' | 'headOid' | 'baseOid' | 'nativeStack' | 'threads'>> & { databaseId?: number; repositoryDatabaseId?: number; reactionToken?: string },
 ): void {
   const path = `/${loaded.repo.owner}/${loaded.repo.name}/pull/${loaded.number}`;
   const known = pullRequests.get(path) ?? {
@@ -133,12 +145,14 @@ export function rememberPullRequest(
     isNativeStack: false,
     databaseId: '',
     repositoryDatabaseId: '',
+    reactionToken: '',
   };
   if (loaded.headOid !== undefined) known.headOid = loaded.headOid;
   if (loaded.baseOid !== undefined) known.baseOid = loaded.baseOid;
   if (loaded.nativeStack !== undefined) known.isNativeStack = loaded.nativeStack !== null;
   if (loaded.databaseId !== undefined) known.databaseId = String(loaded.databaseId);
   if (loaded.repositoryDatabaseId !== undefined) known.repositoryDatabaseId = String(loaded.repositoryDatabaseId);
+  if (loaded.reactionToken !== undefined) known.reactionToken = loaded.reactionToken;
   pullRequests.set(path, known);
   if (loaded.id) pullPaths.set(loaded.id, path);
   for (const thread of loaded.threads ?? []) {
@@ -244,6 +258,8 @@ interface KnownPullRequest {
   /** GitHub's database ids of the PR and its repository, as a preview names them; empty until the header has loaded. */
   databaseId: string;
   repositoryDatabaseId: string;
+  /** The `authenticity_token` of the PR page's reaction forms, one for every subject in the repository; empty until the header has loaded. */
+  reactionToken: string;
 }
 
 interface KnownThread {

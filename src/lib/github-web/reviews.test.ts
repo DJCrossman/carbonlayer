@@ -12,6 +12,8 @@ describe('reviewersOf', () => {
     createdAt: '2026-10-01T00:00:00Z',
     url: '',
     threadIds: [],
+    subjectId: null,
+    reactions: [],
   });
   const requests = {
     pendingReviewRequests: [

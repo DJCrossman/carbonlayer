@@ -40,7 +40,7 @@ describe('the PR page in stages', () => {
     );
   });
 
-  it('puts the header together from the page and its counts, with the description the conversation renders', async () => {
+  it('puts the header together from the page and its counts, with the description and its reactions as the conversation renders them', async () => {
     expect(await loadStage('header')).toMatchObject({
       id: 'PR_1',
       title: 'Fix the widget',
@@ -48,6 +48,7 @@ describe('the PR page in stages', () => {
       viewerLogin: 'ana',
       viewerDidAuthor: false,
       bodyHtml: '<p>The description</p>',
+      descriptionReactions: [{ content: 'HOORAY', count: 3, viewerHasReacted: true }],
       additions: 3,
       deletions: 1,
       changedFiles: 2,
@@ -82,6 +83,15 @@ describe('the PR page in stages', () => {
     await call('pr.resolveThread', { threadId: '7', resolved: true });
     await Promise.all(STAGES.map((stage) => loadStage(stage)));
     expect(requests.toSorted()).toEqual(['POST resolve_thread', 'base_comparison_info', 'tab_counts', 'threads'].sort());
+  });
+
+  it("reacts with the token of the page's reaction forms, and reloads nothing for it", async () => {
+    await Promise.all(STAGES.map((stage) => loadStage(stage)));
+    requests.length = 0;
+    await call('pr.react', { prId: 'PR_1', subjectId: 'PR_1', content: 'HOORAY', add: false });
+    await Promise.all(STAGES.map((stage) => loadStage(stage)));
+    expect(requests).toEqual(['POST reactions']);
+    expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/\/o\/r\/reactions$/), expect.objectContaining({ body: expect.stringContaining('authenticity_token=reaction-token') }));
   });
 
   it('repeats only the requests a forced stage makes for itself', async () => {
@@ -147,7 +157,7 @@ async function loadStage<S extends PrStage>(stage: S, force = false) {
 
 /**
  * github.com for PR o/r#1, recording each request as its page_data route (`page` for the page itself, `POST <route>`
- * for a write, `actions` for the branch's Actions list, `actions/runs/<id>` for a run's page). `failing` answers a route
+ * for a write, `actions` for the branch's Actions list, `actions/runs/<id>` for a run's page, `reactions` for a reaction). `failing` answers a route
  * with that status instead, `answers` with that answer. Each call has a head commit of its own: what the Actions list
  * says about a commit is kept 5 minutes.
  */
@@ -160,7 +170,9 @@ function serveGitHub(failing: Record<string, number> = {}, viewer = 'ana', answe
   };
   const page = `<html><head><meta name="user-login" content="${viewer}"></head><body>
     <script type="application/json" data-target="react-app.embeddedData">${JSON.stringify({ payload: { pullRequestsLayoutRoute: layout } })}</script>
-    <div class="TimelineItem"><div id="pullrequest-1" class="timeline-comment"><div class="comment-body"><p>The description</p></div></div></div>
+    <div class="TimelineItem"><div id="pullrequest-1" class="timeline-comment"><div class="comment-body"><p>The description</p></div>
+      <form class="js-pick-reaction" action="/o/r/reactions" method="post"><input type="hidden" name="authenticity_token" value="reaction-token"><input type="hidden" name="input[subjectId]" value="PR_1">
+        <button name="input[content]" value="HOORAY unreact" class="social-reaction-summary-item js-reaction-group-button"><g-emoji alias="tada">🎉</g-emoji> 3</button></form></div></div>
     <div id="pullrequestreview-9"><div class="TimelineItem"><div class="TimelineItem-body"><a class="author">cy</a> left a comment <relative-time datetime="2026-10-02T00:00:00Z"></relative-time></div></div></div>
   </body></html>`;
   const routes: Record<string, unknown> = {
@@ -183,6 +195,7 @@ function serveGitHub(failing: Record<string, number> = {}, viewer = 'ana', answe
     assignees: { assignees: [{ login: 'bo' }] },
     create_timeline_comment: {},
     resolve_thread: {},
+    reactions: {},
     // No runs of GitHub's own dynamic workflows on the branch.
     actions: '<ul></ul>',
     ...answers,
@@ -190,7 +203,7 @@ function serveGitHub(failing: Record<string, number> = {}, viewer = 'ana', answe
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init?: RequestInit) => {
-      const route = /\/o\/r\/(actions(?:\/runs\/\d+)?)/.exec(url)?.[1] ?? /\/o\/r\/pull\/1(?:\/page_data\/([a-z_]+))?/.exec(url)?.[1] ?? 'page';
+      const route = /\/o\/r\/(actions(?:\/runs\/\d+)?|reactions)/.exec(url)?.[1] ?? /\/o\/r\/pull\/1(?:\/page_data\/([a-z_]+))?/.exec(url)?.[1] ?? 'page';
       asked.push(init?.method ? `${init.method} ${route}` : route);
       const status = failing[route];
       if (status) return Response.json({ error: 'Not Found' }, { status });

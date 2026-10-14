@@ -1,0 +1,89 @@
+/* Reactions under a comment, as GitHub's: rounded pills, emoji then count, the viewer's own in the accent tone, and a
+   smiley opening the picker of eight. */
+
+.reactions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.reaction-pill,
+.reaction-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--gg-border-muted);
+  border-radius: 999px;
+  background: var(--gg-bg-subtle);
+  color: var(--gg-fg-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  cursor: pointer;
+}
+.reaction-pill:hover:not(:disabled),
+.reaction-add:hover,
+.reaction-add[aria-expanded='true'] {
+  border-color: var(--gg-border);
+  background: var(--gg-bg-hover);
+  color: var(--gg-fg);
+}
+.reaction-pill.is-mine,
+.reaction-pill.is-mine:hover:not(:disabled) {
+  border-color: var(--gg-accent);
+  background: var(--gg-bg-selected);
+  color: var(--gg-accent);
+}
+.reaction-pill:disabled { cursor: default; }
+.reaction-emoji { font-size: 13px; }
+
+.reaction-picker-anchor {
+  position: relative;
+  display: inline-flex;
+}
+.reaction-add { padding: 0 5px; }
+/* With nothing given yet, the smiley stands alone, quieter, until pointed at. */
+.reactions.is-empty .reaction-add:not(:hover, [aria-expanded='true']) {
+  border-color: transparent;
+  background: none;
+  color: var(--gg-fg-subtle);
+}
+
+.reaction-picker {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--gg-border);
+  border-radius: 8px;
+  background: var(--gg-bg);
+  box-shadow: var(--gg-shadow-overlay);
+}
+.reaction-option {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.reaction-option:hover,
+.reaction-option:focus-visible { background: var(--gg-bg-hover); outline: none; }
+.reaction-option.is-mine {
+  background: var(--gg-bg-selected);
+  box-shadow: inset 0 0 0 1px var(--gg-accent);
+}

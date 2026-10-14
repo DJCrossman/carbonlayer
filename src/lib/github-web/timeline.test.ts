@@ -9,7 +9,13 @@ const conversation = `
 </div>
 <div class="TimelineItem js-comment-container">
   <div class="timeline-comment-group TimelineItem-body" id="issuecomment-7"><a class="author">bo</a> commented
-    <relative-time datetime="2026-09-02T11:00:00Z"></relative-time><div class="comment-body"><p>Looks good</p></div></div>
+    <relative-time datetime="2026-09-02T11:00:00Z"></relative-time><div class="comment-body"><p>Looks good</p></div>
+    <div class="comment-reactions js-reactions-container"><form class="js-pick-reaction" action="/o/r/reactions" method="post">
+      <input type="hidden" name="_method" value="put"><input type="hidden" name="authenticity_token" value="tok">
+      <input type="hidden" name="input[subjectId]" value="IC_7">
+      <button name="input[content]" value="THUMBS_UP react" class="social-reaction-summary-item js-reaction-group-button" aria-pressed="false"><g-emoji alias="+1">👍</g-emoji> 1</button>
+      <button name="input[content]" value="HEART unreact" class="social-reaction-summary-item js-reaction-group-button" aria-pressed="true"><g-emoji alias="heart">❤️</g-emoji> 2</button>
+    </form></div></div>
 </div>
 <div class="TimelineItem js-comment-container">
   <div class="timeline-comment-group TimelineItem-body" id="issuecomment-8"><div class="minimized-comment"></div></div>
@@ -25,7 +31,8 @@ const conversation = `
     <div class="TimelineItem-body"><strong><a class="author">cy</a></strong> approved these changes <relative-time datetime="2026-09-03T09:00:00Z"></relative-time></div>
   </div>
   <div class="TimelineItem"><div class="TimelineItem-body"><div id="pullrequestreview-99" class="timeline-comment"><a class="author">cy</a> left a comment
-    <div class="comment-body"><p>Ship it</p></div></div></div></div>
+    <div class="comment-body"><p>Ship it</p></div>
+    <form class="js-pick-reaction"><input type="hidden" name="input[subjectId]" value="PRR_99"></form></div></div></div>
   <div class="TimelineItem"><div class="TimelineItem-body"><turbo-frame id="review-thread-or-comment-id-5"><div class="comment-body"><p>nit</p></div></turbo-frame></div></div>
 </div>
 <div id="commits-pushed-abc1234" class="TimelineItem">
@@ -84,5 +91,28 @@ describe('timelineFrom', () => {
     });
     expect(timeline[3]).toMatchObject({ kind: 'commit', abbreviatedOid: 'abc1234', messageHeadline: 'Fix the widget', author: { login: 'ana' }, committedAt: '2026-09-03T08:00:00.000Z' });
     expect(timeline[4]).toMatchObject({ kind: 'force-push', beforeOid: '1111111', afterOid: '2222222' });
+  });
+
+  it("reads each comment's and review's reactions from its own reaction form, the viewer's by its unreact button", () => {
+    expect(timeline[0]).toMatchObject({
+      subjectId: 'IC_7',
+      reactions: [
+        { content: 'THUMBS_UP', count: 1, viewerHasReacted: false },
+        { content: 'HEART', count: 2, viewerHasReacted: true },
+      ],
+    });
+    expect(timeline[2]).toMatchObject({ subjectId: 'PRR_99', reactions: [] });
+  });
+
+  it('offers nothing to react to for a review without a body, though the threads it opened have reaction forms', () => {
+    const review = `<div id="pullrequestreview-98">
+      <div class="TimelineItem"><div class="TimelineItem-body"><a class="author">cy</a> reviewed <relative-time datetime="2026-09-03T09:00:00Z"></relative-time></div></div>
+      <div class="TimelineItem"><turbo-frame id="review-thread-or-comment-id-6"><div class="comment-body"><p>nit</p></div>
+        <form class="js-pick-reaction"><input type="hidden" name="input[subjectId]" value="PRRC_6">
+          <button name="input[content]" value="EYES react" class="social-reaction-summary-item js-reaction-group-button"><g-emoji alias="eyes">👀</g-emoji> 4</button>
+        </form></turbo-frame></div>
+    </div>`;
+    const [item] = timelineFrom(new DOMParser().parseFromString(review, 'text/html'), { pageUrl: '', threadIdsByReview: new Map(), commits: new Map() });
+    expect(item).toMatchObject({ kind: 'review', subjectId: null, reactions: [] });
   });
 });

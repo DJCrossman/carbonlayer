@@ -1,8 +1,8 @@
 # GitHub React PR page: same-origin requests (from the public JS bundles, 2026-10-09; nothing was sent)
 
 Every PR action is a same-origin JSON `fetch` to `P = /{owner}/{repo}/pull/{n}/page_data/<route>`, except
-"viewed" which uses `/{owner}/{repo}/pull/{n}/file_review`. No Relay / persisted-query ids and no
-`authenticity_token` are involved. Route names are plain strings in one enum (module `UT` in
+"viewed" which uses `/{owner}/{repo}/pull/{n}/file_review`, and reactions, still a classic form (see Reactions below).
+No Relay / persisted-query ids and, reactions aside, no `authenticity_token` are involved. Route names are plain strings in one enum (module `UT` in
 `4t-c2bbc4f2c8ef0b83.js`); chunk hashes change with every deploy, the route names are the contract.
 
 ## Headers (seen in the bundle and in a captured request)
@@ -122,6 +122,32 @@ is `@github/markdown-toolbar-element` (chunk `hj-ece3bec966e8a2b6.js`), its shor
 (`markdown-editor:*` in `86g-dffecec336e77800.js`: bold ⌘B, italic ⌘I, code ⌘E, link ⌘K, quote ⌘⇧., numbered list ⌘⇧7, task list
 ⌘⇧L, toggle preview ⌘⇧P) and the docs' "Keyboard shortcuts → Comments" (which also lists ⌘⇧8 for a bulleted list
 and ⌘G for a suggestion).
+
+## Reactions (a classic form; seen on the owner's signed-in PR page, 2026-10-14)
+GitHub's conversation page reacts with the server-rendered `form.js-pick-reaction` under each comment (in
+`.comment-reactions.js-reactions-container`): `POST /{owner}/{repo}/reactions`, form-encoded, fields in this order:
+- `_method=put`; `authenticity_token=<86-character token>`; `input[subjectId]=<the subject's node id>`;
+- the clicked button's `input[content]`: `"<CONTENT> react"` to add, `"<CONTENT> unreact"` to remove (`THUMBS_UP react`).
+  Contents in the picker's order: `THUMBS_UP`, `THUMBS_DOWN`, `LAUGH`, `HOORAY`, `CONFUSED`, `HEART`, `ROCKET`, `EYES`.
+- Some forms also carry an empty `input[context]=`; CarbonLayer leaves it out.
+
+Subjects seen: `PR_…` (the PR itself: its description), `IC_…` (conversation comments), `PRR_…` (review summaries).
+Diff comments are `PRRC_…`; CarbonLayer sends them through the same form, as GitHub's classic timeline did for review
+comments, but no such form was seen on this page: UNVERIFIED. The token is per form action, so one token from any
+reaction form on the PR page serves every subject in its repository. The header stage reads
+`form.js-pick-reaction input[name="authenticity_token"]` from the PR page it fetches and remembers it with the PR
+(`rememberPullRequest`); without one `pr.react` fails with "Reload the pull request to react". It goes out through
+`submitForm` (`session.ts`): same origin, `X-Requested-With: XMLHttpRequest`, any 2xx or a redirect elsewhere than sign-in
+counting as done; what GitHub answers is not recorded.
+
+Where the current reactions are:
+- conversation items (the description, comments, review summaries), in the PR page's HTML: inside the item's form, one
+  `button.social-reaction-summary-item.js-reaction-group-button` per reaction given, valued `"<CONTENT> react"`, or
+  `"<CONTENT> unreact"` (and `aria-pressed="true"`) when the viewer gave it, reading its emoji
+  (`<g-emoji alias="+1">👍</g-emoji>`) and count (`👍 1`). The form's `input[subjectId]` names the subject; a review's own
+  form is the one outside the `turbo-frame`s of the threads it opened.
+- diff comments, in `page_data/threads`: each comment's `id` (`PRRC_…`) and `reactionGroups: [{ reaction: { content,
+  viewerHasReacted }, reactors: [...], totalCount }]`, all eight contents listed, zero counts included.
 
 ## Where to re-check (all at https://github.githubassets.com/assets/<file>)
 | File | Matched string(s) |

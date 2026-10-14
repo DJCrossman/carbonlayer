@@ -9,6 +9,7 @@ import { Kbd } from '../ui/Kbd';
 import { Comment } from './Comment';
 import type { ComposerAnchor, DiffNote } from './diff';
 import { CommentInput } from './primitives';
+import { Reactions } from './Reactions';
 import './threads.css';
 
 export function DiffNoteView({
@@ -102,7 +103,15 @@ function ThreadNote({ thread, current, actions }: { thread: ReviewThread; curren
         </div>
       )}
       {thread.comments.map((comment) => (
-        <Comment key={comment.id} author={comment.author} createdAt={comment.createdAt} bodyHtml={comment.bodyHtml} url={comment.url} compact />
+        <Comment
+          key={comment.id}
+          author={comment.author}
+          createdAt={comment.createdAt}
+          bodyHtml={comment.bodyHtml}
+          url={comment.url}
+          footer={<Reactions subjectId={comment.subjectId} reactions={comment.reactions} />}
+          compact
+        />
       ))}
       <div className="diff-note-reply">
         <CommentInput value={reply} onChange={setReply} onSubmit={sendReply} placeholder="Reply…" minRows={1} disabled={busy} />

@@ -1,7 +1,7 @@
 // The PR conversation as GitHub server-renders it inside the React page: classic HTML with one
 // `.TimelineItem` per comment, review header, commit or event (events carry an octicon badge).
 
-import type { TimelineItem } from '../model';
+import { REACTION_CONTENTS, type Reaction, type ReactionContent, type TimelineItem } from '../model';
 import { githubUser } from './session';
 
 /**
@@ -34,7 +34,9 @@ export function timelineFrom(
       if (seenReviews.has(review)) continue;
       seenReviews.add(review);
       const header = (row.querySelector('.TimelineItem-body')?.textContent ?? '').replace(/\s+/g, ' ');
+      // The review's own body and reaction form, not those of the threads it opened.
       const body = [...review.querySelectorAll('.comment-body')].find((element) => !element.closest('turbo-frame'));
+      const reactionForm = [...review.querySelectorAll('form.js-pick-reaction')].find((form) => !form.closest('turbo-frame'));
       items.push({
         kind: 'review',
         id: review.id,
@@ -50,6 +52,7 @@ export function timelineFrom(
         createdAt,
         url: `${context.pageUrl}#${review.id}`,
         threadIds: context.threadIdsByReview.get(review.id.replace('pullrequestreview-', '')) ?? [],
+        ...reactionsIn(reactionForm),
       });
       continue;
     }
@@ -62,7 +65,15 @@ export function timelineFrom(
       const body = comment.querySelector('.comment-body');
       // Minimized (hidden) comments render without a body.
       if (body) {
-        items.push({ kind: 'comment', id: comment.id, author: actor ?? githubUser('ghost'), bodyHtml: body.innerHTML.trim(), createdAt, url: `${context.pageUrl}#${comment.id}` });
+        items.push({
+          kind: 'comment',
+          id: comment.id,
+          author: actor ?? githubUser('ghost'),
+          bodyHtml: body.innerHTML.trim(),
+          createdAt,
+          url: `${context.pageUrl}#${comment.id}`,
+          ...reactionsIn(comment.querySelector('form.js-pick-reaction')),
+        });
       }
       continue;
     }
@@ -112,4 +123,21 @@ export function timelineFrom(
     }
   }
   return items;
+}
+
+/**
+ * What a comment's reaction form (`form.js-pick-reaction`) says: the subject a reaction names, and a button for each
+ * reaction given, valued `<CONTENT> react`, or `<CONTENT> unreact` once the viewer gave it, reading its emoji and count.
+ * Without a form there is nothing to react with.
+ */
+export function reactionsIn(form: Element | null | undefined): { subjectId: string | null; reactions: Reaction[] } {
+  if (!form) return { subjectId: null, reactions: [] };
+  const reactions = [...form.querySelectorAll('button.social-reaction-summary-item')].flatMap((button): Reaction[] => {
+    const [, value = '', un] = /^([A-Z_]+) (un)?react$/.exec(button.getAttribute('value')?.trim() ?? '') ?? [];
+    const content = value as ReactionContent;
+    const count = Number(/(\d+)\s*$/.exec(button.textContent ?? '')?.[1] ?? 0);
+    const viewerHasReacted = un === 'un';
+    return REACTION_CONTENTS.includes(content) && (count > 0 || viewerHasReacted) ? [{ content, count, viewerHasReacted }] : [];
+  });
+  return { subjectId: form.querySelector('input[name="input[subjectId]"]')?.getAttribute('value') || null, reactions };
 }
