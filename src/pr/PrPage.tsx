@@ -2,7 +2,8 @@
 // a sticky sidebar and Graphite's keybindings. Everything comes through `source`, in stages (page-data.ts): the
 // header first, then each part as its stage arrives, each with its own skeleton. Each mutation is shown optimistically
 // where that matters (viewed, resolved, draft, auto-merge) and then reloads the stages it changed.
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { postToParent } from '../app/bridge';
 import type { DataSource, ReviewThreadDraft } from '../app/data-source';
 import type { AppRoute } from '../app/routes';
@@ -93,6 +94,15 @@ function PrView({
   const retry = (stages: PrStage[]) => void reload(stages, true).catch(() => {});
   const [batch, setBatch] = useState<ReviewThreadDraft[]>([]);
   const [review, setReview] = useState<{ open: boolean; event: ReviewEvent; body: string }>({ open: false, event: 'COMMENT', body: '' });
+  // Once the header's Finish review button scrolls out of sight, another appears under the reviewers (FinishReviewAgain).
+  const [finishReviewInView, setFinishReviewInView] = useState(true);
+  useEffect(() => {
+    const button = document.querySelector('.pr-header .pr-review-anchor');
+    if (!button) return;
+    const observer = new IntersectionObserver(([entry]) => setFinishReviewInView(entry?.isIntersecting ?? true), { root: document });
+    observer.observe(button);
+    return () => observer.disconnect();
+  }, []);
   const [quickApprove, setQuickApprove] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [reviewerPickerOpen, setReviewerPickerOpen] = useState(false);
@@ -264,6 +274,32 @@ function PrView({
     }
   });
 
+  const reviewPopover = (
+      review.open && (
+        <ReviewComposer
+          pr={pr}
+          batch={batch}
+          event={review.event}
+          body={review.body}
+          onEventChange={(event) => setReview((current) => ({ ...current, event }))}
+          onBodyChange={(body) => setReview((current) => ({ ...current, body }))}
+          onRemove={noteActions.removePending}
+          onClose={closeReview}
+          onSubmit={async () => {
+            const verdict = { COMMENT: 'Review submitted', REQUEST_CHANGES: 'Changes requested', APPROVE: 'Approved' }[review.event];
+            const ok = await mutate(STAGES_A_WRITE_CHANGES['pr.review'], () => source.review(pr.id, review.event, review.body, batch), 'Could not submit the review', {
+              success: verdict,
+            });
+            if (ok) {
+              setBatch([]);
+              setReview({ open: false, event: 'COMMENT', body: '' });
+            }
+            return ok;
+          }}
+        />
+      )
+  );
+
   return (
     <div className={`pr-page ${legendHidden ? '' : 'has-legend'}`}>
       <div className="pr-conversation">
@@ -273,31 +309,7 @@ function PrView({
           onFinishReview={() => (review.open ? closeReview() : openReview(review.event))}
           onSetDraft={setDraft}
           onCopied={() => showToast('Link copied')}
-          reviewPopover={
-            review.open && (
-              <ReviewComposer
-                pr={pr}
-                batch={batch}
-                event={review.event}
-                body={review.body}
-                onEventChange={(event) => setReview((current) => ({ ...current, event }))}
-                onBodyChange={(body) => setReview((current) => ({ ...current, body }))}
-                onRemove={noteActions.removePending}
-                onClose={closeReview}
-                onSubmit={async () => {
-                  const verdict = { COMMENT: 'Review submitted', REQUEST_CHANGES: 'Changes requested', APPROVE: 'Approved' }[review.event];
-                  const ok = await mutate(STAGES_A_WRITE_CHANGES['pr.review'], () => source.review(pr.id, review.event, review.body, batch), 'Could not submit the review', {
-                    success: verdict,
-                  });
-                  if (ok) {
-                    setBatch([]);
-                    setReview({ open: false, event: 'COMMENT', body: '' });
-                  }
-                  return ok;
-                }}
-              />
-            )
-          }
+          reviewPopover={finishReviewInView ? reviewPopover : null}
         />
         {data.header.status === 'error' && <StageError what="the header again" error={data.header.error} onRetry={() => retry(['header'])} />}
         {/* No stack card, not even its skeleton, when the page shows no stack. */}
@@ -321,6 +333,16 @@ function PrView({
         pr={pr}
         data={data}
         onRetry={retry}
+        finishReview={
+          !finishReviewInView && (
+            <FinishReviewAgain
+              batchCount={batch.length}
+              open={review.open}
+              onToggle={() => (review.open ? closeReview() : openReview(review.event))}
+              popover={reviewPopover}
+            />
+          )
+        }
         mergeMethod={mergeMethod}
         onAutoMerge={(enabled, method) => {
           // Another method for an auto-merge already on: turned off, then on again with it.
@@ -574,4 +596,48 @@ function optimisticPr(pr: PrDetail, edits: PendingEdits): PrDetail {
     unresolvedThreadCount: Math.max(0, pr.unresolvedThreadCount + unresolvedDelta),
     files,
   };
+}
+
+/**
+ * The Finish review button again, under the reviewers, for while the header's is scrolled out of sight. Its popover
+ * floats beside it, rendered into the body since the sidebar would clip it.
+ */
+function FinishReviewAgain({ batchCount, open, onToggle, popover }: { batchCount: number; open: boolean; onToggle: () => void; popover: ReactNode }) {
+  const anchor = useRef<HTMLDivElement>(null);
+  const [at, setAt] = useState<{ top: number; right: number; above: boolean } | null>(null);
+  useLayoutEffect(() => {
+    if (!popover) return;
+    // Below the button when the popover fits there, else above it (the button often sits low in the sidebar).
+    const place = () => {
+      const rect = anchor.current?.getBoundingClientRect();
+      const height = anchor.current?.querySelector('.review-popover')?.getBoundingClientRect().height ?? 320;
+      if (!rect) return;
+      const above = window.innerHeight - rect.bottom < height + 12 && rect.top > window.innerHeight - rect.bottom;
+      setAt({ top: above ? rect.top : rect.bottom, right: window.innerWidth - rect.right, above });
+    };
+    place();
+    window.addEventListener('resize', place);
+    document.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      document.removeEventListener('scroll', place, true);
+    };
+  }, [popover]);
+  return (
+    <div className="pr-review-anchor side-finish-review" ref={anchor}>
+      <Button variant="primary" onClick={onToggle} aria-expanded={open} title="Finish review (r c)">
+        Finish review
+        {batchCount > 0 && <span className="pr-badge pr-review-badge">{batchCount}</span>}
+      </Button>
+      {popover &&
+        at &&
+        // In the body, past the sidebar's clipping; still a `.pr-review-anchor`, so clicks inside it keep it open.
+        createPortal(
+          <div className={`pr-review-anchor review-popover-float ${at.above ? 'is-above' : ''}`} style={{ top: at.top, right: at.right }}>
+            {popover}
+          </div>,
+          document.body,
+        )}
+    </div>
+  );
 }

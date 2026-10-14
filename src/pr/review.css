@@ -1,6 +1,12 @@
 /* Review popover (anchored under "Finish review") and the quick-approve dialog. */
 
 .pr-review-anchor { position: relative; }
+/* The second Finish review, under the reviewers, spans the sidebar; its popover floats below its right edge. */
+.side-finish-review { display: flex; }
+.side-finish-review > .gg-btn { flex: 1; justify-content: center; }
+.review-popover-float { position: fixed; z-index: 30; width: 0; height: 0; }
+.review-popover-float .review-popover { top: 6px; }
+.review-popover-float.is-above .review-popover { top: auto; bottom: 6px; }
 
 .review-popover {
   position: absolute;

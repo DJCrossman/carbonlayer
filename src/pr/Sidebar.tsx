@@ -30,6 +30,7 @@ export function Sidebar({
   onViewThreads,
   checkReruns,
   reviewersCard,
+  finishReview,
 }: {
   pr: PrDetail;
   /** The stages the cards come from: the merge box (status, next step, reviewers), checks, labels and assignees. */
@@ -46,6 +47,8 @@ export function Sidebar({
   checkReruns: CheckReruns;
   /** The Reviewers card (Reviewers.tsx), wired to the page's data source. */
   reviewersCard: ReactNode;
+  /** Finish review again, under the reviewers, while the header's button is out of sight (PrPage's FinishReviewAgain). */
+  finishReview: ReactNode;
 }) {
   return (
     <aside className="pr-sidebar" aria-label="Status">
@@ -70,6 +73,7 @@ export function Sidebar({
       <Staged state={data.mergeBox} what="the reviewers" onRetry={() => onRetry(['mergeBox'])} skeleton={<SideCardSkeleton title="Reviewers" rows={2} />}>
         {() => reviewersCard}
       </Staged>
+      {finishReview}
       <Staged
         state={data.meta}
         what="labels and assignees"
