@@ -200,19 +200,26 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
 
 /**
  * What GitHub answers about one PR, each from memory while it is fresh or still in flight, except the requests named in
- * `repeat`, which are made again. Failures are not kept.
+ * `repeat`, which are made again, once for all the stages forced together. Failures are not kept.
  */
 function answersFor(pull: Pull, repeat: readonly GitHubRequest[]) {
   const ask = <T,>(request: GitHubRequest, variant: string, load: () => Promise<T>): Promise<T> => {
     const key = `${pull.path.toLowerCase()} ${request} ${variant}`;
     const kept = answers.get(key);
-    if (!repeat.includes(request) && kept && kept.expiresAt > Date.now()) return kept.value as Promise<T>;
-    const value = load();
-    answers.set(key, { expiresAt: Date.now() + 30_000, value });
-    value.catch(() => {
-      if (answers.get(key)?.value === value) answers.delete(key);
-    });
-    return value;
+    const repeating = repeat.includes(request);
+    // Another stage forced alongside this one is already asking GitHub again.
+    if (kept && (repeating ? kept.repeating : kept.expiresAt > Date.now())) return kept.value as Promise<T>;
+    const entry = { expiresAt: Date.now() + 30_000, value: load(), repeating };
+    answers.set(key, entry);
+    entry.value.then(
+      () => {
+        entry.repeating = false;
+      },
+      () => {
+        if (answers.get(key) === entry) answers.delete(key);
+      },
+    );
+    return entry.value;
   };
   const data = `${pull.path}/page_data`;
   // A route behind a side card. GitHub answers 404 for one the repository or viewer lacks, which leaves the card empty;
@@ -285,8 +292,8 @@ const OWN_REQUESTS: { [S in PrStage]: readonly GitHubRequest[] } = {
   meta: ['labels', 'assignees'],
 };
 
-/** GitHub's answers by `<pull path> <request> <variant>`, kept 30 s. */
-const answers = new Map<string, { expiresAt: number; value: Promise<unknown> }>();
+/** GitHub's answers by `<pull path> <request> <variant>`, kept 30 s; `repeating` while a forced stage's is on its way. */
+const answers = new Map<string, { expiresAt: number; value: Promise<unknown>; repeating: boolean }>();
 
 type GitHubAnswers = ReturnType<typeof answersFor>;
 

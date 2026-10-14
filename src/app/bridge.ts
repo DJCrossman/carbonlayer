@@ -6,7 +6,9 @@ export type ParentToAppMessage =
   | { type: 'gg:route'; hash: string }
   | { type: 'gg:theme'; theme: 'light' | 'dark' }
   /** A keydown that happened in the top document while the iframe did not have focus. */
-  | { type: 'gg:keydown'; key: string; code: string; altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean };
+  | { type: 'gg:keydown'; key: string; code: string; altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }
+  /** The top window was focused: the iframe's own window hears of a window focus only when it lands inside the frame. */
+  | { type: 'gg:focus' };
 
 export type AppToParentMessage =
   | { type: 'gg:ready' }

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { createPortal } from 'react-dom';
 import { postToParent } from '../app/bridge';
 import type { DataSource, ReviewThreadDraft } from '../app/data-source';
+import { useRefreshOnReturn } from '../app/refresh-on-return';
 import type { AppRoute } from '../app/routes';
 import { SIGNED_OUT } from '../lib/github-web/session';
 import type { PrDetail, PrStage, PrStages, ReactionContent } from '../lib/model';
@@ -63,11 +64,13 @@ export function PrPage({ source, route }: { source: DataSource; route: Extract<A
 
 /** The PR's stages as they arrive: a page skeleton until the header does, which only signing in can stop. */
 function PrStagesView({ source, route, settings }: { source: DataSource; route: Extract<AppRoute, { page: 'pr' }>; settings: Settings | null }) {
-  const { data, reload } = usePrPageData(source, route.repo, route.number);
+  const { data, reload, refresh } = usePrPageData(source, route.repo, route.number);
   const header = data.header;
   const prId = header.value?.id;
   // Every comment box on the page previews its Markdown as GitHub renders it on this PR.
   const previewMarkdown = useCallback((text: string) => source.previewMarkdown(text, prId ?? ''), [source, prId]);
+  // Not while a part of the page is loading already: the first load, a retry, or what a write changed.
+  useRefreshOnReturn(refresh, { busy: Object.values(data).some((stage) => stage.status === 'loading') });
   if (header.status === 'error' && header.error === SIGNED_OUT) return <PrError message={header.error} />;
   if (!header.value || !settings) {
     const retry = () => void reload(['header'], true).catch(() => {});

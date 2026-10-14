@@ -198,6 +198,8 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
   const themeChanges = new MutationObserver(() => ready && postTheme());
   themeChanges.observe(html, { attributes: true, attributeFilter: ['data-color-mode'] });
   systemTheme.addEventListener('change', () => ready && postTheme(), { signal });
+  // Coming back to the window refreshes the app's page; the frame hears of it itself only when the focus lands inside it.
+  window.addEventListener('focus', () => ready && post({ type: 'gg:focus' }), { signal });
 
   ui.iframe.addEventListener(
     'load',

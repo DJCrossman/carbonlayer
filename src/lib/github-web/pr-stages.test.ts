@@ -101,6 +101,14 @@ describe('the PR page in stages', () => {
     expect(requests.toSorted()).toEqual(['merge_box', 'review_requests']);
   });
 
+  it('asks GitHub once for a request several stages forced together repeat', async () => {
+    await Promise.all(STAGES.map((stage) => loadStage(stage)));
+    requests.length = 0;
+    await Promise.all(STAGES.map((stage) => loadStage(stage, true)));
+    // The Actions list is kept per head commit for 5 minutes, forced or not.
+    expect(requests.toSorted()).toEqual(['page', 'tab_counts', 'diffstat', 'threads', 'base_comparison_info', 'merge_box', 'review_requests', 'status_checks', 'labels', 'assignees'].sort());
+  });
+
   it('leaves a side card empty when GitHub has no such route, and fails its stage on anything else', async () => {
     vi.spyOn(console, 'debug').mockImplementation(() => {});
     requests = serveGitHub({ status_checks: 404 });

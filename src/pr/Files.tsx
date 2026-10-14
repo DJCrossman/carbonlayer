@@ -327,7 +327,19 @@ function FileCard({
   // Keyed on the patch, not the object: a refetch returns new objects, and a new diff identity re-renders it.
   const fileDiff = useMemo(() => renderableDiff(file), [file.path, file.previousPath, file.status, file.patch]);
   const composer = review.composer?.path === file.path ? review.composer : null;
-  const notes = useMemo(() => fileNotes(file.path, pr.threads, batch, composer), [file.path, pr.threads, batch, composer]);
+  // The diff keys each note by its place in the list, so a note keeps the place it was first shown in and new ones go
+  // after it: a thread that arrives with a refresh leaves an open composer or reply, and what is typed in it, as it was.
+  const shownNotes = useRef<Array<string | ReviewThreadDraft>>([]);
+  const notes = useMemo(() => {
+    // A thread is known by its id, a pending comment by its draft, the composer as itself.
+    const found = fileNotes(file.path, pr.threads, batch, composer).map((note) => {
+      const { metadata } = note;
+      return { note, id: metadata.kind === 'thread' ? metadata.thread.id : metadata.kind === 'pending' ? metadata.draft : metadata.kind };
+    });
+    const ids = found.map(({ id }) => id);
+    shownNotes.current = [...shownNotes.current.filter((id) => ids.includes(id)), ...ids.filter((id) => !shownNotes.current.includes(id))];
+    return found.toSorted((a, b) => shownNotes.current.indexOf(a.id) - shownNotes.current.indexOf(b.id)).map(({ note }) => note);
+  }, [file.path, pr.threads, batch, composer]);
   // GitHub offers "Add a suggestion" on the new file's lines only.
   const suggestion =
     composer && file.patch !== null && composer.side === 'additions' && (composer.startSide ?? 'additions') === 'additions'

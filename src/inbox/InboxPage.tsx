@@ -6,6 +6,7 @@ import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { postToParent } from '../app/bridge';
 import type { DataSource } from '../app/data-source';
+import { useRefreshOnReturn } from '../app/refresh-on-return';
 import { toGitHubUrl, type AppRoute } from '../app/routes';
 import type { Organization, PrEnrichment, PrSummary, RepoRef, StackBranches, TopRepository, View, ViewResult } from '../lib/model';
 import type { Settings } from '../lib/settings';
@@ -462,8 +463,8 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
 /**
  * Settings, the organization the inbox shows (the one chosen, unless the viewer's organizations, once known, no longer
  * include it) and every view's results for it, kept fresh: refetched when what GitHub is asked changes (not on rename or
- * collapse), every 2 minutes while the tab is visible, and on returning to the tab when older than a minute. Nothing is
- * fetched while no organization is shown.
+ * collapse), every 2 minutes while the tab is visible, and, asking GitHub itself, on coming back to the tab or window
+ * when older than 30 s (useRefreshOnReturn). Nothing is fetched while no organization is shown.
  */
 function useInbox(source: DataSource, organizations: Organization[] | null) {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -532,9 +533,8 @@ function useInbox(source: DataSource, organizations: Organization[] | null) {
   }, [org?.login]);
 
   const queriesKey = settings && org && JSON.stringify([settings.inboxScope, settings.views.map(({ id, query, limit }) => [id, query, limit])]);
-  const keepFresh = useEffectEvent((trigger: 'queries' | 'timer' | 'visible') => {
+  const keepFresh = useEffectEvent((trigger: 'queries' | 'timer') => {
     if (trigger !== 'queries' && document.visibilityState !== 'visible') return;
-    if (trigger === 'visible' && fetchedAt !== null && Date.now() - fetchedAt < 60_000) return;
     void refresh(false);
   });
 
@@ -544,13 +544,11 @@ function useInbox(source: DataSource, organizations: Organization[] | null) {
 
   useEffect(() => {
     const timer = setInterval(() => keepFresh('timer'), 120_000);
-    const onVisibilityChange = () => keepFresh('visible');
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-    };
+    return () => clearInterval(timer);
   }, []);
+
+  // Forced: the content script would answer from the minute it keeps the results. The rows update in place.
+  useRefreshOnReturn(() => refresh(true), { busy: refreshing, fetchedAt });
 
   return { settings, org, results, error, fetchedAt, refreshing, refresh, saveSettings };
 }

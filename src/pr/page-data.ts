@@ -10,9 +10,14 @@ import { filesInTreeOrder, fileTree } from './diff';
 /**
  * Loads every stage of a PR's page and keeps each as it arrives. The diffs GitHub does not send with the file list follow
  * it 20 files a request, four requests at a time, in the order the files show, so the first files fill in first.
- * `reload` loads stages again (keeping what they showed meanwhile) and rejects with the first failure.
+ * `reload` loads stages again (keeping what they showed meanwhile) and rejects with the first failure. `refresh` asks
+ * GitHub again for everything in the background; the diffs follow the head commit, loading again only once it moved.
  */
-export function usePrPageData(source: DataSource, repo: RepoRef, number: number): { data: PrPageData; reload: (stages: readonly PrStage[], force?: boolean) => Promise<void> } {
+export function usePrPageData(
+  source: DataSource,
+  repo: RepoRef,
+  number: number,
+): { data: PrPageData; reload: (stages: readonly PrStage[], force?: boolean) => Promise<void>; refresh: () => Promise<void> } {
   const [data, setData] = useState<PrPageData>(() => Object.fromEntries(PR_STAGES.map((stage) => [stage, { status: 'loading', value: null }])) as PrPageData);
   // Only the latest load of a stage may change it: one a later load overtook (a reload after a write) is dropped.
   const latestLoad = useRef<Partial<Record<PrStage, number>>>({});
@@ -50,7 +55,8 @@ export function usePrPageData(source: DataSource, repo: RepoRef, number: number)
         }
 
         const listed = value as PrStages['files'];
-        update('files', () => ({ status: 'loading', value: listed }));
+        // A file shows the diff it had until its new one arrives.
+        update('files', (state) => ({ status: 'loading', value: { ...listed, diffs: { ...state.value?.diffs, ...listed.diffs } } }));
         const order = filesInTreeOrder(fileTree(listed.files.map((file): ChangedFile => ({ ...file, patch: null, previousPath: null }))));
         const missing = order.map((file) => file.path).filter((path) => !(path in listed.diffs));
         const batches = Array.from({ length: Math.ceil(missing.length / 20) }, (_, i) => missing.slice(i * 20, i * 20 + 20));
@@ -78,6 +84,38 @@ export function usePrPageData(source: DataSource, repo: RepoRef, number: number)
     [source, owner, name, number],
   );
 
+  /**
+   * Every stage but the files again, asked of GitHub rather than the content script's memory. Each part of the page keeps
+   * showing what it has until its new answer replaces it, and one GitHub does not answer stays as it was: the next return
+   * to the page asks again.
+   */
+  const refresh = useCallback(async () => {
+    const pr = { owner, name };
+    const refreshStage = async <S extends PrStage>(stage: S) => {
+      const run = (latestLoad.current[stage] ?? 0) + 1;
+      latestLoad.current[stage] = run;
+      try {
+        const value = await source.fetchPrStage(stage, pr, number, true);
+        if (mounted.current && latestLoad.current[stage] === run) setData((current) => ({ ...current, [stage]: { status: 'ready', value } }));
+      } catch (reason) {
+        console.debug('[gg]', `refreshing the ${stage} failed; it shows what it had:`, reason instanceof Error ? reason.message : reason);
+      }
+    };
+    await Promise.all(PR_STAGES.filter((stage) => stage !== 'files').map((stage) => refreshStage(stage)));
+  }, [source, owner, name, number]);
+
+  // The diffs follow the head commit: the same commit on the same base has the same diffs, so the files load again only
+  // once a header finds the branch moved on or the pull request retargeted.
+  const head = data.header.value && `${data.header.value.baseRefName} ${data.header.value.headOid}`;
+  const filesHead = useRef(head);
+  useEffect(() => {
+    if (head === null || head === filesHead.current) return;
+    const first = filesHead.current === null;
+    filesHead.current = head;
+    // The first header's files are loading alongside it.
+    if (!first) reload(['files'], true).catch(() => {});
+  }, [head, reload]);
+
   useEffect(() => {
     mounted.current = true;
     // Each stage shows its own failure where it would have rendered.
@@ -87,7 +125,7 @@ export function usePrPageData(source: DataSource, repo: RepoRef, number: number)
     };
   }, [reload]);
 
-  return { data, reload };
+  return { data, reload, refresh };
 }
 
 /**
