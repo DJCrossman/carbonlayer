@@ -1,8 +1,9 @@
+import { QueryClient } from '@tanstack/react-query';
 import { describe, expect, it } from 'vitest';
 import { prFixtures } from '../fixtures/pr';
-import type { PrStages } from '../lib/model';
+import type { PrEnrichment, PrStages, ViewResult } from '../lib/model';
 import { nextActionFor } from './next-action';
-import { prDetailFrom, type PrPageData } from './page-data';
+import { prDetailFrom, stagesStandingIn, type PrPageData } from './page-data';
 
 const pr42 = prFixtures.find((pr) => pr.number === 42)!;
 const { timeline, threads, unresolvedThreadCount, files, baseOid, stack, labels, assignees, ci, requiredCheckNames, unread, ...rest } = pr42;
@@ -60,5 +61,47 @@ describe('prDetailFrom', () => {
       },
     });
     expect(pr.files).toEqual([{ ...first, previousPath: null }, { ...second, patch: null, previousPath: null }]);
+  });
+});
+
+describe('stagesStandingIn', () => {
+  const widgets = { owner: 'acme', name: 'widgets' };
+  // #42's stack as its page showed it: #41 below, #43 above.
+  const showedStack = () => {
+    const client = new QueryClient();
+    client.setQueryData(['pr', 'acme', 'widgets', 42, 'stack'], { stack });
+    return client;
+  };
+
+  it("stands in for a neighbour opened from a stack card with its entry: the header, and the stack centred on it; with its row details, the reviewers and checks", () => {
+    const client = showedStack();
+    const fromEntry = stagesStandingIn(client, widgets, 41);
+    expect(fromEntry.header).toMatchObject({ number: 41, title: 'Add a typed PARCS client', author: { login: 'mona' }, bodyHtml: '', stackSource: 'graphite-comment' });
+    expect(fromEntry.stack?.stack).toMatchObject({ currentIndex: 0, entries: [{ number: 41 }, { number: 42 }, { number: 43 }] });
+    expect(fromEntry).not.toHaveProperty('meta');
+    expect(fromEntry).not.toHaveProperty('mergeBox');
+
+    const details: PrEnrichment = { mergeStatus: 'CLEAN', reviewers: [{ kind: 'user', user: { login: 'hubot', avatarUrl: '', url: '' }, state: 'APPROVED' }], reviewDecision: 'APPROVED', ci };
+    client.setQueryData(['inbox-row', 'PR_fixture41', '2026-10-08T16:20:00Z', 'OPEN', false, 'NONE', 'SQUASH'], details);
+    expect(stagesStandingIn(client, widgets, 41)).toMatchObject({ mergeBox: { mergeStatus: 'CLEAN', reviewDecision: 'APPROVED', reviewers: [{ state: 'APPROVED' }] }, checks: { ci: { state: 'FAILURE' } } });
+  });
+
+  it("prefers the inbox's row, with its labels, and still centres the stack the page showed on the PR", () => {
+    const client = showedStack();
+    const row = { ...stack.entries[2]!, author: { login: 'jlord', avatarUrl: '', url: '' }, title: 'Show the zone switcher (as the inbox listed it)', labels: [{ name: 'ui', color: '000000' }] };
+    const section: Pick<ViewResult, 'prs'> = { prs: [row] };
+    client.setQueryData(['inbox', 'acme', 'org:acme', 'mine', 'is:pr', 50], section);
+    expect(stagesStandingIn(client, widgets, 43)).toMatchObject({
+      header: { title: 'Show the zone switcher (as the inbox listed it)', stackSource: 'graphite-comment' },
+      meta: { labels: [{ name: 'ui' }], assignees: [] },
+      stack: { stack: { currentIndex: 2 } },
+    });
+  });
+
+  it('stands in with no header for an entry whose author GitHub did not name, and with nothing for a PR neither showed', () => {
+    const client = new QueryClient();
+    client.setQueryData(['pr', 'acme', 'widgets', 42, 'stack'], { stack: { ...stack, entries: stack.entries.map((entry) => ({ ...entry, author: null })) } });
+    expect(Object.keys(stagesStandingIn(client, widgets, 43))).toEqual(['stack']);
+    expect(stagesStandingIn(client, widgets, 7)).toEqual({});
   });
 });

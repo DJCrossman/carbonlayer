@@ -8,6 +8,7 @@ import { postToParent } from '../app/bridge';
 import { copyPullRequest } from '../app/copy-pull-request';
 import type { DataSource, ReviewThreadDraft } from '../app/data-source';
 import type { AppRoute } from '../app/routes';
+import { useSettings } from '../app/use-settings';
 import { SIGNED_OUT } from '../lib/github-web/session';
 import type { PrDetail, PrStage, PrStages, ReactionContent } from '../lib/model';
 import { STAGES_A_WRITE_CHANGES, type MergeMethod } from '../lib/rpc';
@@ -38,42 +39,34 @@ import './page.css';
 
 export function PrPage({ source, route }: { source: DataSource; route: Extract<AppRoute, { page: 'pr' }> }) {
   const { owner, name } = route.repo;
-  const [error, setError] = useState<string | null>(null);
-  const [settings, setSettings] = useState<Settings | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const fail = (reason: unknown) => !cancelled && setError(reason instanceof Error ? reason.message : String(reason));
-    source.getSettings().then((value) => !cancelled && setSettings(value), fail);
-    let unwatch = () => {};
-    try {
-      unwatch = source.watchSettings(setSettings);
-    } catch (reason) {
-      fail(reason);
-    }
-    return () => {
-      cancelled = true;
-      unwatch();
-    };
-  }, [source]);
-
+  const { settings, error } = useSettings(source);
   if (error) return <PrError message={error} />;
-  // Another PR starts its stages over.
+  // Another PR starts its stages over, and everything the page was doing on the last one.
   return <PrStagesView key={`${owner}/${name}#${route.number}`} source={source} route={route} settings={settings} />;
 }
 
-/** The PR's stages as they arrive: a page skeleton until the header does, which only signing in can stop. */
+/**
+ * The PR's stages as they arrive: a page skeleton until the header does, which only signing in can stop. The window's
+ * title names the PR, by its number until its header comes.
+ */
 function PrStagesView({ source, route, settings }: { source: DataSource; route: Extract<AppRoute, { page: 'pr' }>; settings: Settings | null }) {
   const { data, reload } = usePrPageData(source, route.repo, route.number);
   const header = data.header;
   const prId = header.value?.id;
   // Every comment box on the page previews its Markdown as GitHub renders it on this PR.
   const previewMarkdown = useCallback((text: string) => source.previewMarkdown(text, prId ?? ''), [source, prId]);
+  const title = header.value ? `${header.value.title} · #${header.value.number}` : `#${route.number}`;
+  useEffect(() => {
+    postToParent({ type: 'gg:title', title });
+    if (window.parent === window) document.title = title;
+  }, [title]);
   if (header.status === 'error' && header.error === SIGNED_OUT) return <PrError message={header.error} />;
-  if (!header.value || !settings) {
+  if (!header.value) {
     const retry = () => void reload(['header']).catch(() => {});
     return <PrSkeleton headerError={header.status === 'error' ? <StageError what="this pull request" error={header.error} onRetry={retry} /> : null} />;
   }
+  // The settings are read in a moment, once a tab: a header the cache had waits for them rather than show the skeleton.
+  if (!settings) return null;
   return (
     <MarkdownPreview value={previewMarkdown}>
       <PrView header={header.value} data={data} reload={reload} settings={settings} source={source} section={route.section} comment={route.comment} />
@@ -131,12 +124,6 @@ function PrView({
   });
   const mergeMethod: MergeMethod = pr.allowedMergeMethods.includes(settings.mergeMethod) ? settings.mergeMethod : pr.defaultMergeMethod;
   useLinkedComment(comment, pr, data, files.revealThread);
-
-  useEffect(() => {
-    const title = `${pr.title} · #${pr.number}`;
-    postToParent({ type: 'gg:title', title });
-    if (window.parent === window) document.title = title;
-  }, [pr.title, pr.number]);
 
   useEffect(() => {
     const files = document.getElementById('pr-files');

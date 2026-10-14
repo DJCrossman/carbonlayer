@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { encodeViewsShareLink } from '../lib/views';
-import { parseAppHash, parseGitHubLocation, toAppHash, toGitHubUrl } from './routes';
+import { parseAppHash, parseGitHubLocation, routeInApp, toAppHash, toGitHubUrl, type AppRoute } from './routes';
 
 describe('parseGitHubLocation', () => {
   it("takes over GitHub's homepage", () => {
@@ -53,6 +53,37 @@ describe('parseGitHubLocation', () => {
   it('carries shared views from the hash into the inbox route', () => {
     const views = [{ id: 'a', name: 'A', query: 'is:pr' }];
     expect(parseGitHubLocation(new URL(encodeViewsShareLink(views)))).toEqual({ page: 'inbox', importViews: views });
+  });
+});
+
+describe('routeInApp', () => {
+  const both = { showsOurs: (route: AppRoute) => route.page !== 'none', signedIn: true };
+
+  it.each([
+    ['https://github.com/acme/widgets/pull/41', { page: 'pr', repo: { owner: 'acme', name: 'widgets' }, number: 41, section: 'conversation' }],
+    ['https://github.com/acme/widgets/pull/41/files', { page: 'pr', repo: { owner: 'acme', name: 'widgets' }, number: 41, section: 'files' }],
+    ['https://github.com/acme/api/pull/7#discussion_r12', { page: 'pr', repo: { owner: 'acme', name: 'api' }, number: 7, section: 'conversation', comment: 'discussion_r12' }],
+    ['https://github.com/', { page: 'inbox', importViews: null }],
+  ])('moves to %s inside the app', (url, route) => {
+    expect(routeInApp(new URL(url), both)).toEqual(route);
+  });
+
+  it.each([
+    'https://github.com/acme/widgets/issues/3',
+    'https://github.com/acme/widgets/pull/41/commits/abc',
+    'https://github.com/acme/widgets/pull/41?gh=1',
+    'https://github.com/pulls',
+    'https://gist.github.com/acme/1',
+    'http://github.com/acme/widgets/pull/41',
+  ])('loads %s', (url) => {
+    expect(routeInApp(new URL(url), both)).toBeNull();
+  });
+
+  it("loads a page this tab shows as GitHub's, and the homepage signed out", () => {
+    const pullRequestsOnly = { showsOurs: (route: AppRoute) => route.page === 'pr', signedIn: true };
+    expect(routeInApp(new URL('https://github.com/'), pullRequestsOnly)).toBeNull();
+    expect(routeInApp(new URL('https://github.com/acme/widgets/pull/41'), pullRequestsOnly)).toMatchObject({ page: 'pr', number: 41 });
+    expect(routeInApp(new URL('https://github.com/'), { ...both, signedIn: false })).toBeNull();
   });
 });
 

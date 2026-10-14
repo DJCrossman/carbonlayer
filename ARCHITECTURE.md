@@ -23,9 +23,9 @@ CSP. The content script is a thin bridge.
 
 | file | role |
 | --- | --- |
-| `github.content.ts` | Content script on `github.com/*`, run at `document_start`. Recognises the inbox (the homepage `/`, only when `<meta name="user-login">` names a signed-in user: signed out, `/` is GitHub's marketing page and stays untouched, so at `document_start` the script waits for that tag, or for `<body>`, before hiding anything) and PR (`/:owner/:repo/pull/:n`, plus `/files`, `/changes`, `/commits`, `/checks`) routes (`src/app/routes.ts`). On a handled route it reads the settings, then hides GitHub's `main` with a `<style>` on `<html>` before the page paints, and mounts the iframe (`app.html?theme=<theme>#<route>`) on `<html>` too, below GitHub's header, so Turbo's `<body>` swaps leave both in place and a soft navigation moves the loaded app with `gg:route` instead of reloading it. The frame opens in the theme the app will show (the options' theme, else GitHub's), which `app-theme.ts` puts on before the first paint: the app's light default would otherwise show while its code loads, a white flash on GitHub's dark theme. It forwards theme, keydown, the window's focus and who is signed in (`gg:viewer`, answering the app's `gg:ready` with `<meta name="user-login">` once the parser has reached it) to the iframe, performs top-level navigations the iframe asks for (`src/app/bridge.ts`), answers the iframe's RPC requests with `handleRpc` from `src/lib/github-web/` (session fetches), and re-routes on `wxt:locationchange`. `?gh=1` leaves GitHub untouched for one visit. The `inboxEnabled` / `prEnabled` settings leave it untouched until switched back. On every handled route the script adds a "GitHub \| CarbonLayer" switch (`role="group"`, two `aria-pressed` buttons, plain DOM, GitHub's colour variables) to GitHub's header, just before the + / notifications cluster (`[data-testid="top-bar-actions"]` in the signed-in global nav, `.AppHeader-actions` on older headers; signed out, the marketing header's search-and-sign-in cluster; failing those, the header's end). A click switches this tab at once and keeps that choice in the tab's `sessionStorage` for as long as the tab lives, and saves it as the default for tabs opened later; other open tabs keep their page until they load again. The popup's switches do the same for the tab in view: they save the default and send that tab's content script a `gg:choose` runtime message. GitHub's headers are server-rendered React partials, and a node inserted among their children before hydration makes React render the header again without it, so the switch lives in an open shadow root on that cluster beside a `<slot>` for GitHub's own children; it is placed once the header is parsed and again after a Turbo `<body>` swap or a React re-render. |
+| `github.content.ts` | Content script on `github.com/*`, run at `document_start`. Recognises the inbox (the homepage `/`, only when `<meta name="user-login">` names a signed-in user: signed out, `/` is GitHub's marketing page and stays untouched, so at `document_start` the script waits for that tag, or for `<body>`, before hiding anything) and PR (`/:owner/:repo/pull/:n`, plus `/files`, `/changes`, `/commits`, `/checks`) routes (`src/app/routes.ts`). On a handled route it reads the settings, then hides GitHub's `main` with a `<style>` on `<html>` before the page paints, and mounts the iframe (`app.html?theme=<theme>#<route>`) on `<html>` too, below GitHub's header, so Turbo's `<body>` swaps leave both in place and a soft navigation moves the loaded app with `gg:route` instead of reloading it. The frame opens in the theme the app will show (the options' theme, else GitHub's), which `app-theme.ts` puts on before the first paint: the app's light default would otherwise show while its code loads, a white flash on GitHub's dark theme. It forwards theme, keydown, the window's focus and who is signed in (`gg:viewer`, answering the app's `gg:ready` with `<meta name="user-login">` once the parser has reached it) to the iframe, performs top-level navigations the iframe asks for (`src/app/bridge.ts`), answers the iframe's RPC requests with `handleRpc` from `src/lib/github-web/` (session fetches), and re-routes on every same-document navigation (the Navigation API's `navigate` event; `wxt:locationchange` where there is none). A page the app asks for that it shows in this tab moves the tab inside the app instead of loading (below, "Moving between pages"). `?gh=1` leaves GitHub untouched for one visit. The `inboxEnabled` / `prEnabled` settings leave it untouched until switched back. On every handled route the script adds a "GitHub \| CarbonLayer" switch (`role="group"`, two `aria-pressed` buttons, plain DOM, GitHub's colour variables) to GitHub's header, just before the + / notifications cluster (`[data-testid="top-bar-actions"]` in the signed-in global nav, `.AppHeader-actions` on older headers; signed out, the marketing header's search-and-sign-in cluster; failing those, the header's end). A click switches this tab at once (GitHub's view loads the URL afresh when the app moved the tab since the page loaded, as GitHub's page below it is another URL's) and keeps that choice in the tab's `sessionStorage` for as long as the tab lives, and saves it as the default for tabs opened later; other open tabs keep their page until they load again. The popup's switches do the same for the tab in view: they save the default and send that tab's content script a `gg:choose` runtime message. GitHub's headers are server-rendered React partials, and a node inserted among their children before hydration makes React render the header again without it, so the switch lives in an open shadow root on that cluster beside a `<slot>` for GitHub's own children; it is placed once the header is parsed and again after a Turbo `<body>` swap or a React re-render. |
 | `app-theme.ts` | `app.html`'s first script, a blocking one in its `<head>`: sets `<html data-theme>` from `?theme=` before the page is parsed or painted, and `app/main.tsx` keeps that theme until it has GitHub's (`gg:theme`) and the options' own. A file of its own (WXT unlisted script), since the extension's CSP blocks inline scripts. |
-| `app/` | The React app (`entrypoints/app/main.tsx`): hash router → `InboxPage` (`src/inbox/`) or `PrPage` (`src/pr/`), inside the page's TanStack Query cache (`PageQueries`, below). Data comes through a `DataSource` (`src/app/data-source.ts`): the RPC-backed one in the extension, a fixture-backed one when opened with `?fixtures=1` (the dev harness). Listed in `web_accessible_resources` for `https://github.com/*`. |
+| `app/` | The React app (`entrypoints/app/main.tsx`): hash router → `InboxPage` (`src/inbox/`) or `PrPage` (`src/pr/`), inside the page's TanStack Query cache (`PageQueries`, below), which a move to another page (`gg:route`) keeps; another page or PR opens at its top. Data comes through a `DataSource` (`src/app/data-source.ts`): the RPC-backed one in the extension, a fixture-backed one when opened with `?fixtures=1` (the dev harness). Listed in `web_accessible_resources` for `https://github.com/*`. |
 | `background.ts` | Brokers the one-click copy from Graphite: opens `app.graphite.com` next to the inbox's tab, remembers both tabs in `storage.session`, stores the copied sections under `graphiteImport` in `storage.local`, then closes the Graphite tab and re-activates the inbox. Nothing else. |
 | `graphite.content.ts` / `graphite-sections.content.ts` | On `app.graphite.com`, only in the tab the background opened: the isolated script asks the page-world script (`world: 'MAIN'`) for the inbox's sections; that one waits for the inbox to render, walks React's internal state above a sidebar item to the inbox `snapshot` (`inboxSnapshotOf` in `src/lib/graphite.ts`) and posts the sections, the inbox's repositories and the signed-in login back. A banner in the tab reports the result. |
 | `options/` | Options page: the inbox's organization, its repositories and views editor, merge method, diff layout, theme, on/off switches. |
@@ -65,17 +65,21 @@ each such workflow whose run page names the head commit as a check that is never
 
 ## The page's cache
 
-Every move between the inbox and a PR page loads `app.html` afresh, so each page's data goes through one TanStack Query
-client (`PageQueries` in `src/app/query-cache.tsx`) whose cache is kept on the device: a page shows what the viewer saw
+Each page's data goes through one TanStack Query client (`PageQueries` in `src/app/query-cache.tsx`). A tab's moves
+between the inbox and PR pages keep the app, and its cache in memory, diffs and comments included (below; a PR's timeline,
+files, threads and diffs for 30 minutes once no page shows them, `IN_MEMORY_FOR_MS`); every page load
+(a new tab, a reload) starts the app afresh, so the cache is also kept on the device: a page shows what the viewer saw
 last at once, then asks GitHub and updates in place. It lives in the extension's own IndexedDB (database `carbonlayer`,
 one entry for the whole cache, shared by every tab, written at most once a second), restored before the page's queries
 run. It is kept for whoever is signed in: the content script answers the app's `gg:ready` with the login (`gg:viewer`), and
 the cache is kept under `<extension version>:<login>`, so another account or version finds nothing (and the old entry
 goes); signed out, the page has an in-memory cache only. Only what loaded is kept, for 24 hours, and never a diff or a
 comment: the PR page's file list (GitHub sends some diffs with it), diffs, review threads and timeline stay in memory and
-are asked of GitHub on every page load (`keptOnDevice`). The page renders once the cache is back, so its first frame
-shows what it holds rather than skeletons. Failures are not retried; each shows where it happened. The options page has
-a cache of its own, in memory only.
+are asked of GitHub on every page load (`keptOnDevice`). The settings are a query of the cache too (`useSettings` in
+`src/app/use-settings.ts`, kept current by `watchSettings`), in memory only, since chrome.storage keeps them: the inbox and
+the PR page read them from it, so a move between them waits for nothing. The page renders once the cache is back, so its
+first frame shows what it holds rather than skeletons. Failures are not retried; each shows where it happened. The
+options page has a cache of its own, in memory only.
 
 Coming back to the page (the tab shown, the window focused, this frame's own or github.com's forwarded as `gg:focus`)
 asks GitHub again for every query on the page older than its `staleTime` (TanStack's `focusManager`, given those three
@@ -90,17 +94,22 @@ organizations (`['orgs']`), an organization's people (`['org-people', org]`) and
 (`['top-repositories']`, pages of one infinite query), 10 minutes each, and the repository picker's searches (`['repos',
 org, text]`, a minute). All of them are kept on the device.
 
-What the inbox knows about a PR makes opening it instant. Resting the pointer on a row for 150 ms, or selecting it with
-j / k, loads that PR's page stages kept on the device (`KEPT_STAGES`: header, stack, merge box, checks, labels; never the
-timeline, files or threads) through the same queries the PR page uses (`prStageQuery` in `src/pr/page-data.ts`), one
-PR at a time, the latest intent first, three waiting at most, none whose stages are 30 s fresh (`useLoadAhead` in
-`src/inbox/InboxPage.tsx`). The cache is saved within a second of a change; it is saved at once (`SaveCacheNow`) when
-such a PR has loaded, before a row opens its PR (the navigation waits for it), and as the page goes (`pagehide`, which
-an unloading page does not always finish). A PR page whose stages the cache does not have uses what the inbox showed
-of it as TanStack placeholders, never cached and never fresh (`stagesFromInbox`): the header from its row (branches
-from its details or its stack lookup; the description shows a skeleton until the page's own header), its labels, and,
-once the row's details were found, its reviewers and merge status and its checks. A stage standing in so is
-`placeholder`: the sidebar's next step waits for the real one, and each is replaced as its own answer arrives.
+What the inbox and the stack card know about a PR makes opening it instant. Resting the pointer on an inbox row or a
+stack entry for 150 ms, or selecting a row with j / k, loads that PR's page through the same queries the PR page uses
+(`prStageQuery` in `src/pr/page-data.ts`): every stage, asked together as the page asks them, then, once the header and
+the file list are in, the diffs GitHub did not send with it; the stages kept on the device (`KEPT_STAGES`: header,
+stack, merge box, checks, labels) are saved there as soon as they have loaded, while the timeline, files, threads and
+diffs stay in this tab's memory, for a move inside the app. One PR at a time, the latest intent first, three waiting at
+most, none whose stages are 30 s fresh, the next waiting only for the kept stages (`useLoadAhead` in
+`src/pr/page-data.ts`). The cache is saved within a second of a change; it is saved at once (`SaveCacheNow`) when such a
+PR's kept stages have loaded, before a row opens its PR (the move waits for it), and as the page goes (`pagehide`, which
+an unloading page does not always finish). A PR page whose stages the cache does not have uses what the inbox or a stack
+showed of it as TanStack placeholders, never cached and never fresh (`stagesStandingIn`): the inbox's row, else its entry
+in the latest stack the page showed that names it (a neighbour opened from the stack card), gives the header (branches
+from the row's details or its stack lookup; the description shows a skeleton until the page's own header; an entry whose
+author GitHub did not name gives none); the row gives the labels; that stack, centred on the PR, the stack card; and once
+the PR's row details were found, its reviewers and merge status and its checks. A stage standing in so is `placeholder`:
+the sidebar's next step waits for the real one, and each is replaced as its own answer arrives.
 
 The PR page loads in stages (`PrStages` in `src/lib/model.ts`, `src/lib/github-web/pr-stages.ts`), all requested at
 once and each rendered as it arrives (`src/pr/page-data.ts`, one query per stage, `['pr', owner, repo, number, stage]`): `pr.fetchHeader` (the page's HTML, `tab_counts`,
@@ -108,7 +117,8 @@ once and each rendered as it arrives (`src/pr/page-data.ts`, one query per stage
 `pr.fetchActivity` (the timeline from that HTML, `threads` for which review opened which), `pr.fetchFiles`
 (`base_comparison_info`: every file, with the diffs GitHub sends along), then `pr.fetchFileDiffs` for the rest, one query
 a file (`['pr-diff', owner, repo, number, headOid, baseRef, path]`, fresh for good: the same commit has the same diff),
-asked 20 paths a `diff_entries` request and four requests at a time in the order the files show, `pr.fetchThreads` (`threads`
+asked 20 paths a `diff_entries` request and four requests at a time in the order the files show (those the cache has for
+the head the cached header names show at once; asking waits for a header GitHub sent the page), `pr.fetchThreads` (`threads`
 placed by the comparison's markers), `pr.fetchMergeBox` (`merge_box`, `review_requests`), `pr.fetchChecks`
 (`status_checks`), `pr.fetchStack` (`stack_mergeability` or Graphite's comment and the author's open PRs, then every
 other entry's own `threads`, for its conversation counter, and, where the stack's listing did not say who opened it,
@@ -116,7 +126,7 @@ its `page_data/header`, three entries at a time) and `pr.fetchMeta` (`labels`, `
 GitHub for every stage every time, and shares a request between the stages that make it while it is on its way, so the
 HTML is fetched once for the stages asked together; after a successful write it shares none made before it. Opening
 the page asks GitHub for every stage, whatever the cache had. Until the header arrives (from the cache, the inbox's
-row, or one round trip) the page is a skeleton; after it each section has its own skeleton and, should its stage fail before it ever
+row or a stack entry, or one round trip) the page is a skeleton, and the window's title the PR's number; after it each section has its own skeleton and, should its stage fail before it ever
 arrived, an inline error with a retry. Only a signed-out header with nothing to show fails the whole page. A write
 invalidates the stages it changes (`STAGES_A_WRITE_CHANGES` in `src/lib/rpc.ts`) and the page loads those again, the
 others untouched (a reload that fails says so in a toast); marking a file viewed only changes it in place. Coming back to
@@ -124,6 +134,37 @@ the page once a stage is 30 s old loads it again in the background, every stage 
 it shows until its answer arrives and as it was should that fail; the file list loads again only once a header GitHub
 sent this page finds the head commit moved or the base changed, and each file keeps its diff until the new one arrives.
 `pr.fetch` still answers the whole `PrDetail` at once, composed from the stages.
+
+Moving between pages: in a tab the app has taken over, a move to another page the app shows there (an inbox row, a
+stack entry or its keys, the sidebar's "Go to #n", a github.com link in Markdown to a PR or the homepage) stays in the
+app. The app asks the content script to navigate (`gg:navigate`), as it always has; when the URL is one the app shows in
+this tab (`routeInApp` in `src/app/routes.ts`: github.com, the surface switched on here, the homepage only signed in),
+the content script `history.pushState`s the top window to it, a `null` state, notes the new entry's key, and posts the
+route (`gg:route`): the app switches page with the same cache, so the address bar shows the real github.com URL, the
+window's title follows (`gg:title`, which each page posts from its first frame) and nothing loads. Back and Forward are
+same-document navigations: the Navigation API's `navigate` event syncs the route as for GitHub's own soft navigations.
+GitHub's page below the app stays the one the tab loaded, and so does its header above the app (its breadcrumbs name
+the repository of the page the tab loaded). GitHub's Turbo restores only entries carrying its own state
+(its `shouldRestore` hook, read from GitHub's bundle), so it leaves the app's entries alone; going back to the page the
+tab loaded is a Turbo entry, which it may restore by fetching and re-rendering that hidden page, under the app. A
+`popstate` landing on one of the app's entries is stopped before GitHub's listeners hear it (the content script listens
+first, at `document_start`), so GitHub's React router does not take its hidden page there. Because GitHub's page is then
+another URL's, the header's GitHub switch loads the current URL afresh after such a move (and shows GitHub's page in
+place otherwise); `?gh=1` (`g h`) was a load already. Everything else still loads: a URL the app does not show (or shows
+as GitHub's in this tab), ⌘ / Ctrl / Shift / middle clicks (the browser's own new tab or window, from the link itself;
+an inbox row's through `window.open`), and a cross-document navigation, which leaves the old document's route as it was.
+The PR page starts over for another PR (`PrStagesView` is keyed by it): scroll, drawer, collapsed files, composers and
+any draft in a comment box belong to the PR they were on.
+
+Skeletons show only where nothing is known: the cache (in memory after a move, on the device after a load) or a
+placeholder stands in everywhere else. What remains: the page skeleton until a header exists (a PR neither the inbox nor
+a stack showed, opened from a link or typed); the description until the page's own header (no row or entry has it);
+the activity, the file list and each file's diff, the threads and the drawer for a PR whose page this tab has not loaded
+in the last 30 minutes (they are never kept on the device); the labels and assignees for a PR known only from a stack entry; the sidebar's
+"Checking mergeability…" line while its next step stands on placeholders (a merge button must not come from them); a
+stack entry's statuses and an inbox row's columns until their first row details; a section's skeleton rows until its
+first answer, or, grouped by stack, until its open rows' branches are known; and the top repositories until their first
+page.
 
 Comment links: every comment GitHub gives a permalink to has a Copy link (`CopyLink` in `src/pr/Comment.tsx`, a link
 icon at the end of its header, or in the description's top corner, out of sight until the pointer is on the comment or
@@ -146,7 +187,8 @@ then its conversations, statuses and age. The viewed PR's review verdict, checks
 every other entry's are the row details the inbox shows for a PR (`useRowEnrichment` in `src/inbox/row-details.ts`,
 `inbox.enrich`, below), asked for while the card is open, 10 entries a request and one request at a time, under the
 inbox's own key for a PR the inbox showed (its row, so either page finds what the other asked for) and the entry's own
-otherwise. The stack's listing names no verdict, checks or mergeability, so they are what the inbox's row would show:
+otherwise; an entry the pointer rests on loads its page ahead, as an inbox row does (below). The stack's listing names
+no verdict, checks or mergeability, so they are what the inbox's row would show:
 until an entry's details arrive (and when the cache has none) its statuses are small skeletons, an open entry's checks
 and merge status too while a merged or closed one says so at once; a request GitHub does not answer leaves them empty. Neither GitHub's stack (`stack.pulls[]`) nor Graphite's comment names who
 opened an entry, and the search finds only the viewed PR's author's, so each other entry's author is its own
@@ -351,5 +393,6 @@ them carrying them as its own `repos`. Relative times
 - Harness: `pnpm build`, then serve `.output/chrome-mv3` statically and open `app.html?fixtures=1#/inbox` or
   `app.html?fixtures=1#/pr/acme/widgets/42` for visual checks (no session, no `chrome.*`). Its cache stays in memory, so
   every run starts clean; `&keep=<label>` keeps it on the device as the fixtures' viewer under that label instead, for
-  checking what a second load restores (another label restores nothing).
+  checking what a second load restores (another label restores nothing). Moves between pages are checked with the real
+  content script on stand-in github.com pages whose frame is pointed at `app.html?fixtures=1`.
 - Real-site check: load `.output/chrome-mv3` unpacked while signed in to github.com, open github.com.

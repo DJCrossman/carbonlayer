@@ -1,7 +1,7 @@
 // The stack card: every PR in the stack on a vertical rail, tip at the top and trunk at the bottom, each with its review,
 // checks and merge status; and the card as it looks while the stack loads.
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import type { DataSource } from '../app/data-source';
 import { inboxRowFor, useRowEnrichment } from '../inbox/row-details';
 import type { Stack, StackEntry } from '../lib/model';
@@ -15,12 +15,14 @@ import { RelativeTime } from '../ui/RelativeTime';
 import { ReviewStatus } from '../ui/ReviewStatus';
 import { Skeleton } from '../ui/Skeleton';
 import { goToPr } from './navigation';
+import { useLoadAhead } from './page-data';
 import './stack.css';
 
 /**
  * The stack's entries. The viewed PR's statuses come with its page; every other entry's with the same row details the
  * inbox shows for a PR (src/inbox/row-details.ts), asked for while the card is open and kept under the inbox's own key
- * for a PR the inbox showed, so either page finds what the other asked for.
+ * for a PR the inbox showed, so either page finds what the other asked for. An entry the pointer rests on loads its page
+ * ahead, as an inbox row does.
  */
 export function StackCard({
   stack,
@@ -43,6 +45,7 @@ export function StackCard({
     [queryClient, stack],
   );
   const details = useRowEnrichment(source, [...rows.values()], mergeMethod);
+  const loadAhead = useLoadAhead(source);
   useEffect(() => {
     if (!collapsed) for (const row of rows.values()) details.want(row);
   }, [rows, collapsed]);
@@ -64,7 +67,15 @@ export function StackCard({
             const found = row && details.found.get(row.id)?.enrichment;
             // What the inbox would show for it: its row's verdict and checks, what its details found over them.
             const shown = row && found ? { ...pr, reviewDecision: row.reviewDecision, ci: row.ci, ...found } : pr;
-            return <StackRow key={pr.id} pr={shown} current={index === stack.currentIndex} waiting={row !== undefined && found === undefined} />;
+            return (
+              <StackRow
+                key={pr.id}
+                pr={shown}
+                current={index === stack.currentIndex}
+                waiting={row !== undefined && found === undefined}
+                onIntent={() => loadAhead(pr)}
+              />
+            );
           })}
           <li className="stack-row is-trunk">
             <span className="stack-dot" />
@@ -105,14 +116,24 @@ function StackRow({
   pr,
   current,
   waiting,
+  onIntent,
 }: {
   pr: StackEntry;
   current: boolean;
   /** Its row details have not arrived and the cache had none: its statuses show small skeletons. */
   waiting: boolean;
+  /** The pointer rested on another entry: the viewer may open it next. */
+  onIntent: () => void;
 }) {
+  // The pointer resting 150 ms on the entry, not passing over it.
+  const resting = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(resting.current), []);
   return (
-    <li className={`stack-row ${current ? 'is-current' : ''} ${pr.state === 'MERGED' ? 'is-merged' : ''}`}>
+    <li
+      className={`stack-row ${current ? 'is-current' : ''} ${pr.state === 'MERGED' ? 'is-merged' : ''}`}
+      onMouseEnter={() => !current && (resting.current = setTimeout(onIntent, 150))}
+      onMouseLeave={() => clearTimeout(resting.current)}
+    >
       <span className="stack-dot" />
       {/* Who opened it; an entry whose page header GitHub did not answer keeps the space empty. */}
       <span className="stack-author">{pr.author && <Avatar user={pr.author} size={16} />}</span>
@@ -124,6 +145,8 @@ function StackRow({
           className="stack-title"
           href={pr.url}
           onClick={(event) => {
+            // A click with ⌘, Ctrl, Shift or Alt, or another button, is the browser's: a new tab or window, or a download.
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
             event.preventDefault();
             goToPr(pr);
           }}

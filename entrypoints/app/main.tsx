@@ -1,5 +1,5 @@
 // The app page. Lives in an iframe on github.com (see ARCHITECTURE.md) or standalone in the harness.
-import { StrictMode, useEffect, useState } from 'react';
+import { StrictMode, useEffect, useLayoutEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { browser } from 'wxt/browser';
 import { GITHUB_ORIGIN, isBridgeMessage, postToParent, themeOpenedIn, type ParentToAppMessage } from '../../src/app/bridge';
@@ -54,6 +54,10 @@ function App({ source }: { source: DataSource }) {
       window.removeEventListener('message', onMessage);
     };
   }, []);
+
+  // Another page, or another PR, opens at its top: a move inside the app (gg:route) keeps this document and its scroll.
+  const shownPage = route.page === 'pr' ? `${route.repo.owner}/${route.repo.name}#${route.number}` : route.page;
+  useLayoutEffect(() => window.scrollTo(0, 0), [shownPage]);
 
   useEffect(() => {
     void source.getSettings().then((settings) => setThemeSetting(settings.theme), () => {});

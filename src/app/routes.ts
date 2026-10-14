@@ -34,6 +34,16 @@ export function parseGitHubLocation(url: URL): AppRoute {
   return { page: 'none' };
 }
 
+/**
+ * The route a move in this tab to `url` shows without loading a page, inside the app: a github.com page the app shows in
+ * this tab (`showsOurs`), the homepage only signed in. Null for any other page, which loads as it would.
+ */
+export function routeInApp(url: URL, { showsOurs, signedIn }: { showsOurs: (route: AppRoute) => boolean; signedIn: boolean }): AppRoute | null {
+  if (url.origin !== 'https://github.com') return null;
+  const route = parseGitHubLocation(url);
+  return showsOurs(route) && (route.page !== 'inbox' || signedIn) ? route : null;
+}
+
 /** The app hash for a route, e.g. `#/pr/acme/widgets/42?section=files`. */
 export function toAppHash(route: AppRoute): string {
   switch (route.page) {

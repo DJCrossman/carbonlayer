@@ -1,14 +1,16 @@
 // The PR page's data as its stages arrive (PrStages in src/lib/model.ts), each a query of the page's cache
 // (src/app/query-cache.tsx). Every stage loads at once and on its own; each part of the page renders from the stages it
 // needs, with a skeleton until they arrive and an inline error, with a retry, for one that failed. What the viewer saw
-// last shows at once from the cache while the page asks GitHub again; a PR the viewer has not opened but the inbox showed
-// stands in with what its row said. A write reloads only the stages it changed.
+// last shows at once from the cache while the page asks GitHub again; a PR the viewer has not opened but the inbox or a
+// stack card showed stands in with what its row or entry said. A write reloads only the stages it changed.
 import { useQueries, useQueryClient, type QueryClient, type UseQueryResult } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { askedTogether } from '../app/asked-together';
 import type { DataSource } from '../app/data-source';
+import { KEPT_STAGES, SaveCacheNow } from '../app/query-cache';
+import { enrichmentFoundBefore, inboxRowFor } from '../inbox/row-details';
 import { SIGNED_OUT } from '../lib/github-web/session';
-import type { ChangedFile, ChangedFileDiff, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, RepoRef, ReviewThread, StackBranches, TimelineItem, ViewResult } from '../lib/model';
+import type { ChangedFile, ChangedFileDiff, PrDetail, PrStage, PrStages, PrSummary, RepoRef, ReviewThread, StackBranches, StackEntry, TimelineItem } from '../lib/model';
 import { filesInTreeOrder, fileTree } from './diff';
 
 /**
@@ -16,13 +18,14 @@ import { filesInTreeOrder, fileTree } from './diff';
  * it 20 files a request, four requests at a time, in the order the files show, so the first files fill in first.
  * `reload` loads stages again (keeping what they showed meanwhile) and rejects with the first failure. Coming back to the
  * page once a stage is 30 s old asks GitHub for it again in the background; the diffs follow the head commit, loading
- * again only once it moved. A stage GitHub does not answer then keeps what it showed. Until a stage first arrives, what
- * the inbox showed of the PR stands in for it, where it can (`placeholder`).
+ * again only once it moved, and those the cache has for the head it had show while the page asks. A stage GitHub does not
+ * answer then keeps what it showed. Until a stage first arrives, what the inbox or a stack showed of the PR stands in for
+ * it, where it can (`placeholder`).
  */
 export function usePrPageData(source: DataSource, repo: RepoRef, number: number): { data: PrPageData; reload: (stages: readonly PrStage[]) => Promise<void> } {
   const { owner, name } = repo;
   const queryClient = useQueryClient();
-  const [fromInbox] = useState(() => stagesFromInbox(queryClient, repo, number));
+  const [standingIn] = useState(() => stagesStandingIn(queryClient, repo, number));
   const stages = useQueries({
     queries: PR_STAGES.map((stage) => ({
       ...prStageQuery(source, { owner, name }, number, stage),
@@ -30,46 +33,25 @@ export function usePrPageData(source: DataSource, repo: RepoRef, number: number)
       refetchOnMount: 'always' as const,
       // The files follow the head commit (below).
       staleTime: stage === 'files' ? Infinity : 30_000,
-      placeholderData: fromInbox[stage],
+      placeholderData: standingIn[stage],
     })),
     combine: (results) => Object.fromEntries(PR_STAGES.map((stage, index) => [stage, results[index]!])) as { [S in PrStage]: UseQueryResult<PrStages[S]> },
   });
   const signedOut = stages.header.error?.message === SIGNED_OUT;
 
-  // The diffs GitHub did not send with the file list, in the order the files show. They follow the head commit, so they
-  // wait for a header GitHub sent this page rather than the one the cache had.
+  // The diffs GitHub did not send with the file list, in the order the files show. They follow the head commit: those the
+  // cache has for the header it had show at once, and asking GitHub waits for a header GitHub sent this page.
   const listed = stages.files.data;
+  const cachedHead = stages.header.isPlaceholderData ? undefined : stages.header.data;
   const head = stages.header.isFetchedAfterMount ? stages.header.data : undefined;
-  const missing = useMemo(
-    () =>
-      listed
-        ? filesInTreeOrder(fileTree(listed.files.map((file): ChangedFile => ({ ...file, patch: null, previousPath: null }))))
-            .map((file) => file.path)
-            .filter((path) => !(path in listed.diffs))
-        : [],
-    [listed],
-  );
-  // 20 paths a request and four requests at a time; a path GitHub sent no diff for has none.
-  const askForDiff = useMemo(
-    () =>
-      askedTogether(
-        async (paths: string[]) => {
-          const diffs = await source.fetchPrFileDiffs({ owner, name }, number, paths);
-          return paths.map((path) => diffs[path] ?? null);
-        },
-        { perRequest: 20, atOnce: 4 },
-      ),
-    [source, owner, name, number],
-  );
+  const missing = useMemo(() => (listed ? diffsToAsk(listed) : []), [listed]);
+  const askForDiff = useMemo(() => askForDiffs(source, { owner, name }, number), [source, owner, name, number]);
   const diffs = useQueries({
-    queries: head
+    queries: cachedHead
       ? missing.map((path) => ({
-          queryKey: ['pr-diff', owner, name, number, head.headOid, head.baseRefName, path],
-          queryFn: () => askForDiff(path),
-          // The same commit on the same base has the same diff.
-          staleTime: Infinity,
+          ...prDiffQuery(askForDiff, { owner, name }, number, cachedHead, path),
           // Signed out, the page says so and nothing else; while the file list loads again, which files changed may too.
-          enabled: !signedOut && !stages.files.isFetching,
+          enabled: head !== undefined && !signedOut && !stages.files.isFetching,
         }))
       : [],
     combine: (results) => ({
@@ -116,9 +98,56 @@ export function usePrPageData(source: DataSource, repo: RepoRef, number: number)
   return { data, reload };
 }
 
-/** The query for one stage of a PR's page, as the page asks it and as the inbox loads it ahead of a click. */
+/**
+ * The query for one stage of a PR's page, as the page asks it and as it is loaded ahead of a click. A stage the device does
+ * not keep stays in this tab's memory for a while once no page shows it (IN_MEMORY_FOR_MS).
+ */
 export function prStageQuery<S extends PrStage>(source: DataSource, repo: RepoRef, number: number, stage: S) {
-  return { queryKey: ['pr', repo.owner, repo.name, number, stage], queryFn: () => source.fetchPrStage(stage, repo, number) };
+  return {
+    queryKey: ['pr', repo.owner, repo.name, number, stage],
+    queryFn: () => source.fetchPrStage(stage, repo, number),
+    ...(!KEPT_STAGES.includes(stage) && { gcTime: IN_MEMORY_FOR_MS }),
+  };
+}
+
+/**
+ * Loads the page of a PR the viewer may open next (an inbox row or a stack entry the pointer rests on, a row selected
+ * with j / k) into the cache, as Graphite does, so opening it shows it at once: every stage, asked together as the page
+ * asks them, the ones kept on the device saved there as soon as they have loaded, and once the header and the file list
+ * are in, the diffs GitHub did not send with it; the timeline, files, threads and diffs stay in this tab's memory. One PR
+ * at a time, the latest intent first, the three latest at most waiting, and none whose stages are 30 s fresh; the next PR
+ * waits only for the stages kept on the device.
+ */
+export function useLoadAhead(source: DataSource) {
+  const queryClient = useQueryClient();
+  const saveCacheNow = useContext(SaveCacheNow);
+  const waiting = useRef<PrToLoad[]>([]);
+  const loading = useRef(false);
+
+  async function loadInTurn() {
+    for (let pr = waiting.current.pop(); pr; pr = waiting.current.pop()) {
+      const { repo, number } = pr;
+      const asked = new Map(PR_STAGES.map((stage) => [stage, queryClient.prefetchQuery({ ...prStageQuery(source, repo, number, stage), staleTime: 30_000 })]));
+      void Promise.all([asked.get('header'), asked.get('files')]).then(() => {
+        const header = queryClient.getQueryData<PrStages['header']>(prStageQuery(source, repo, number, 'header').queryKey);
+        const listed = queryClient.getQueryData<PrStages['files']>(prStageQuery(source, repo, number, 'files').queryKey);
+        if (!header || !listed) return;
+        const askForDiff = askForDiffs(source, repo, number);
+        for (const path of diffsToAsk(listed)) void queryClient.prefetchQuery(prDiffQuery(askForDiff, repo, number, header, path));
+      });
+      await Promise.all(KEPT_STAGES.map((stage) => asked.get(stage)));
+      // Saved at once rather than within the second, should the PR be opened some other way than here.
+      await saveCacheNow();
+    }
+    loading.current = false;
+  }
+
+  return (pr: PrToLoad) => {
+    waiting.current = [...waiting.current.filter((other) => other.id !== pr.id), pr].slice(-3);
+    if (loading.current) return;
+    loading.current = true;
+    void loadInTurn();
+  };
 }
 
 /**
@@ -166,7 +195,7 @@ export function prDetailFrom(header: PrStages['header'], data: PrPageData): PrDe
 
 /**
  * A stage of the PR page: loading (still showing what it had, if anything), arrived, failed, or, until it first arrives,
- * what the inbox showed of the PR in its place.
+ * what the inbox or a stack showed of the PR in its place.
  */
 export type StageState<T> =
   | { status: 'loading'; value: T | null }
@@ -176,61 +205,76 @@ export type StageState<T> =
 
 export type PrPageData = { [S in PrStage]: StageState<PrStages[S]> };
 
+/** A PR the viewer may open next, as an inbox row or a stack entry names it. */
+type PrToLoad = Pick<PrSummary, 'id' | 'repo' | 'number'>;
+
 /** Every stage, the header first: the page's first request. */
 const PR_STAGES: PrStage[] = ['header', 'stack', 'activity', 'files', 'threads', 'mergeBox', 'checks', 'meta'];
 
 /**
- * What the inbox showed of this PR (its row in a section or a "Load more" page, the details found for the row, its
- * branches), in the place of the stages it can stand in for until theirs arrive: the header without its description,
- * the labels, and, once the row's details were found, the reviewers and merge status, and the checks. Nothing when the
- * inbox has not shown the PR.
+ * How long this tab keeps a PR's timeline, files, threads and diffs once no page shows them, for a move back to it: the
+ * device never keeps them, and a tab that moves between many PRs should not hold them all.
  */
-function stagesFromInbox(queryClient: QueryClient, repo: RepoRef, number: number): Partial<PrStages> {
+const IN_MEMORY_FOR_MS = 30 * 60_000;
+
+/**
+ * What the inbox or a stack the page showed knows of this PR, in the place of the stages it can stand in for until theirs
+ * arrive. The inbox's row (in a section or a "Load more" page) with its branches, else the PR's entry in the latest stack
+ * that names it (a neighbour opened from its stack card), gives the header without its description; with the row details
+ * found for it, the reviewers and merge status, and the checks. The row gives the labels; the stack, itself centred on
+ * this PR. Nothing when neither has shown the PR.
+ */
+export function stagesStandingIn(queryClient: QueryClient, repo: RepoRef, number: number): Partial<PrStages> {
   const isThisPr = (pr: Pick<PrSummary, 'repo' | 'number'>) =>
     pr.number === number && pr.repo.owner.toLowerCase() === repo.owner.toLowerCase() && pr.repo.name.toLowerCase() === repo.name.toLowerCase();
-  const newestFirst = (queryKey: string) =>
-    queryClient
-      .getQueryCache()
-      .findAll({ queryKey: [queryKey], predicate: ({ state }) => state.data !== undefined })
-      .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt);
-  const row = [...newestFirst('inbox'), ...newestFirst('inbox-page')].flatMap((query) => (query.state.data as ViewResult).prs).find(isThisPr);
-  if (!row) return {};
-  const details = newestFirst('inbox-row').find(({ queryKey }) => queryKey[1] === row.id)?.state.data as PrEnrichment | undefined;
-  const branches = queryClient.getQueryData<StackBranches | null>(['stack-branches', row.repo.owner, row.repo.name, row.number]);
-  const pr: PrSummary = { ...row, ...details };
+  const row = inboxRowFor(queryClient, repo, number);
+  const stack = queryClient
+    .getQueryCache()
+    .findAll({ queryKey: ['pr'], predicate: ({ queryKey, state }) => queryKey[4] === 'stack' && state.data !== undefined })
+    .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt)
+    .map((query) => (query.state.data as PrStages['stack']).stack)
+    .find((candidate) => candidate.source !== 'none' && candidate.entries.some(isThisPr));
+  const known = row ?? stack?.entries.find(isThisPr);
+  if (!known) return {};
+  const details = enrichmentFoundBefore(queryClient).get(known.id);
+  const branches = queryClient.getQueryData<StackBranches | null>(['stack-branches', known.repo.owner, known.repo.name, known.number]);
+  const pr: StackEntry = { ...known, ...details };
   const { id, title, url, author, state, isDraft, createdAt, updatedAt, mergedAt, additions, deletions, changedFiles, commentCount, nativeStack } = pr;
-  const header: PrStages['header'] = {
-    id,
-    repo: pr.repo,
-    number,
-    title,
-    url,
-    author,
-    state,
-    isDraft,
-    createdAt,
-    updatedAt,
-    mergedAt,
-    additions,
-    deletions,
-    changedFiles,
-    commentCount,
-    nativeStack,
-    headRefName: pr.headRefName || branches?.headRefName || '',
-    baseRefName: pr.baseRefName || branches?.baseRefName || '',
-    // Not on the row: the page's own header brings them.
-    bodyHtml: '',
-    descriptionUrl: null,
-    descriptionReactions: [],
-    headOid: '',
-    viewerCanUpdate: false,
-    viewerDidAuthor: false,
-    viewerLogin: '',
-    stackSource: pr.nativeStack ? 'native' : 'none',
-  };
   return {
-    header,
-    meta: { labels: pr.labels, assignees: [] },
+    // A stack entry whose page header GitHub did not answer names nobody; the page's own header will.
+    ...(author && {
+      header: {
+        id,
+        repo: pr.repo,
+        number,
+        title,
+        url,
+        author,
+        state,
+        isDraft,
+        createdAt,
+        updatedAt,
+        mergedAt,
+        additions,
+        deletions,
+        changedFiles,
+        commentCount,
+        nativeStack,
+        headRefName: pr.headRefName || branches?.headRefName || '',
+        baseRefName: pr.baseRefName || branches?.baseRefName || '',
+        // Not on the row or the entry: the page's own header brings them.
+        bodyHtml: '',
+        descriptionUrl: null,
+        descriptionReactions: [],
+        headOid: '',
+        viewerCanUpdate: false,
+        viewerDidAuthor: false,
+        viewerLogin: '',
+        stackSource: stack?.source ?? (pr.nativeStack ? 'native' : 'none'),
+      },
+    }),
+    ...(row && { meta: { labels: row.labels, assignees: [] } }),
+    ...(stack && { stack: { stack: { ...stack, currentIndex: stack.entries.findIndex(isThisPr) } } }),
     ...(details?.reviewers && {
       mergeBox: {
         mergeStatus: pr.mergeStatus,
@@ -245,6 +289,35 @@ function stagesFromInbox(queryClient: QueryClient, repo: RepoRef, number: number
       },
     }),
     ...(details?.ci && { checks: { ci: details.ci, requiredCheckNames: details.requiredCheckNames ?? [], emptyReason: null } }),
+  };
+}
+
+/** The files whose diffs GitHub did not send with the list, in the order the files show: those asked for a batch at a time. */
+function diffsToAsk(listed: PrStages['files']): string[] {
+  return filesInTreeOrder(fileTree(listed.files.map((file): ChangedFile => ({ ...file, patch: null, previousPath: null }))))
+    .map((file) => file.path)
+    .filter((path) => !(path in listed.diffs));
+}
+
+/** How a PR's diffs are asked of GitHub: 20 paths a request and four requests at a time; a path GitHub sent no diff for has none. */
+function askForDiffs(source: DataSource, repo: RepoRef, number: number) {
+  return askedTogether(
+    async (paths: string[]) => {
+      const diffs = await source.fetchPrFileDiffs(repo, number, paths);
+      return paths.map((path) => diffs[path] ?? null);
+    },
+    { perRequest: 20, atOnce: 4 },
+  );
+}
+
+/** The query for one file's diff on a head commit, as the page asks it and as it is loaded ahead of a click. */
+function prDiffQuery(ask: (path: string) => Promise<ChangedFileDiff | null>, repo: RepoRef, number: number, head: Pick<PrStages['header'], 'headOid' | 'baseRefName'>, path: string) {
+  return {
+    queryKey: ['pr-diff', repo.owner, repo.name, number, head.headOid, head.baseRefName, path],
+    queryFn: () => ask(path),
+    // The same commit on the same base has the same diff.
+    staleTime: Infinity,
+    gcTime: IN_MEMORY_FOR_MS,
   };
 }
 

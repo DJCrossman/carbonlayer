@@ -1,6 +1,7 @@
 // Content script on github.com: recognises the inbox (the homepage, signed in) and PR routes, hides GitHub's page
 // content below its header, shows app.html there in an iframe, and bridges theme, keystrokes, titles and navigation
-// (src/app/bridge.ts). It also answers the app's data requests (src/lib/rpc.ts) with the user's github.com session.
+// (src/app/bridge.ts): a move to another page the app shows stays in the app, the address bar and history following it.
+// It also answers the app's data requests (src/lib/rpc.ts) with the user's github.com session.
 // `?gh=1` leaves GitHub untouched for one visit. On every handled route it adds a "GitHub | CarbonLayer" switch to
 // GitHub's header, which saves the surface's setting; while that is off, GitHub's page stays untouched.
 import { browser } from 'wxt/browser';
@@ -8,7 +9,7 @@ import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { createIframeUi } from 'wxt/utils/content-script-ui/iframe';
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { isBridgeMessage, type AppToParentMessage, type ParentToAppMessage } from '../src/app/bridge';
-import { parseGitHubLocation, toAppHash, type AppRoute } from '../src/app/routes';
+import { parseGitHubLocation, routeInApp, toAppHash, type AppRoute } from '../src/app/routes';
 import { handleRpc } from '../src/lib/github-web';
 import { isRpcRequest, type RpcResponse } from '../src/lib/rpc';
 import { getSettings, setSettings, watchSettings, type Settings } from '../src/lib/settings';
@@ -18,6 +19,19 @@ export default defineContentScript({
   // Before GitHub's page is parsed, so a handled route never shows GitHub's own content first.
   runAt: 'document_start',
   async main(ctx) {
+    // The entries this tab's history gained from moves inside the app (moveInApp), by key. Below the app, GitHub's page is
+    // still the one it showed before such a move. Going Back or Forward to one is the app's alone: GitHub's scripts made
+    // no such entry (Turbo restores only an entry carrying its own state), and its React router would otherwise take its
+    // hidden page there. Registered before GitHub's scripts run, so it hears the event first.
+    const movedInApp = new Set<string>();
+    ctx.addEventListener(
+      window,
+      'popstate',
+      (event) => {
+        if (movedInApp.has(window.navigation?.currentEntry?.key ?? '')) event.stopImmediatePropagation();
+      },
+      { capture: true },
+    );
     let settings = await getSettings();
     let takeover: ReturnType<typeof takeOverPage> | null = null;
     let pageViewSwitch: ReturnType<typeof addPageViewSwitch> | null = null;
@@ -33,12 +47,35 @@ export default defineContentScript({
     const choosePage = (surface: 'inboxEnabled' | 'prEnabled', showOurs: boolean) => {
       sessionStorage.setItem(`gg:${surface}`, showOurs ? 'on' : 'off');
       settings = { ...settings, [surface]: showOurs };
+      const saving = setSettings({ [surface]: showOurs }).catch((error: unknown) => console.error('[gg]', 'Could not save the page view:', error instanceof Error ? error.message : error));
+      // After a move inside the app, GitHub's page below it is another URL's: GitHub's view of this one loads afresh.
+      if (!showOurs && takeover && movedInApp.has(window.navigation?.currentEntry?.key ?? '')) {
+        takeover.leavingFor = location.href;
+        void saving.finally(() => location.reload());
+        return;
+      }
       sync(new URL(location.href));
-      setSettings({ [surface]: showOurs }).catch((error: unknown) => console.error('[gg]', 'Could not save the page view:', error instanceof Error ? error.message : error));
+    };
+    // Whether this tab shows CarbonLayer's page for a route rather than GitHub's.
+    const showsOurs = (route: AppRoute) => (route.page === 'inbox' && enabledHere('inboxEnabled')) || (route.page === 'pr' && enabledHere('prEnabled'));
+    /**
+     * Moves this tab to `url` inside the app, without loading a page, when the app shows that page here: the address bar
+     * and history follow (`pushState`), GitHub's page below stays as it was. False for any other page, which loads.
+     */
+    const moveInApp = (url: URL) => {
+      const signedIn = Boolean(document.querySelector('meta[name="user-login"]')?.getAttribute('content'));
+      if (!routeInApp(url, { showsOurs, signedIn })) return false;
+      if (url.href !== location.href) {
+        history.pushState(null, '', url.href);
+        const entry = window.navigation?.currentEntry;
+        if (entry) movedInApp.add(entry.key);
+      }
+      sync(url);
+      return true;
     };
 
-    // WXT reports navigations through the Navigation API before they commit, and none to the URL already shown, so
-    // the destination comes from the event; settings changes use the committed location.
+    // Navigations are reported before they commit (below), so the destination comes from the event; settings changes and
+    // moves inside the app use the committed location.
     const sync = (url: URL) => {
       if (takeover?.leavingFor === url.href) return;
       let route = parseGitHubLocation(url);
@@ -61,14 +98,14 @@ export default defineContentScript({
         }
         if (!login) route = { page: 'none' };
       }
-      const enabled = (route.page === 'inbox' && enabledHere('inboxEnabled')) || (route.page === 'pr' && enabledHere('prEnabled'));
+      const enabled = showsOurs(route);
       if (!enabled) {
         takeover?.release();
         takeover = null;
       } else if (takeover) {
         takeover.show(route);
       } else {
-        takeover = takeOverPage(ctx, route, settings.theme);
+        takeover = takeOverPage(ctx, route, settings.theme, moveInApp);
       }
       // The way between GitHub's page and ours, on every handled route.
       if (route.page === 'none') {
@@ -81,7 +118,17 @@ export default defineContentScript({
     };
 
     sync(new URL(location.href));
-    ctx.addEventListener(window, 'wxt:locationchange', (event) => sync(event.newUrl));
+    // GitHub's own moves (Turbo and React visits), Back and Forward, and the app's: the route follows, before the move
+    // commits. A move to another document is that document's to show: this one keeps its route while it unloads, and
+    // should it come back from the back/forward cache.
+    if (window.navigation) {
+      ctx.addEventListener(window.navigation, 'navigate', (event) => {
+        const { destination } = event as NavigateEvent;
+        if (destination.sameDocument) sync(new URL(destination.url));
+      });
+    } else {
+      ctx.addEventListener(window, 'wxt:locationchange', (event) => sync(event.newUrl));
+    }
     const unwatchSettings = watchSettings((next) => {
       // A saved page choice is for tabs opened later: this tab keeps the page it shows (the popup reaches the tab in
       // view through `gg:choose` instead).
@@ -107,8 +154,11 @@ export default defineContentScript({
   },
 });
 
-/** Hides GitHub's content below its header and shows the app there, until `release()` puts the page back as it was. */
-function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute, themeSetting: Settings['theme']) {
+/**
+ * Hides GitHub's content below its header and shows the app there, until `release()` puts the page back as it was. A
+ * page the app asks for moves the tab inside the app when `moveInApp` can, else loads.
+ */
+function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute, themeSetting: Settings['theme'], moveInApp: (url: URL) => boolean) {
   const appOrigin = new URL(browser.runtime.getURL('/')).origin;
   const html = document.documentElement;
   // A style sheet rather than inline styles on GitHub's elements: it hides `main` before the parser reaches it and
@@ -256,7 +306,7 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute, themeSe
           if (url.protocol !== 'https:' && url.protocol !== 'http:') return;
           if (message.newTab) {
             window.open(url.href, '_blank', 'noopener');
-          } else {
+          } else if (!moveInApp(url)) {
             takeover.leavingFor = url.href;
             location.assign(url.href);
           }
@@ -503,3 +553,14 @@ function addPageViewSwitch(onChoose: (surface: 'inboxEnabled' | 'prEnabled', sho
 /** CarbonLayer's mark (assets/logo.svg) as one path on a 28px grid, as `logo` in src/ui/Icon.tsx. */
 const CARBONLAYER_MARK =
   'M17.644 0 3.73 3.729 0 17.644l10.187 10.187 13.915-3.729 3.73-13.915zm2.27 24.312H7.917L1.92 13.915 7.917 3.518h11.997l5.998 10.397zM20.704 7.123l-9.27-2.484-6.788 6.793 2.482 9.276 9.27 2.484 6.788-6.793zM12.709 16.765C10.692 16.52 9.272 15.07 9.272 13.191C9.272 12.427 9.547 11.603 10.005 11.053C9.806 10.549 9.837 9.48 10.066 9.037C10.677 8.961 11.502 9.282 11.991 9.724C12.571 9.541 13.182 9.449 13.931 9.449C14.679 9.449 15.29 9.541 15.839 9.709C16.313 9.281 17.153 8.961 17.764 9.037C17.978 9.449 18.009 10.519 17.809 11.037C18.299 11.618 18.558 12.397 18.558 13.191C18.558 15.07 17.138 16.49 15.091 16.75C15.61 17.086 15.962 17.819 15.962 18.659L15.962 23.075L11.96 22.003L11.96 19.04A1.972 1.972 0 0 1 11.227 19.193C10.219 19.193 9.623 18.643 9.196 17.62C9.028 17.207 8.844 16.963 8.493 16.917C8.309 16.902 8.249 16.826 8.249 16.734C8.249 16.55 8.555 16.414 8.859 16.414C9.303 16.414 9.684 16.688 10.081 17.253C10.387 17.696 10.707 17.895 11.09 17.895C11.471 17.895 11.715 17.757 12.067 17.406C12.327 17.147 12.525 16.917 12.709 16.764Z';
+
+declare global {
+  interface Window {
+    /** The parts of the Navigation API used here, which TypeScript's DOM library does not declare yet; Chrome has had them since 102. */
+    readonly navigation?: EventTarget & { readonly currentEntry: NavigationHistoryEntry | null };
+  }
+}
+
+interface NavigateEvent extends Event {
+  readonly destination: { readonly url: string; readonly sameDocument: boolean };
+}

@@ -10,13 +10,14 @@ import { askedTogether } from '../app/asked-together';
 import { postToParent } from '../app/bridge';
 import { COPY_KEYBINDINGS, copyPullRequest } from '../app/copy-pull-request';
 import type { DataSource } from '../app/data-source';
-import { KEPT_STAGES, SaveCacheNow } from '../app/query-cache';
+import { SaveCacheNow } from '../app/query-cache';
 import { toGitHubUrl, type AppRoute } from '../app/routes';
+import { useSettings } from '../app/use-settings';
 import type { Organization, PrSummary, RepoRef, StackBranches, TopRepository, View, ViewResult } from '../lib/model';
 import type { Settings } from '../lib/settings';
 import { encodeViewsShareLink, sectionCount } from '../lib/views';
 import { createChordReader } from '../pr/keybindings';
-import { prStageQuery } from '../pr/page-data';
+import { useLoadAhead } from '../pr/page-data';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
 import { RelativeTime } from '../ui/RelativeTime';
@@ -115,9 +116,9 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   }, [selectedPr?.id]);
   const toReview = firstResult && !firstResult.error ? sectionCount(firstResult) : undefined;
 
+  // From the first frame, so a move here inside the app does not keep the last page's title.
   useEffect(() => {
-    if (toReview === undefined) return;
-    const title = `Pull requests · ${toReview} to review`;
+    const title = toReview === undefined ? 'Pull requests' : `Pull requests · ${toReview} to review`;
     document.title = title;
     postToParent({ type: 'gg:title', title });
   }, [toReview]);
@@ -496,30 +497,16 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
 }
 
 /**
- * Settings, the organization the inbox shows (the one chosen, unless the viewer's organizations, once known, no longer
- * include it) and every view's results for it, a query a section, kept by what GitHub is asked (not a rename or a
- * collapse): what the cache had for the organization shows at once, then GitHub is asked, the open sections first and the
- * folded ones, which show only a count until opened, once those have answered; again every 2 minutes while the tab
- * shows, and on coming back to it once 30 s old (src/app/query-cache.tsx). Nothing is fetched while no organization is
- * shown.
+ * The settings (as the page last read them, useSettings), the organization the inbox shows (the one chosen, unless the
+ * viewer's organizations, once known, no longer include it) and every view's results for it, a query a section, kept by
+ * what GitHub is asked (not a rename or a collapse): what the cache had for the organization shows at once, then GitHub is
+ * asked, the open sections first and the folded ones, which show only a count until opened, once those have answered;
+ * again every 2 minutes while the tab shows, and on coming back to it once 30 s old (src/app/query-cache.tsx). Nothing is
+ * fetched while no organization is shown.
  */
 function useInbox(source: DataSource, organizations: Organization[] | null) {
   const queryClient = useQueryClient();
-  const [settings, setSettings] = useState<Settings | null>(null);
-  const [settingsError, setSettingsError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    source.getSettings().then(
-      (loaded) => active && setSettings(loaded),
-      (cause: unknown) => active && setSettingsError(cause instanceof Error ? cause.message : String(cause)),
-    );
-    const unwatch = source.watchSettings(setSettings);
-    return () => {
-      active = false;
-      unwatch();
-    };
-  }, [source]);
+  const { settings, error: settingsError, show: showSettings } = useSettings(source);
 
   const chosen = settings?.currentOrg ?? null;
   const org = chosen && (organizations === null || organizations.some((candidate) => candidate.login.toLowerCase() === chosen.login.toLowerCase())) ? chosen : null;
@@ -563,7 +550,7 @@ function useInbox(source: DataSource, organizations: Organization[] | null) {
   async function saveSettings(patch: Partial<Settings>): Promise<Settings | null> {
     try {
       const saved = await source.setSettings(patch);
-      setSettings(saved);
+      showSettings(saved);
       return saved;
     } catch (cause) {
       showToast(`Could not save: ${cause instanceof Error ? cause.message : String(cause)}`, 'danger');
@@ -696,36 +683,6 @@ function useStackBranches(source: DataSource, enabled: boolean, sections: Array<
   return {
     branchesOf: (prId: string) => found.get(prId) ?? undefined,
     awaiting: (viewId: string) => enabled && !shown.has(viewId) && sections.some((section) => section.viewId === viewId && !section.openRows.every((pr) => found.has(pr.id))),
-  };
-}
-
-/**
- * Loads the page of a PR the viewer may open next (its row hovered a moment, or selected with j / k) into the cache, as
- * Graphite does, so opening it shows it at once: the stages kept on the device (never the timeline, files or threads),
- * one PR at a time, the latest intent first, the three latest at most waiting, and none whose stages are fresh; each
- * saved on the device as soon as it has loaded.
- */
-function useLoadAhead(source: DataSource) {
-  const queryClient = useQueryClient();
-  const saveCacheNow = useContext(SaveCacheNow);
-  const waiting = useRef<PrSummary[]>([]);
-  const loading = useRef(false);
-
-  async function loadInTurn() {
-    for (let pr = waiting.current.pop(); pr; pr = waiting.current.pop()) {
-      const { repo, number } = pr;
-      await Promise.all(KEPT_STAGES.map((stage) => queryClient.prefetchQuery({ ...prStageQuery(source, repo, number, stage), staleTime: 30_000 })));
-      // Saved at once rather than within the second, should the PR be opened some other way than its row.
-      await saveCacheNow();
-    }
-    loading.current = false;
-  }
-
-  return (pr: PrSummary) => {
-    waiting.current = [...waiting.current.filter((other) => other.id !== pr.id), pr].slice(-3);
-    if (loading.current) return;
-    loading.current = true;
-    void loadInTurn();
   };
 }
 

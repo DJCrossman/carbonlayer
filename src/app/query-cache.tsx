@@ -1,7 +1,8 @@
-// The app page's TanStack Query cache. Every move between the inbox and a PR page loads app.html afresh, so the cache is
-// kept on the device, in the extension's own IndexedDB, shared by every tab: a page shows what the viewer saw last at once,
-// then asks GitHub and updates in place. It is kept per viewer and extension version, and for 24 hours; diffs and comments
-// are never kept, and signed out nothing is.
+// The app page's TanStack Query cache. A tab's moves between the inbox and PR pages keep the app, and the cache with it;
+// every page load (a new tab, a reload) starts the app afresh, so the cache is also kept on the device, in the extension's
+// own IndexedDB, shared by every tab: a page shows what the viewer saw last at once, then asks GitHub and updates in place.
+// It is kept per viewer and extension version, and for 24 hours; diffs and comments are never kept, and signed out nothing
+// is.
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
 import { focusManager, QueryClient, QueryClientProvider, useIsRestoring } from '@tanstack/react-query';
 import { PersistQueryClientProvider, persistQueryClientSave, type AsyncStorage, type PersistQueryClientProviderProps } from '@tanstack/react-query-persist-client';
@@ -79,8 +80,9 @@ export function keptOnDevice(owner: CacheOwner, storage: AsyncStorage<string> = 
         state.status === 'success' &&
         Date.now() - state.dataUpdatedAt < KEPT_FOR_MS &&
         // The diffs, the file list GitHub sends some of them with, the review threads and the timeline stay in memory,
-        // asked of GitHub on every page load.
+        // asked of GitHub on every page load. chrome.storage keeps the settings.
         queryKey[0] !== 'pr-diff' &&
+        queryKey[0] !== 'settings' &&
         (queryKey[0] !== 'pr' || KEPT_STAGES.includes(queryKey[4] as PrStage)),
     },
   };
