@@ -11,7 +11,7 @@ import type { ChangedFile, PrDetail, PrStages } from '../lib/model';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
 import { Skeleton } from '../ui/Skeleton';
-import { composerAnchorFor, fileNotes, filesInTreeOrder, fileTree, renderableDiff, type ComposerAnchor, type DiffNote, type FileTreeNode } from './diff';
+import { composerAnchorFor, currentLinesOf, fileNotes, filesInTreeOrder, fileTree, renderableDiff, type ComposerAnchor, type DiffNote, type FileTreeNode } from './diff';
 import type { StageState } from './page-data';
 import { StageError } from './primitives';
 import { DiffNoteView, type NoteActions } from './Threads';
@@ -328,6 +328,11 @@ function FileCard({
   const fileDiff = useMemo(() => renderableDiff(file), [file.path, file.previousPath, file.status, file.patch]);
   const composer = review.composer?.path === file.path ? review.composer : null;
   const notes = useMemo(() => fileNotes(file.path, pr.threads, batch, composer), [file.path, pr.threads, batch, composer]);
+  // GitHub offers "Add a suggestion" on the new file's lines only.
+  const suggestion =
+    composer && file.patch !== null && composer.side === 'additions' && (composer.startSide ?? 'additions') === 'additions'
+      ? currentLinesOf(file.patch, composer.startLine ?? composer.line, composer.line)
+      : null;
   // Lines being selected, until the pointer is released and the composer opens for them.
   const [selecting, setSelecting] = useState<SelectedLineRange | null>(null);
   // The commented lines stay highlighted while the composer is open, and only then; a selection shows as it grows.
@@ -436,6 +441,7 @@ function FileCard({
           <DiffNoteView
             note={annotation.metadata}
             anchor={composer}
+            suggestion={suggestion}
             current={annotation.metadata.kind === 'thread' && annotation.metadata.thread.id === review.currentThreadId}
             actions={noteActions}
           />

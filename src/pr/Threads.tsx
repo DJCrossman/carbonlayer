@@ -14,11 +14,14 @@ import './threads.css';
 export function DiffNoteView({
   note,
   anchor,
+  suggestion,
   current,
   actions,
 }: {
   note: DiffNote;
   anchor: ComposerAnchor | null;
+  /** The commented lines' current text, when GitHub would offer a suggestion for them (right-side lines). */
+  suggestion: string | null;
   /** The thread `n` / `p` last moved to. */
   current: boolean;
   actions: NoteActions;
@@ -39,7 +42,7 @@ export function DiffNoteView({
         </div>
       );
     case 'composer':
-      return anchor && <InlineComposer anchor={anchor} actions={actions} />;
+      return anchor && <InlineComposer anchor={anchor} suggestion={suggestion} actions={actions} />;
   }
 }
 
@@ -123,7 +126,7 @@ function ThreadNote({ thread, current, actions }: { thread: ReviewThread; curren
   );
 }
 
-function InlineComposer({ anchor, actions }: { anchor: ComposerAnchor; actions: NoteActions }) {
+function InlineComposer({ anchor, suggestion, actions }: { anchor: ComposerAnchor; suggestion: string | null; actions: NoteActions }) {
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   const draft: ReviewThreadDraft = {
@@ -153,6 +156,7 @@ function InlineComposer({ anchor, actions }: { anchor: ComposerAnchor; actions: 
         }
         autoFocus
         disabled={busy}
+        suggestion={suggestion === null ? undefined : () => suggestion}
       />
       <div className="diff-note-actions">
         <Button variant="ghost" size="sm" onClick={actions.closeComposer}>

@@ -108,6 +108,28 @@ export type FileTreeNode =
   | { kind: 'file'; name: string; file: ChangedFile };
 
 /**
+ * The commented lines as they read now, which GitHub's "Add a suggestion" starts the suggestion from: the new file's
+ * lines `from` to `to`, read from the patch. Null when the patch does not reach them (a suggestion replaces lines that
+ * exist on the right side).
+ */
+export function currentLinesOf(patch: string, from: number, to: number): string | null {
+  const lines: string[] = [];
+  let next = 0;
+  for (const row of patch.split('\n')) {
+    const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(row);
+    if (hunk) {
+      next = Number(hunk[1]);
+      continue;
+    }
+    // Context and added lines are the new file's; removed lines and "\ No newline at end of file" are not.
+    if (next === 0 || row.startsWith('-') || row.startsWith('\\')) continue;
+    if (next >= from && next <= to) lines.push(row.slice(1));
+    next++;
+  }
+  return lines.length === to - from + 1 ? lines.join('\n') : null;
+}
+
+/**
  * The changed files as a directory tree, directories before files, each level sorted by name.
  * Chains of single-directory levels are merged ("src/parcs") the way GitHub's file tree shows them.
  */

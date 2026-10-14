@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { prFixtures } from '../fixtures/pr';
 import type { ChangedFile, ReviewThread } from '../lib/model';
-import { composerAnchorFor, fileNotes, filesInTreeOrder, fileTree, renderableDiff } from './diff';
+import { composerAnchorFor, currentLinesOf, fileNotes, filesInTreeOrder, fileTree, renderableDiff } from './diff';
 
 const pr42 = prFixtures.find((pr) => pr.number === 42)!;
 const fileAt = (path: string) => pr42.files.find((file) => file.path === path)!;
@@ -141,5 +141,18 @@ describe('fileTree', () => {
       'src/parcs/new-name.ts',
       'src/parcs/zones.ts',
     ]);
+  });
+});
+
+describe('currentLinesOf', () => {
+  const patch = ['@@ -10,4 +10,5 @@ class Adapter', ' const a = 1;', '-const b = 2;', '+const b = 3;', '+const c = 4;', ' return a;', '\\ No newline at end of file'].join('\n');
+
+  it("reads the new file's lines, skipping removed ones, for a suggestion to start from", () => {
+    expect(currentLinesOf(patch, 11, 12)).toBe('const b = 3;\nconst c = 4;');
+    expect(currentLinesOf(patch, 13, 13)).toBe('return a;');
+  });
+
+  it('gives nothing for lines the patch does not reach', () => {
+    expect(currentLinesOf(patch, 13, 15)).toBeNull();
   });
 });
