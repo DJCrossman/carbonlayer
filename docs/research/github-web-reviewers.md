@@ -44,19 +44,31 @@ Candidate lists: `/_ghui/item-pickers/assignees?owner&repo&queryId=…&number&qu
   isRequired, avatarUrl, additionalContext`; Actions ids come from `targetUrl` = `/{o}/{r}/actions/runs/{runId}/job/{jobId}`.
 - Only workflow mutation: `POST P/run_action_required_workflows` (approves fork workflows, no body).
 - Checks tab is server-rendered: `GET /pull/{n}/partials/checks_partial` (404 signed out).
-- Re-run is a classic form POST (action and fields UNVERIFIED): the run page's "Re-run job" dialogs load from
-  `GET /{o}/{r}/actions/runs/{id}/job_rerun_dialogs_partial` (empty shell signed out). With a session, read the
-  `<form action>` and its hidden `authenticity_token` from that partial and POST it form-encoded.
+- Re-run is a classic form POST (VERIFIED signed in 2026-10-14 on a run with a failed job, GETs only). The run-level
+  forms sit inline in the run page itself, `GET /{o}/{r}/actions/runs/{id}` (HTML, not in a `<template>`):
+  `<dialog id="rerun-dialog-failed">` ("Re-run failed jobs") holds `<form id="rerun-form-rerun-dialog-failed" method="post"
+  action="/{o}/{r}/actions/runs/{id}/rerequest_check_suite">` with hidden `_method=put`, its own `authenticity_token`,
+  hidden `only_failed_check_runs=true` and an unticked checkbox `enable_debug_logging` (value `true`);
+  `<dialog id="rerun-dialog-all">` ("Re-run all jobs") holds `rerun-form-rerun-dialog-all`, the same action and fields
+  without `only_failed_check_runs`. The submit button ("Re-run jobs", `type="submit"`, no name) sits outside the form,
+  linked by `form="rerun-form-rerun-dialog-…"`. The mobile layout repeats both as `rerun-dialog-mobile-failed|all` /
+  `rerun-form-rerun-dialog-mobile-failed|all`. Signed in, `job_rerun_dialogs_partial` holds only the single jobs'
+  dialogs ("Re-run single job", `<dialog id="rerun-dialog-<checkRunId>">`): the same action with a hidden
+  `check_run_id=<id>` instead. A run that offers no re-run of failed jobs (nothing failed, or still running) is taken to
+  have no failed dialog (INFERRED). What the POST answers is UNVERIFIED (never sent); a redirect back to the run page is
+  expected, which `fetch` follows.
 - No `<meta name="csrf-token">`; each classic form carries its own `authenticity_token` (per form). `page_data` needs none.
 - No per-check re-run for non-Actions checks on the page.
 - VERIFIED signed out on cli/cli#14320 (2026-10-09): Actions job links read `/cli/cli/actions/runs/{runId}/job/{jobId}?pr=14320`;
   `job_rerun_dialogs_partial` is the same empty `js-updatable-content` shell with or without `X-Requested-With`; the run page's
   bundle only shows per-job "Re-run job" buttons opening server-rendered dialogs (`data-show-dialog-id`). `P/reviewers`,
   `P/reviewers?q=` and `P/suggested_reviewers` answer `{}` (200).
-- **In the app**: `github-web/actions.ts` loads the partial, takes the form whose action names failed jobs
-  (`rerun_failed_jobs` / `rerun-failed-jobs`) or the run's own `…/rerun` (never a job's), falling back to its dialog's wording,
-  and POSTs its hidden fields form-encoded; no such form → `offered: false`, and the PR page opens the run on GitHub. The
-  Checks card's "Re-run failed" (`c r`) and its menu's "Re-run all jobs" run this once per workflow run with a failed check.
+- **In the app** (2026-10-14): `github-web/actions.ts` loads the run page and takes the form with id
+  `rerun-form-rerun-dialog-failed` / `-all`, falling back to its shape (action ending `/rerequest_check_suite`; failed has
+  hidden `only_failed_check_runs`, all has neither that nor `check_run_id`; never a single job's form), and POSTs its hidden
+  fields and ticked boxes form-encoded (debug logging stays off); no such form → `offered: false`, and the PR page says so in
+  a toast and opens nothing. The Checks card's "Re-run failed" (`c r`) and its menu's "Re-run all jobs" run this once per
+  workflow run with a failed check.
 
 ## Where to re-check (`github.githubassets.com/assets/`)
 `4t-c2bbc4f2c8ef0b83.js` (`modifyReviewers:"modify_reviewers"`, `reRequestReviewFromUser`, `availableReviewers:"reviewers"`,

@@ -1,6 +1,6 @@
-// Re-running a workflow run's jobs, which GitHub's React PR page cannot do. The Actions run page does it with classic
-// forms that it loads into its "Re-run jobs" dialogs from job_rerun_dialogs_partial (docs/research/github-web-reviewers.md).
-// Signed out that partial is an empty shell (observed); signed in, the forms' actions and fields are read, not assumed.
+// Re-running a workflow run's jobs, which GitHub's React PR page cannot do. The Actions run page does it with the classic
+// forms of its "Re-run failed jobs" and "Re-run all jobs" dialogs, rendered inline in the page itself (verified signed in
+// 2026-10-14, docs/research/github-web-reviewers.md); job_rerun_dialogs_partial holds only the single jobs' dialogs.
 // Runs of GitHub's own `dynamic` workflows (Copilot's code review, …) are read from the repository's Actions list too: the
 // PR's merge box, its Checks tab and the commit's status rollup leave them out, and Graphite counts them as checks.
 
@@ -9,44 +9,44 @@ import { request, submitForm } from './session';
 
 /** Re-runs a run's failed jobs, or all of them, as the run page's dialog would; `offered: false` when GitHub offers no such re-run. */
 export async function rerunWorkflowJobs(repoPath: string, runId: string, scope: 'failed' | 'all'): Promise<{ offered: boolean }> {
-  const dialogs = await request(`${repoPath}/actions/runs/${encodeURIComponent(runId)}/job_rerun_dialogs_partial`, 'text/html', { xhr: true });
-  const form = rerunForm(await dialogs.text(), scope);
+  const runPage = await request(`${repoPath}/actions/runs/${encodeURIComponent(runId)}`, 'text/html');
+  const form = rerunForm(await runPage.text(), scope);
   if (!form) return { offered: false };
   await submitForm(form.action, form.fields);
   return { offered: true };
 }
 
 /**
- * The form in GitHub's re-run dialogs that re-runs the run's failed jobs, or all of them, with the fields a browser would
- * submit; null when there is none. A form is recognised by its action first (`…/rerun_failed_jobs` or `…/rerun-failed-jobs`;
- * the run's own `…/rerun`), then by what its dialog says ("failed", "all jobs"). A single job's form never counts.
+ * The run page's form that re-runs the run's failed jobs, or all of them, with the fields a browser would submit; null when
+ * the page offers none (a run with nothing failed, or still running, has no failed-jobs dialog). Verified signed in
+ * 2026-10-14: `<dialog id="rerun-dialog-failed">` and `<dialog id="rerun-dialog-all">` hold `<form
+ * id="rerun-form-rerun-dialog-failed|all" method="post" action="/{o}/{r}/actions/runs/{id}/rerequest_check_suite">` with a
+ * hidden `_method=put`, its own `authenticity_token`, an unticked `enable_debug_logging` box and, for failed jobs only, a
+ * hidden `only_failed_check_runs=true`; the nameless submit button sits outside the form (`form="…"`), and the mobile layout
+ * repeats both as `rerun-dialog-mobile-…`. A form is recognised by its id first, then by that shape. A single job's form
+ * (the same action with a hidden `check_run_id`) never counts.
  */
 export function rerunForm(html: string, scope: 'failed' | 'all'): { action: string; fields: Array<[string, string]> } | null {
   const page = new DOMParser().parseFromString(html, 'text/html');
-  // A dialog's content may wait in a <template> until it opens.
-  const forms = [page, ...[...page.querySelectorAll('template')].map((template) => template.content)].flatMap((root) => [...root.querySelectorAll('form')]);
-  const runForms = forms.flatMap((form) => {
+  const runForms = [...page.querySelectorAll('form')].flatMap((form) => {
     const action = form.getAttribute('action');
-    if (!action || form.getAttribute('method')?.toLowerCase() !== 'post') return [];
-    const url = new URL(action, 'https://github.com');
-    if (/\/jobs?\/\d+/.test(url.pathname)) return [];
-    const wording = (form.closest('dialog, modal-dialog, details-dialog, [role="dialog"]') ?? form).textContent ?? '';
-    return [{ form, action, path: url.pathname, wording, mentionsFailed: /failed/i.test(`${url.search} ${wording}`) }];
+    return action && form.getAttribute('method')?.toLowerCase() === 'post' && !form.querySelector('input[name="check_run_id"]') ? [{ form, action }] : [];
   });
   const chosen =
-    scope === 'failed'
-      ? (runForms.find(({ path }) => /rerun[-_]failed/i.test(path)) ?? runForms.find(({ mentionsFailed }) => mentionsFailed))
-      : (runForms.find(({ path, mentionsFailed }) => /\/runs\/\d+\/rerun\/?$/.test(path) && !mentionsFailed) ??
-        runForms.find(({ wording, mentionsFailed }) => /all jobs/i.test(wording) && !mentionsFailed));
+    runForms.find(({ form }) => form.id === `rerun-form-rerun-dialog-${scope}`) ??
+    runForms.find(
+      ({ form, action }) =>
+        /\/rerequest_check_suite\/?$/.test(new URL(action, 'https://github.com').pathname) &&
+        !!form.querySelector('input[type="hidden"][name="only_failed_check_runs"]') === (scope === 'failed'),
+    );
   if (!chosen) return null;
 
-  // What a browser submits: hidden fields, ticked boxes as they come, and the submit button's own name if it has one.
+  // What a browser submits: hidden fields (`_method=put` among them, which GitHub reads as the PUT) and ticked boxes as they
+  // come, so debug logging stays off. The submit button has no name to add.
   const fields = [...chosen.form.querySelectorAll('input[name]')].flatMap((input): Array<[string, string]> => {
     const { type, name, value, checked } = input as HTMLInputElement;
     return type === 'hidden' || ((type === 'checkbox' || type === 'radio') && checked) ? [[name, value]] : [];
   });
-  const submitter = chosen.form.querySelector<HTMLButtonElement | HTMLInputElement>('button[name]:not([type="button"]):not([type="reset"]), input[type="submit"][name]');
-  if (submitter) fields.push([submitter.name, submitter.value]);
   return { action: chosen.action, fields };
 }
 
