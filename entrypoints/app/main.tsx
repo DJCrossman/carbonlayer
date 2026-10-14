@@ -1,7 +1,7 @@
 // The app page. Lives in an iframe on github.com (see ARCHITECTURE.md) or standalone in the harness.
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { GITHUB_ORIGIN, isBridgeMessage, postToParent, type ParentToAppMessage } from '../../src/app/bridge';
+import { GITHUB_ORIGIN, isBridgeMessage, postToParent, themeOpenedIn, type ParentToAppMessage } from '../../src/app/bridge';
 import { createFixtureDataSource, createRpcDataSource, type DataSource } from '../../src/app/data-source';
 import { parseAppHash, type AppRoute } from '../../src/app/routes';
 import { InboxPage } from '../../src/inbox/InboxPage';
@@ -11,9 +11,11 @@ import '../../src/ui/tokens.css';
 
 function App({ source }: { source: DataSource }) {
   const [route, setRoute] = useState<AppRoute>(() => parseAppHash(location.hash));
-  // GitHub's own theme, sent by the parent page; null standalone (harness) and until the parent has said.
-  const [githubTheme, setGithubTheme] = useState<'light' | 'dark' | null>(null);
-  const [themeSetting, setThemeSetting] = useState<Settings['theme']>('auto');
+  // GitHub's own theme, sent by the parent page; null standalone (harness). Until the parent has said, and until the
+  // options' theme is read, both are the theme the parent opened this frame in, which app-theme.ts has shown since the
+  // first paint, so the first render keeps it rather than flashing the system's.
+  const [githubTheme, setGithubTheme] = useState<'light' | 'dark' | null>(themeOpenedIn);
+  const [themeSetting, setThemeSetting] = useState<Settings['theme']>(() => themeOpenedIn() ?? 'auto');
 
   useEffect(() => {
     const onHashChange = () => setRoute(parseAppHash(location.hash));

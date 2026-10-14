@@ -32,3 +32,12 @@ export function postToParent(message: AppToParentMessage): void {
   if (window.parent === window) return;
   window.parent.postMessage(message, GITHUB_ORIGIN);
 }
+
+/**
+ * The theme the github.com page opened the app's frame in (`app.html?theme=`): the one the app will show, the options'
+ * theme or else GitHub's, known before the app has loaded or heard from the page. Null when opened directly (harness).
+ */
+export function themeOpenedIn(): 'light' | 'dark' | null {
+  const theme = new URLSearchParams(location.search).get('theme');
+  return theme === 'light' || theme === 'dark' ? theme : null;
+}

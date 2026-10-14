@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CarbonLayer</title>
+    <!-- Blocking, so it runs before the first paint: the theme the frame was opened in. WXT builds it on its own
+         (entrypoints/app-theme.ts), so Vite leaves the tag as it is. -->
+    <script vite-ignore src="/app-theme.js"></script>
   </head>
   <body>
     <div id="root"></div>

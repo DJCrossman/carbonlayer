@@ -11,7 +11,7 @@ import { isBridgeMessage, type AppToParentMessage, type ParentToAppMessage } fro
 import { parseGitHubLocation, toAppHash, type AppRoute } from '../src/app/routes';
 import { handleRpc } from '../src/lib/github-web';
 import { isRpcRequest, type RpcResponse } from '../src/lib/rpc';
-import { getSettings, setSettings, watchSettings } from '../src/lib/settings';
+import { getSettings, setSettings, watchSettings, type Settings } from '../src/lib/settings';
 
 export default defineContentScript({
   matches: ['https://github.com/*'],
@@ -68,7 +68,7 @@ export default defineContentScript({
       } else if (takeover) {
         takeover.show(route);
       } else {
-        takeover = takeOverPage(ctx, route);
+        takeover = takeOverPage(ctx, route, settings.theme);
       }
       // The way between GitHub's page and ours, on every handled route.
       if (route.page === 'none') {
@@ -108,7 +108,7 @@ export default defineContentScript({
 });
 
 /** Hides GitHub's content below its header and shows the app there, until `release()` puts the page back as it was. */
-function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
+function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute, themeSetting: Settings['theme']) {
   const appOrigin = new URL(browser.runtime.getURL('/')).origin;
   const html = document.documentElement;
   // A style sheet rather than inline styles on GitHub's elements: it hides `main` before the parser reaches it and
@@ -127,6 +127,12 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
   let ready = false;
   const listeners = new AbortController();
   const signal = listeners.signal;
+  // GitHub's theme: the one its <html> names, or the system's when it follows the system.
+  const systemTheme = matchMedia('(prefers-color-scheme: dark)');
+  const githubTheme = () => {
+    const mode = html.dataset.colorMode;
+    return mode === 'light' || mode === 'dark' ? mode : systemTheme.matches ? 'dark' : 'light';
+  };
 
   const ui = createIframeUi(ctx, {
     page: '/app.html',
@@ -141,7 +147,9 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
       iframe.style.cssText = 'display: block; width: 100%; height: 100%; border: 0; background: var(--bgColor-default, #fff);';
       iframe.title = 'Pull requests';
       iframe.allow = 'clipboard-write';
-      iframe.src = browser.runtime.getURL(`/app.html${appHash}`);
+      // Opened in the theme the app will show, the options' or else GitHub's, which app.html puts on before its first
+      // paint: until the app has heard it from this page, its frame would show the light default, white on GitHub's dark.
+      iframe.src = browser.runtime.getURL(`/app.html?theme=${themeSetting === 'auto' ? githubTheme() : themeSetting}${appHash}`);
       // Inside a shadow root: on the signed-in homepage something strips the iframe out of the wrapper shortly after
       // it loads (page scripts and other extensions sweep `document.querySelectorAll('iframe')`); a shadow root is
       // outside their reach, and the guard below puts the frame back if anything still removes it.
@@ -190,11 +198,7 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
   window.addEventListener('resize', placeBelowHeader, { signal });
 
   const post = (message: ParentToAppMessage | RpcResponse) => ui.iframe.contentWindow?.postMessage(message, appOrigin);
-  const systemTheme = matchMedia('(prefers-color-scheme: dark)');
-  const postTheme = () => {
-    const mode = html.dataset.colorMode;
-    post({ type: 'gg:theme', theme: mode === 'light' || mode === 'dark' ? mode : systemTheme.matches ? 'dark' : 'light' });
-  };
+  const postTheme = () => post({ type: 'gg:theme', theme: githubTheme() });
   const themeChanges = new MutationObserver(() => ready && postTheme());
   themeChanges.observe(html, { attributes: true, attributeFilter: ['data-color-mode'] });
   systemTheme.addEventListener('change', () => ready && postTheme(), { signal });
