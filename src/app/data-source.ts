@@ -23,7 +23,8 @@ export interface ReviewerChange {
 }
 
 export interface DataSource {
-  fetchInbox(views: View[], force?: boolean): Promise<ViewResult[]>;
+  /** Each view's first page of rows, in the same order; a section GitHub would not search says why (`ViewResult.error`). */
+  fetchInbox(views: View[]): Promise<ViewResult[]>;
   /** Page `page` of a view's rows, whole: what "Load more" adds to a section. */
   fetchInboxPage(view: View, page: number): Promise<ViewResult>;
   /** What GitHub's dashboard leaves out of these inbox rows (mergeability, reviewers, line counts, failing checks), in the same order. */
@@ -70,7 +71,7 @@ export interface DataSource {
 
 export function createRpcDataSource(): DataSource {
   return {
-    fetchInbox: (views, force) => rpc('inbox.fetch', { views, force }),
+    fetchInbox: (views) => rpc('inbox.fetch', { views }),
     fetchInboxPage: (view, page) => rpc('inbox.fetchMore', { view, page }),
     enrichInbox: (prs) => rpc('inbox.enrich', { prs }),
     branchesOf: (prs) => rpc('inbox.branches', { prs }),

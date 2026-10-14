@@ -3,7 +3,7 @@
 // then asks GitHub and updates in place. It is kept per viewer and extension version, and for 24 hours; diffs and comments
 // are never kept, and signed out nothing is.
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
-import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { focusManager, QueryClient, QueryClientProvider, useIsRestoring } from '@tanstack/react-query';
 import { PersistQueryClientProvider, type AsyncStorage, type PersistQueryClientProviderProps } from '@tanstack/react-query-persist-client';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { PrStage } from '../lib/model';
@@ -11,7 +11,8 @@ import { GITHUB_ORIGIN, isBridgeMessage, type ParentToAppMessage } from './bridg
 
 /**
  * The page's queries, kept on the device for `owner` (who is signed in, with which version of the extension), or only in
- * memory when nobody is (signed out, and the harness). Coming back to the page asks GitHub again for what has gone stale.
+ * memory when nobody is (signed out, the harness, the options page). The page renders once what was kept is back, so its
+ * first frame shows it. Coming back to the page asks GitHub again for what has gone stale.
  */
 export function PageQueries({ owner, children }: { owner: CacheOwner | null; children: ReactNode }) {
   const [client] = useState(
@@ -34,7 +35,7 @@ export function PageQueries({ owner, children }: { owner: CacheOwner | null; chi
   if (!kept) return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   return (
     <PersistQueryClientProvider client={client} persistOptions={kept}>
-      {children}
+      <Restored>{children}</Restored>
     </PersistQueryClientProvider>
   );
 }
@@ -68,6 +69,11 @@ export function keptOnDevice(owner: CacheOwner, storage: AsyncStorage<string> = 
 
 /** How long the device keeps what a page showed. */
 const KEPT_FOR_MS = 24 * 60 * 60_000;
+
+/** Nothing until the cache kept on the device is back (a few milliseconds), rather than skeletons for what it holds. */
+function Restored({ children }: { children: ReactNode }) {
+  return useIsRestoring() ? null : children;
+}
 
 /**
  * Tells TanStack Query the viewer came back to the page: the tab shown again, or the window focused again, this frame's

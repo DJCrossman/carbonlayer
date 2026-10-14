@@ -3,14 +3,16 @@
 // Graphite-dense rows, j/k keyboard navigation, Linear's copy shortcuts for the row under the pointer, shareable view
 // lists, and Graphite's section editor in a drawer. Data comes through the DataSource; navigation goes through the
 // parent page (src/app/bridge.ts).
-import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import { hashKey, useInfiniteQuery, useQueries, useQueryClient, type Query, type QueryClient } from '@tanstack/react-query';
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
+import { askedTogether } from '../app/asked-together';
 import { postToParent } from '../app/bridge';
 import { COPY_KEYBINDINGS, copyPullRequest } from '../app/copy-pull-request';
 import type { DataSource } from '../app/data-source';
-import { useRefreshOnReturn } from '../app/refresh-on-return';
 import { toGitHubUrl, type AppRoute } from '../app/routes';
 import type { Organization, PrEnrichment, PrSummary, RepoRef, StackBranches, TopRepository, View, ViewResult } from '../lib/model';
+import type { MergeMethod } from '../lib/rpc';
 import type { Settings } from '../lib/settings';
 import { encodeViewsShareLink, sectionCount } from '../lib/views';
 import { createChordReader } from '../pr/keybindings';
@@ -31,12 +33,22 @@ import { rowsByStack, stackPlaces } from './stacks';
 import './inbox.css';
 
 export function InboxPage({ source, route }: { source: DataSource; route: Extract<AppRoute, { page: 'inbox' }> }) {
+  const queryClient = useQueryClient();
   const organizations = useOrganizations(source.listOrgs);
   const inbox = useInbox(source, organizations.list);
-  const enrichment = useRowEnrichment(source);
   const topRepositories = useTopRepositories(source, inbox.org, inbox.settings?.inboxRepos ?? NO_REPOS);
-  const moreRows = useMoreRows(source);
+  const moreRows = useMoreRows(source, inbox.org);
   const { settings, org } = inbox;
+  // Each section's rows as GitHub's dashboard gave them: its first page, then those "Load more" added. A section that
+  // could not load says why in place of its rows, those "Load more" added before too.
+  const dashboard = inbox.results.map((result) => ({
+    result,
+    added: result.error ? [] : (moreRows.addedTo(result.view, settings?.inboxScope ?? '')?.prs.filter((pr) => !result.prs.some((first) => first.id === pr.id)) ?? []),
+  }));
+  // Enrichment is asked about rows as GitHub's dashboard gave them, by id: its key follows the dashboard's own CI rollup,
+  // which the enriched checks replace on screen, so the row is asked again when the rollup moves on and not before.
+  const dashboardRows = new Map(dashboard.flatMap(({ result, added }) => [...result.prs, ...added].map((pr) => [pr.id, pr] as const)));
+  const enrichment = useRowEnrichment(source, [...dashboardRows.values()], settings?.mergeMethod ?? 'MERGE');
   const viewerLogin = organizations.list?.find((candidate) => candidate.isViewer)?.login ?? null;
   const [selected, setSelected] = useState<SelectedRow | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -56,37 +68,27 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   const stackBranches = useStackBranches(
     source,
     settings?.inboxGroupByStack === true,
-    inbox.results?.map((result) => ({
-      viewId: result.view.id,
-      openRows: [...result.prs, ...(moreRows.addedTo(result.view, settings?.inboxScope ?? '')?.prs ?? [])].filter((pr) => pr.state === 'OPEN'),
-    })) ?? [],
+    dashboard.map(({ result, added }) => ({ viewId: result.view.id, openRows: [...result.prs, ...added].filter((pr) => pr.state === 'OPEN') })),
   );
   // Each section's rows, those "Load more" added after the first page's, with what enrichment has found, in the order the
   // section shows them, which j / k follow too.
-  // Enrichment is asked about rows as GitHub's dashboard gave them, by id: its key follows the dashboard's own CI rollup,
-  // which the enriched checks replace on screen, so the row is asked again when the rollup moves on and not before.
-  const dashboardRows = new Map<string, PrSummary>();
-  const sections =
-    inbox.results?.map((result) => {
-      const { by, descending } = sorts[result.view.id] ?? LATEST_UPDATED_FIRST;
-      // A section that could not load says why in place of its rows, those "Load more" added before too.
-      const added = result.error ? [] : (moreRows.addedTo(result.view, settings?.inboxScope ?? '')?.prs.filter((pr) => !result.prs.some((first) => first.id === pr.id)) ?? []);
-      for (const pr of [...result.prs, ...added]) dashboardRows.set(pr.id, pr);
-      const enriched = [...result.prs, ...added].map((pr) => {
-        const found = enrichment.found.get(pr.id)?.enrichment;
-        const branches = stackBranches.branchesOf(pr.id);
-        // The checks found speak for the row whenever there are some: the rollup leaves out GitHub's own dynamic workflow
-        // runs (Copilot's review), and a row is asked again once its rollup moves on (`want`). The branches its merge box
-        // named are fresher than those looked up or remembered.
-        return { ...pr, ...(branches && { baseRefName: branches.baseRefName, headRefName: branches.headRefName ?? '' }), ...found, ci: found?.ci ?? pr.ci };
-      });
-      const prs = enriched.toSorted((a, b) => {
-        const ascending =
-          by === 'title' ? a.title.localeCompare(b.title) : by === 'changes' ? a.additions + a.deletions - (b.additions + b.deletions) : Date.parse(a.updatedAt) - Date.parse(b.updatedAt);
-        return descending ? -ascending : ascending;
-      });
-      return { ...result, prs };
-    }) ?? [];
+  const sections = dashboard.map(({ result, added }) => {
+    const { by, descending } = sorts[result.view.id] ?? LATEST_UPDATED_FIRST;
+    const enriched = [...result.prs, ...added].map((pr) => {
+      const found = enrichment.found.get(pr.id)?.enrichment;
+      const branches = stackBranches.branchesOf(pr.id);
+      // The checks found speak for the row whenever there are some: the rollup leaves out GitHub's own dynamic workflow
+      // runs (Copilot's review), and a row is asked again once its rollup moves on (`want`). The branches its merge box
+      // named are fresher than those looked up or remembered.
+      return { ...pr, ...(branches && { baseRefName: branches.baseRefName, headRefName: branches.headRefName ?? '' }), ...found, ci: found?.ci ?? pr.ci };
+    });
+    const prs = enriched.toSorted((a, b) => {
+      const ascending =
+        by === 'title' ? a.title.localeCompare(b.title) : by === 'changes' ? a.additions + a.deletions - (b.additions + b.deletions) : Date.parse(a.updatedAt) - Date.parse(b.updatedAt);
+      return descending ? -ascending : ascending;
+    });
+    return { ...result, prs };
+  });
   // Where each row sits in its stack, among every row the inbox has, so a stack joins through a PR another section shows;
   // grouped by stack or not, a stack GitHub doesn't track gets a chip from it.
   const places = stackPlaces(sections.flatMap((result) => result.prs));
@@ -151,7 +153,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
       if (!pr) return;
       openOnGitHub(pr.url, event.shiftKey);
     } else if (event.key === 'r') {
-      void inbox.refresh(true);
+      inbox.refresh();
     } else if (event.key === 'c') {
       if (!selected) return;
       toggleCollapsed(selected.viewId);
@@ -292,7 +294,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
               selected={settings.inboxRepos}
               emptyLabel="All repositories"
               title={`Every section searches ${settings.inboxRepos.length > 0 ? 'these of' : 'all of'} ${org.login}'s repositories, unless it names repositories of its own`}
-              searchRepos={(query) => source.searchRepos(query, org)}
+              searchRepos={(query) => searchRepos(queryClient, source, query, org)}
               onChange={(inboxRepos) => void inbox.saveSettings({ inboxRepos })}
             />
           )}
@@ -312,7 +314,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
                   icon="sync"
                   className={inbox.refreshing ? 'is-spinning' : undefined}
                   title="Refresh (r)"
-                  onClick={() => void inbox.refresh(true)}
+                  onClick={inbox.refresh}
                 >
                   {inbox.fetchedAt === null ? 'Loading…' : <>Updated <RelativeTime date={new Date(inbox.fetchedAt).toISOString()} ago /></>}
                 </Button>
@@ -439,8 +441,11 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
       {editing && (
         <SectionEditor
           // The organization's repositories only.
-          searchRepos={(query) => source.searchRepos(query, org)}
-          listPeople={async () => (org ? source.listOrgPeople(org) : [])}
+          searchRepos={(query) => searchRepos(queryClient, source, query, org)}
+          // An organization's people change slowly: kept 10 minutes.
+          listPeople={async () =>
+            org ? queryClient.fetchQuery({ queryKey: ['org-people', org.login], queryFn: () => source.listOrgPeople(org), staleTime: 10 * 60_000 }) : []
+          }
           key={editing === 'new' ? 'new' : editing.id}
           view={editing === 'new' ? null : editing}
           onSave={saveSection}
@@ -478,23 +483,22 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
 
 /**
  * Settings, the organization the inbox shows (the one chosen, unless the viewer's organizations, once known, no longer
- * include it) and every view's results for it, kept fresh: refetched when what GitHub is asked changes (not on rename or
- * collapse), every 2 minutes while the tab is visible, and, asking GitHub itself, on coming back to the tab or window
- * when older than 30 s (useRefreshOnReturn). Nothing is fetched while no organization is shown.
+ * include it) and every view's results for it, a query a section, kept by what GitHub is asked (not a rename or a
+ * collapse): what the cache had for the organization shows at once, then GitHub is asked, the open sections first and the
+ * folded ones, which show only a count until opened, once those have answered; again every 2 minutes while the tab
+ * shows, and on coming back to it once 30 s old (src/app/query-cache.tsx). Nothing is fetched while no organization is
+ * shown.
  */
 function useInbox(source: DataSource, organizations: Organization[] | null) {
+  const queryClient = useQueryClient();
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [results, setResults] = useState<ViewResult[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [fetchedAt, setFetchedAt] = useState<number | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const latestRequest = useRef(0);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     source.getSettings().then(
       (loaded) => active && setSettings(loaded),
-      (cause: unknown) => active && setError(cause instanceof Error ? cause.message : String(cause)),
+      (cause: unknown) => active && setSettingsError(cause instanceof Error ? cause.message : String(cause)),
     );
     const unwatch = source.watchSettings(setSettings);
     return () => {
@@ -505,30 +509,41 @@ function useInbox(source: DataSource, organizations: Organization[] | null) {
 
   const chosen = settings?.currentOrg ?? null;
   const org = chosen && (organizations === null || organizations.some((candidate) => candidate.login.toLowerCase() === chosen.login.toLowerCase())) ? chosen : null;
+  const views = settings && org ? settings.views : [];
+  // Sections asked for in the same moment are one request; the content script asks GitHub about three at a time.
+  const askForSection = useMemo(() => askedTogether((asked: View[]) => source.fetchInbox(asked), { perRequest: Infinity, atOnce: Infinity }), [source]);
+  // The organization whose open sections have answered on this page, so its folded ones may be asked.
+  const [openAnswered, setOpenAnswered] = useState<string | null>(null);
+  const sections = useQueries({
+    queries: views.map((view) => ({
+      queryKey: ['inbox', org?.login, settings?.inboxScope, view.id, view.query, view.limit],
+      queryFn: () => askForSection(view),
+      // Opening the inbox asks GitHub, whatever the cache had.
+      refetchOnMount: 'always' as const,
+      staleTime: 30_000,
+      refetchInterval: 120_000,
+      enabled: !view.collapsed || openAnswered === org?.login,
+      // A section whose search changed (the repositories chosen, its query or limit) shows its last answer for the
+      // organization until GitHub answers the new one.
+      placeholderData: () =>
+        queryClient
+          .getQueryCache()
+          .findAll({ queryKey: ['inbox', org?.login], predicate: ({ queryKey, state }) => queryKey[3] === view.id && state.data !== undefined })
+          .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt)[0]?.state.data as ViewResult | undefined,
+    })),
+  });
+  useEffect(() => {
+    if (org && openAnswered !== org.login && views.every((view, index) => view.collapsed || sections[index]?.isFetchedAfterMount)) setOpenAnswered(org.login);
+  });
 
-  async function refresh(force: boolean) {
-    if (!settings || !org) return;
-    const request = ++latestRequest.current;
-    setRefreshing(true);
-    // The open sections first, so what is on screen fills in before GitHub is asked about the folded ones, which show
-    // only a count until opened. Each answer replaces those sections' rows; sections no longer in the views go.
-    const views = new Set(settings.views.map((view) => view.id));
-    try {
-      for (const batch of [settings.views.filter((view) => !view.collapsed), settings.views.filter((view) => view.collapsed)]) {
-        if (batch.length === 0) continue;
-        const fresh = await source.fetchInbox(batch, force);
-        if (request !== latestRequest.current) return;
-        const answered = new Set(batch.map((view) => view.id));
-        setResults((shown) => [...(shown ?? []).filter((result) => views.has(result.view.id) && !answered.has(result.view.id)), ...fresh]);
-        setError(null);
-      }
-      setFetchedAt(Date.now());
-    } catch (cause) {
-      if (request === latestRequest.current) setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      if (request === latestRequest.current) setRefreshing(false);
-    }
-  }
+  // Every section that has answered, now or before (the cache), under its view as it is now: a rename shows at once.
+  const results: ViewResult[] = views.flatMap((view, index) => {
+    const data = sections[index]?.data;
+    return data ? [{ ...data, view }] : [];
+  });
+  const answeredAt = sections.flatMap((section) => (section.data && !section.isPlaceholderData ? [section.dataUpdatedAt] : []));
+  // Signed out, or with the content script not answering, every section fails: the page says so once, over what it shows.
+  const failed = sections.find((section) => section.isError);
 
   /** The settings as saved with `patch`; null when they were not, and a toast has said why. */
   async function saveSettings(patch: Partial<Settings>): Promise<Settings | null> {
@@ -542,40 +557,27 @@ function useInbox(source: DataSource, organizations: Organization[] | null) {
     }
   }
 
-  // Another organization's results are no one's to see.
-  useEffect(() => {
-    setResults(null);
-    setFetchedAt(null);
-  }, [org?.login]);
-
-  const queriesKey = settings && org && JSON.stringify([settings.inboxScope, settings.views.map(({ id, query, limit }) => [id, query, limit])]);
-  const keepFresh = useEffectEvent((trigger: 'queries' | 'timer') => {
-    if (trigger !== 'queries' && document.visibilityState !== 'visible') return;
-    void refresh(false);
-  });
-
-  useEffect(() => {
-    if (queriesKey) keepFresh('queries');
-  }, [queriesKey]);
-
-  useEffect(() => {
-    const timer = setInterval(() => keepFresh('timer'), 120_000);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Forced: the content script would answer from the minute it keeps the results. The rows update in place.
-  useRefreshOnReturn(() => refresh(true), { busy: refreshing, fetchedAt });
-
-  return { settings, org, results, error, fetchedAt, refreshing, refresh, saveSettings };
+  return {
+    settings,
+    org,
+    results,
+    error: settingsError ?? failed?.error?.message ?? null,
+    fetchedAt: answeredAt.length > 0 ? Math.min(...answeredAt) : null,
+    refreshing: sections.some((section) => section.isFetching),
+    /** Asks GitHub again for every section of the organization shown, each showing what it has meanwhile. */
+    refresh: () => void queryClient.invalidateQueries({ queryKey: ['inbox', org?.login] }),
+    saveSettings,
+  };
 }
 
 /**
  * The rows "Load more" has added to each section after its first page, by view id, kept while what the view searches
- * stays the same. Each click asks for the next of GitHub's pages, or, when the view's limit cut the first page short,
- * the first again for the rows it left out; a page that adds nothing new is followed by the next, once; an empty page
- * means there is no more.
+ * stays the same. Each click asks for the next of GitHub's pages (a query of its own, kept 30 s), or, when the view's
+ * limit cut the first page short, the first again for the rows it left out; a page that adds nothing new is followed by
+ * the next, once; an empty page means there is no more.
  */
-function useMoreRows(source: DataSource) {
+function useMoreRows(source: DataSource, org: Organization | null) {
+  const queryClient = useQueryClient();
   const [added, setAdded] = useState<Record<string, { searched: string; nextPage: number; prs: PrSummary[]; done: boolean }>>({});
   const [loading, setLoading] = useState<ReadonlySet<string>>(new Set());
 
@@ -594,7 +596,12 @@ function useMoreRows(source: DataSource) {
     let done = false;
     try {
       for (let tries = 0; tries < 2 && found.length === 0 && !done; tries += 1, page += 1) {
-        const { prs } = await source.fetchInboxPage(view, page);
+        const asked = page;
+        const { prs } = await queryClient.fetchQuery({
+          queryKey: ['inbox-page', org?.login, scope, view.query, view.limit, asked],
+          queryFn: () => source.fetchInboxPage(view, asked),
+          staleTime: 30_000,
+        });
         done = prs.length === 0;
         found.push(...prs.filter((pr) => !shown.some((other) => other.id === pr.id)));
       }
@@ -614,151 +621,124 @@ function useMoreRows(source: DataSource) {
 }
 
 /**
- * What GitHub's dashboard leaves out of the rows (mergeability, reviewers, line counts, failing checks), by PR id, asked
- * for as rows come within 200px of view: up to 10 rows a request and one request at a time, so with the content script
- * asking GitHub about 3 PRs at once (and keeping each answer 2 minutes) the inbox never has more than that in flight. A
- * PR is asked again once it has been updated, or its checks have changed, since; an answer that misses something keeps
- * what was found before.
+ * What GitHub's dashboard leaves out of the rows (mergeability, reviewers, line counts, failing checks), by PR id, a query
+ * a row, asked for once the row has come within 200px of view: up to 10 rows a request and one request at a time, so with
+ * the content script asking GitHub about 3 PRs at once the inbox never has more than that in flight. A row is asked again
+ * once it has been updated, or its checks or the merge method have changed, and kept 2 minutes; until the new answer
+ * comes, and wherever it misses something, what was found before stays, from the cache too.
  */
-function useRowEnrichment(source: DataSource) {
-  const [found, setFound] = useState<ReadonlyMap<string, { updatedAt: string; enrichment: PrEnrichment }>>(new Map());
-  const asked = useRef(new Set<string>());
-  const queue = useRef<PrSummary[]>([]);
-  const asking = useRef(false);
-
-  async function askInTurn() {
-    while (queue.current.length > 0) {
-      const batch = queue.current.splice(0, 10);
-      let answers: PrEnrichment[] = [];
-      try {
-        answers = await source.enrichInbox(batch.map(({ repo, number, state, isDraft, author, ci }) => ({ repo, number, state, isDraft, author, ci: { state: ci.state } })));
-      } catch (error) {
-        console.debug('[gg]', 'enriching inbox rows failed; they keep what the dashboard said:', error instanceof Error ? error.message : error);
-      }
-      setFound((current) => {
-        const next = new Map(current);
-        batch.forEach((pr, index) => next.set(pr.id, { updatedAt: pr.updatedAt, enrichment: { ...current.get(pr.id)?.enrichment, ...answers[index] } }));
-        return next;
-      });
-    }
-    asking.current = false;
-  }
+function useRowEnrichment(source: DataSource, rows: PrSummary[], mergeMethod: MergeMethod) {
+  const queryClient = useQueryClient();
+  // The rows shown so far, as they were when shown (rowVersion).
+  const [shown, setShown] = useState<ReadonlySet<string>>(new Set());
+  // Rows that come into view together (the first paint, a section opening, a scroll) share a request. One that fails
+  // leaves its rows as the dashboard showed them.
+  const askForRow = useMemo(
+    () =>
+      askedTogether(
+        async (prs: PrSummary[]) => {
+          try {
+            return await source.enrichInbox(prs.map(({ repo, number, state, isDraft, author, ci }) => ({ repo, number, state, isDraft, author, ci: { state: ci.state } })));
+          } catch (error) {
+            console.debug('[gg]', 'enriching inbox rows failed; they keep what the dashboard said:', error instanceof Error ? error.message : error);
+            return prs.map((): PrEnrichment => ({}));
+          }
+        },
+        { perRequest: 10, atOnce: 1, gatherMs: 50 },
+      ),
+    [source],
+  );
+  const found = useQueries({
+    queries: rows.map((pr) => ({
+      queryKey: ['inbox-row', ...rowVersion(pr), mergeMethod],
+      queryFn: async () => ({ ...enrichmentFoundBefore(queryClient).get(pr.id), ...(await askForRow(pr)) }),
+      staleTime: 2 * 60_000,
+      enabled: shown.has(hashKey(rowVersion(pr))),
+    })),
+    combine: (results) => {
+      const before = results.some((result) => result.data === undefined) ? enrichmentFoundBefore(queryClient) : null;
+      return new Map(rows.flatMap((pr, index) => {
+        const enrichment = results[index]?.data ?? before?.get(pr.id);
+        return enrichment ? [[pr.id, { enrichment }] as const] : [];
+      }));
+    },
+  });
 
   function want(pr: PrSummary) {
-    const key = `${pr.id}@${pr.updatedAt}@${pr.ci.state}`;
-    if (asked.current.has(key)) return;
-    asked.current.add(key);
-    queue.current.push(pr);
-    if (asking.current) return;
-    asking.current = true;
-    // Rows that come into view together (the first paint, a section opening, a scroll) share a request.
-    setTimeout(() => void askInTurn(), 50);
+    const version = hashKey(rowVersion(pr));
+    if (!shown.has(version)) setShown((current) => new Set(current).add(version));
   }
 
   return { found, want };
 }
 
+/** What a row's enrichment goes by: the PR, and what the dashboard says of it that would change the answer. */
+function rowVersion(pr: PrSummary) {
+  return [pr.id, pr.updatedAt, pr.state, pr.isDraft, pr.ci.state];
+}
+
+/** The latest enrichment found for each row, by PR id, whatever the row looked like then. */
+function enrichmentFoundBefore(queryClient: QueryClient): Map<string, PrEnrichment> {
+  const queries = queryClient.getQueryCache().findAll({ queryKey: ['inbox-row'] });
+  const latest = new Map<string, { at: number; enrichment: PrEnrichment }>();
+  for (const { queryKey, state } of queries) {
+    const id = queryKey[1] as string;
+    if (state.data !== undefined && state.dataUpdatedAt > (latest.get(id)?.at ?? -1)) latest.set(id, { at: state.dataUpdatedAt, enrichment: state.data as PrEnrichment });
+  }
+  return new Map([...latest].map(([id, { enrichment }]) => [id, enrichment]));
+}
+
 /**
  * The open rows' branches, by PR id, by which "Group by stack" chains them before (and whether or not) a row is enriched,
- * and which sections wait for theirs. What GitHub named is remembered in storage.local (`stackBranches`) for a week after
- * it last did; while `enabled`, GitHub is asked (each PR's page header) about every open row with nothing remembered, or
- * nothing from the last day, each row once a page load: 25 rows a request and up to three requests at once, the rows of
- * the sections higher up first (`sections` comes in their order). A section is `awaiting` until each of its open rows has
- * its branches, or GitHub had none for it, or 8 s after its rows were first asked about, whichever comes first; once
- * shown it stays so, and rows that join it later join their stacks as their branches arrive. Without storage (the
- * harness) nothing is remembered.
+ * and which sections wait for theirs: a query a PR. While `enabled`, GitHub is asked (each PR's page header) about every
+ * open row the cache has nothing for: 25 rows a request and up to three requests at once, the rows of the sections higher
+ * up first (`sections` comes in their order). A PR's branches do not change, so once GitHub has named them they are kept
+ * until the cache lets them go (a day); a row GitHub named none for is asked again on the next page load. A section is
+ * `awaiting` until each of its open rows has its branches, or GitHub had none for it, or 8 s after its rows were first
+ * asked about, whichever comes first; once shown it stays so, and rows that join it later join their stacks as their
+ * branches arrive.
  */
 function useStackBranches(source: DataSource, enabled: boolean, sections: Array<{ viewId: string; openRows: PrSummary[] }>) {
-  // Null until the remembered copy has been read; a row GitHub named no branches for maps to null.
-  const [found, setFound] = useState<ReadonlyMap<string, StackBranches | null> | null>(null);
   // When each section's rows were first asked about, and the sections shown since, by view id.
   const [askedAt, setAskedAt] = useState<ReadonlyMap<string, number>>(new Map());
   const [shown, setShown] = useState<ReadonlySet<string>>(new Set());
-  const remembered = useRef<Record<string, StackBranches & { seenAt: string }>>({});
-  const asked = useRef(new Set<string>());
-  const queue = useRef<PrSummary[]>([]);
-  // The requests asking GitHub now, each taking the next 25 rows of the queue until it is empty.
-  const inFlight = useRef(0);
+  const askForBranches = useMemo(
+    () => askedTogether((prs: PrSummary[]) => source.branchesOf(prs.map(({ repo, number }) => ({ repo, number }))), { perRequest: 25, atOnce: 3 }),
+    [source],
+  );
+  const rows = [...new Map(sections.flatMap((section) => section.openRows.map((pr) => [pr.id, pr] as const))).values()];
+  // A row GitHub named branches for, or none for (null), or that it did not answer for (null, unless the cache had some).
+  const found = useQueries({
+    queries: rows.map((pr) => ({
+      queryKey: ['stack-branches', pr.repo.owner, pr.repo.name, pr.number],
+      queryFn: () => askForBranches(pr),
+      staleTime: (query: Query<StackBranches | null>) => (query.state.data ? Infinity : 0),
+      refetchOnWindowFocus: false,
+      enabled,
+    })),
+    combine: (results) => new Map(rows.flatMap((pr, index) => (results[index]?.data !== undefined || results[index]?.isError ? [[pr.id, results[index]?.data ?? null] as const] : []))),
+  });
 
+  // Branches were kept in storage.local before the page's cache kept them; that copy goes.
   useEffect(() => {
-    let active = true;
-    void (async () => {
-      let stored: Array<[string, StackBranches & { seenAt: string }]> = [];
-      try {
-        const { stackBranches } = await browser.storage.local.get('stackBranches');
-        // Branches GitHub has not named for a week belong to pull requests long gone from the inbox.
-        stored = Object.entries((stackBranches ?? {}) as Record<string, StackBranches & { seenAt: string }>).filter(([, branches]) => Date.now() - Date.parse(branches.seenAt) < 7 * DAY);
-      } catch (error) {
-        console.debug('[gg]', 'no branches remembered; every open row is looked up:', error instanceof Error ? error.message : error);
-      }
-      if (!active) return;
-      remembered.current = Object.fromEntries(stored);
-      setFound(new Map(stored));
-    })();
-    return () => {
-      active = false;
-    };
+    browser?.storage?.local.remove('stackBranches').catch(() => {});
   }, []);
 
-  async function askInTurn() {
-    while (queue.current.length > 0) {
-      const batch = queue.current.splice(0, 25);
-      let answers: Array<StackBranches | null> = [];
-      try {
-        answers = await source.branchesOf(batch.map(({ repo, number }) => ({ repo, number })));
-      } catch (error) {
-        console.debug('[gg]', "looking up inbox rows' branches failed; they wait for their merge boxes:", error instanceof Error ? error.message : error);
-      }
-      const seenAt = new Date().toISOString();
-      batch.forEach((pr, index) => {
-        const branches = answers[index];
-        if (branches) remembered.current[pr.id] = { ...branches, seenAt };
-      });
-      // A row GitHub did not answer for keeps what was remembered of it.
-      setFound((current) => {
-        const next = new Map(current);
-        batch.forEach((pr, index) => next.set(pr.id, answers[index] ?? next.get(pr.id) ?? null));
-        return next;
-      });
-      try {
-        await browser.storage.local.set({ stackBranches: remembered.current });
-      } catch (error) {
-        console.debug('[gg]', 'the branches looked up could not be remembered:', error instanceof Error ? error.message : error);
-      }
-    }
-    inFlight.current -= 1;
-  }
-
-  const askAboutRows = useEffectEvent(() => {
-    if (!found) return;
-    const wanted: PrSummary[] = [];
-    for (const pr of sections.flatMap((section) => section.openRows)) {
-      const seenAt = remembered.current[pr.id]?.seenAt;
-      if (asked.current.has(pr.id) || (seenAt !== undefined && Date.now() - Date.parse(seenAt) < DAY)) continue;
-      asked.current.add(pr.id);
-      wanted.push(pr);
-    }
-    // A section with rows not answered yet, asked about now or before for another section, waits 8 s at most from now.
+  // A section with rows not answered yet, asked about now or before for another section, waits 8 s at most from now.
+  const startWaiting = useEffectEvent(() => {
     const waiting = sections.filter(({ viewId, openRows }) => !askedAt.has(viewId) && !openRows.every((pr) => found.has(pr.id)));
     if (waiting.length > 0) setAskedAt((at) => new Map([...waiting.map(({ viewId }) => [viewId, Date.now()] as const), ...at]));
-    if (wanted.length === 0) return;
-    queue.current.push(...wanted);
-    // Up to three requests at once: each takes its first 25 rows now, and the next 25 left once it is answered.
-    while (inFlight.current < 3 && queue.current.length > 0) {
-      inFlight.current += 1;
-      void askInTurn();
-    }
   });
   // A section shown once stays shown, whatever rows join it later.
   const keepShown = useEffectEvent(() => {
-    if (!enabled || !found) return;
+    if (!enabled) return;
     const answered = sections.filter(({ viewId, openRows }) => !shown.has(viewId) && openRows.every((pr) => found.has(pr.id)));
     if (answered.length > 0) setShown((ids) => new Set([...ids, ...answered.map(({ viewId }) => viewId)]));
   });
   const sectionsKey = sections.map(({ viewId, openRows }) => `${viewId}:${openRows.map((pr) => pr.id).join(',')}`).join(' ');
   useEffect(() => {
-    if (enabled) askAboutRows();
-  }, [enabled, sectionsKey, found === null]);
+    if (enabled) startWaiting();
+  }, [enabled, sectionsKey]);
   useEffect(() => keepShown(), [enabled, sectionsKey, found]);
 
   // A slow GitHub holds a section's rows back 8 s at most.
@@ -768,56 +748,43 @@ function useStackBranches(source: DataSource, enabled: boolean, sections: Array<
   }, [askedAt]);
 
   return {
-    branchesOf: (prId: string) => found?.get(prId) ?? undefined,
-    awaiting: (viewId: string) => enabled && !shown.has(viewId) && sections.some((section) => section.viewId === viewId && !section.openRows.every((pr) => found?.has(pr.id))),
+    branchesOf: (prId: string) => found.get(prId) ?? undefined,
+    awaiting: (viewId: string) => enabled && !shown.has(viewId) && sections.some((section) => section.viewId === viewId && !section.openRows.every((pr) => found.has(pr.id))),
   };
 }
 
 /**
- * The repositories GitHub's homepage lists under "Top repositories": the first page as the inbox opens, then each page
- * "Show more" asks for, appended. A failure keeps what is shown, with GitHub's reason for the sidebar to say.
- */
-/**
  * The repositories under the sections, for the organization the inbox shows: the repositories chosen in its picker when
  * the inbox searches only those, else GitHub's own "Top repositories", which span every owner, narrowed to the
- * organization. GitHub's list is read a page at a time until a page's worth of the organization's repositories shows,
- * the list ends, or six pages have been read for nothing; "Show more" asks for the next page's worth the same way.
+ * organization. GitHub's list is read a page at a time (kept 10 minutes) until a page's worth of the organization's
+ * repositories shows, the list ends, or six pages have been read for nothing; "Show more" asks for the next page's worth
+ * the same way. A failure keeps what is shown, with GitHub's reason for the sidebar to say.
  */
 function useTopRepositories(source: DataSource, org: Organization | null, chosen: RepoRef[]) {
-  // Every page GitHub has answered (for every owner), the cursor of its next page (undefined before the first), and how
-  // many of the organization's repositories to show and how many more pages may be read to find them.
-  const [fetched, setFetched] = useState<TopRepository[]>([]);
-  const [nextCursor, setNextCursor] = useState<number | null | undefined>(undefined);
-  const [wanted, setWanted] = useState(REPOSITORIES_PAGE);
-  const [pagesLeft, setPagesLeft] = useState(6);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // How many of the organization's repositories to show, and how many of GitHub's pages may be read to find them.
+  const [wanted, setWanted] = useState({ repos: REPOSITORIES_PAGE, pages: 6 });
   const owner = org?.login.toLowerCase() ?? null;
+  const pages = useInfiniteQuery({
+    queryKey: ['top-repositories'],
+    queryFn: ({ pageParam }) => source.listTopRepositories(pageParam),
+    initialPageParam: null as number | null,
+    getNextPageParam: (page) => page.nextCursor,
+    staleTime: 10 * 60_000,
+    enabled: chosen.length === 0 && owner !== null,
+  });
+  const fetched = (pages.data?.pages ?? []).flatMap((page) => page.repos).filter((repo, index, all) => all.findIndex((other) => other.url === repo.url) === index);
   const ofOrganization = fetched.filter((repo) => repo.owner.toLowerCase() === owner);
+  const read = pages.data?.pages.length ?? 0;
 
   // Another organization starts from a page's worth again; what GitHub answered still holds.
   useEffect(() => {
-    setWanted(REPOSITORIES_PAGE);
-    setPagesLeft(6);
+    setWanted({ repos: REPOSITORIES_PAGE, pages: read + 6 });
   }, [owner]);
 
   useEffect(() => {
-    if (chosen.length > 0 || !owner || loading || error !== null || pagesLeft <= 0) return;
-    if (nextCursor === null || (nextCursor !== undefined && ofOrganization.length >= wanted)) return;
-    setLoading(true);
-    setPagesLeft((left) => left - 1);
-    source.listTopRepositories(nextCursor ?? null).then(
-      (page) => {
-        setFetched((known) => [...known, ...page.repos.filter((repo) => !known.some((other) => other.url === repo.url))]);
-        setNextCursor(page.nextCursor);
-        setLoading(false);
-      },
-      (cause: unknown) => {
-        setError(cause instanceof Error ? cause.message : String(cause));
-        setLoading(false);
-      },
-    );
-  }, [source, owner, chosen.length, loading, error, pagesLeft, nextCursor, ofOrganization.length, wanted]);
+    if (chosen.length > 0 || !owner || !pages.hasNextPage || pages.isFetching || pages.isError) return;
+    if (read < wanted.pages && ofOrganization.length < wanted.repos) void pages.fetchNextPage();
+  }, [chosen.length, owner, pages.hasNextPage, pages.isFetching, pages.isError, read, wanted, ofOrganization.length]);
 
   if (chosen.length > 0) {
     return {
@@ -836,14 +803,13 @@ function useTopRepositories(source: DataSource, org: Organization | null, chosen
     };
   }
   return {
-    repos: ofOrganization.slice(0, wanted),
-    canShowMore: ofOrganization.length > wanted || nextCursor !== null,
-    loading: loading || (nextCursor === undefined && error === null),
-    error,
+    repos: ofOrganization.slice(0, wanted.repos),
+    canShowMore: ofOrganization.length > wanted.repos || pages.hasNextPage,
+    loading: pages.isFetching || (pages.data === undefined && !pages.isError),
+    error: pages.error?.message ?? null,
     showMore: () => {
-      if (loading) return;
-      setWanted((shown) => shown + REPOSITORIES_PAGE);
-      setPagesLeft(6);
+      if (pages.isFetching) return;
+      setWanted((current) => ({ repos: current.repos + REPOSITORIES_PAGE, pages: read + 6 }));
     },
   };
 }
@@ -895,7 +861,6 @@ function useSectionInView(views: View[] | undefined): [string | null, (viewId: s
 /** Graphite's default order for a section's rows. */
 const LATEST_UPDATED_FIRST: SectionSort = { by: 'updated', descending: true };
 
-const DAY = 24 * 60 * 60 * 1000;
 
 /**
  * Opens a page on GitHub (a PR, a repository, the organization) the way a link would: the github.com page navigates (or
@@ -908,3 +873,12 @@ function openOnGitHub(url: string, newTab: boolean) {
 
 /** Reads ⌘. / ⌘C / ⌘, (Ctrl off macOS), which copy a row's PR. */
 const readCopyKey = createChordReader(COPY_KEYBINDINGS, { isMac: navigator.userAgent.includes('Mac') });
+
+/**
+ * The organization's repositories GitHub's picker offers for what was typed: what the top bar's and the section editor's
+ * pickers list. The picker asks again after every pause in typing; what it asked in the last minute is answered from the
+ * cache.
+ */
+function searchRepos(queryClient: QueryClient, source: DataSource, query: string, org: Organization | null) {
+  return queryClient.fetchQuery({ queryKey: ['repos', org?.login, query.trim()], queryFn: () => source.searchRepos(query, org), staleTime: 60_000 });
+}

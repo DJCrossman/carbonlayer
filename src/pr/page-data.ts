@@ -4,8 +4,9 @@
 // last shows at once from the cache while the page asks GitHub again. A write reloads only the stages it changed.
 import { useQueries, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { askedTogether } from '../app/asked-together';
 import type { DataSource } from '../app/data-source';
-import { politely, SIGNED_OUT } from '../lib/github-web/session';
+import { SIGNED_OUT } from '../lib/github-web/session';
 import type { ChangedFile, ChangedFileDiff, PrDetail, PrStage, PrStages, PrSummary, RepoRef, ReviewThread, TimelineItem } from '../lib/model';
 import { filesInTreeOrder, fileTree } from './diff';
 
@@ -45,7 +46,18 @@ export function usePrPageData(source: DataSource, repo: RepoRef, number: number)
         : [],
     [listed],
   );
-  const askForDiff = useMemo(() => diffsInBatches(source, { owner, name }, number), [source, owner, name, number]);
+  // 20 paths a request and four requests at a time; a path GitHub sent no diff for has none.
+  const askForDiff = useMemo(
+    () =>
+      askedTogether(
+        async (paths: string[]) => {
+          const diffs = await source.fetchPrFileDiffs({ owner, name }, number, paths);
+          return paths.map((path) => diffs[path] ?? null);
+        },
+        { perRequest: 20, atOnce: 4 },
+      ),
+    [source, owner, name, number],
+  );
   const diffs = useQueries({
     queries: head
       ? missing.map((path) => ({
@@ -151,31 +163,6 @@ export type PrPageData = { [S in PrStage]: StageState<PrStages[S]> };
 
 /** Every stage, the header first: the page's first request. */
 const PR_STAGES: PrStage[] = ['header', 'stack', 'activity', 'files', 'threads', 'mergeBox', 'checks', 'meta'];
-
-/**
- * Asks GitHub for files' diffs as the page asks for them one at a time: the paths asked for in the same moment go 20 a
- * request, four requests at a time, in the order they were asked for. Each resolves with its diff, or null when GitHub
- * sent none for it.
- */
-function diffsInBatches(source: DataSource, repo: RepoRef, number: number): (path: string) => Promise<ChangedFileDiff | null> {
-  let asked: Array<{ path: string; resolve: (diff: ChangedFileDiff | null) => void; reject: (reason: unknown) => void }> = [];
-  return (path) =>
-    new Promise((resolve, reject) => {
-      if (asked.push({ path, resolve, reject }) > 1) return;
-      setTimeout(() => {
-        const batches = Array.from({ length: Math.ceil(asked.length / 20) }, (_, i) => asked.slice(i * 20, i * 20 + 20));
-        asked = [];
-        void politely(batches, 4, async (batch) => {
-          try {
-            const diffs = await source.fetchPrFileDiffs(repo, number, batch.map((entry) => entry.path));
-            for (const entry of batch) entry.resolve(diffs[entry.path] ?? null);
-          } catch (reason) {
-            for (const entry of batch) entry.reject(reason);
-          }
-        });
-      });
-    });
-}
 
 /**
  * What the page shows of a stage: once it has arrived, what it has, through a reload or a return to the page that GitHub

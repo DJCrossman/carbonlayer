@@ -53,8 +53,8 @@ shows "Sign in to github.com in this tab". Signed in, the routes behind the side
 `status_checks`, `stack_mergeability`, `review_requests`, `labels`, `assignees`, `description`) and
 the inbox's deferred fields are side details: on the PR page a 404 from one is logged with `console.debug('[gg]', …)`
 and leaves that card empty (an open PR's checks card says why), and any other failure shows in the card with a retry.
-Reads are cached in the content script for 30–60 s, except the PR page's stages, which the page's own cache keeps (below);
-a successful write clears the cache.
+The page's own cache (below) decides when to ask again, so the content script asks GitHub every time, except the
+reviewer picker's searches and `pr.fetch`, kept 60 s and 30 s; a successful write clears those.
 
 Graphite judges CI from every check run on the head commit, runs of the workflows GitHub triggers itself (event `dynamic`,
 such as Copilot's code review) included, while `status_checks`, the commit's status rollup and the PR's Checks tab all
@@ -73,11 +73,22 @@ run. It is kept for whoever is signed in: the content script answers the app's `
 the cache is kept under `<extension version>:<login>`, so another account or version finds nothing (and the old entry
 goes); signed out, the page has an in-memory cache only. Only what loaded is kept, for 24 hours, and never a diff or a
 comment: the PR page's file list (GitHub sends some diffs with it), diffs, review threads and timeline stay in memory and
-are asked of GitHub on every page load (`keptOnDevice`). Failures are not retried; each shows where it happened.
+are asked of GitHub on every page load (`keptOnDevice`). The page renders once the cache is back, so its first frame
+shows what it holds rather than skeletons. Failures are not retried; each shows where it happened. The options page has
+a cache of its own, in memory only.
 
 Coming back to the page (the tab shown, the window focused, this frame's own or github.com's forwarded as `gg:focus`)
 asks GitHub again for every query on the page older than its `staleTime` (TanStack's `focusManager`, given those three
-listeners).
+listeners). Where GitHub answers several things in one request (a PR's diffs, the inbox's sections, its rows' details
+and branches) each still has a query of its own, and what the queries ask for in the same moment goes together
+(`askedTogether` in `src/app/asked-together.ts`).
+
+The inbox's queries: each section (`['inbox', org, scope, view id, query, limit]`, 30 s), each "Load more" page
+(`['inbox-page', org, scope, query, limit, page]`), each row's details (`['inbox-row', id, updatedAt, state, draft, CI
+rollup, merge method]`, 2 minutes), each open PR's branches (`['stack-branches', owner, repo, number]`), the
+organizations (`['orgs']`), an organization's people (`['org-people', org]`) and the top repositories
+(`['top-repositories']`, pages of one infinite query), 10 minutes each, and the repository picker's searches (`['repos',
+org, text]`, a minute). All of them are kept on the device.
 
 The PR page loads in stages (`PrStages` in `src/lib/model.ts`, `src/lib/github-web/pr-stages.ts`), all requested at
 once and each rendered as it arrives (`src/pr/page-data.ts`, one query per stage, `['pr', owner, repo, number, stage]`): `pr.fetchHeader` (the page's HTML, `tab_counts`,
@@ -148,7 +159,8 @@ to, or their own account). The list comes from the `orgs.list` RPC, which the co
 picker offers for `contributed-by:@me`, with the organizations `GET /settings/organizations` lists (its rows'
 `/orgs/<login>`, `/organizations/<login>/…` or `/<login>` links; HTML, signed in; when it fails or names nobody, the
 owners stand alone), by login, then the viewer's own account
-(`meta[name="user-login"]`, of the settings page or of the github.com page the script runs in), last; kept 10 minutes.
+(`meta[name="user-login"]`, of the settings page or of the github.com page the script runs in), last; kept 10 minutes
+by the page's cache.
 The options page, no github.com page, asks github.com for both itself. Until an organization is chosen, or once the list
 no longer has the chosen one, the inbox shows a centred "Choose an organization" card (`OrgChooser` in
 `src/inbox/OrgPicker.tsx`) and fetches nothing; after that, a chip with the organization's avatar beside the repository
@@ -158,7 +170,13 @@ the top of its Inbox section and edits that organization's repositories and view
 
 The inbox scope, prepended to every search, is compiled from the organization in `getSettings` (`organizationScope` in
 `src/lib/views.ts`): the repositories chosen for it as one `(repo:a OR repo:b)`, else `org:<login>`, or `user:<login>`
-for the viewer's own account. `inbox.fetch` reads it from settings as before. The inbox asks `inbox.fetch` twice per load: the open sections first, then the folded ones, which show only a count until opened, so what is on screen is never queued behind them. A section GitHub would not search (`/pulls/search`
+for the viewer's own account. `inbox.fetch` reads it from settings as before. Each section is a query of its own,
+keyed by the organization, the scope and what the view searches (so a rename or a fold asks nothing): the inbox shows
+what the cache had for the organization at once, never another organization's, then asks `inbox.fetch` for the open
+sections together, and for the folded ones, which show only a count until opened, once those have answered, so what is
+on screen is never queued behind them. It asks again every 2 minutes while the tab shows, on coming back to it once a
+section is 30 s old, and on Refresh (r); a section whose search changed (the repositories chosen, its query or limit)
+shows its last answer until the new one comes. A section GitHub would not search (`/pulls/search`
 answers such a search with a 200, no rows and why in `error`) or whose request failed comes back with that reason and
 what GitHub was asked (`ViewResult.error`), which it shows in place of its rows and count, while the other sections load
 as ever; only signed out does the whole page fail, with one banner. A page "Load more" cannot get says why in a toast and
@@ -196,7 +214,8 @@ beside its `+ @me` chip: as the user types, those whose login or name has the te
 begins with it first, then a name with a word that does), ↑ / ↓ and Enter or a click add one's login, Esc closes only the
 list, and Enter with nobody reached adds the text as typed. The people come from `orgs.people`, which the content script
 answers with `organizationPeople` (`src/lib/github-web/people.ts`) from the organization's People page (`GET
-/orgs/<login>/people`, HTML, signed in; further pages read while one links to the next, ten at most), kept 10 minutes;
+/orgs/<login>/people`, HTML, signed in; further pages read while one links to the next, ten at most), kept 10 minutes
+by the page's cache;
 the options page asks github.com itself, and the viewer's own account has nobody.
 "Advanced" there shows that query and lets the user write one by hand instead, which drops the filter. Beside the
 section cards, Graphite's sections sidebar (`src/inbox/SectionsSidebar.tsx`) lists every section with its count, the one
@@ -206,7 +225,7 @@ organization's repositories, each a link to it there: the ones chosen in the rep
 only those, else the viewer's top repositories as GitHub's homepage lists them, narrowed to the organization
 (`repos.top`: `topRepositories` in `src/lib/github-web/repositories.ts` reads the HTML fragments GitHub's dashboard
 loads, which span every owner, so `useTopRepositories` reads further pages until seven of the organization's show, the
-first page kept 10 minutes; "Show more" asks for seven more the same way). It hides with `sidebarCollapsed` in settings, and below 900px it opens over the inbox
+pages kept 10 minutes; "Show more" asks for seven more the same way). It hides with `sidebarCollapsed` in settings, and below 900px it opens over the inbox
 from the top bar's toggle.
 
 Rows follow Graphite's columns (`src/inbox/InboxSection.tsx`): unread dot, avatar, title with `author · owner/repo #N`,
@@ -250,20 +269,23 @@ merged or closed PRs), `page_data/review_requests` (reviewers, bots and teams in
 by the page's `meta[name="user-login"]`; else the reviewers the merge box names), `page_data/diffstat`,
 `page_data/threads` (its conversations, `conversationsIn` in `src/lib/github-web/threads.ts`) and, for an open PR,
 `page_data/status_checks` (which checks fail and which are required, `checksFrom` in
-`src/lib/github-web/checks.ts`) with GitHub's own dynamic workflow runs on the head commit (above), three PRs at a time,
-each answer kept 2 minutes (`enrichPull` in `src/lib/github-web/inbox.ts`). A row is asked again when it was updated or
-its rollup changed; the checks it found are its CI. Until a row's answer arrives its Reviewers and Changes columns show a
-skeleton dash, an open row's CI column a placeholder and its Merge column "Unknown"; a failure leaves the row as it was.
+`src/lib/github-web/checks.ts`) with GitHub's own dynamic workflow runs on the head commit (above), three PRs at a time
+(`enrichPull` in `src/lib/github-web/inbox.ts`). A row is asked again when it was updated, its rollup changed or the merge
+method did, and its answer is kept 2 minutes; the checks it found are its CI. Until a row's first answer arrives its
+Reviewers and Changes columns show a skeleton dash, an open row's CI column a placeholder and its Merge column
+"Unknown"; after that it shows what was last found (the cache's too) until the new answer, which keeps what it misses
+from the last; a failure leaves the row as it was.
 
 "Group by stack", a switch beside the top bar's repository chip (`inboxGroupByStack` in settings), shows each stack's rows
 together (`rowsByStack` in `src/inbox/stacks.ts`): a PR whose base branch is another row's head branch in the same
 repository (in any section) sits on it, and a section shows the stack where the first of its rows sorts, its top first
 and the rest indented under it, top down. The branches come from each open PR's page header (`inbox.branches`:
 `page_data/header`'s `baseBranch` and `headBranch`, a fork's head branch left out, `branchesIn` in
-`src/lib/github-web/inbox.ts`; six PRs at a time, each kept 10 minutes), looked up first: while the switch is on, the
-inbox asks about every open row, 25 a request and up to three requests at once, the rows of the sections higher up
-first, and remembers the answers in `storage.local` (`stackBranches`) for a week, asking again after a day; a row's merge
-box, once enriched, has the last word. Until each of its open rows is answered (or 8 s after they were first asked
+`src/lib/github-web/inbox.ts`; six PRs at a time), looked up first: while the switch is on, the inbox asks about every
+open row the cache has nothing for, 25 a request and up to three requests at once, the rows of the sections higher up
+first. A PR's branches do not change, so once named they are kept until the cache lets them go after a day; a row GitHub
+named none for is asked again on the next page load. A row's merge box, once enriched, has the last word. (The
+`stackBranches` entry in `storage.local` that kept them before is removed.) Until each of its open rows is answered (or 8 s after they were first asked
 about) a section shows skeleton rows, so it appears already grouped (at once when every row is remembered), each section
 on its own; once shown it stays so, and rows that come later ("Load more", a refresh) join their stacks as their
 branches arrive.
@@ -271,8 +293,8 @@ branches arrive.
 Section counts read `sectionCount` (`99+` above 99, `<limit>+` for a view cut short below that). A section shows
 GitHub's first page of rows (cut to the view's `limit`, default 50); while GitHub counts more, "Load more" at its foot
 asks `inbox.fetchMore` for the next of GitHub's pages (`/pulls/search?…&page=N` with its `/pulls/deferred`, or
-`/pulls/inbox/queries?…&page=N`) and appends the rows (page state, kept while the view's search is unchanged), until a
-page comes back empty.
+`/pulls/inbox/queries?…&page=N`, a query each, kept 30 s) and appends the rows (page state, kept while the view's search
+is unchanged), until a page comes back empty.
 
 Repositories are picked, not typed (`src/inbox/RepoPicker.tsx`): the inbox's top-bar chip, the options page and the
 section editor's Repositories field open a popover with a search box, "Select all / none" and checkboxes, fed by GitHub's

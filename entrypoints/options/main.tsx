@@ -2,6 +2,7 @@
 // switches. Every change is saved as it is made (text fields 400 ms after the last keystroke).
 import { StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { PageQueries } from '../../src/app/query-cache';
 import { OrgPicker, useOrganizations } from '../../src/inbox/OrgPicker';
 import { RepoPicker } from '../../src/inbox/RepoPicker';
 import { listOrganizations } from '../../src/lib/github-web/organizations';
@@ -17,7 +18,9 @@ import { ViewsEditor } from './ViewsEditor';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <OptionsPage />
+    <PageQueries owner={null}>
+      <OptionsPage />
+    </PageQueries>
   </StrictMode>,
 );
 

@@ -20,13 +20,13 @@ afterEach(() => vi.unstubAllGlobals());
 const call = (method: RpcRequest['method'], args: unknown) => handleRpc({ kind: 'gg-rpc', id: 'req-1', method, args } as RpcRequest);
 
 describe('handleRpc', () => {
-  it('answers with the request id, and serves repeat reads from the cache until forced', async () => {
+  it("answers with the request id, asking GitHub every time: the page's cache decides when", async () => {
     const views = [{ id: 'a', name: 'Mine', query: 'is:pr author:@me' }];
+    vi.mocked(fetchInbox).mockImplementation(async (asked) => asked.map((view) => ({ view, prs: [], totalCount: 0, fetchedAt: 'now' })));
     expect(await call('inbox.fetch', { views })).toEqual({ kind: 'gg-rpc-result', id: 'req-1', ok: true, result: [{ view: views[0], prs: [], totalCount: 0, fetchedAt: 'now' }] });
     await call('inbox.fetch', { views });
-    expect(fetchInbox).toHaveBeenCalledTimes(1);
-    await call('inbox.fetch', { views, force: true });
     expect(fetchInbox).toHaveBeenCalledTimes(2);
+    expect(fetchInbox).toHaveBeenLastCalledWith(views, DEFAULT_SETTINGS.inboxScope);
   });
 
   it('forgets cached pages after a successful write, reloads a forced read, and reports failures as errors', async () => {
@@ -44,24 +44,21 @@ describe('handleRpc', () => {
     expect(await call('nope' as RpcRequest['method'], {})).toMatchObject({ ok: false, error: 'Unknown request: nope' });
   });
 
-  it('fetches a later page of a view in the inbox scope, answering with the view as asked', async () => {
+  it('fetches a later page of a view in the inbox scope', async () => {
     const view = { id: 'a', name: 'Mine', query: 'is:pr author:@me' };
-    vi.mocked(fetchViewPage).mockResolvedValue({ view: { ...view, name: 'Earlier name' }, prs: [], totalCount: 40, fetchedAt: 'now' });
+    vi.mocked(fetchViewPage).mockResolvedValue({ view, prs: [], totalCount: 40, fetchedAt: 'now' });
     expect(await call('inbox.fetchMore', { view, page: 2 })).toMatchObject({ ok: true, result: { view, totalCount: 40 } });
     expect(fetchViewPage).toHaveBeenCalledWith(view, DEFAULT_SETTINGS.inboxScope, 2);
   });
 
-  it("keeps the first page of the homepage's top repositories, and asks GitHub for every later one", async () => {
-    await call('repos.top', {});
+  it("asks GitHub for the homepage's first page of top repositories, or the one after a cursor", async () => {
     expect(await call('repos.top', { cursor: null })).toMatchObject({ ok: true, result: { repos: [], nextCursor: 7 } });
-    expect(topRepositories).toHaveBeenCalledTimes(1);
+    expect(topRepositories).toHaveBeenLastCalledWith();
     await call('repos.top', { cursor: 7 });
-    await call('repos.top', { cursor: 7 });
-    expect(topRepositories).toHaveBeenCalledTimes(3);
     expect(topRepositories).toHaveBeenLastCalledWith(7);
   });
 
-  it('enriches inbox rows three pull requests at a time, and keeps each answer', async () => {
+  it('enriches inbox rows three pull requests at a time', async () => {
     let inFlight = 0;
     let most = 0;
     vi.mocked(enrichPull).mockImplementation(async (pr) => {
@@ -82,8 +79,6 @@ describe('handleRpc', () => {
     expect(await call('inbox.enrich', { prs })).toMatchObject({ ok: true, result: prs.map((pr) => ({ additions: pr.number })) });
     expect(most).toBe(3);
     expect(enrichPull).toHaveBeenCalledWith(prs[0], DEFAULT_SETTINGS.mergeMethod, 'octocat');
-    await call('inbox.enrich', { prs: prs.slice(0, 2) });
-    expect(enrichPull).toHaveBeenCalledTimes(7);
   });
 
   it("previews Markdown with the form GitHub's comment box posts for a pull request, and keeps what it read", async () => {

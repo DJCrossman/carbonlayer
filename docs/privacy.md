@@ -11,9 +11,10 @@ describes what it does with your data. Last updated 14 October 2026.
   password and never signs in on your behalf.
 - **Your settings.** Your inbox sections, chosen organization and repositories, and display preferences are kept in
   Chrome's extension storage, which Chrome may sync across the devices signed in to your Chrome profile.
-- **Pull request details, briefly.** To open pages faster, the pull request details a page showed you are kept in the
-  extension's local storage on your device for up to 24 hours, for the GitHub account that saw them; they are never
-  sent anywhere. File diffs and comments are not kept.
+- **Pull request details, briefly.** To open pages faster, the pull request details a page showed you (and, on the
+  inbox, your organizations' names, repositories and people) are kept in the extension's local storage on your device
+  for up to 24 hours, for the GitHub account that saw them; they are never sent anywhere. File diffs and comments are
+  not kept.
 - **Graphite, only when you ask.** "Import from Graphite" reads the sections of your signed-in Graphite inbox from the
   app.graphite.com tab you have open, once, when you click it. Nothing is sent to Graphite.
 

@@ -1,8 +1,8 @@
 // Answers the app's RPC requests with the user's github.com session: same-origin requests from the content
 // script to the endpoints GitHub's own React UI uses (docs/research/github-web-*.md). No token, no api.github.com.
-// Reads are cached briefly in the content script's memory, except the PR page's stages, which the page's own cache
-// keeps (pr-stages.ts only shares a request while it is on its way); any successful write clears that cache, and stops
-// sharing the requests made before it.
+// The page's own cache (src/app/query-cache.tsx) decides when to ask again, so reads go to GitHub; only the reviewer
+// picker's and `pr.fetch`'s are kept briefly here, and pr-stages.ts shares a request between the PR page's stages while
+// it is on its way. Any successful write clears what is kept, and stops sharing the requests made before it.
 
 import type { RpcMethod, RpcMethods, RpcRequest, RpcResponse } from '../rpc';
 import { getSettings } from '../settings';
@@ -33,58 +33,36 @@ export async function handleRpc(request: RpcRequest): Promise<RpcResponse> {
 }
 
 const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<RpcMethods[M]['result']> } = {
-  'inbox.fetch': async ({ views, force }) => {
-    const { inboxScope } = await getSettings();
-    // Keyed by the queries as saved: resolved, their relative times change every second.
-    const key = `inbox:${JSON.stringify([inboxScope, views.map((view) => [view.query, view.limit])])}`;
-    const results = await cached(key, 60_000, force, () => fetchInbox(views, inboxScope));
-    // Results are index-aligned with `views`; the views themselves are not cached so renames show at once.
-    return results.map((result, i) => ({ ...result, view: views[i]! }));
-  },
-  'inbox.fetchMore': async ({ view, page }) => {
-    const { inboxScope } = await getSettings();
-    const key = `inbox-page:${JSON.stringify([inboxScope, view.query, page])}`;
-    return { ...(await cached(key, 60_000, false, () => fetchViewPage(view, inboxScope, page))), view };
-  },
+  'inbox.fetch': async ({ views }) => fetchInbox(views, (await getSettings()).inboxScope),
+  'inbox.fetchMore': async ({ view, page }) => fetchViewPage(view, (await getSettings()).inboxScope, page),
   'inbox.enrich': async ({ prs }) => {
     const { mergeMethod } = await getSettings();
     // The viewer's own review is found by the login of the github.com page this script runs in.
     const viewerLogin = document.querySelector('meta[name="user-login"]')?.getAttribute('content') || null;
-    // Three pull requests at a time (each up to four page_data requests), each answer kept for 2 minutes.
-    return politely(prs, 3, (pr) =>
-      cached(`enrich:${pr.repo.owner}/${pr.repo.name}#${pr.number}:${pr.state}:${pr.isDraft}:${pr.ci.state}:${mergeMethod}`.toLowerCase(), 120_000, false, () =>
-        enrichPull(pr, mergeMethod, viewerLogin),
-      ),
-    );
+    // Three pull requests at a time, each up to four page_data requests.
+    return politely(prs, 3, (pr) => enrichPull(pr, mergeMethod, viewerLogin));
   },
   'inbox.branches': ({ prs }) =>
-    // Six pull requests at a time, each header asked once in 10 minutes; one GitHub does not answer has no branches.
+    // Six pull requests at a time; one GitHub does not answer has no branches.
     politely(prs, 6, ({ repo, number }) =>
-      cached(`branches:${repo.owner}/${repo.name}#${number}`.toLowerCase(), 600_000, false, async () =>
-        branchesIn(await getJson<unknown>(`/${repo.owner}/${repo.name}/pull/${number}/page_data/header`), repo),
-      ).catch((error: unknown) => {
-        console.debug('[gg]', `page_data/header for ${repo.owner}/${repo.name}#${number} failed; the row waits for its merge box to name its branches:`, error instanceof Error ? error.message : error);
-        return null;
-      }),
+      getJson<unknown>(`/${repo.owner}/${repo.name}/pull/${number}/page_data/header`)
+        .then((header) => branchesIn(header, repo))
+        .catch((error: unknown) => {
+          console.debug('[gg]', `page_data/header for ${repo.owner}/${repo.name}#${number} failed; the row waits for its merge box to name its branches:`, error instanceof Error ? error.message : error);
+          return null;
+        }),
     ),
   'repos.search': async ({ query, owner }) =>
-    // The picker asks again after every pause in typing; what it asked in the last minute is answered from memory.
     pickableRepositories(query.trim(), owner ?? null, async (path) => {
-      const data = await cached(`repos:${path}`, 60_000, false, () => getJson<unknown>(path));
+      const data = await getJson<unknown>(path);
       noteShape('repositories/picker/search', data);
       return data;
     }),
-  'repos.top': ({ cursor }) =>
-    // The homepage's list changes slowly: its first page is asked for once in 10 minutes, every "Show more" afresh.
-    cursor === undefined || cursor === null ? cached('repos.top', 600_000, false, () => topRepositories()) : topRepositories(cursor),
+  'repos.top': ({ cursor }) => (cursor === undefined || cursor === null ? topRepositories() : topRepositories(cursor)),
   'orgs.list': () =>
-    // Who is signed in is the github.com page's own business; the list is asked for once in 10 minutes.
-    cached('orgs', 600_000, false, () =>
-      listOrganizations({ json: getJson, page: getPage }, document.querySelector('meta[name="user-login"]')?.getAttribute('content') || null),
-    ),
-  'orgs.people': ({ org }) =>
-    // An organization's people change slowly: each one's are asked for once in 10 minutes.
-    cached(`people:${org.login}`.toLowerCase(), 600_000, false, () => organizationPeople(org, getPage)),
+    // Who is signed in is the github.com page's own business.
+    listOrganizations({ json: getJson, page: getPage }, document.querySelector('meta[name="user-login"]')?.getAttribute('content') || null),
+  'orgs.people': ({ org }) => organizationPeople(org, getPage),
   'pr.fetch': async ({ repo, number, force }) => {
     const { mergeMethod } = await getSettings();
     const key = `pr:${repo.owner}/${repo.name}#${number}:${mergeMethod}`.toLowerCase();

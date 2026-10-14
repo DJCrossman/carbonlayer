@@ -2,6 +2,7 @@
 // inbox shows (its avatar and login; a chip in the inbox's top bar, a form field on the options page) that opens the list
 // of the viewer's organizations, their own account last. `OrgChooser` is the same list as the inbox's first screen,
 // while no organization is chosen, offering to keep the views saved before views belonged to one.
+import { useQuery } from '@tanstack/react-query';
 import { useEffect, useId, useRef, useState } from 'react';
 import type { Organization } from '../lib/model';
 import { Avatar } from '../ui/Avatar';
@@ -109,26 +110,10 @@ export function OrgChooser({
 /** The organizations as loaded (`useOrganizations`): the list, or why it did not load and a way to ask again, or null while loading. */
 type OrganizationsLoad = { list: Organization[] | null; error: string | null; retry: () => void };
 
-/** The viewer's organizations, asked for once (the content script keeps them 10 minutes), and again on `retry`. */
+/** The viewer's organizations, kept 10 minutes, and asked for again on `retry`. */
 export function useOrganizations(listOrgs: () => Promise<Organization[]>): OrganizationsLoad {
-  const [list, setList] = useState<Organization[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
-  useEffect(() => {
-    let current = true;
-    listOrgs().then(
-      (found) => {
-        if (!current) return;
-        setList(found);
-        setError(null);
-      },
-      (cause: unknown) => current && setError(cause instanceof Error ? cause.message : String(cause)),
-    );
-    return () => {
-      current = false;
-    };
-  }, [attempt]);
-  return { list, error, retry: () => setAttempt(attempt + 1) };
+  const { data, error, refetch } = useQuery({ queryKey: ['orgs'], queryFn: listOrgs, staleTime: 10 * 60_000 });
+  return { list: data ?? null, error: error?.message ?? null, retry: () => void refetch() };
 }
 
 function OrganizationList({
