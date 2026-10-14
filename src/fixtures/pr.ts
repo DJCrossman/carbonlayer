@@ -96,7 +96,7 @@ const summary42: PrSummary = {
   isInMergeQueue: false,
   autoMerge: null,
   nativeStack: null,
-  conversations: { resolved: 2, total: 3 },
+  conversations: { resolved: 2, total: 4 },
 };
 
 const summary43: PrSummary = {
@@ -220,6 +220,27 @@ const threads42: ReviewThread[] = [
         createdAt: '2026-10-07T15:40:00Z',
         url: 'https://github.com/acme/widgets/pull/42#discussion_r5',
         subjectId: 'PRRC_fixture5',
+        reactions: [],
+      },
+    ],
+  },
+  {
+    id: 'PRRT_fixture4',
+    path: 'src/parcs/zones.ts',
+    line: 31,
+    startLine: 29,
+    side: 'RIGHT',
+    isResolved: false,
+    isOutdated: false,
+    diffHunk: '@@ -0,0 +1,31 @@\n+  if (!isOpen(target, new Date())) {\n+    throw new Error(`${target.name} is closed`);\n+  }',
+    comments: [
+      {
+        id: 'PRRC_fixture6',
+        author: hubot,
+        bodyHtml: '<p>Passing <code>now</code> in instead of <code>new Date()</code> would let the tests pin the clock.</p>',
+        createdAt: '2026-10-09T09:12:00Z',
+        url: 'https://github.com/acme/widgets/pull/42#discussion_r6',
+        subjectId: 'PRRC_fixture6',
         reactions: [],
       },
     ],
@@ -535,7 +556,7 @@ const detail42: PrDetail = {
   viewerCanMerge: true,
   viewerCanEnableAutoMerge: true,
   requiredCheckNames: ['build', 'unit', 'e2e / portal'],
-  unresolvedThreadCount: 1,
+  unresolvedThreadCount: 2,
 };
 
 const detail41: PrDetail = {

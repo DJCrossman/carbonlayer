@@ -35,6 +35,13 @@ describe('createChordReader', () => {
     expect(read(key('?', 10, { shiftKey: true }))).toEqual({ action: 'help' });
   });
 
+  it('tells C (comments) from c, which starts c r', () => {
+    const read = mac();
+    expect(read(key('C', 0, { shiftKey: true }))).toEqual({ action: 'toggle-comments' });
+    expect(read(key('c', 100))).toBe('pending');
+    expect(read(key('r', 200))).toEqual({ action: 'rerun-failed-checks' });
+  });
+
   it('waits for the second stroke of a chord', () => {
     const read = mac();
     expect(read(key('r', 0))).toBe('pending');

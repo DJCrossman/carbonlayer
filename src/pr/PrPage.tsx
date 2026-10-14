@@ -20,6 +20,7 @@ import { showToast, ToastHost } from '../ui/Toast';
 import { Activity } from './Activity';
 import { useCheckReruns } from './check-reruns';
 import { Markdown } from './Comment';
+import { CommentsDrawer } from './CommentsDrawer';
 import { FilesSection, useFileReview } from './Files';
 import { usePrKeybindings } from './keybindings';
 import { followLink, goToPr, openOnGitHub } from './navigation';
@@ -115,6 +116,7 @@ function PrView({
   const [helpOpen, setHelpOpen] = useState(false);
   const [reviewerPickerOpen, setReviewerPickerOpen] = useState(false);
   const [stackCollapsed, setStackCollapsed] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
   const [legendHidden, setLegendHidden] = useState(() => {
     try {
       return localStorage.getItem('gg:pr-legend-hidden') === '1';
@@ -251,6 +253,8 @@ function PrView({
         return files.toggleTree();
       case 'toggle-stack':
         return setStackCollapsed((collapsed) => !collapsed);
+      case 'toggle-comments':
+        return setCommentsOpen((open) => !open);
       case 'stack-down': {
         const below = entries[currentIndex - 1];
         return below && goToPr(below);
@@ -319,11 +323,13 @@ function PrView({
 
   return (
     <PrReactions value={{ changed: edits.reactions, react }}>
-      <div className={`pr-page ${legendHidden ? '' : 'has-legend'}`}>
+      <div className={`pr-page ${legendHidden ? '' : 'has-legend'} ${commentsOpen ? 'has-comments-drawer' : ''}`}>
         <div className="pr-conversation">
           <PrHeader
             pr={pr}
             batchCount={batch.length}
+            commentsOpen={commentsOpen}
+            onToggleComments={() => setCommentsOpen((open) => !open)}
             onFinishReview={() => (review.open ? closeReview() : openReview(review.event))}
             onSetDraft={setDraft}
             onCopied={() => showToast('Link copied')}
@@ -424,6 +430,21 @@ function PrView({
           onToggleViewed={toggleViewed}
           noteActions={noteActions}
         />
+        {commentsOpen && (
+          <CommentsDrawer
+            threads={pr.threads}
+            stage={data.threads}
+            batch={batch}
+            files={files.order}
+            viewerLogin={header.viewerLogin}
+            currentThreadId={files.currentThreadId}
+            actions={noteActions}
+            onRevealThread={files.revealThread}
+            onGoToFile={files.goToFile}
+            onRetry={() => retry(['threads'])}
+            onClose={() => setCommentsOpen(false)}
+          />
+        )}
         {legendHidden ? null : <ShortcutLegend onHide={() => setLegendHidden(true)} onShowAll={() => setHelpOpen(true)} />}
         {helpOpen && <ShortcutHelp legendHidden={legendHidden} onShowLegend={() => setLegendHidden(false)} onClose={() => setHelpOpen(false)} />}
         {quickApprove && (
@@ -442,6 +463,8 @@ function PrView({
 function PrHeader({
   pr,
   batchCount,
+  commentsOpen,
+  onToggleComments,
   onFinishReview,
   onSetDraft,
   onCopied,
@@ -449,6 +472,8 @@ function PrHeader({
 }: {
   pr: PrDetail;
   batchCount: number;
+  commentsOpen: boolean;
+  onToggleComments: () => void;
   onFinishReview: () => void;
   onSetDraft: (draft: boolean) => Promise<boolean>;
   onCopied: () => void;
@@ -477,6 +502,17 @@ function PrHeader({
           {pr.repo.owner}/{pr.repo.name} <span className="pr-header-number">#{pr.number}</span>
         </span>
         <span className="pr-header-spacer" />
+        {/* Opens the comments drawer; counts the open conversations once the threads have arrived. */}
+        <Button
+          className="pr-comments-toggle"
+          icon="comment-discussion"
+          onClick={onToggleComments}
+          aria-pressed={commentsOpen}
+          aria-label={pr.conversations ? `Comments: ${pr.unresolvedThreadCount} open` : 'Comments'}
+          title="Comments (C)"
+        >
+          {pr.conversations ? pr.unresolvedThreadCount : null}
+        </Button>
         <div className="pr-review-anchor">
           <Button variant="primary" onClick={onFinishReview} aria-expanded={Boolean(reviewPopover)} title="Finish review (r c)">
             Finish review

@@ -58,6 +58,14 @@
   min-height: 28px;
 }
 .pr-header-spacer { flex: 1; }
+/* The Comments button stays pressed while its drawer is open. */
+.pr-comments-toggle[aria-pressed='true'],
+.pr-comments-toggle[aria-pressed='true']:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--gg-accent) 55%, var(--gg-border));
+  background: var(--gg-bg-selected);
+  color: var(--gg-accent);
+}
+.pr-comments-toggle[aria-pressed='true'] .gg-icon { color: inherit; }
 .pr-header-number { color: var(--gg-fg-subtle); }
 .pr-badge {
   display: inline-grid;

@@ -40,6 +40,8 @@ export const PR_KEYBINDINGS: ReadonlyArray<{ chord: string; action: PrAction; la
   { chord: 'e', action: 'toggle-file', label: 'Expand / collapse current file' },
   { chord: 'f', action: 'toggle-tree', label: 'Toggle file tree', legend: true },
   { chord: 's', action: 'toggle-stack', label: 'Toggle stack', legend: true },
+  // Graphite's old threads panel was c, which starts c r here (and would wait for it); shift keeps its letter.
+  { chord: 'C', action: 'toggle-comments', label: 'Toggle comments' },
   { chord: 'mod+shift+ArrowDown', action: 'stack-down', label: 'Down the stack' },
   { chord: 'mod+shift+ArrowUp', action: 'stack-up', label: 'Up the stack' },
   { chord: 'r c', action: 'review-comment', label: 'Review: comment', legend: true },
@@ -122,6 +124,7 @@ type PrAction =
   | 'prev-thread'
   | 'toggle-tree'
   | 'toggle-stack'
+  | 'toggle-comments'
   | 'stack-down'
   | 'stack-up'
   | 'review-comment'

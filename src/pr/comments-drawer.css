@@ -1,0 +1,242 @@
+/* The comments drawer: fixed to the right of the page's viewport, its full height, with the page laid out in what is
+   left beside it (its content stays centred there) rather than under it. Dense, as Graphite's. */
+
+.pr-page.has-comments-drawer {
+  --comments-drawer-width: 380px;
+  max-width: calc(1520px + var(--comments-drawer-width));
+  padding-right: calc(20px + var(--comments-drawer-width));
+}
+/* The legend and the toasts keep to the page's part of the viewport. */
+.pr-page.has-comments-drawer .shortcut-legend { right: var(--comments-drawer-width); }
+.pr-page.has-comments-drawer .gg-toast-host { left: calc(50% - var(--comments-drawer-width) / 2); }
+
+/* page.css stacks the page below 1100px; beside the drawer that is 380px more of viewport. */
+@media (max-width: 1480px) {
+  .pr-page.has-comments-drawer {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'conversation' 'sidebar' 'files';
+  }
+  .pr-page.has-comments-drawer .pr-sidebar {
+    position: static;
+    max-height: none;
+    margin-top: 16px;
+  }
+}
+/* Too narrow to share: the drawer covers the page instead. */
+@media (max-width: 900px) {
+  .pr-page.has-comments-drawer { max-width: 1520px; padding-right: 20px; }
+  .pr-page.has-comments-drawer .shortcut-legend { right: 0; }
+  .pr-page.has-comments-drawer .gg-toast-host { left: 50%; }
+  .comments-drawer { box-shadow: var(--gg-shadow-overlay); }
+}
+
+.comments-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: var(--comments-drawer-width);
+  max-width: 100vw;
+  border-left: 1px solid var(--gg-border);
+  background: var(--gg-bg);
+}
+.comments-drawer:focus { outline: none; }
+
+.comments-drawer-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  height: 40px;
+  padding: 0 6px 0 14px;
+  border-bottom: 1px solid var(--gg-border-muted);
+}
+.comments-drawer-header h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.comments-drawer-filters {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--gg-border-muted);
+}
+.comments-drawer-spacer { flex: 1; }
+
+.comments-filter { position: relative; min-width: 0; }
+.comments-filter-button { max-width: 150px; }
+.comments-filter-button .gg-avatar { flex: none; }
+.comments-filter-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 10;
+  min-width: 180px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--gg-border);
+  border-radius: 8px;
+  background: var(--gg-bg);
+  box-shadow: var(--gg-shadow-overlay);
+}
+.comments-filter-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--gg-fg);
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.comments-filter-option:hover,
+.comments-filter-option:focus-visible { background: var(--gg-bg-hover); outline: none; }
+.comments-filter-check { display: inline-grid; place-items: center; flex: none; width: 16px; color: var(--gg-accent); }
+.comments-filter-count {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--gg-fg-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.comments-filter-divider { height: 1px; margin: 4px; background: var(--gg-border-muted); }
+
+.comments-drawer-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px;
+  scrollbar-width: thin;
+}
+
+.comments-drawer-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+/* One conversation */
+.comments-drawer-thread {
+  flex: none;
+  border: 1px solid var(--gg-border);
+  border-radius: var(--gg-radius);
+  background: var(--gg-bg);
+}
+.comments-drawer-thread.is-current { box-shadow: 0 0 0 2px color-mix(in srgb, var(--gg-accent) 45%, transparent); }
+
+.comments-drawer-thread-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: calc(var(--gg-radius) - 1px) calc(var(--gg-radius) - 1px) 0 0;
+  background: none;
+  color: var(--gg-fg);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.comments-drawer-thread-header:hover { background: var(--gg-bg-hover); }
+.comments-drawer-thread-header:focus-visible { outline: 2px solid var(--gg-accent); outline-offset: -2px; }
+.comments-drawer-thread-header .gg-icon { flex: none; }
+.comments-drawer-file {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.comments-drawer-lines { flex: none; color: var(--gg-fg-muted); font-variant-numeric: tabular-nums; }
+.comments-drawer-thread-header .diff-note-tag { flex: none; height: 16px; font-size: 10.5px; }
+
+/* The commented code, a small diff: a background per line, + and − before added and removed text. */
+.comments-drawer-code {
+  margin: 0 8px;
+  padding: 2px 0;
+  overflow: hidden;
+  border: 1px solid var(--gg-border-muted);
+  border-radius: 4px;
+  background: var(--gg-bg-subtle);
+  font: 11.5px/1.5 var(--gg-font-mono);
+}
+.comments-drawer-code-row { display: flex; }
+.comments-drawer-code-row.is-added { background: color-mix(in srgb, var(--gg-success) 16%, transparent); }
+.comments-drawer-code-row.is-removed { background: color-mix(in srgb, var(--gg-danger) 16%, transparent); }
+.comments-drawer-code-line {
+  flex: none;
+  min-width: 28px;
+  padding: 0 6px 0 4px;
+  color: var(--gg-fg-subtle);
+  text-align: right;
+  user-select: none;
+}
+/* A wrapped line carries on under its text, not under its + or −. */
+.comments-drawer-code-text {
+  flex: 1;
+  min-width: 0;
+  padding: 0 6px 0 1.4ch;
+  text-indent: -1.4ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.comments-drawer-code-text::before {
+  content: ' ';
+  display: inline-block;
+  width: 1.4ch;
+  text-indent: 0;
+  user-select: none;
+}
+.is-added > .comments-drawer-code-text::before { content: '+'; color: var(--gg-success); }
+.is-removed > .comments-drawer-code-text::before { content: '−'; color: var(--gg-danger); }
+
+.comments-drawer-comments { padding: 8px 10px 0; }
+.comments-drawer-comments .pr-comment + .pr-comment {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--gg-border-muted);
+}
+.comments-drawer-comments .markdown-body { font-size: 13px; }
+/* The picker opens from the start of its row, so it fits the drawer whichever reaction it follows. */
+.comments-drawer-comments .reactions { position: relative; }
+.comments-drawer-comments .reaction-picker-anchor { position: static; }
+.comments-drawer-pending-body {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.comments-drawer-reply { padding: 8px 10px 0; }
+.comments-drawer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px 10px;
+}
+.comments-drawer-reply .comments-drawer-actions { padding: 6px 0 8px; }

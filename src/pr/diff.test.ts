@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { prFixtures } from '../fixtures/pr';
 import type { ChangedFile, ReviewThread } from '../lib/model';
-import { composerAnchorFor, currentLinesOf, fileNotes, filesInTreeOrder, fileTree, renderableDiff } from './diff';
+import { commentedRows, composerAnchorFor, currentLinesOf, fileNotes, filesInTreeOrder, fileTree, renderableDiff } from './diff';
 
 const pr42 = prFixtures.find((pr) => pr.number === 42)!;
 const fileAt = (path: string) => pr42.files.find((file) => file.path === path)!;
@@ -154,5 +154,41 @@ describe('currentLinesOf', () => {
 
   it('gives nothing for lines the patch does not reach', () => {
     expect(currentLinesOf(patch, 13, 15)).toBeNull();
+  });
+});
+
+describe('commentedRows', () => {
+  // L10/R10 unchanged, L11 removed, R11–R12 added, L12/R13 unchanged.
+  const patch = ['@@ -10,3 +10,4 @@ class Adapter', ' const a = 1;', '-const b = 2;', '+const b = 3;', '+const c = 4;', ' return a;', '\\ No newline at end of file'].join('\n');
+
+  it('reads one line on either side, numbered in its own file', () => {
+    expect(commentedRows(patch, { side: 'RIGHT', line: 12 }, { side: 'RIGHT', line: 12 })).toEqual([{ kind: 'added', line: 12, text: 'const c = 4;' }]);
+    expect(commentedRows(patch, { side: 'LEFT', line: 11 }, { side: 'LEFT', line: 11 })).toEqual([{ kind: 'removed', line: 11, text: 'const b = 2;' }]);
+  });
+
+  it('keeps the removed lines a range spans, its unchanged lines numbered on the side of its last line', () => {
+    expect(commentedRows(patch, { side: 'RIGHT', line: 10 }, { side: 'RIGHT', line: 12 })).toEqual([
+      { kind: 'context', line: 10, text: 'const a = 1;' },
+      { kind: 'removed', line: 11, text: 'const b = 2;' },
+      { kind: 'added', line: 11, text: 'const b = 3;' },
+      { kind: 'added', line: 12, text: 'const c = 4;' },
+    ]);
+    expect(commentedRows(patch, { side: 'LEFT', line: 11 }, { side: 'LEFT', line: 12 })?.map((row) => [row.kind, row.line])).toEqual([
+      ['removed', 11],
+      ['added', 11],
+      ['added', 12],
+      ['context', 12],
+    ]);
+  });
+
+  it('reads a range from a removed line to an added one', () => {
+    expect(commentedRows(patch, { side: 'LEFT', line: 11 }, { side: 'RIGHT', line: 11 })?.map((row) => row.text)).toEqual(['const b = 2;', 'const b = 3;']);
+  });
+
+  it('gives nothing for lines the patch does not reach in one hunk', () => {
+    expect(commentedRows(patch, { side: 'RIGHT', line: 14 }, { side: 'RIGHT', line: 14 })).toBeNull();
+    const twoHunks = `${patch}\n@@ -30,2 +31,2 @@\n x\n y`;
+    expect(commentedRows(twoHunks, { side: 'RIGHT', line: 13 }, { side: 'RIGHT', line: 31 })).toBeNull();
+    expect(commentedRows(twoHunks, { side: 'RIGHT', line: 32 }, { side: 'RIGHT', line: 32 })).toEqual([{ kind: 'context', line: 32, text: 'y' }]);
   });
 });

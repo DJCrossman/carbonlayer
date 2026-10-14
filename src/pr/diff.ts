@@ -1,6 +1,7 @@
 // Pure diff logic for the Files section: what the diff library can render for a changed file, which
 // notes (review threads, batched comments, the open composer) sit on which of its lines, where the
-// composer opens for selected lines, and the file tree that orders the files.
+// composer opens for selected lines, the rows a comment sits on (for the comments drawer), and the file
+// tree that orders the files.
 
 import { parsePatchFiles, type DiffLineAnnotation, type FileDiffMetadata, type SelectedLineRange } from '@pierre/diffs';
 import type { ReviewThreadDraft } from '../app/data-source';
@@ -127,6 +128,53 @@ export function currentLinesOf(patch: string, from: number, to: number): string 
     next++;
   }
   return lines.length === to - from + 1 ? lines.join('\n') : null;
+}
+
+/**
+ * The diff rows a comment sits on, as the patch shows them: from its first commented line to its last in the unified
+ * diff's order, so a range over a change block keeps the removed lines among the added ones. Each row is numbered in its
+ * own file (the old one for removed lines, the new one for added), an unchanged row in the file the comment's last line
+ * is on. Null when the patch does not reach those lines in one hunk (an outdated thread).
+ */
+export function commentedRows(patch: string, first: DiffLineRef, last: DiffLineRef): CommentedRow[] | null {
+  const rows: CommentedRow[] = [];
+  let inHunk = false;
+  let oldLine = 0;
+  let newLine = 0;
+  for (const row of patch.split('\n')) {
+    const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(row);
+    if (hunk) {
+      // GitHub only takes a comment on lines of one hunk.
+      if (rows.length > 0) return null;
+      inHunk = true;
+      oldLine = Number(hunk[1]);
+      newLine = Number(hunk[2]);
+      continue;
+    }
+    if (!inHunk || row.startsWith('\\')) continue;
+    const kind = row.startsWith('+') ? 'added' : row.startsWith('-') ? 'removed' : 'context';
+    const isAt = ({ side, line }: DiffLineRef) => (side === 'LEFT' ? kind !== 'added' && oldLine === line : kind !== 'removed' && newLine === line);
+    if (rows.length > 0 || isAt(first)) {
+      rows.push({ kind, line: kind === 'removed' || (kind === 'context' && last.side === 'LEFT') ? oldLine : newLine, text: row.slice(1) });
+      if (isAt(last)) return rows;
+    }
+    if (kind !== 'added') oldLine++;
+    if (kind !== 'removed') newLine++;
+  }
+  return null;
+}
+
+/** A line on one side of a diff, as GitHub names it: the old file's (LEFT) or the new file's (RIGHT). */
+export interface DiffLineRef {
+  side: 'LEFT' | 'RIGHT';
+  line: number;
+}
+
+/** One row of a diff: the line's number in its own file, and its text without the diff's marker. */
+export interface CommentedRow {
+  kind: 'added' | 'removed' | 'context';
+  line: number;
+  text: string;
 }
 
 /**
