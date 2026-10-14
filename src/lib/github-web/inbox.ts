@@ -10,22 +10,33 @@ import { dynamicWorkflowChecks } from './actions';
 import { checksFrom } from './checks';
 import { mergeState } from './merge-box';
 import { reviewersOf } from './reviews';
-import { embeddedPayload, findInPayload, getJson, githubUser, noteShape, politely, request } from './session';
+import { SIGNED_OUT, embeddedPayload, findInPayload, getJson, githubUser, noteShape, politely, request } from './session';
 import { conversationsIn } from './threads';
 
-/** Every view's first page of rows, cut to its limit, three views at a time so at most three requests are in flight. */
+/**
+ * Every view's first page of rows, cut to its limit, three views at a time so at most three requests are in flight. A
+ * view GitHub would not search, or whose request failed, comes back without rows, saying why and what GitHub was asked,
+ * and the others load as ever; signed out, none can, and the whole inbox says so.
+ */
 export async function fetchInbox(views: View[], scope: string): Promise<ViewResult[]> {
-  return politely(views, 3, (view) => fetchView(view, scope, 1, view.limit ?? 50));
+  return politely(views, 3, async (view) => {
+    const query = resolveViewQuery(view, scope);
+    try {
+      return await fetchView(view, query, 1, view.limit ?? 50);
+    } catch (error) {
+      if (error instanceof Error && error.message === SIGNED_OUT) throw error;
+      return { view, prs: [], totalCount: 0, fetchedAt: new Date().toISOString(), error: { message: error instanceof Error ? error.message : String(error), query } };
+    }
+  });
 }
 
 /** Page `page` of a view's rows, as GitHub pages its search or section, whole: what "Load more" adds to a section. */
 export function fetchViewPage(view: View, scope: string, page: number): Promise<ViewResult> {
-  return fetchView(view, scope, page, Infinity);
+  return fetchView(view, resolveViewQuery(view, scope), page, Infinity);
 }
 
-async function fetchView(view: View, scope: string, page: number, limit: number): Promise<ViewResult> {
+async function fetchView(view: View, query: string, page: number, limit: number): Promise<ViewResult> {
   const section = inboxFilterOf(view);
-  const query = resolveViewQuery(view, scope);
   let found: { pulls: Pull[]; totalCount: number };
   if (section) {
     const data = await getJson<unknown>(`/pulls/inbox/queries?filter=${section}&max_pr_age=1m${page > 1 ? `&page=${page}` : ''}`);
@@ -57,16 +68,26 @@ function pullsIn(data: unknown): { pulls: Pull[]; totalCount: number } {
   return { pulls, totalCount };
 }
 
-/** A page of a search's rows (the first unless said), as GitHub's dashboard renders it. Also used for stack neighbours. */
+/**
+ * A page of a search's rows (the first unless said), as GitHub's dashboard renders it. Also used for stack neighbours.
+ * A search GitHub will not run throws GitHub's reason.
+ */
 export async function searchPulls(query: string, page = 1): Promise<{ pulls: Pull[]; totalCount: number }> {
   const response = await request(`/pulls/search?${new URLSearchParams({ q: query, ...(page > 1 && { page: String(page) }) })}`, 'application/json');
+  let found: unknown;
   if (response.headers.get('content-type')?.includes('json')) {
     const data = (await response.json()) as { payload?: Record<string, unknown> } | null;
     noteShape('pulls/search (JSON)', data);
-    return pullsIn(data?.payload?.pullsDashboardSurfaceContentRoute ?? data);
+    found = data?.payload?.pullsDashboardSurfaceContentRoute ?? data;
+  } else {
+    const html = new DOMParser().parseFromString(await response.text(), 'text/html');
+    found = embeddedPayload(html, 'pullsDashboardSurfaceContentRoute')?.payload.pullsDashboardSurfaceContentRoute;
   }
-  const html = new DOMParser().parseFromString(await response.text(), 'text/html');
-  return pullsIn(embeddedPayload(html, 'pullsDashboardSurfaceContentRoute')?.payload.pullsDashboardSurfaceContentRoute);
+  // GitHub answers a search it will not run with a 200, no rows and why: "The search query contains invalid syntax.", or
+  // that a date is not one it can read.
+  const { error } = (found ?? {}) as { error?: unknown };
+  if (typeof error === 'string' && error) throw new Error(error);
+  return pullsIn(found);
 }
 
 /**

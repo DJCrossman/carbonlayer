@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { branchesIn, enrichPull, fetchInbox, fetchViewPage, summarisePull, type Pull } from './inbox';
+import { SIGNED_OUT } from './session';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -96,6 +97,42 @@ describe('fetchInbox', () => {
       '/pulls/inbox/queries?filter=review-requested&max_pr_age=1m&page=3',
       '/pulls/inbox/deferred?page=3&ids%5B%5D=PR_30&ids%5B%5D=PR_31',
     ]);
+  });
+
+  it('says why GitHub would not run a search, and what it was asked, in that section alone', async () => {
+    const invalid = 'The search query contains invalid syntax.';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.startsWith('/pulls/inbox/queries')) return new Response('', { status: 500 });
+        // GitHub's answer to a search it cannot parse: a 200 with no rows and why.
+        if (url.startsWith('/pulls/search') && new URL(url, 'https://github.com').searchParams.get('q')!.includes('(')) {
+          return Response.json({ payload: { pullsDashboardSurfaceContentRoute: { results: [], pageInfo: { totalCount: 0 }, error: invalid } } });
+        }
+        if (url.startsWith('/pulls/search')) return Response.json({ payload: { pullsDashboardSurfaceContentRoute: { results: [pull(9)], pageInfo: { totalCount: 1 }, error: null } } });
+        return Response.json([]);
+      }),
+    );
+    const [broken, fine, section] = await fetchInbox(
+      [
+        { id: 'a', name: 'Broken', query: 'is:pr (author:@me' },
+        { id: 'b', name: 'Mine', query: 'is:pr author:@me' },
+        { id: 'c', name: 'Drafts', query: 'inbox:your-drafts' },
+      ],
+      'org:acme',
+    );
+
+    expect(broken).toMatchObject({ prs: [], error: { message: invalid, query: 'org:acme is:pr (author:@me' } });
+    expect(fine).toMatchObject({ totalCount: 1, prs: [{ number: 9 }] });
+    expect(fine?.error).toBeUndefined();
+    expect(section).toMatchObject({ prs: [], error: { message: 'GitHub answered 500 for /pulls/inbox/queries', query: 'inbox:your-drafts' } });
+    // "Load more" fails saying so, rather than finding no more rows.
+    await expect(fetchViewPage({ id: 'a', name: 'Broken', query: 'is:pr (author:@me' }, 'org:acme', 2)).rejects.toThrow(invalid);
+  });
+
+  it('fails as a whole when signed out', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: "Couldn't authenticate you" }, { status: 404 })));
+    await expect(fetchInbox([{ id: 'b', name: 'Mine', query: 'is:pr author:@me' }], 'org:acme')).rejects.toThrow(SIGNED_OUT);
   });
 
   it('accepts a bare list of rows', async () => {

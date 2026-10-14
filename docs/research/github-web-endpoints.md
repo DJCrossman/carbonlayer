@@ -33,6 +33,15 @@ GitHub's own search sends `q` with ` sort:updated-desc` appended). Each row is `
 statusCheckRollup, approvedReviewsCount, changesRequestedReviewsCount }`; the inbox sections' `/pulls/inbox/deferred`
 rows have the same fields (GitHub caches them per id). Try `Accept: application/json` first; fall back to parsing the HTML.
 
+`error` is null for a search GitHub ran. A search it will not run still answers **200**, with `results: []`,
+`totalCount: 0` and `error` a string saying why: `"The search query contains invalid syntax."` (unbalanced
+parentheses, an empty `()`), or `"\"{{7d}}\" is not a recognized date/time format. Please provide an ISO 8601
+date/time value, such as YYYY-MM-DD."`. An unknown qualifier (`bogus:thing`) is no error: 0 rows, `error: null`.
+`(repo:a OR repo:b …) <query>` searches any of 1 to 40 repositories (some 1.4k characters of query), nested groups
+included (`(repo:a OR repo:b) is:pr is:open ((author:@me OR assignee:@me) OR review-requested:@me)`); bare repeated
+`repo:a repo:b` AND, so match nothing. `/pulls/deferred?q=` answers 200 for those scoped queries too. (VERIFIED signed in
+2026-10-14, read-only.)
+
 ### Pull (search result / inbox row)
 ```
 itemType: 'pull_request'          assignees: [{login, avatarUrl}?]   author: { displayLogin }

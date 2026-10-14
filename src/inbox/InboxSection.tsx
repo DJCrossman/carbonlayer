@@ -75,12 +75,30 @@ export function InboxSection({
           <button type="button" className="gg-section__toggle" aria-expanded={expanded} onClick={onToggleCollapsed}>
             <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={14} className="gg-section__chevron" />
             <span className="gg-section__name">{view.name}</span>
-            {empty ? <span className="gg-section__empty">No pull requests</span> : result && <span className="gg-section__count">{sectionCount(result)}</span>}
+            {result?.error ? (
+              <span className="gg-section__failed">Could not load</span>
+            ) : empty ? (
+              <span className="gg-section__empty">No pull requests</span>
+            ) : (
+              result && <span className="gg-section__count">{sectionCount(result)}</span>
+            )}
           </button>
           <Button variant="ghost" size="sm" icon="gear" className="gg-section__edit" aria-label={`Edit ${view.name}`} title="Edit section" onClick={onEdit} />
         </>
       }
     >
+      {/* GitHub's reason in place of the rows, and what it was asked, so the part it rejected can be found. */}
+      {expanded && result?.error && (
+        <div className="gg-section__error">
+          <Icon name="alert" size={14} />
+          <div className="gg-section__error-text">
+            {result.error.message}
+            <code className="gg-section__query" title="What GitHub was asked">
+              {result.error.query}
+            </code>
+          </div>
+        </div>
+      )}
       {expanded && !empty && (result || loading) && (
         <div className="gg-section__columns">
           <span />

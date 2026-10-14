@@ -4,6 +4,7 @@
 import type { ChangedFileDiff, Organization, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, TopRepository, View, ViewResult } from '../lib/model';
 import { rpc, type InboxRowToEnrich, type MergeMethod } from '../lib/rpc';
 import { getSettings, setSettings, watchSettings, type Settings, type SettingsStorage } from '../lib/settings';
+import { resolveViewQuery } from '../lib/views';
 
 export interface ReviewThreadDraft {
   path: string;
@@ -138,10 +139,15 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
   };
   return {
     // Rows as GitHub's dashboard lists them: a CI rollup without its checks, and no branches; their branches come later,
-    // from branchesOf, and their merge status, reviewers, line counts and conversations from enrichInbox.
+    // from branchesOf, and their merge status, reviewers, line counts and conversations from enrichInbox. A search whose
+    // parentheses do not pair up gets GitHub's answer to one: no rows, and why.
     fetchInbox: (views) =>
       Promise.all(
         views.map(async (view) => {
+          const query = resolveViewQuery(view, (await getSettings(memory)).inboxScope);
+          if (query.split('(').length !== query.split(')').length) {
+            return { view, prs: [], totalCount: 0, fetchedAt: new Date().toISOString(), error: { message: 'The search query contains invalid syntax.', query } };
+          }
           const result = fixtures.inbox.find((r) => r.view.id === view.id) ?? { view, prs: [], totalCount: 0, fetchedAt: new Date().toISOString() };
           const prs = result.prs.filter(await searched(view));
           return {

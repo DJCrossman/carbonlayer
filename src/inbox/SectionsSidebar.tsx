@@ -68,7 +68,7 @@ export function SectionsSidebar({
             <li key={view.id} className={view.id === currentViewId ? 'gg-sidebar__item is-current' : 'gg-sidebar__item'}>
               <button type="button" className="gg-sidebar__link" aria-current={view.id === currentViewId ? 'location' : undefined} onClick={() => onSelect(view)}>
                 <span className="gg-sidebar__name">{view.name}</span>
-                {result && <span className="gg-sidebar__count">{sectionCount(result)}</span>}
+                {result && !result.error && <span className="gg-sidebar__count">{sectionCount(result)}</span>}
               </button>
               <span className="gg-sidebar__tools">
                 <Button variant="ghost" size="sm" icon="arrow-up" aria-label={`Move ${view.name} up`} title="Move up" disabled={index === 0} onClick={() => onMove(index, -1)} />

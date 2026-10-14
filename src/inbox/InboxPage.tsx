@@ -65,7 +65,8 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   const sections =
     inbox.results?.map((result) => {
       const { by, descending } = sorts[result.view.id] ?? LATEST_UPDATED_FIRST;
-      const added = moreRows.addedTo(result.view, settings?.inboxScope ?? '')?.prs.filter((pr) => !result.prs.some((first) => first.id === pr.id)) ?? [];
+      // A section that could not load says why in place of its rows, those "Load more" added before too.
+      const added = result.error ? [] : (moreRows.addedTo(result.view, settings?.inboxScope ?? '')?.prs.filter((pr) => !result.prs.some((first) => first.id === pr.id)) ?? []);
       for (const pr of [...result.prs, ...added]) dashboardRows.set(pr.id, pr);
       const enriched = [...result.prs, ...added].map((pr) => {
         const found = enrichment.found.get(pr.id)?.enrichment;
@@ -97,7 +98,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
     }),
   );
   const firstResult = settings?.views[0] && resultsByView.get(settings.views[0].id);
-  const toReview = firstResult && sectionCount(firstResult);
+  const toReview = firstResult && !firstResult.error ? sectionCount(firstResult) : undefined;
 
   useEffect(() => {
     if (toReview === undefined) return;

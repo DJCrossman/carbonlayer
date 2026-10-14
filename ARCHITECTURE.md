@@ -99,7 +99,11 @@ the top of its Inbox section and edits that organization's repositories and view
 
 The inbox scope, prepended to every search, is compiled from the organization in `getSettings` (`organizationScope` in
 `src/lib/views.ts`): the repositories chosen for it as one `(repo:a OR repo:b)`, else `org:<login>`, or `user:<login>`
-for the viewer's own account. `inbox.fetch` reads it from settings as before. The inbox asks `inbox.fetch` twice per load: the open sections first, then the folded ones, which show only a count until opened, so what is on screen is never queued behind them. The repository picker lists only the
+for the viewer's own account. `inbox.fetch` reads it from settings as before. The inbox asks `inbox.fetch` twice per load: the open sections first, then the folded ones, which show only a count until opened, so what is on screen is never queued behind them. A section GitHub would not search (`/pulls/search`
+answers such a search with a 200, no rows and why in `error`) or whose request failed comes back with that reason and
+what GitHub was asked (`ViewResult.error`), which it shows in place of its rows and count, while the other sections load
+as ever; only signed out does the whole page fail, with one banner. A page "Load more" cannot get says why in a toast and
+stays offered, rather than ending the list. The harness answers a search whose parentheses do not pair up as GitHub does. The repository picker lists only the
 organization's repositories (`repos.search` with an `owner`: GitHub's picker is asked `contributed-by:@me org:<login>
 <text>`, and, should that bring none of the owner's, again without the qualifier, keeping the owner's;
 `pickableRepositories` in `src/lib/github-web/repositories.ts`), and `setSettings` keeps only repositories the

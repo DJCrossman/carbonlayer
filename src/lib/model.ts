@@ -343,4 +343,10 @@ export interface ViewResult {
   prs: PrSummary[];
   totalCount: number;
   fetchedAt: string;
+  /**
+   * Why the section has no rows: GitHub would not run its search (in GitHub's words, such as "The search query contains
+   * invalid syntax.") or the request failed. `query` is what GitHub was asked: the search, scope and all, or
+   * `inbox:<filter>` for one of GitHub's own sections.
+   */
+  error?: { message: string; query: string };
 }
