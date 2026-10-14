@@ -3,7 +3,7 @@
 // Graphite-dense rows, j/k keyboard navigation, Linear's copy shortcuts for the row under the pointer, shareable view
 // lists, and Graphite's section editor in a drawer. Data comes through the DataSource; navigation goes through the
 // parent page (src/app/bridge.ts).
-import { hashKey, useInfiniteQuery, useQueries, useQueryClient, type Query, type QueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueries, useQueryClient, type Query, type QueryClient } from '@tanstack/react-query';
 import { useContext, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { askedTogether } from '../app/asked-together';
@@ -12,8 +12,7 @@ import { COPY_KEYBINDINGS, copyPullRequest } from '../app/copy-pull-request';
 import type { DataSource } from '../app/data-source';
 import { KEPT_STAGES, SaveCacheNow } from '../app/query-cache';
 import { toGitHubUrl, type AppRoute } from '../app/routes';
-import type { Organization, PrEnrichment, PrSummary, RepoRef, StackBranches, TopRepository, View, ViewResult } from '../lib/model';
-import type { MergeMethod } from '../lib/rpc';
+import type { Organization, PrSummary, RepoRef, StackBranches, TopRepository, View, ViewResult } from '../lib/model';
 import type { Settings } from '../lib/settings';
 import { encodeViewsShareLink, sectionCount } from '../lib/views';
 import { createChordReader } from '../pr/keybindings';
@@ -27,6 +26,7 @@ import { importViews } from './import-views';
 import { InboxSection, type SectionSort } from './InboxSection';
 import { OrgChooser, OrgPicker, useOrganizations } from './OrgPicker';
 import { RepoPicker } from './RepoPicker';
+import { useRowEnrichment } from './row-details';
 import { SectionEditor } from './SectionEditor';
 import { SectionsSidebar } from './SectionsSidebar';
 import { moveSelection, type SelectedRow } from './selection';
@@ -632,74 +632,6 @@ function useMoreRows(source: DataSource, org: Organization | null) {
   }
 
   return { addedTo, loading, loadMore };
-}
-
-/**
- * What GitHub's dashboard leaves out of the rows (mergeability, reviewers, line counts, failing checks), by PR id, a query
- * a row, asked for once the row has come within 200px of view: up to 10 rows a request and one request at a time, so with
- * the content script asking GitHub about 3 PRs at once the inbox never has more than that in flight. A row is asked again
- * once it has been updated, or its checks or the merge method have changed, and kept 2 minutes; until the new answer
- * comes, and wherever it misses something, what was found before stays, from the cache too.
- */
-function useRowEnrichment(source: DataSource, rows: PrSummary[], mergeMethod: MergeMethod) {
-  const queryClient = useQueryClient();
-  // The rows shown so far, as they were when shown (rowVersion).
-  const [shown, setShown] = useState<ReadonlySet<string>>(new Set());
-  // Rows that come into view together (the first paint, a section opening, a scroll) share a request. One that fails
-  // leaves its rows as the dashboard showed them.
-  const askForRow = useMemo(
-    () =>
-      askedTogether(
-        async (prs: PrSummary[]) => {
-          try {
-            return await source.enrichInbox(prs.map(({ repo, number, state, isDraft, author, ci }) => ({ repo, number, state, isDraft, author, ci: { state: ci.state } })));
-          } catch (error) {
-            console.debug('[gg]', 'enriching inbox rows failed; they keep what the dashboard said:', error instanceof Error ? error.message : error);
-            return prs.map((): PrEnrichment => ({}));
-          }
-        },
-        { perRequest: 10, atOnce: 1, gatherMs: 50 },
-      ),
-    [source],
-  );
-  const found = useQueries({
-    queries: rows.map((pr) => ({
-      queryKey: ['inbox-row', ...rowVersion(pr), mergeMethod],
-      queryFn: async () => ({ ...enrichmentFoundBefore(queryClient).get(pr.id), ...(await askForRow(pr)) }),
-      staleTime: 2 * 60_000,
-      enabled: shown.has(hashKey(rowVersion(pr))),
-    })),
-    combine: (results) => {
-      const before = results.some((result) => result.data === undefined) ? enrichmentFoundBefore(queryClient) : null;
-      return new Map(rows.flatMap((pr, index) => {
-        const enrichment = results[index]?.data ?? before?.get(pr.id);
-        return enrichment ? [[pr.id, { enrichment }] as const] : [];
-      }));
-    },
-  });
-
-  function want(pr: PrSummary) {
-    const version = hashKey(rowVersion(pr));
-    if (!shown.has(version)) setShown((current) => new Set(current).add(version));
-  }
-
-  return { found, want };
-}
-
-/** What a row's enrichment goes by: the PR, and what the dashboard says of it that would change the answer. */
-function rowVersion(pr: PrSummary) {
-  return [pr.id, pr.updatedAt, pr.state, pr.isDraft, pr.ci.state];
-}
-
-/** The latest enrichment found for each row, by PR id, whatever the row looked like then. */
-function enrichmentFoundBefore(queryClient: QueryClient): Map<string, PrEnrichment> {
-  const queries = queryClient.getQueryCache().findAll({ queryKey: ['inbox-row'] });
-  const latest = new Map<string, { at: number; enrichment: PrEnrichment }>();
-  for (const { queryKey, state } of queries) {
-    const id = queryKey[1] as string;
-    if (state.data !== undefined && state.dataUpdatedAt > (latest.get(id)?.at ?? -1)) latest.set(id, { at: state.dataUpdatedAt, enrichment: state.data as PrEnrichment });
-  }
-  return new Map([...latest].map(([id, { enrichment }]) => [id, enrichment]));
 }
 
 /**

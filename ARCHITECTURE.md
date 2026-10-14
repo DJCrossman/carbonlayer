@@ -85,7 +85,7 @@ and branches) each still has a query of its own, and what the queries ask for in
 
 The inbox's queries: each section (`['inbox', org, scope, view id, query, limit]`, 30 s), each "Load more" page
 (`['inbox-page', org, scope, query, limit, page]`), each row's details (`['inbox-row', id, updatedAt, state, draft, CI
-rollup, merge method]`, 2 minutes), each open PR's branches (`['stack-branches', owner, repo, number]`), the
+rollup, merge method]`, 2 minutes, which the PR page's stack card asks too), each open PR's branches (`['stack-branches', owner, repo, number]`), the
 organizations (`['orgs']`), an organization's people (`['org-people', org]`) and the top repositories
 (`['top-repositories']`, pages of one infinite query), 10 minutes each, and the repository picker's searches (`['repos',
 org, text]`, a minute). All of them are kept on the device.
@@ -142,7 +142,13 @@ typing or clicking first.
 Stacks: GitHub-native `stack` from the PR page's embedded data first; otherwise Graphite's stack
 comment in the timeline, enriched through a `/pulls/search` query on the author's open PRs. The stack card
 (`src/pr/StackCard.tsx`) shows each entry as Graphite does: its dot on the rail, its author's avatar, number and title,
-then its conversations, statuses and age. Neither GitHub's stack (`stack.pulls[]`) nor Graphite's comment names who
+then its conversations, statuses and age. The viewed PR's review verdict, checks and merge status come with its page;
+every other entry's are the row details the inbox shows for a PR (`useRowEnrichment` in `src/inbox/row-details.ts`,
+`inbox.enrich`, below), asked for while the card is open, 10 entries a request and one request at a time, under the
+inbox's own key for a PR the inbox showed (its row, so either page finds what the other asked for) and the entry's own
+otherwise. The stack's listing names no verdict, checks or mergeability, so they are what the inbox's row would show:
+until an entry's details arrive (and when the cache has none) its statuses are small skeletons, an open entry's checks
+and merge status too while a merged or closed one says so at once; a request GitHub does not answer leaves them empty. Neither GitHub's stack (`stack.pulls[]`) nor Graphite's comment names who
 opened an entry, and the search finds only the viewed PR's author's, so each other entry's author is its own
 `page_data/header`'s `pullRequest.author` (`authorIn` in `src/lib/github-web/stack.ts`), asked alongside its threads. Until the stack arrives its skeleton has a round placeholder there; an
 entry whose header GitHub did not answer leaves the place empty (`StackEntry.author` is null), never the viewed PR's
@@ -275,10 +281,11 @@ hover. Each status column is one function from the row's data to an icon, a tone
 
 GitHub's dashboard rows carry review decision and CI rollup but no mergeability, reviewers or line counts: as a row comes
 within 200px of view (an `IntersectionObserver` per row, rooted at the page's own document), the inbox asks
-`inbox.enrich` for it, up to 10 rows a request and one request at a time, and the content script answers from each PR's
+`inbox.enrich` for it (`useRowEnrichment` in `src/inbox/row-details.ts`, shared with the PR page's stack card), up to 10 rows a request and one request at a time, and the content script answers from each PR's
 `page_data/merge_box` (mergeability and the first unmet requirement as the reason it is blocked; skipped for drafts and
 merged or closed PRs), `page_data/review_requests` (reviewers, bots and teams included, and the viewer's own review,
-by the page's `meta[name="user-login"]`; else the reviewers the merge box names), `page_data/diffstat`,
+by the page's `meta[name="user-login"]`; else the reviewers the merge box names; the verdict they make as the PR page
+words it, `reviewDecisionOf`), `page_data/diffstat`,
 `page_data/threads` (its conversations, `conversationsIn` in `src/lib/github-web/threads.ts`) and, for an open PR,
 `page_data/status_checks` (which checks fail and which are required, `checksFrom` in
 `src/lib/github-web/checks.ts`) with GitHub's own dynamic workflow runs on the head commit (above), three PRs at a time

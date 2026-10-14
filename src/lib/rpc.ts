@@ -2,12 +2,12 @@
 // GitHub with the user's session. Inside github.com the app posts requests to its parent window, the
 // content script answers them with same-origin fetches (cookies included); see src/lib/github-web/.
 
-import type { ChangedFileDiff, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, TopRepository, View, ViewResult } from './model';
+import type { ChangedFileDiff, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, StackEntry, TopRepository, View, ViewResult } from './model';
 
 export type MergeMethod = 'MERGE' | 'SQUASH' | 'REBASE';
 
-/** What enriching an inbox row goes by (`inbox.enrich`). */
-export type InboxRowToEnrich = Pick<PrSummary, 'repo' | 'number' | 'state' | 'isDraft' | 'author'> & { ci: Pick<PrSummary['ci'], 'state'> };
+/** What enriching an inbox row, or a stack entry, goes by (`inbox.enrich`); a stack entry may not know its author. */
+export type InboxRowToEnrich = Pick<StackEntry, 'repo' | 'number' | 'state' | 'isDraft' | 'author'> & { ci: Pick<PrSummary['ci'], 'state'> };
 
 export interface RpcMethods {
   'inbox.fetch': { args: { views: View[] }; result: ViewResult[] };
@@ -16,7 +16,7 @@ export interface RpcMethods {
   /**
    * What GitHub's dashboard leaves out of these inbox rows (mergeability, reviewers, line counts, failing checks), in the
    * same order. A row's state and draft flag say whether its merge box is worth asking, its CI rollup whether its checks
-   * are, and its author is no reviewer.
+   * are, and its author, when known, is no reviewer.
    */
   'inbox.enrich': { args: { prs: InboxRowToEnrich[] }; result: PrEnrichment[] };
   /** The branches of these pull requests, in the same order, by which "Group by stack" chains them; null where GitHub did not say. */

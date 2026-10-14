@@ -1,7 +1,7 @@
 // Everything the UI needs from the outside world, behind one interface so the same pages render
 // from the content script's RPC in the extension and from fixtures in the dev harness (`?fixtures=1`).
 
-import type { ChangedFileDiff, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, TopRepository, View, ViewResult } from '../lib/model';
+import type { ChangedFileDiff, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, StackEntry, TopRepository, View, ViewResult } from '../lib/model';
 import { rpc, type InboxRowToEnrich, type MergeMethod } from '../lib/rpc';
 import { getSettings, setSettings, watchSettings, type Settings, type SettingsStorage } from '../lib/settings';
 import { resolveViewQuery } from '../lib/views';
@@ -172,22 +172,28 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
         prs: prs.map((pr) => ({ ...pr, ci: { ...pr.ci, checks: [] }, reviewers: [], additions: 0, deletions: 0, headRefName: '', baseRefName: '', conversations: null })),
       };
     },
-    // The fixture rows' own values, a moment later, as GitHub's page data would give them: the checks only for a failing
-    // rollup, the viewer's review as octocat's, the branches only for an open PR (its merge box).
+    // The fixture rows' own values, and those of the fixture PRs' stack entries, a moment later, as GitHub's page data
+    // would give them: the checks and the branches only for an open PR (its status checks and merge box), the viewer's
+    // review as octocat's.
     enrichInbox: async (prs) => {
       await new Promise((resolve) => setTimeout(resolve, 400));
-      const rows = [...fixtures.inbox.flatMap((result) => result.prs), ...Object.values(fixtures.inboxPages).flat(2)];
+      const rows: Array<StackEntry & Pick<InboxFixtureRow, 'requiredCheckNames' | 'mergeBlockedReason'>> = [
+        ...fixtures.inbox.flatMap((result) => result.prs),
+        ...Object.values(fixtures.inboxPages).flat(2),
+        ...fixtures.prs.flatMap((pr) => pr.stack.entries),
+      ];
       return prs.map(({ repo, number }) => {
         const pr = rows.find((row) => row.repo.owner === repo.owner && row.repo.name === repo.name && row.number === number);
         if (!pr) return {};
         return {
           mergeStatus: pr.mergeStatus,
           reviewers: pr.reviewers,
+          reviewDecision: pr.reviewDecision,
           viewerReview: pr.reviewers.find((reviewer) => reviewer.user.login === 'octocat')?.state ?? null,
           additions: pr.additions,
           deletions: pr.deletions,
           conversations: pr.conversations,
-          ...(pr.ci.state === 'FAILURE' && { ci: pr.ci, requiredCheckNames: pr.requiredCheckNames ?? [] }),
+          ...(pr.state === 'OPEN' && { ci: pr.ci, requiredCheckNames: pr.requiredCheckNames ?? [] }),
           ...(pr.mergeBlockedReason && { mergeBlockedReason: pr.mergeBlockedReason }),
           ...(pr.state === 'OPEN' && { headRefName: pr.headRefName, baseRefName: pr.baseRefName }),
         };
@@ -237,7 +243,18 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
         threads: { threads, unresolvedThreadCount },
         mergeBox: { mergeStatus, reviewers, reviewDecision, viewerCanMerge, viewerCanEnableAutoMerge, allowedMergeMethods, defaultMergeMethod, autoMerge, isInMergeQueue },
         checks: { ci, requiredCheckNames, emptyReason: null },
-        stack: { stack },
+        // The other entries as GitHub's stack listing names them, without a verdict, checks or mergeability: those come
+        // with each entry's row details (enrichInbox).
+        stack: {
+          stack: {
+            ...stack,
+            entries: stack.entries.map((entry, index) =>
+              index === stack.currentIndex
+                ? entry
+                : { ...entry, reviewDecision: 'NONE', reviewers: [], ci: { state: 'NONE', checks: [], counts: { success: 0, failure: 0, pending: 0, other: 0 } }, mergeStatus: entry.isDraft ? 'DRAFT' : 'UNKNOWN' },
+            ),
+          },
+        },
         meta: { labels, assignees },
       };
       return stages[stage];

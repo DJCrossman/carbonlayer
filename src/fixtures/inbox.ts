@@ -3,7 +3,7 @@
 // conversation counters (with and without a stack), unread rows, long titles, labels, team and bot reviewers, and one
 // row of globex's, the viewer's other organization. The viewer is octocat. Ages are relative to page load so the
 // harness always looks current. Each row has its checks, which the fixture source hands out only as GitHub would: the
-// dashboard's rollup at first, the list (with the required ones) when enriching a failing rollup. The rows in "Needs
+// dashboard's rollup at first, the list (with the required ones) when enriching an open row. The rows in "Needs
 // anyone's review" have no line counts and no merge state. The stacks' rows chain by branch, which the fixture source
 // names when asked for branches ("Group by stack"): octocat's is one of GitHub's own, across sections, nat's in "Needs
 // your review" a Graphite stack GitHub doesn't track.

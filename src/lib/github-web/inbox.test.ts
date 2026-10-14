@@ -186,6 +186,7 @@ describe('enrichPull', () => {
         { kind: 'user', user: { login: 'cy', avatarUrl: 'https://avatars/cy', url: 'https://github.com/cy' }, state: 'PENDING', id: undefined, canReRequest: false },
         { kind: 'user', user: { login: 'bo', avatarUrl: 'https://avatars/bo', url: 'https://github.com/bo' }, state: 'APPROVED' },
       ],
+      reviewDecision: 'APPROVED',
       viewerReview: 'APPROVED',
       additions: 12,
       deletions: 3,
@@ -223,7 +224,7 @@ describe('enrichPull', () => {
       ['Copilot', 'user', 'COMMENTED'],
       ['octocat', 'user', 'APPROVED'],
     ]);
-    expect(found).toMatchObject({ mergeStatus: 'CLEAN', viewerReview: 'APPROVED' });
+    expect(found).toMatchObject({ mergeStatus: 'CLEAN', reviewDecision: 'APPROVED', viewerReview: 'APPROVED' });
     expect(found).not.toHaveProperty('mergeBlockedReason');
   });
 

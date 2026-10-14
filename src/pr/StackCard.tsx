@@ -1,6 +1,11 @@
-// The stack card: every PR in the stack on a vertical rail, tip at the top and trunk at the bottom; and the card as it
-// looks while the stack loads.
+// The stack card: every PR in the stack on a vertical rail, tip at the top and trunk at the bottom, each with its review,
+// checks and merge status; and the card as it looks while the stack loads.
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo } from 'react';
+import type { DataSource } from '../app/data-source';
+import { inboxRowFor, useRowEnrichment } from '../inbox/row-details';
 import type { Stack, StackEntry } from '../lib/model';
+import type { MergeMethod } from '../lib/rpc';
 import { Avatar } from '../ui/Avatar';
 import { Card } from '../ui/Card';
 import { CiStatus } from '../ui/CiStatus';
@@ -12,7 +17,35 @@ import { Skeleton } from '../ui/Skeleton';
 import { goToPr } from './navigation';
 import './stack.css';
 
-export function StackCard({ stack, collapsed, onToggle }: { stack: Stack; collapsed: boolean; onToggle: () => void }) {
+/**
+ * The stack's entries. The viewed PR's statuses come with its page; every other entry's with the same row details the
+ * inbox shows for a PR (src/inbox/row-details.ts), asked for while the card is open and kept under the inbox's own key
+ * for a PR the inbox showed, so either page finds what the other asked for.
+ */
+export function StackCard({
+  stack,
+  collapsed,
+  onToggle,
+  source,
+  mergeMethod,
+}: {
+  stack: Stack;
+  collapsed: boolean;
+  onToggle: () => void;
+  source: DataSource;
+  /** The merge method in the settings, which the row details go by. */
+  mergeMethod: MergeMethod;
+}) {
+  const queryClient = useQueryClient();
+  // Each other entry as the inbox last showed it, when it did, else as the stack names it.
+  const rows = useMemo(
+    () => new Map(stack.entries.flatMap((entry, index) => (index === stack.currentIndex ? [] : [[entry.id, inboxRowFor(queryClient, entry.repo, entry.number) ?? entry] as const]))),
+    [queryClient, stack],
+  );
+  const details = useRowEnrichment(source, [...rows.values()], mergeMethod);
+  useEffect(() => {
+    if (!collapsed) for (const row of rows.values()) details.want(row);
+  }, [rows, collapsed]);
   const tipFirst = stack.entries.map((pr, index) => ({ pr, index })).reverse();
   return (
     <Card className="stack-card">
@@ -26,9 +59,13 @@ export function StackCard({ stack, collapsed, onToggle }: { stack: Stack; collap
       </button>
       {!collapsed && (
         <ol className="stack-rail">
-          {tipFirst.map(({ pr, index }) => (
-            <StackRow key={pr.id} pr={pr} current={index === stack.currentIndex} />
-          ))}
+          {tipFirst.map(({ pr, index }) => {
+            const row = rows.get(pr.id);
+            const found = row && details.found.get(row.id)?.enrichment;
+            // What the inbox would show for it: its row's verdict and checks, what its details found over them.
+            const shown = row && found ? { ...pr, reviewDecision: row.reviewDecision, ci: row.ci, ...found } : pr;
+            return <StackRow key={pr.id} pr={shown} current={index === stack.currentIndex} waiting={row !== undefined && found === undefined} />;
+          })}
           <li className="stack-row is-trunk">
             <span className="stack-dot" />
             <span className="pr-mono">{stack.trunk}</span>
@@ -64,7 +101,16 @@ export function StackSkeleton() {
   );
 }
 
-function StackRow({ pr, current }: { pr: StackEntry; current: boolean }) {
+function StackRow({
+  pr,
+  current,
+  waiting,
+}: {
+  pr: StackEntry;
+  current: boolean;
+  /** Its row details have not arrived and the cache had none: its statuses show small skeletons. */
+  waiting: boolean;
+}) {
   return (
     <li className={`stack-row ${current ? 'is-current' : ''} ${pr.state === 'MERGED' ? 'is-merged' : ''}`}>
       <span className="stack-dot" />
@@ -96,10 +142,11 @@ function StackRow({ pr, current }: { pr: StackEntry; current: boolean }) {
             {pr.conversations.resolved}/{pr.conversations.total}
           </span>
         )}
-        {/* An entry known only from the stack's own listing has no review decision; leave it out rather than say "none". */}
-        {pr.reviewDecision !== 'NONE' && <ReviewStatus state={pr.reviewDecision} size={14} />}
-        <CiStatus ci={pr.ci} variant="compact" />
-        <MergeStatus status={pr.mergeStatus} state={pr.state} />
+        {/* As the inbox's row: the verdict waits for the row's details, an open PR's checks and mergeability too, while a
+            merged or closed one says so at once. No review needed, no checks or no mergeability known shows nothing. */}
+        {waiting ? <Skeleton width={14} height={14} /> : pr.reviewDecision !== 'NONE' && <ReviewStatus state={pr.reviewDecision} size={14} />}
+        {waiting && pr.state === 'OPEN' ? <Skeleton width={28} height={10} /> : <CiStatus ci={pr.ci} variant="compact" />}
+        {waiting && pr.state === 'OPEN' ? <Skeleton width={48} height={10} /> : <MergeStatus status={pr.mergeStatus} state={pr.state} />}
         <RelativeTime date={pr.updatedAt} />
       </span>
     </li>

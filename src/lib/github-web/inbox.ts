@@ -9,7 +9,7 @@ import { inboxFilterOf, resolveViewQuery, type GitHubInboxFilter } from '../view
 import { dynamicWorkflowChecks } from './actions';
 import { checksFrom } from './checks';
 import { mergeState } from './merge-box';
-import { reviewersOf } from './reviews';
+import { reviewDecisionOf, reviewersOf } from './reviews';
 import { SIGNED_OUT, embeddedPayload, findInPayload, getJson, githubUser, noteShape, politely, request } from './session';
 import { conversationsIn } from './threads';
 
@@ -182,8 +182,9 @@ export function summarisePull(pull: Pull, section: GitHubInboxFilter | null): Pr
 /**
  * What GitHub's dashboard leaves out of a row, from the PR's own page data: mergeability, and why merging is blocked,
  * from its merge box (`page_data/merge_box`, read as the PR page reads it); reviewers, and the viewer's own review,
- * from `page_data/review_requests`, else from what the merge box names (`latestOpinionatedReviews`, pending requests);
- * line counts from `page_data/diffstat`; its conversations, resolved of all, from `page_data/threads`; and for an open
+ * from `page_data/review_requests`, else from what the merge box names (`latestOpinionatedReviews`, pending requests),
+ * and the verdict they make as the PR page words it (`reviewDecisionOf`, with the approvals the merge box requires); line
+ * counts from `page_data/diffstat`; its conversations, resolved of all, from `page_data/threads`; and for an open
  * PR, the checks themselves (which fail, which are required, and whether anything but Graphite's mergeability check is
  * still running) from `page_data/status_checks`, with GitHub's own dynamic workflow runs on the head commit, which only
  * the branch's Actions list names. A merged or closed PR's merge status is its state, so it does not ask the merge box;
@@ -207,9 +208,11 @@ export async function enrichPull(pr: InboxRowToEnrich, mergeMethod: MergeMethod,
   const where = `${pr.repo.owner}/${pr.repo.name}#${pr.number}`;
   const found: PrEnrichment = {};
   let named: { latestOpinionatedReviews: unknown; pendingReviewRequests: unknown } | null = null;
+  let numReviewsRequired = 0;
   if (asksMergeBox && mergeBox.status === 'fulfilled') {
     const merge = mergeState(mergeBox.value, { isDraft: pr.isDraft, isOpen: true });
     found.mergeStatus = merge.mergeStatus;
+    numReviewsRequired = merge.numReviewsRequired;
     // The first requirement the merge box says is unmet, e.g. "At least 1 approving review is required".
     const { mergeRequirements } = (mergeBox.value ?? {}) as { mergeRequirements?: { conditions?: Array<{ result?: string; message?: string; description?: string; displayName?: string }> } };
     const unmet = (Array.isArray(mergeRequirements?.conditions) ? mergeRequirements.conditions : []).find((condition) => condition?.result === 'FAILED');
@@ -238,8 +241,9 @@ export async function enrichPull(pr: InboxRowToEnrich, mergeMethod: MergeMethod,
       requests: requests ?? { pendingReviewRequests: named?.pendingReviewRequests },
       latestOpinionatedReviews: named?.latestOpinionatedReviews ?? null,
       timeline: [],
-      author: pr.author.login,
+      author: pr.author?.login ?? '',
     });
+    found.reviewDecision = reviewDecisionOf(found.reviewers, numReviewsRequired);
     if (viewerLogin) found.viewerReview = found.reviewers.find((reviewer) => reviewer.user.login.toLowerCase() === viewerLogin.toLowerCase())?.state ?? null;
   }
 

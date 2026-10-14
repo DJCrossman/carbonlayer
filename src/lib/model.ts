@@ -145,11 +145,13 @@ export interface PrSummary {
 
 /**
  * What the inbox learns about a row after GitHub's dashboard listed it, from the PR's own page data: its mergeability,
- * reviewers, line counts and conversations, the viewer's own review, for failing checks which checks fail and which
- * are required, and for an open PR its branches, by which the inbox finds its stack. A field is absent where GitHub did
- * not say.
+ * reviewers and the review verdict they make, line counts and conversations, the viewer's own review, for failing checks
+ * which checks fail and which are required, and for an open PR its branches, by which the inbox finds its stack. The PR
+ * page's stack card shows the same for each other entry. A field is absent where GitHub did not say.
  */
-export type PrEnrichment = Partial<Pick<PrSummary, 'mergeStatus' | 'reviewers' | 'additions' | 'deletions' | 'ci' | 'headRefName' | 'baseRefName' | 'conversations'>> & {
+export type PrEnrichment = Partial<
+  Pick<PrSummary, 'mergeStatus' | 'reviewers' | 'reviewDecision' | 'additions' | 'deletions' | 'ci' | 'headRefName' | 'baseRefName' | 'conversations'>
+> & {
   /** The signed-in viewer's own state among the reviewers; null when they are not one. */
   viewerReview?: ReviewerSummary['state'] | null;
   /** The names of the required checks, once GitHub has listed the checks and said which are required. */

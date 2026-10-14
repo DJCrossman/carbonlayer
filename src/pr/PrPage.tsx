@@ -353,7 +353,17 @@ function PrView({
           {/* No stack card, not even its skeleton, when the page shows no stack. */}
           {(header.stackSource !== 'none' || pr.stack.source !== 'none') && (
             <Staged state={data.stack} what="the stack" onRetry={() => retry(['stack'])} skeleton={<StackSkeleton />}>
-              {() => pr.stack.source !== 'none' && <StackCard stack={pr.stack} collapsed={stackCollapsed} onToggle={() => setStackCollapsed((collapsed) => !collapsed)} />}
+              {() =>
+                pr.stack.source !== 'none' && (
+                  <StackCard
+                    stack={pr.stack}
+                    collapsed={stackCollapsed}
+                    onToggle={() => setStackCollapsed((collapsed) => !collapsed)}
+                    source={source}
+                    mergeMethod={settings.mergeMethod}
+                  />
+                )
+              }
             </Staged>
           )}
           <section className="pr-description" id="pr-description" aria-label="Description">
