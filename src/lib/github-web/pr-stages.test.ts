@@ -3,7 +3,6 @@ import type { PrStage, PrStages } from '../model';
 import type { RpcMethod, RpcRequest } from '../rpc';
 import { DEFAULT_SETTINGS } from '../settings';
 import { handleRpc } from './index';
-import { forgetPrStages } from './pr-stages';
 import { SIGNED_OUT } from './session';
 
 vi.mock('../settings', async (original) => ({ ...(await original<typeof import('../settings')>()), getSettings: vi.fn(async () => DEFAULT_SETTINGS) }));
@@ -13,7 +12,6 @@ beforeEach(() => {
   requests = serveGitHub();
 });
 afterEach(() => {
-  forgetPrStages(STAGES);
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -71,49 +69,44 @@ describe('the PR page in stages', () => {
     expect(activity.timeline).toMatchObject([{ kind: 'review', threadIds: ['7'] }]);
   });
 
-  it('after a write, reloading every stage asks GitHub again only for what the stages the write changed asked', async () => {
+  it('asks GitHub again every time the stages load: the page decides when they are fresh', async () => {
     await Promise.all(STAGES.map((stage) => loadStage(stage)));
-
     requests.length = 0;
-    await call('pr.comment', { prId: 'PR_1', body: 'Thanks' });
     await Promise.all(STAGES.map((stage) => loadStage(stage)));
-    expect(requests).toEqual(['POST create_timeline_comment', 'page']);
-
-    requests.length = 0;
-    await call('pr.resolveThread', { threadId: '7', resolved: true });
-    await Promise.all(STAGES.map((stage) => loadStage(stage)));
-    expect(requests.toSorted()).toEqual(['POST resolve_thread', 'base_comparison_info', 'tab_counts', 'threads'].sort());
+    // The Actions list is kept per head commit for 5 minutes.
+    expect(requests.toSorted()).toEqual(['page', 'tab_counts', 'diffstat', 'threads', 'base_comparison_info', 'merge_box', 'review_requests', 'status_checks', 'labels', 'assignees'].sort());
   });
 
-  it("reacts with the token of the page's reaction forms, and reloads nothing for it", async () => {
-    await Promise.all(STAGES.map((stage) => loadStage(stage)));
+  it('asks GitHub again after a write rather than sharing a request made before it', async () => {
+    await loadStage('header');
+    const served = vi.mocked(fetch).getMockImplementation()!;
+    let release = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    vi.mocked(fetch).mockImplementation(async (url, init) => {
+      if (String(url).endsWith('/o/r/pull/1')) await held;
+      return served(url, init);
+    });
+    requests.length = 0;
+    const before = loadStage('activity');
+    await call('pr.comment', { prId: 'PR_1', body: 'Thanks' });
+    const after = loadStage('activity');
+    release();
+    await Promise.all([before, after]);
+    expect(requests.filter((request) => request === 'page')).toHaveLength(2);
+  });
+
+  it("reacts with the token of the page's reaction forms", async () => {
+    await loadStage('header');
     requests.length = 0;
     await call('pr.react', { prId: 'PR_1', subjectId: 'PR_1', content: 'HOORAY', add: false });
-    await Promise.all(STAGES.map((stage) => loadStage(stage)));
     expect(requests).toEqual(['POST reactions']);
     expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/\/o\/r\/reactions$/), expect.objectContaining({ body: expect.stringContaining('authenticity_token=reaction-token') }));
-  });
-
-  it('repeats only the requests a forced stage makes for itself', async () => {
-    await Promise.all(STAGES.map((stage) => loadStage(stage)));
-    requests.length = 0;
-    await loadStage('mergeBox', true);
-    expect(requests.toSorted()).toEqual(['merge_box', 'review_requests']);
-  });
-
-  it('asks GitHub once for a request several stages forced together repeat', async () => {
-    await Promise.all(STAGES.map((stage) => loadStage(stage)));
-    requests.length = 0;
-    await Promise.all(STAGES.map((stage) => loadStage(stage, true)));
-    // The Actions list is kept per head commit for 5 minutes, forced or not.
-    expect(requests.toSorted()).toEqual(['page', 'tab_counts', 'diffstat', 'threads', 'base_comparison_info', 'merge_box', 'review_requests', 'status_checks', 'labels', 'assignees'].sort());
   });
 
   it('leaves a side card empty when GitHub has no such route, and fails its stage on anything else', async () => {
     vi.spyOn(console, 'debug').mockImplementation(() => {});
     requests = serveGitHub({ status_checks: 404 });
     expect(await loadStage('checks')).toMatchObject({ ci: { state: 'NONE', checks: [] } });
-    forgetPrStages(STAGES);
     requests = serveGitHub({ status_checks: 502 });
     await expect(loadStage('checks')).rejects.toThrow('GitHub answered 502');
   });
@@ -158,9 +151,9 @@ async function call(method: RpcMethod, args: unknown) {
   return response.result;
 }
 
-async function loadStage<S extends PrStage>(stage: S, force = false) {
+async function loadStage<S extends PrStage>(stage: S) {
   const method = `pr.fetch${stage[0]!.toUpperCase()}${stage.slice(1)}` as RpcMethod;
-  return (await call(method, { repo, number: 1, force })) as PrStages[S];
+  return (await call(method, { repo, number: 1 })) as PrStages[S];
 }
 
 /**

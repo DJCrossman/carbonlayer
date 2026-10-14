@@ -204,6 +204,16 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute, themeSe
   systemTheme.addEventListener('change', () => ready && postTheme(), { signal });
   // Coming back to the window refreshes the app's page; the frame hears of it itself only when the focus lands inside it.
   window.addEventListener('focus', () => ready && post({ type: 'gg:focus' }), { signal });
+  // Who is signed in, whose cache the app restores: <meta name="user-login"> in GitHub's <head>, empty for no one, once
+  // the parser has reached it.
+  const postViewer = () => {
+    const meta = document.querySelector('meta[name="user-login"]');
+    if (!meta && document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', postViewer, { once: true, signal });
+      return;
+    }
+    post({ type: 'gg:viewer', login: meta?.getAttribute('content') || null });
+  };
 
   ui.iframe.addEventListener(
     'load',
@@ -238,6 +248,7 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute, themeSe
         case 'gg:ready':
           ready = true;
           postTheme();
+          postViewer();
           if (appHash !== loadedHash) post({ type: 'gg:route', hash: appHash });
           break;
         case 'gg:navigate': {

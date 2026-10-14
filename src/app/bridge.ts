@@ -8,7 +8,9 @@ export type ParentToAppMessage =
   /** A keydown that happened in the top document while the iframe did not have focus. */
   | { type: 'gg:keydown'; key: string; code: string; altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }
   /** The top window was focused: the iframe's own window hears of a window focus only when it lands inside the frame. */
-  | { type: 'gg:focus' };
+  | { type: 'gg:focus' }
+  /** Who is signed in to github.com (`<meta name="user-login">`), null for no one: whose cache the app restores. */
+  | { type: 'gg:viewer'; login: string | null };
 
 export type AppToParentMessage =
   | { type: 'gg:ready' }

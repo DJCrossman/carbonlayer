@@ -7,7 +7,6 @@ import { createPortal } from 'react-dom';
 import { postToParent } from '../app/bridge';
 import { copyPullRequest } from '../app/copy-pull-request';
 import type { DataSource, ReviewThreadDraft } from '../app/data-source';
-import { useRefreshOnReturn } from '../app/refresh-on-return';
 import type { AppRoute } from '../app/routes';
 import { SIGNED_OUT } from '../lib/github-web/session';
 import type { PrDetail, PrStage, PrStages, ReactionContent } from '../lib/model';
@@ -65,16 +64,14 @@ export function PrPage({ source, route }: { source: DataSource; route: Extract<A
 
 /** The PR's stages as they arrive: a page skeleton until the header does, which only signing in can stop. */
 function PrStagesView({ source, route, settings }: { source: DataSource; route: Extract<AppRoute, { page: 'pr' }>; settings: Settings | null }) {
-  const { data, reload, refresh } = usePrPageData(source, route.repo, route.number);
+  const { data, reload } = usePrPageData(source, route.repo, route.number);
   const header = data.header;
   const prId = header.value?.id;
   // Every comment box on the page previews its Markdown as GitHub renders it on this PR.
   const previewMarkdown = useCallback((text: string) => source.previewMarkdown(text, prId ?? ''), [source, prId]);
-  // Not while a part of the page is loading already: the first load, a retry, or what a write changed.
-  useRefreshOnReturn(refresh, { busy: Object.values(data).some((stage) => stage.status === 'loading') });
   if (header.status === 'error' && header.error === SIGNED_OUT) return <PrError message={header.error} />;
   if (!header.value || !settings) {
-    const retry = () => void reload(['header'], true).catch(() => {});
+    const retry = () => void reload(['header']).catch(() => {});
     return <PrSkeleton headerError={header.status === 'error' ? <StageError what="this pull request" error={header.error} onRetry={retry} /> : null} />;
   }
   return (
@@ -95,7 +92,7 @@ function PrView({
 }: {
   header: PrStages['header'];
   data: PrPageData;
-  reload: (stages: readonly PrStage[], force?: boolean) => Promise<void>;
+  reload: (stages: readonly PrStage[]) => Promise<void>;
   settings: Settings;
   source: DataSource;
   section: Extract<AppRoute, { page: 'pr' }>['section'];
@@ -105,8 +102,8 @@ function PrView({
   const pr = useMemo(() => optimisticPr(prDetailFrom(header, data), edits), [header, data, edits]);
   const files = useFileReview(pr);
   const checkReruns = useCheckReruns(pr, source, () => reload(STAGES_A_WRITE_CHANGES['pr.rerunFailedJobs']));
-  /** A section's retry: its stages again, asked of GitHub rather than the content script's memory. */
-  const retry = (stages: PrStage[]) => void reload(stages, true).catch(() => {});
+  /** A section's retry: its stages again. */
+  const retry = (stages: PrStage[]) => void reload(stages).catch(() => {});
   const [batch, setBatch] = useState<ReviewThreadDraft[]>([]);
   const [review, setReview] = useState<{ open: boolean; event: ReviewEvent; body: string }>({ open: false, event: 'COMMENT', body: '' });
   // Once the header's actions scroll out of sight, they appear again under the reviewers (PrActions, twice).
@@ -171,8 +168,8 @@ function PrView({
   }, [legendHidden]);
 
   /**
-   * Runs a change against GitHub, then reloads the stages it changed (STAGES_A_WRITE_CHANGES), which the content script
-   * has already forgotten. A failure is reported and its optimistic edit undone.
+   * Runs a change against GitHub, then reloads the stages it changed (STAGES_A_WRITE_CHANGES). A failure is reported and
+   * its optimistic edit undone.
    */
   async function mutate(
     changed: readonly PrStage[],
@@ -353,7 +350,6 @@ function PrView({
             pr={pr}
             actions={<PrActions {...actions} reviewPopover={headerActionsInView ? reviewPopover : null} menuOpen={menuOpen && headerActionsInView} />}
           />
-          {data.header.status === 'error' && <StageError what="the header again" error={data.header.error} onRetry={() => retry(['header'])} />}
           {/* No stack card, not even its skeleton, when the page shows no stack. */}
           {(header.stackSource !== 'none' || pr.stack.source !== 'none') && (
             <Staged state={data.stack} what="the stack" onRetry={() => retry(['stack'])} skeleton={<StackSkeleton />}>

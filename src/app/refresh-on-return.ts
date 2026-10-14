@@ -1,5 +1,5 @@
 // Coming back to a page refreshes it, as Graphite does (React Query's refetchOnWindowFocus): quietly, in the background,
-// the page updating in place. The inbox and the PR page both use it.
+// the page updating in place. The inbox uses it; the PR page has TanStack Query do the same (src/app/query-cache.tsx).
 import { useEffect, useEffectEvent, useRef } from 'react';
 import { GITHUB_ORIGIN, isBridgeMessage, type ParentToAppMessage } from './bridge';
 
@@ -43,8 +43,8 @@ export function useRefreshOnReturn(refresh: () => Promise<void>, { busy, fetched
 }
 
 /**
- * How old what a page shows may be before coming back to it asks GitHub again: the 30 s the content script keeps a PR's
- * answers. A glance at another window comes back well within it and asks nothing; coming back from a review in another
+ * How old what a page shows may be before coming back to it asks GitHub again: the 30 s the PR page's stages stay
+ * fresh. A glance at another window comes back well within it and asks nothing; coming back from a review in another
  * tab, a chat or a CI run always refreshes.
  */
 const STALE_AFTER_MS = 30_000;

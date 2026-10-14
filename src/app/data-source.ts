@@ -38,10 +38,10 @@ export interface DataSource {
   listOrgPeople(org: Organization): Promise<OrgMember[]>;
   /** A page of the repositories GitHub's homepage lists under "Top repositories": the first, or the one after `cursor`. */
   listTopRepositories(cursor?: number | null): Promise<{ repos: TopRepository[]; nextCursor: number | null }>;
-  /** One stage of a PR's page (PrStages); `force` asks GitHub again instead of reusing what the content script has. */
-  fetchPrStage<S extends PrStage>(stage: S, repo: RepoRef, number: number, force?: boolean): Promise<PrStages[S]>;
+  /** One stage of a PR's page (PrStages), asked of GitHub. */
+  fetchPrStage<S extends PrStage>(stage: S, repo: RepoRef, number: number): Promise<PrStages[S]>;
   /** The diffs of up to 20 of a PR's changed files, by path. */
-  fetchPrFileDiffs(repo: RepoRef, number: number, paths: string[], force?: boolean): Promise<Record<string, ChangedFileDiff>>;
+  fetchPrFileDiffs(repo: RepoRef, number: number, paths: string[]): Promise<Record<string, ChangedFileDiff>>;
   review(prId: string, event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT', body: string, threads?: ReviewThreadDraft[]): Promise<void>;
   comment(prId: string, body: string): Promise<void>;
   merge(prId: string, method: MergeMethod, expectedHeadOid: string): Promise<void>;
@@ -78,8 +78,8 @@ export function createRpcDataSource(): DataSource {
     listOrgs: () => rpc('orgs.list', {}),
     listOrgPeople: (org) => rpc('orgs.people', { org: { login: org.login, isViewer: org.isViewer } }),
     listTopRepositories: (cursor) => rpc('repos.top', { cursor }),
-    fetchPrStage: (stage, repo, number, force) => prStageRequests[stage]({ repo, number, force }),
-    fetchPrFileDiffs: (repo, number, paths, force) => rpc('pr.fetchFileDiffs', { repo, number, paths, force }),
+    fetchPrStage: (stage, repo, number) => prStageRequests[stage]({ repo, number }),
+    fetchPrFileDiffs: (repo, number, paths) => rpc('pr.fetchFileDiffs', { repo, number, paths }),
     review: (prId, event, body, threads) => rpc('pr.review', { prId, event, body, threads }),
     comment: (prId, body) => rpc('pr.comment', { prId, body }),
     merge: (prId, method, expectedHeadOid) => rpc('pr.merge', { prId, method, expectedHeadOid }),
@@ -365,7 +365,7 @@ const FIXTURE_REVIEWER_CANDIDATES: ReviewerCandidate[] = [
 ];
 
 /** The request that loads each stage of the PR page. */
-const prStageRequests: { [S in PrStage]: (args: { repo: RepoRef; number: number; force?: boolean }) => Promise<PrStages[S]> } = {
+const prStageRequests: { [S in PrStage]: (args: { repo: RepoRef; number: number }) => Promise<PrStages[S]> } = {
   header: (args) => rpc('pr.fetchHeader', args),
   activity: (args) => rpc('pr.fetchActivity', args),
   files: (args) => rpc('pr.fetchFiles', args),

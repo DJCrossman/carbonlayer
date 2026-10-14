@@ -1,13 +1,14 @@
 // Answers the app's RPC requests with the user's github.com session: same-origin requests from the content
 // script to the endpoints GitHub's own React UI uses (docs/research/github-web-*.md). No token, no api.github.com.
-// Reads are cached briefly in the content script's memory; any successful write clears that cache, and forgets the
-// stages of the PR page it changes (pr-stages.ts keeps those).
+// Reads are cached briefly in the content script's memory, except the PR page's stages, which the page's own cache
+// keeps (pr-stages.ts only shares a request while it is on its way); any successful write clears that cache, and stops
+// sharing the requests made before it.
 
-import { STAGES_A_WRITE_CHANGES, type RpcMethod, type RpcMethods, type RpcRequest, type RpcResponse } from '../rpc';
+import type { RpcMethod, RpcMethods, RpcRequest, RpcResponse } from '../rpc';
 import { getSettings } from '../settings';
 import { branchesIn, enrichPull, fetchInbox, fetchViewPage } from './inbox';
 import { mutations, pullRequestFor, rememberPullRequest } from './mutations';
-import { fetchFileDiffs, fetchPrStage, forgetPrStages } from './pr-stages';
+import { fetchFileDiffs, fetchPrStage, forgetPrAnswers } from './pr-stages';
 import { fetchPullRequestPage } from './pull-request';
 import { listOrganizations } from './organizations';
 import { organizationPeople } from './people';
@@ -23,7 +24,7 @@ export async function handleRpc(request: RpcRequest): Promise<RpcResponse> {
     const result = await handler(request.args);
     if (Object.hasOwn(mutations, request.method)) {
       cache.clear();
-      forgetPrStages(STAGES_A_WRITE_CHANGES[request.method as keyof typeof mutations]);
+      forgetPrAnswers();
     }
     return { kind: 'gg-rpc-result', id: request.id, ok: true, result };
   } catch (error) {
@@ -91,7 +92,7 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
     rememberPullRequest(detail);
     return detail;
   },
-  // The PR page, a stage at a time; pr-stages.ts keeps GitHub's answers, shared between the stages.
+  // The PR page, a stage at a time; pr-stages.ts shares GitHub's answers between the stages that ask at once.
   'pr.fetchHeader': (args) => fetchPrStage('header', args),
   'pr.fetchActivity': (args) => fetchPrStage('activity', args),
   'pr.fetchFiles': (args) => fetchPrStage('files', args),

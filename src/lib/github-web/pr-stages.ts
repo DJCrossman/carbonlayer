@@ -1,8 +1,8 @@
 // The PR page in stages (PrStages in ../model.ts), each loaded on its own so the page renders each part as it arrives.
-// What GitHub answers is kept per PR for 30 s and shared by every stage that reads it: the page's HTML, fetched once,
-// feeds the header, the activity, the threads, the merge box and the stack; base_comparison_info feeds the files and
-// the threads' positions. `force` repeats the requests a stage makes for itself and reuses the rest; a successful write
-// forgets what the stages it changes asked (STAGES_A_WRITE_CHANGES in ../rpc.ts).
+// The page's cache decides when a stage is asked for again (src/app/query-cache.tsx), so every request here goes to
+// GitHub, and stages asked for in the same moment share it while it is on its way: the page's HTML, fetched once, feeds
+// the header, the activity, the threads, the merge box and the stack; base_comparison_info feeds the files and the
+// threads' positions.
 
 import type { ChangedFileDiff, PrStage, PrStages, PrSummary, RepoRef, UserRef } from '../model';
 import type { MergeMethod } from '../rpc';
@@ -20,22 +20,22 @@ import { conversationsIn, reviewThreads } from './threads';
 import { descriptionPermalink, reactionsIn, timelineFrom } from './timeline';
 
 /** One stage of a PR's page. */
-export function fetchPrStage<S extends PrStage>(stage: S, { repo, number, force = false }: { repo: RepoRef; number: number; force?: boolean }): Promise<PrStages[S]> {
+export function fetchPrStage<S extends PrStage>(stage: S, { repo, number }: { repo: RepoRef; number: number }): Promise<PrStages[S]> {
   const pull = { repo, number, path: `/${repo.owner}/${repo.name}/pull/${number}` };
-  return stages[stage](answersFor(pull, force ? OWN_REQUESTS[stage] : []), pull);
+  return stages[stage](answersFor(pull), pull);
 }
 
 /** The diffs of up to 20 of a PR's changed files, by path: the rest of the files stage, a batch at a time. */
-export function fetchFileDiffs({ repo, number, paths, force = false }: { repo: RepoRef; number: number; paths: string[]; force?: boolean }): Promise<Record<string, ChangedFileDiff>> {
-  return answersFor({ repo, number, path: `/${repo.owner}/${repo.name}/pull/${number}` }, force ? ['diffs'] : []).diffs(paths);
+export function fetchFileDiffs({ repo, number, paths }: { repo: RepoRef; number: number; paths: string[] }): Promise<Record<string, ChangedFileDiff>> {
+  return answersFor({ repo, number, path: `/${repo.owner}/${repo.name}/pull/${number}` }).diffs(paths);
 }
 
-/** Forgets, for every PR, what these stages asked GitHub, so they load afresh: what a successful write does. */
-export function forgetPrStages(changed: readonly PrStage[]): void {
-  const forgotten = new Set(changed.flatMap((stage) => OWN_REQUESTS[stage]));
-  for (const key of answers.keys()) {
-    if (forgotten.has(key.split(' ')[1] as GitHubRequest)) answers.delete(key);
-  }
+/**
+ * Stops sharing the requests still on their way, so a stage asked for after a successful write asks GitHub after it,
+ * rather than taking an answer GitHub gave before the write.
+ */
+export function forgetPrAnswers(): void {
+  answers.clear();
 }
 
 const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<PrStages[S]> } = {
@@ -174,16 +174,15 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
         {
           mergeability: () => github.stackMergeability(),
           authorsOpenPulls: () => github.authorsOpenPulls(header.author.login),
-          // Kept with that PR's own answers, so its page reads them from memory should the viewer open it next.
           conversations: (number) =>
-            answersFor({ repo: pull.repo, number, path: `/${pull.repo.owner}/${pull.repo.name}/pull/${number}` }, [])
+            answersFor({ repo: pull.repo, number, path: `/${pull.repo.owner}/${pull.repo.name}/pull/${number}` })
               .threads()
               .then(conversationsIn, (error: unknown) => {
                 console.debug('[gg]', `page_data/threads for ${pull.repo.owner}/${pull.repo.name}#${number} failed; its stack entry shows no conversations:`, error instanceof Error ? error.message : error);
                 return null;
               }),
           author: (number) =>
-            answersFor({ repo: pull.repo, number, path: `/${pull.repo.owner}/${pull.repo.name}/pull/${number}` }, [])
+            answersFor({ repo: pull.repo, number, path: `/${pull.repo.owner}/${pull.repo.name}/pull/${number}` })
               .author()
               .catch((error: unknown) => {
                 console.debug('[gg]', `page_data/header for ${pull.repo.owner}/${pull.repo.name}#${number} failed; its stack entry shows no author:`, error instanceof Error ? error.message : error);
@@ -206,28 +205,19 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
   },
 };
 
-/**
- * What GitHub answers about one PR, each from memory while it is fresh or still in flight, except the requests named in
- * `repeat`, which are made again, once for all the stages forced together. Failures are not kept.
- */
-function answersFor(pull: Pull, repeat: readonly GitHubRequest[]) {
-  const ask = <T,>(request: GitHubRequest, variant: string, load: () => Promise<T>, keepFor = 30_000): Promise<T> => {
+/** What GitHub answers about one PR: a request another stage already has on its way is shared, any other is made. */
+function answersFor(pull: Pull) {
+  const ask = <T,>(request: GitHubRequest, variant: string, load: () => Promise<T>): Promise<T> => {
     const key = `${pull.path.toLowerCase()} ${request} ${variant}`;
-    const kept = answers.get(key);
-    const repeating = repeat.includes(request);
-    // Another stage forced alongside this one is already asking GitHub again.
-    if (kept && (repeating ? kept.repeating : kept.expiresAt > Date.now())) return kept.value as Promise<T>;
-    const entry = { expiresAt: Date.now() + keepFor, value: load(), repeating };
-    answers.set(key, entry);
-    entry.value.then(
-      () => {
-        entry.repeating = false;
-      },
-      () => {
-        if (answers.get(key) === entry) answers.delete(key);
-      },
-    );
-    return entry.value;
+    const asking = answers.get(key);
+    if (asking) return asking as Promise<T>;
+    const value = load();
+    answers.set(key, value);
+    const answered = () => {
+      if (answers.get(key) === value) answers.delete(key);
+    };
+    value.then(answered, answered);
+    return value;
   };
   const data = `${pull.path}/page_data`;
   // A route behind a side card. GitHub answers 404 for one the repository or viewer lacks, which leaves the card empty;
@@ -244,8 +234,8 @@ function answersFor(pull: Pull, repeat: readonly GitHubRequest[]) {
     diffstat: () => ask('diffstat', '', () => getJson<{ diffstat?: { linesAdded?: number; linesDeleted?: number } }>(`${data}/diffstat`)),
     description: () => ask('description', '', () => sideDetail<{ bodyHtml?: string }>('description')),
     threads: () => ask('threads', '', () => getJson<unknown>(`${data}/threads`)),
-    // Who opened the PR, for its entry in another PR's stack: that never changes, so it is kept 10 minutes.
-    author: () => ask('author', '', () => getJson<unknown>(`${data}/header`).then(authorIn), 600_000),
+    // Who opened the PR, for its entry in another PR's stack.
+    author: () => ask('author', '', () => getJson<unknown>(`${data}/header`).then(authorIn)),
     comparison: () =>
       ask('comparison', '', () => getJson<BaseComparison>(`${data}/base_comparison_info`).then((info) => ({ ...info, diffSummaries: info.diffSummaries ?? [] }))),
     // The comparison is only asked for should GitHub want a range after all.
@@ -287,26 +277,8 @@ function layoutOf(page: Document, pull: Pull): LayoutRoute {
   return layout;
 }
 
-/**
- * The requests each stage makes for itself: `force` makes them again, and a write that changes the stage forgets them.
- * A stage reads the rest from memory (the activity, threads, merge box, checks and stack all read the header's page).
- */
-const OWN_REQUESTS: { [S in PrStage]: readonly GitHubRequest[] } = {
-  header: ['page', 'tabCounts', 'diffstat', 'description'],
-  activity: ['page'],
-  files: ['comparison', 'diffs'],
-  threads: ['threads', 'comparison', 'tabCounts'],
-  mergeBox: ['mergeBox', 'reviewRequests'],
-  checks: ['statusChecks', 'dynamicChecks'],
-  stack: ['stackMergeability', 'authorsOpenPulls'],
-  meta: ['labels', 'assignees'],
-};
-
-/**
- * GitHub's answers by `<pull path> <request> <variant>`, kept 30 s (who opened a PR 10 minutes); `repeating` while a
- * forced stage's is on its way.
- */
-const answers = new Map<string, { expiresAt: number; value: Promise<unknown>; repeating: boolean }>();
+/** GitHub's answers by `<pull path> <request> <variant>` while they are on their way. */
+const answers = new Map<string, Promise<unknown>>();
 
 type GitHubAnswers = ReturnType<typeof answersFor>;
 

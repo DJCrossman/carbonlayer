@@ -18,6 +18,9 @@
   },
   "dependencies": {
     "@pierre/diffs": "^1.5.2",
+    "@tanstack/query-async-storage-persister": "5.104.2",
+    "@tanstack/react-query": "5.104.2",
+    "@tanstack/react-query-persist-client": "5.104.2",
     "github-markdown-css": "^5.9.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"

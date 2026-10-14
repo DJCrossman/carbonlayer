@@ -23,9 +23,9 @@ CSP. The content script is a thin bridge.
 
 | file | role |
 | --- | --- |
-| `github.content.ts` | Content script on `github.com/*`, run at `document_start`. Recognises the inbox (the homepage `/`, only when `<meta name="user-login">` names a signed-in user: signed out, `/` is GitHub's marketing page and stays untouched, so at `document_start` the script waits for that tag, or for `<body>`, before hiding anything) and PR (`/:owner/:repo/pull/:n`, plus `/files`, `/changes`, `/commits`, `/checks`) routes (`src/app/routes.ts`). On a handled route it reads the settings, then hides GitHub's `main` with a `<style>` on `<html>` before the page paints, and mounts the iframe (`app.html?theme=<theme>#<route>`) on `<html>` too, below GitHub's header, so Turbo's `<body>` swaps leave both in place and a soft navigation moves the loaded app with `gg:route` instead of reloading it. The frame opens in the theme the app will show (the options' theme, else GitHub's), which `app-theme.ts` puts on before the first paint: the app's light default would otherwise show while its code loads, a white flash on GitHub's dark theme. It forwards theme, keydown and the window's focus to the iframe, performs top-level navigations the iframe asks for (`src/app/bridge.ts`), answers the iframe's RPC requests with `handleRpc` from `src/lib/github-web/` (session fetches), and re-routes on `wxt:locationchange`. `?gh=1` leaves GitHub untouched for one visit. The `inboxEnabled` / `prEnabled` settings leave it untouched until switched back. On every handled route the script adds a "GitHub \| CarbonLayer" switch (`role="group"`, two `aria-pressed` buttons, plain DOM, GitHub's colour variables) to GitHub's header, just before the + / notifications cluster (`[data-testid="top-bar-actions"]` in the signed-in global nav, `.AppHeader-actions` on older headers; signed out, the marketing header's search-and-sign-in cluster; failing those, the header's end). A click switches this tab at once and keeps that choice in the tab's `sessionStorage` for as long as the tab lives, and saves it as the default for tabs opened later; other open tabs keep their page until they load again. The popup's switches do the same for the tab in view: they save the default and send that tab's content script a `gg:choose` runtime message. GitHub's headers are server-rendered React partials, and a node inserted among their children before hydration makes React render the header again without it, so the switch lives in an open shadow root on that cluster beside a `<slot>` for GitHub's own children; it is placed once the header is parsed and again after a Turbo `<body>` swap or a React re-render. |
+| `github.content.ts` | Content script on `github.com/*`, run at `document_start`. Recognises the inbox (the homepage `/`, only when `<meta name="user-login">` names a signed-in user: signed out, `/` is GitHub's marketing page and stays untouched, so at `document_start` the script waits for that tag, or for `<body>`, before hiding anything) and PR (`/:owner/:repo/pull/:n`, plus `/files`, `/changes`, `/commits`, `/checks`) routes (`src/app/routes.ts`). On a handled route it reads the settings, then hides GitHub's `main` with a `<style>` on `<html>` before the page paints, and mounts the iframe (`app.html?theme=<theme>#<route>`) on `<html>` too, below GitHub's header, so Turbo's `<body>` swaps leave both in place and a soft navigation moves the loaded app with `gg:route` instead of reloading it. The frame opens in the theme the app will show (the options' theme, else GitHub's), which `app-theme.ts` puts on before the first paint: the app's light default would otherwise show while its code loads, a white flash on GitHub's dark theme. It forwards theme, keydown, the window's focus and who is signed in (`gg:viewer`, answering the app's `gg:ready` with `<meta name="user-login">` once the parser has reached it) to the iframe, performs top-level navigations the iframe asks for (`src/app/bridge.ts`), answers the iframe's RPC requests with `handleRpc` from `src/lib/github-web/` (session fetches), and re-routes on `wxt:locationchange`. `?gh=1` leaves GitHub untouched for one visit. The `inboxEnabled` / `prEnabled` settings leave it untouched until switched back. On every handled route the script adds a "GitHub \| CarbonLayer" switch (`role="group"`, two `aria-pressed` buttons, plain DOM, GitHub's colour variables) to GitHub's header, just before the + / notifications cluster (`[data-testid="top-bar-actions"]` in the signed-in global nav, `.AppHeader-actions` on older headers; signed out, the marketing header's search-and-sign-in cluster; failing those, the header's end). A click switches this tab at once and keeps that choice in the tab's `sessionStorage` for as long as the tab lives, and saves it as the default for tabs opened later; other open tabs keep their page until they load again. The popup's switches do the same for the tab in view: they save the default and send that tab's content script a `gg:choose` runtime message. GitHub's headers are server-rendered React partials, and a node inserted among their children before hydration makes React render the header again without it, so the switch lives in an open shadow root on that cluster beside a `<slot>` for GitHub's own children; it is placed once the header is parsed and again after a Turbo `<body>` swap or a React re-render. |
 | `app-theme.ts` | `app.html`'s first script, a blocking one in its `<head>`: sets `<html data-theme>` from `?theme=` before the page is parsed or painted, and `app/main.tsx` keeps that theme until it has GitHub's (`gg:theme`) and the options' own. A file of its own (WXT unlisted script), since the extension's CSP blocks inline scripts. |
-| `app/` | The React app (`entrypoints/app/main.tsx`): hash router → `InboxPage` (`src/inbox/`) or `PrPage` (`src/pr/`). Data comes through a `DataSource` (`src/app/data-source.ts`): the RPC-backed one in the extension, a fixture-backed one when opened with `?fixtures=1` (the dev harness). Listed in `web_accessible_resources` for `https://github.com/*`. |
+| `app/` | The React app (`entrypoints/app/main.tsx`): hash router → `InboxPage` (`src/inbox/`) or `PrPage` (`src/pr/`), inside the page's TanStack Query cache (`PageQueries`, below). Data comes through a `DataSource` (`src/app/data-source.ts`): the RPC-backed one in the extension, a fixture-backed one when opened with `?fixtures=1` (the dev harness). Listed in `web_accessible_resources` for `https://github.com/*`. |
 | `background.ts` | Brokers the one-click copy from Graphite: opens `app.graphite.com` next to the inbox's tab, remembers both tabs in `storage.session`, stores the copied sections under `graphiteImport` in `storage.local`, then closes the Graphite tab and re-activates the inbox. Nothing else. |
 | `graphite.content.ts` / `graphite-sections.content.ts` | On `app.graphite.com`, only in the tab the background opened: the isolated script asks the page-world script (`world: 'MAIN'`) for the inbox's sections; that one waits for the inbox to render, walks React's internal state above a sidebar item to the inbox `snapshot` (`inboxSnapshotOf` in `src/lib/graphite.ts`) and posts the sections, the inbox's repositories and the signed-in login back. A banner in the tab reports the result. |
 | `options/` | Options page: the inbox's organization, its repositories and views editor, merge method, diff layout, theme, on/off switches. |
@@ -53,7 +53,8 @@ shows "Sign in to github.com in this tab". Signed in, the routes behind the side
 `status_checks`, `stack_mergeability`, `review_requests`, `labels`, `assignees`, `description`) and
 the inbox's deferred fields are side details: on the PR page a 404 from one is logged with `console.debug('[gg]', …)`
 and leaves that card empty (an open PR's checks card says why), and any other failure shows in the card with a retry.
-Reads are cached in the content script for 30–60 s; a successful write clears the cache.
+Reads are cached in the content script for 30–60 s, except the PR page's stages, which the page's own cache keeps (below);
+a successful write clears the cache.
 
 Graphite judges CI from every check run on the head commit, runs of the workflows GitHub triggers itself (event `dynamic`,
 such as Copilot's code review) included, while `status_checks`, the commit's status rollup and the PR's Checks tab all
@@ -62,27 +63,44 @@ leave those out. So the PR page's checks and the inbox's open rows also read the
 each such workflow whose run page names the head commit as a check that is never required (`dynamicWorkflowChecks` in
 `src/lib/github-web/actions.ts`, kept 5 minutes a commit; a failure counts none).
 
+## The page's cache
+
+Every move between the inbox and a PR page loads `app.html` afresh, so each page's data goes through one TanStack Query
+client (`PageQueries` in `src/app/query-cache.tsx`) whose cache is kept on the device: a page shows what the viewer saw
+last at once, then asks GitHub and updates in place. It lives in the extension's own IndexedDB (database `carbonlayer`,
+one entry for the whole cache, shared by every tab, written at most once a second), restored before the page's queries
+run. It is kept for whoever is signed in: the content script answers the app's `gg:ready` with the login (`gg:viewer`), and
+the cache is kept under `<extension version>:<login>`, so another account or version finds nothing (and the old entry
+goes); signed out, the page has an in-memory cache only. Only what loaded is kept, for 24 hours, and never a diff or a
+comment: the PR page's file list (GitHub sends some diffs with it), diffs, review threads and timeline stay in memory and
+are asked of GitHub on every page load (`keptOnDevice`). Failures are not retried; each shows where it happened.
+
+Coming back to the page (the tab shown, the window focused, this frame's own or github.com's forwarded as `gg:focus`)
+asks GitHub again for every query on the page older than its `staleTime` (TanStack's `focusManager`, given those three
+listeners).
+
 The PR page loads in stages (`PrStages` in `src/lib/model.ts`, `src/lib/github-web/pr-stages.ts`), all requested at
-once and each rendered as it arrives (`src/pr/page-data.ts`): `pr.fetchHeader` (the page's HTML, `tab_counts`,
+once and each rendered as it arrives (`src/pr/page-data.ts`, one query per stage, `['pr', owner, repo, number, stage]`): `pr.fetchHeader` (the page's HTML, `tab_counts`,
 `diffstat`; the description is the conversation's first comment, `page_data/description` only without one),
 `pr.fetchActivity` (the timeline from that HTML, `threads` for which review opened which), `pr.fetchFiles`
-(`base_comparison_info`: every file, with the diffs GitHub sends along), then `pr.fetchFileDiffs` for the rest, 20
-paths a `diff_entries` request and four requests at a time in the order the files show, `pr.fetchThreads` (`threads`
+(`base_comparison_info`: every file, with the diffs GitHub sends along), then `pr.fetchFileDiffs` for the rest, one query
+a file (`['pr-diff', owner, repo, number, headOid, baseRef, path]`, fresh for good: the same commit has the same diff),
+asked 20 paths a `diff_entries` request and four requests at a time in the order the files show, `pr.fetchThreads` (`threads`
 placed by the comparison's markers), `pr.fetchMergeBox` (`merge_box`, `review_requests`), `pr.fetchChecks`
 (`status_checks`), `pr.fetchStack` (`stack_mergeability` or Graphite's comment and the author's open PRs, then every
 other entry's own `threads`, for its conversation counter, and, where the stack's listing did not say who opened it,
-its `page_data/header`, three entries at a time) and `pr.fetchMeta` (`labels`, `assignees`). The content script keeps
-each of GitHub's answers per PR for 30 s and shares it
-between the stages that read it, so the HTML is fetched once; `force` repeats only the requests a stage makes for
-itself. Until the header arrives (one round trip) the page is a skeleton; after it each section has its own skeleton
-and, should its stage fail, an inline error with a retry. Only a signed-out header fails the whole page. A write
-forgets what the stages it changes asked (`STAGES_A_WRITE_CHANGES` in `src/lib/rpc.ts`) and the page loads those
-stages again, the others untouched; marking a file viewed only changes it in place. Coming back to the page (the tab
-shown, the window focused) once what it shows is 30 s old loads every stage but the files again in the background,
-forced (stages forced together make each request once), each part keeping what it shows until its answer arrives and
-as it was should that fail (`useRefreshOnReturn` in `src/app/refresh-on-return.ts`, which the inbox uses too); the
-files load again only once the header finds the head commit moved or the base changed. `pr.fetch` still answers the
-whole `PrDetail` at once, composed from the stages.
+its `page_data/header`, three entries at a time) and `pr.fetchMeta` (`labels`, `assignees`). The content script asks
+GitHub for every stage every time, and shares a request between the stages that make it while it is on its way, so the
+HTML is fetched once for the stages asked together; after a successful write it shares none made before it. Opening
+the page asks GitHub for every stage, whatever the cache had. Until the header arrives (from the cache, or one round
+trip) the page is a skeleton; after it each section has its own skeleton and, should its stage fail before it ever
+arrived, an inline error with a retry. Only a signed-out header with nothing to show fails the whole page. A write
+invalidates the stages it changes (`STAGES_A_WRITE_CHANGES` in `src/lib/rpc.ts`) and the page loads those again, the
+others untouched (a reload that fails says so in a toast); marking a file viewed only changes it in place. Coming back to
+the page once a stage is 30 s old loads it again in the background, every stage but the files, each part keeping what
+it shows until its answer arrives and as it was should that fail; the file list loads again only once a header GitHub
+sent this page finds the head commit moved or the base changed, and each file keeps its diff until the new one arrives.
+`pr.fetch` still answers the whole `PrDetail` at once, composed from the stages.
 
 Comment links: every comment GitHub gives a permalink to has a Copy link (`CopyLink` in `src/pr/Comment.tsx`, a link
 icon at the end of its header, or in the description's top corner, out of sight until the pointer is on the comment or
@@ -103,8 +121,7 @@ comment in the timeline, enriched through a `/pulls/search` query on the author'
 (`src/pr/StackCard.tsx`) shows each entry as Graphite does: its dot on the rail, its author's avatar, number and title,
 then its conversations, statuses and age. Neither GitHub's stack (`stack.pulls[]`) nor Graphite's comment names who
 opened an entry, and the search finds only the viewed PR's author's, so each other entry's author is its own
-`page_data/header`'s `pullRequest.author` (`authorIn` in `src/lib/github-web/stack.ts`), asked alongside its threads
-and kept 10 minutes, since it never changes. Until the stack arrives its skeleton has a round placeholder there; an
+`page_data/header`'s `pullRequest.author` (`authorIn` in `src/lib/github-web/stack.ts`), asked alongside its threads. Until the stack arrives its skeleton has a round placeholder there; an
 entry whose header GitHub did not answer leaves the place empty (`StackEntry.author` is null), never the viewed PR's
 author.
 
@@ -291,5 +308,7 @@ them carrying them as its own `repos`. Relative times
 - `pnpm test` (vitest) covers pure logic: the github-web mappers and session handling, stack inference,
   view link encode/decode, Graphite section import, routes, keyboard chords, next-step derivation.
 - Harness: `pnpm build`, then serve `.output/chrome-mv3` statically and open `app.html?fixtures=1#/inbox` or
-  `app.html?fixtures=1#/pr/acme/widgets/42` for visual checks (no session, no `chrome.*`).
+  `app.html?fixtures=1#/pr/acme/widgets/42` for visual checks (no session, no `chrome.*`). Its cache stays in memory, so
+  every run starts clean; `&keep=<label>` keeps it on the device as the fixtures' viewer under that label instead, for
+  checking what a second load restores (another label restores nothing).
 - Real-site check: load `.output/chrome-mv3` unpacked while signed in to github.com, open github.com.

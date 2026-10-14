@@ -1,13 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTINGS } from '../settings';
-import { forgetPrStages } from './pr-stages';
 import { fetchPullRequestPage } from './pull-request';
 import { SIGNED_OUT } from './session';
 
 vi.mock('../settings', async (original) => ({ ...(await original<typeof import('../settings')>()), getSettings: vi.fn(async () => DEFAULT_SETTINGS) }));
 
 afterEach(() => {
-  forgetPrStages(['header', 'activity', 'files', 'threads', 'mergeBox', 'checks', 'stack', 'meta']);
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });

@@ -1,131 +1,104 @@
-// The PR page's data as its stages arrive (PrStages in src/lib/model.ts). Every stage loads at once and on its own;
-// each part of the page renders from the stages it needs, with a skeleton until they arrive and an inline error, with a
-// retry, for one that failed. A write reloads only the stages it changed.
-import { useCallback, useEffect, useRef, useState } from 'react';
+// The PR page's data as its stages arrive (PrStages in src/lib/model.ts), each a query of the page's cache
+// (src/app/query-cache.tsx). Every stage loads at once and on its own; each part of the page renders from the stages it
+// needs, with a skeleton until they arrive and an inline error, with a retry, for one that failed. What the viewer saw
+// last shows at once from the cache while the page asks GitHub again. A write reloads only the stages it changed.
+import { useQueries, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { DataSource } from '../app/data-source';
 import { politely, SIGNED_OUT } from '../lib/github-web/session';
-import type { ChangedFile, PrDetail, PrStage, PrStages, PrSummary, RepoRef, ReviewThread, TimelineItem } from '../lib/model';
+import type { ChangedFile, ChangedFileDiff, PrDetail, PrStage, PrStages, PrSummary, RepoRef, ReviewThread, TimelineItem } from '../lib/model';
 import { filesInTreeOrder, fileTree } from './diff';
 
 /**
  * Loads every stage of a PR's page and keeps each as it arrives. The diffs GitHub does not send with the file list follow
  * it 20 files a request, four requests at a time, in the order the files show, so the first files fill in first.
- * `reload` loads stages again (keeping what they showed meanwhile) and rejects with the first failure. `refresh` asks
- * GitHub again for everything in the background; the diffs follow the head commit, loading again only once it moved.
+ * `reload` loads stages again (keeping what they showed meanwhile) and rejects with the first failure. Coming back to the
+ * page once a stage is 30 s old asks GitHub for it again in the background; the diffs follow the head commit, loading
+ * again only once it moved. A stage GitHub does not answer then keeps what it showed.
  */
-export function usePrPageData(
-  source: DataSource,
-  repo: RepoRef,
-  number: number,
-): { data: PrPageData; reload: (stages: readonly PrStage[], force?: boolean) => Promise<void>; refresh: () => Promise<void> } {
-  const [data, setData] = useState<PrPageData>(() => Object.fromEntries(PR_STAGES.map((stage) => [stage, { status: 'loading', value: null }])) as PrPageData);
-  // Only the latest load of a stage may change it: one a later load overtook (a reload after a write) is dropped.
-  const latestLoad = useRef<Partial<Record<PrStage, number>>>({});
-  const mounted = useRef(true);
-  const signedOut = useRef(false);
+export function usePrPageData(source: DataSource, repo: RepoRef, number: number): { data: PrPageData; reload: (stages: readonly PrStage[]) => Promise<void> } {
   const { owner, name } = repo;
+  const queryClient = useQueryClient();
+  const stages = useQueries({
+    queries: PR_STAGES.map((stage) => ({
+      queryKey: ['pr', owner, name, number, stage],
+      queryFn: () => source.fetchPrStage(stage, { owner, name }, number),
+      // Opening the page asks GitHub, whatever the cache had.
+      refetchOnMount: 'always' as const,
+      // The files follow the head commit (below).
+      staleTime: stage === 'files' ? Infinity : 30_000,
+    })),
+    combine: (results) => Object.fromEntries(PR_STAGES.map((stage, index) => [stage, results[index]!])) as { [S in PrStage]: UseQueryResult<PrStages[S]> },
+  });
+  const signedOut = stages.header.error?.message === SIGNED_OUT;
 
-  const reload = useCallback(
-    async (stages: readonly PrStage[], force = false) => {
-      const pr = { owner, name };
-      const update = <S extends PrStage>(stage: S, next: (state: StageState<PrStages[S]>) => StageState<PrStages[S]>) =>
-        setData((current) => ({ ...current, [stage]: next(current[stage]) }));
-      const fail = <S extends PrStage>(stage: S, reason: unknown) => {
-        const error = reason instanceof Error ? reason.message : String(reason);
-        if (stage === 'header' && error === SIGNED_OUT) signedOut.current = true;
-        update(stage, (state) => ({ status: 'error', value: state.value, error }));
-        return error;
-      };
+  // The diffs GitHub did not send with the file list, in the order the files show. They follow the head commit, so they
+  // wait for a header GitHub sent this page rather than the one the cache had.
+  const listed = stages.files.data;
+  const head = stages.header.isFetchedAfterMount ? stages.header.data : undefined;
+  const missing = useMemo(
+    () =>
+      listed
+        ? filesInTreeOrder(fileTree(listed.files.map((file): ChangedFile => ({ ...file, patch: null, previousPath: null }))))
+            .map((file) => file.path)
+            .filter((path) => !(path in listed.diffs))
+        : [],
+    [listed],
+  );
+  const askForDiff = useMemo(() => diffsInBatches(source, { owner, name }, number), [source, owner, name, number]);
+  const diffs = useQueries({
+    queries: head
+      ? missing.map((path) => ({
+          queryKey: ['pr-diff', owner, name, number, head.headOid, head.baseRefName, path],
+          queryFn: () => askForDiff(path),
+          // The same commit on the same base has the same diff.
+          staleTime: Infinity,
+          // Signed out, the page says so and nothing else; while the file list loads again, which files changed may too.
+          enabled: !signedOut && !stages.files.isFetching,
+        }))
+      : [],
+    combine: (results) => ({
+      arrived: Object.fromEntries(results.flatMap((result, index) => (result.data ? [[missing[index]!, result.data]] : []))),
+      failure: results.find((result) => result.isError && !result.isFetching)?.error?.message ?? null,
+      waiting: results.some((result) => result.data === undefined),
+    }),
+  });
 
-      const load = async <S extends PrStage>(stage: S): Promise<string | null> => {
-        const run = (latestLoad.current[stage] ?? 0) + 1;
-        latestLoad.current[stage] = run;
-        const isLatest = () => mounted.current && latestLoad.current[stage] === run;
-        update(stage, (state) => ({ status: 'loading', value: state.value }));
-        let value: PrStages[S];
-        try {
-          value = await source.fetchPrStage(stage, pr, number, force);
-        } catch (reason) {
-          return isLatest() ? fail(stage, reason) : null;
-        }
-        if (!isLatest()) return null;
-        if (stage !== 'files') {
-          update(stage, () => ({ status: 'ready', value }));
-          return null;
-        }
+  // A file shows the diff it had until its new one arrives.
+  const shownDiffs = useRef<Record<string, ChangedFileDiff>>({});
+  const files = useMemo((): StageState<PrStages['files']> => {
+    if (!listed) return stageShown(stages.files);
+    shownDiffs.current = { ...shownDiffs.current, ...listed.diffs, ...diffs.arrived };
+    const value = { ...listed, diffs: shownDiffs.current };
+    if (diffs.failure) return { status: 'error', value, error: diffs.failure };
+    const loading = stages.files.isFetching || diffs.waiting || (!head && missing.length > 0);
+    return { status: loading ? 'loading' : 'ready', value };
+  }, [listed, stages.files, diffs, head, missing]);
 
-        const listed = value as PrStages['files'];
-        // A file shows the diff it had until its new one arrives.
-        update('files', (state) => ({ status: 'loading', value: { ...listed, diffs: { ...state.value?.diffs, ...listed.diffs } } }));
-        const order = filesInTreeOrder(fileTree(listed.files.map((file): ChangedFile => ({ ...file, patch: null, previousPath: null }))));
-        const missing = order.map((file) => file.path).filter((path) => !(path in listed.diffs));
-        const batches = Array.from({ length: Math.ceil(missing.length / 20) }, (_, i) => missing.slice(i * 20, i * 20 + 20));
-        const failures = await politely(batches, 4, async (paths) => {
-          // Signed out, the page says so and nothing else: no point asking for more diffs.
-          if (!isLatest() || signedOut.current) return null;
-          try {
-            const diffs = await source.fetchPrFileDiffs(pr, number, paths, force);
-            if (isLatest()) update('files', (state) => (state.value ? { ...state, value: { ...state.value, diffs: { ...state.value.diffs, ...diffs } } } : state));
-            return null;
-          } catch (reason) {
-            return reason;
-          }
-        });
-        if (!isLatest()) return null;
-        const failure = failures.find((reason) => reason !== null);
-        if (failure !== undefined) return fail('files', failure);
-        update('files', (state) => (state.value ? { status: 'ready', value: state.value } : state));
-        return null;
-      };
-
-      const failure = (await Promise.all(stages.map((stage) => load(stage)))).find((error) => error !== null);
-      if (failure) throw new Error(failure);
-    },
-    [source, owner, name, number],
+  const data = useMemo(
+    () => ({ ...(Object.fromEntries(PR_STAGES.map((stage) => [stage, stageShown(stages[stage] as UseQueryResult<unknown>)])) as PrPageData), files }),
+    [stages, files],
   );
 
-  /**
-   * Every stage but the files again, asked of GitHub rather than the content script's memory. Each part of the page keeps
-   * showing what it has until its new answer replaces it, and one GitHub does not answer stays as it was: the next return
-   * to the page asks again.
-   */
-  const refresh = useCallback(async () => {
-    const pr = { owner, name };
-    const refreshStage = async <S extends PrStage>(stage: S) => {
-      const run = (latestLoad.current[stage] ?? 0) + 1;
-      latestLoad.current[stage] = run;
-      try {
-        const value = await source.fetchPrStage(stage, pr, number, true);
-        if (mounted.current && latestLoad.current[stage] === run) setData((current) => ({ ...current, [stage]: { status: 'ready', value } }));
-      } catch (reason) {
-        console.debug('[gg]', `refreshing the ${stage} failed; it shows what it had:`, reason instanceof Error ? reason.message : reason);
-      }
-    };
-    await Promise.all(PR_STAGES.filter((stage) => stage !== 'files').map((stage) => refreshStage(stage)));
-  }, [source, owner, name, number]);
+  const reload = useCallback(
+    (changed: readonly PrStage[]) =>
+      queryClient.invalidateQueries({ queryKey: ['pr', owner, name, number], predicate: ({ queryKey }) => changed.includes(queryKey[4] as PrStage) }, { throwOnError: true }),
+    [queryClient, owner, name, number],
+  );
 
-  // The diffs follow the head commit: the same commit on the same base has the same diffs, so the files load again only
-  // once a header finds the branch moved on or the pull request retargeted.
-  const head = data.header.value && `${data.header.value.baseRefName} ${data.header.value.headOid}`;
-  const filesHead = useRef(head);
+  // The diffs follow the head commit: the same commit on the same base has the same diffs, so the file list loads again
+  // only once a header finds the branch moved on or the pull request retargeted.
+  const headAt = head ? `${head.baseRefName} ${head.headOid}` : null;
+  const filesHead = useRef(headAt);
   useEffect(() => {
-    if (head === null || head === filesHead.current) return;
+    if (headAt === null || headAt === filesHead.current) return;
     const first = filesHead.current === null;
-    filesHead.current = head;
+    filesHead.current = headAt;
     // The first header's files are loading alongside it.
-    if (!first) reload(['files'], true).catch(() => {});
-  }, [head, reload]);
+    if (!first) void queryClient.invalidateQueries({ queryKey: ['pr', owner, name, number, 'files'] });
+  }, [headAt, queryClient, owner, name, number]);
 
-  useEffect(() => {
-    mounted.current = true;
-    // Each stage shows its own failure where it would have rendered.
-    reload(PR_STAGES).catch(() => {});
-    return () => {
-      mounted.current = false;
-    };
-  }, [reload]);
-
-  return { data, reload, refresh };
+  return { data, reload };
 }
 
 /**
@@ -178,6 +151,41 @@ export type PrPageData = { [S in PrStage]: StageState<PrStages[S]> };
 
 /** Every stage, the header first: the page's first request. */
 const PR_STAGES: PrStage[] = ['header', 'stack', 'activity', 'files', 'threads', 'mergeBox', 'checks', 'meta'];
+
+/**
+ * Asks GitHub for files' diffs as the page asks for them one at a time: the paths asked for in the same moment go 20 a
+ * request, four requests at a time, in the order they were asked for. Each resolves with its diff, or null when GitHub
+ * sent none for it.
+ */
+function diffsInBatches(source: DataSource, repo: RepoRef, number: number): (path: string) => Promise<ChangedFileDiff | null> {
+  let asked: Array<{ path: string; resolve: (diff: ChangedFileDiff | null) => void; reject: (reason: unknown) => void }> = [];
+  return (path) =>
+    new Promise((resolve, reject) => {
+      if (asked.push({ path, resolve, reject }) > 1) return;
+      setTimeout(() => {
+        const batches = Array.from({ length: Math.ceil(asked.length / 20) }, (_, i) => asked.slice(i * 20, i * 20 + 20));
+        asked = [];
+        void politely(batches, 4, async (batch) => {
+          try {
+            const diffs = await source.fetchPrFileDiffs(repo, number, batch.map((entry) => entry.path));
+            for (const entry of batch) entry.resolve(diffs[entry.path] ?? null);
+          } catch (reason) {
+            for (const entry of batch) entry.reject(reason);
+          }
+        });
+      });
+    });
+}
+
+/**
+ * What the page shows of a stage: once it has arrived, what it has, through a reload or a return to the page that GitHub
+ * does not answer; before that, its first failure, with a retry.
+ */
+function stageShown<T>(query: UseQueryResult<T>): StageState<T> {
+  if (query.data !== undefined) return { status: query.isFetching ? 'loading' : 'ready', value: query.data };
+  if (query.isError && !query.isFetching) return { status: 'error', value: null, error: query.error.message };
+  return { status: 'loading', value: null };
+}
 
 const NO_TIMELINE: TimelineItem[] = [];
 const NO_THREADS: ReviewThread[] = [];

@@ -1,8 +1,10 @@
 // The app page. Lives in an iframe on github.com (see ARCHITECTURE.md) or standalone in the harness.
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { browser } from 'wxt/browser';
 import { GITHUB_ORIGIN, isBridgeMessage, postToParent, themeOpenedIn, type ParentToAppMessage } from '../../src/app/bridge';
 import { createFixtureDataSource, createRpcDataSource, type DataSource } from '../../src/app/data-source';
+import { PageQueries, type CacheOwner } from '../../src/app/query-cache';
 import { parseAppHash, type AppRoute } from '../../src/app/routes';
 import { InboxPage } from '../../src/inbox/InboxPage';
 import type { Settings } from '../../src/lib/settings';
@@ -16,6 +18,14 @@ function App({ source }: { source: DataSource }) {
   // first paint, so the first render keeps it rather than flashing the system's.
   const [githubTheme, setGithubTheme] = useState<'light' | 'dark' | null>(themeOpenedIn);
   const [themeSetting, setThemeSetting] = useState<Settings['theme']>(() => themeOpenedIn() ?? 'auto');
+  // Whose cache the page restores: whoever the parent page says is signed in (gg:viewer), undefined until it has said.
+  // Opened directly (the harness) nobody is and the cache stays in memory, unless a test asks for it to be kept on the
+  // device (`&keep=<label>`), as the fixtures' viewer, under that label for a version.
+  const [cacheOwner, setCacheOwner] = useState<CacheOwner | null | undefined>(() => {
+    if (window.parent !== window) return undefined;
+    const label = new URLSearchParams(location.search).get('keep');
+    return label ? { version: label, login: 'octocat' } : null;
+  });
 
   useEffect(() => {
     const onHashChange = () => setRoute(parseAppHash(location.hash));
@@ -27,6 +37,8 @@ function App({ source }: { source: DataSource }) {
         setRoute(parseAppHash(message.hash));
       } else if (message.type === 'gg:theme') {
         setGithubTheme(message.theme);
+      } else if (message.type === 'gg:viewer') {
+        setCacheOwner(message.login ? { version: browser.runtime.getManifest().version, login: message.login } : null);
       } else if (message.type === 'gg:keydown') {
         // A key typed on GitHub's page while this document did not have focus, so its own listeners never saw it:
         // replay it once, on the document, where the page-level shortcut hooks listen.
@@ -57,14 +69,18 @@ function App({ source }: { source: DataSource }) {
     return () => media.removeEventListener('change', apply);
   }, [themeSetting, githubTheme]);
 
-  switch (route.page) {
-    case 'inbox':
-      return <InboxPage source={source} route={route} />;
-    case 'pr':
-      return <PrPage source={source} route={route} />;
-    case 'none':
-      return <p style={{ padding: 16 }}>Open github.com or a pull request.</p>;
-  }
+  if (cacheOwner === undefined) return null;
+  return (
+    <PageQueries owner={cacheOwner}>
+      {route.page === 'inbox' ? (
+        <InboxPage source={source} route={route} />
+      ) : route.page === 'pr' ? (
+        <PrPage source={source} route={route} />
+      ) : (
+        <p style={{ padding: 16 }}>Open github.com or a pull request.</p>
+      )}
+    </PageQueries>
+  );
 }
 
 async function start() {

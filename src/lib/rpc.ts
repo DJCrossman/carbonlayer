@@ -37,7 +37,7 @@ export interface RpcMethods {
   'orgs.people': { args: { org: Pick<Organization, 'login' | 'isViewer'> }; result: OrgMember[] };
   /** The whole PR at once, all its stages put together (the PR page itself loads them one by one, below). */
   'pr.fetch': { args: { repo: RepoRef; number: number; force?: boolean }; result: PrDetail };
-  // The PR page, a stage at a time (PrStages in model.ts). `force` repeats the requests the stage itself makes to GitHub.
+  // The PR page, a stage at a time (PrStages in model.ts), each asked of GitHub every time.
   'pr.fetchHeader': { args: PrPageRequest; result: PrStages['header'] };
   'pr.fetchActivity': { args: PrPageRequest; result: PrStages['activity'] };
   'pr.fetchFiles': { args: PrPageRequest; result: PrStages['files'] };
@@ -91,10 +91,7 @@ export interface RpcMethods {
 
 export type RpcMethod = keyof RpcMethods;
 
-/**
- * The stages of the PR page each write changes. When a write succeeds, the content script forgets what it knew about
- * them and the page loads them again; every other stage stays as it is.
- */
+/** The stages of the PR page each write changes. When a write succeeds, the page loads them again; every other stage stays as it is. */
 export const STAGES_A_WRITE_CHANGES = {
   'pr.review': ['activity', 'mergeBox', 'threads'],
   'pr.comment': ['activity'],
@@ -174,5 +171,4 @@ function isRpcResponse(data: unknown): data is RpcResponse {
 interface PrPageRequest {
   repo: RepoRef;
   number: number;
-  force?: boolean;
 }
