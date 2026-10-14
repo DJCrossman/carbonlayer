@@ -132,3 +132,53 @@
 .markdown-body table { margin-bottom: 10px; }
 .markdown-body .highlight pre,
 .markdown-body pre { padding: 10px 12px; font-size: 12px; }
+
+/* A suggested change as GitHub renders it (```suggestion): a diff table whose look comes from GitHub's own blob styles,
+   which the app doesn't load. As GitHub shows it: a muted heading, line numbers, a −/+ marker, red and green rows, and
+   the words that changed in a stronger tint. */
+.markdown-body .js-suggested-changes-blob {
+  margin: 8px 0;
+  overflow: hidden;
+  border: 1px solid var(--gg-border);
+  border-radius: 6px;
+}
+.markdown-body .js-suggested-changes-blob > .f6 {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--gg-border);
+  font-size: 12px;
+  color: var(--gg-fg-muted);
+}
+.markdown-body .js-suggested-changes-blob table {
+  display: table;
+  width: 100%;
+  margin: 0;
+  border-collapse: collapse;
+  font-family: var(--gg-font-mono);
+  font-size: 12px;
+  line-height: 20px;
+}
+.markdown-body .js-suggested-changes-blob table tr { border: 0; background: none; }
+.markdown-body .js-suggested-changes-blob table td { padding: 0 8px; border: 0; vertical-align: top; }
+.markdown-body .js-suggested-changes-blob .blob-num {
+  width: 1%;
+  min-width: 40px;
+  color: var(--gg-fg-muted);
+  text-align: right;
+  user-select: none;
+}
+.markdown-body .js-suggested-changes-blob .blob-num::before { content: attr(data-line-number); }
+.markdown-body .js-suggested-changes-blob .blob-code-inner {
+  position: relative;
+  padding-left: 22px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.markdown-body .js-suggested-changes-blob .blob-code-inner::before { position: absolute; left: 8px; }
+.markdown-body .js-suggested-changes-blob .blob-code-marker-deletion::before { content: '-'; }
+.markdown-body .js-suggested-changes-blob .blob-code-marker-addition::before { content: '+'; }
+.markdown-body .js-suggested-changes-blob .blob-code-deletion { background: var(--gg-danger-bg); }
+.markdown-body .js-suggested-changes-blob .blob-code-addition { background: var(--gg-success-bg); }
+.markdown-body .js-suggested-changes-blob .blob-num-deletion { background: color-mix(in srgb, var(--gg-danger) 14%, var(--gg-danger-bg)); }
+.markdown-body .js-suggested-changes-blob .blob-num-addition { background: color-mix(in srgb, var(--gg-success) 14%, var(--gg-success-bg)); }
+.markdown-body .js-suggested-changes-blob .blob-code-deletion .x { border-radius: 2px; background: color-mix(in srgb, var(--gg-danger) 32%, transparent); }
+.markdown-body .js-suggested-changes-blob .blob-code-addition .x { border-radius: 2px; background: color-mix(in srgb, var(--gg-success) 32%, transparent); }
