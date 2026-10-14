@@ -437,6 +437,12 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+/* A stack GitHub doesn't track, worked out from branch names. */
+.gg-row__chip--attention {
+  border-color: color-mix(in srgb, var(--gg-attention) 40%, transparent);
+  color: var(--gg-attention);
+  background: var(--gg-attention-bg);
+}
 .gg-row__status {
   display: flex;
   align-items: center;

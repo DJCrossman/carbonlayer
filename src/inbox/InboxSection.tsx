@@ -13,6 +13,7 @@ import { RelativeTime } from '../ui/RelativeTime';
 import { Skeleton } from '../ui/Skeleton';
 import { StatusIcon } from '../ui/StatusIcon';
 import { ciStatusIcon, mergeStatusIcon, reviewStatusIcon } from '../ui/status-icons';
+import type { StackPlace } from './stacks';
 
 export function InboxSection({
   view,
@@ -24,6 +25,7 @@ export function InboxSection({
   viewerLogin,
   enrichmentOf,
   stackedPrIds,
+  stackPlaces,
   awaitingStacks,
   more,
   onSort,
@@ -49,6 +51,8 @@ export function InboxSection({
   enrichmentOf: (pr: PrSummary) => PrEnrichment | undefined;
   /** Grouped by stack, the ids of the rows below the top of their stack, which hang under the row above. */
   stackedPrIds?: ReadonlySet<string>;
+  /** Where each row the inbox knows sits in its stack, by PR id (`stackPlaces`), for the chip of a stack GitHub doesn't track. */
+  stackPlaces: ReadonlyMap<string, StackPlace>;
   /** Grouped by stack, the rows wait for their stacks to be known: skeleton rows show in their place. */
   awaitingStacks?: boolean;
   /** Whether GitHub has rows beyond those shown ("Load more"), and whether they are on their way. */
@@ -110,6 +114,7 @@ export function InboxSection({
                 viewerLogin={viewerLogin}
                 selected={pr.id === selectedPrId}
                 stacked={stackedPrIds?.has(pr.id) === true}
+                stackPlace={stackPlaces.get(pr.id)}
                 overdueAfterHours={overdueAfterHours}
                 onShown={onRowShown}
                 onOpen={onOpen}
@@ -165,6 +170,7 @@ function PrRow({
   viewerLogin,
   selected,
   stacked,
+  stackPlace,
   overdueAfterHours,
   onShown,
   onOpen,
@@ -176,6 +182,8 @@ function PrRow({
   selected: boolean;
   /** Below the top of its stack: indented, hanging from the row above. */
   stacked: boolean;
+  /** Where it sits in its stack among the rows the inbox knows; undefined while it stands alone. */
+  stackPlace: StackPlace | undefined;
   overdueAfterHours: number | undefined;
   onShown: (pr: PrSummary) => void;
   onOpen: (pr: PrSummary, newTab: boolean) => void;
@@ -258,6 +266,16 @@ function PrRow({
           <span className="gg-row__chip" title={`Stacked: ${pr.nativeStack.position} of ${pr.nativeStack.size}`}>
             <Icon name="stack" size={12} />
             {pr.nativeStack.position}/{pr.nativeStack.size}
+          </span>
+        )}
+        {/* A stack GitHub doesn't track is known only from branch names, counted among the PRs the inbox has. */}
+        {stackPlace?.untracked && (
+          <span
+            className="gg-row__chip gg-row__chip--attention"
+            title={`${stackPlace.position} of ${stackPlace.size} in a stack GitHub doesn't track (worked out from branch names)`}
+          >
+            <Icon name="stack" size={12} />
+            {stackPlace.position}/{stackPlace.size}
           </span>
         )}
       </span>

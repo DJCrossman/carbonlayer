@@ -4,8 +4,9 @@
 // row of globex's, the viewer's other organization. The viewer is octocat. Ages are relative to page load so the
 // harness always looks current. Each row has its checks, which the fixture source hands out only as GitHub would: the
 // dashboard's rollup at first, the list (with the required ones) when enriching a failing rollup. The rows in "Needs
-// anyone's review" have no line counts and no merge state. The native stacks' rows chain by branch, which the fixture
-// source names when asked for branches ("Group by stack").
+// anyone's review" have no line counts and no merge state. The stacks' rows chain by branch, which the fixture source
+// names when asked for branches ("Group by stack"): octocat's is one of GitHub's own, across sections, nat's in "Needs
+// your review" a Graphite stack GitHub doesn't track.
 import type { Fixtures, InboxFixtureRow } from '../app/data-source';
 import type { CheckRunSummary, CheckState, CiSummary, UserRef } from '../lib/model';
 import { DEFAULT_VIEWS } from '../lib/views';
@@ -133,7 +134,6 @@ function prsFor(viewId: string): InboxFixtureRow[] {
           title: 'Extract DatePicker into @acme/ui',
           author: nat,
           updated: 2 * DAY + 4 * HOUR,
-          nativeStack: { position: 2, size: 4 },
           headRefName: 'nat/extract-date-picker',
           baseRefName: 'nat/date-picker-tokens',
           reviewers: [{ kind: 'user', user: octocat, state: 'PENDING' }],
@@ -149,7 +149,6 @@ function prsFor(viewId: string): InboxFixtureRow[] {
           title: 'Use the shared DatePicker in the booking flow',
           author: nat,
           updated: 3 * DAY,
-          nativeStack: { position: 3, size: 4 },
           headRefName: 'nat/booking-date-picker',
           baseRefName: 'nat/extract-date-picker',
           reviewers: [{ kind: 'user', user: octocat, state: 'PENDING' }],

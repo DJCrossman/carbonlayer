@@ -23,7 +23,7 @@ import { SectionEditor } from './SectionEditor';
 import { SectionsSidebar } from './SectionsSidebar';
 import { moveSelection, type SelectedRow } from './selection';
 import { ShortcutHelp } from './ShortcutHelp';
-import { rowsByStack } from './stacks';
+import { rowsByStack, stackPlaces } from './stacks';
 import './inbox.css';
 
 export function InboxPage({ source, route }: { source: DataSource; route: Extract<AppRoute, { page: 'inbox' }> }) {
@@ -48,11 +48,14 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
 
   // How each section orders its rows, as its column headers were last clicked (this visit only).
   const [sorts, setSorts] = useState<Record<string, SectionSort>>({});
-  // The open rows' branches, "Load more"'s too, looked up or remembered before grouping by stack shows the rows.
+  // Each section's open rows' branches, "Load more"'s too, looked up or remembered before grouping by stack shows the rows.
   const stackBranches = useStackBranches(
     source,
     settings?.inboxGroupByStack === true,
-    inbox.results?.flatMap((result) => [...result.prs, ...(moreRows.addedTo(result.view, settings?.inboxScope ?? '')?.prs ?? [])]).filter((pr) => pr.state === 'OPEN') ?? [],
+    inbox.results?.map((result) => ({
+      viewId: result.view.id,
+      openRows: [...result.prs, ...(moreRows.addedTo(result.view, settings?.inboxScope ?? '')?.prs ?? [])].filter((pr) => pr.state === 'OPEN'),
+    })) ?? [],
   );
   // Each section's rows, those "Load more" added after the first page's, with what enrichment has found, in the order the
   // section shows them, which j / k follow too.
@@ -79,14 +82,16 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
       });
       return { ...result, prs };
     }) ?? [];
+  // Where each row sits in its stack, among every row the inbox has, so a stack joins through a PR another section shows;
+  // grouped by stack or not, a stack GitHub doesn't track gets a chip from it.
+  const places = stackPlaces(sections.flatMap((result) => result.prs));
   // Grouped by stack, a section shows each stack's rows together, the top first and the others hanging under it (their
-  // ids, by view id); a stack joins through a PR another section shows.
-  const known = sections.flatMap((result) => result.prs);
+  // ids, by view id).
   const stackedByView = new Map<string, ReadonlySet<string>>();
   const resultsByView = new Map(
     sections.map((result) => {
       if (!settings?.inboxGroupByStack) return [result.view.id, result];
-      const rows = rowsByStack(result.prs, known);
+      const rows = rowsByStack(result.prs, places);
       stackedByView.set(result.view.id, new Set(rows.filter((row) => row.stacked).map((row) => row.pr.id)));
       return [result.view.id, { ...result, prs: rows.map((row) => row.pr) }];
     }),
@@ -388,9 +393,9 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
                     viewerLogin={viewerLogin}
                     enrichmentOf={(pr) => enrichment.found.get(pr.id)?.enrichment}
                     stackedPrIds={stackedByView.get(view.id)}
-                    // Until the first lookup of the branches has settled, a section with open rows shows skeleton rows, so
-                    // it appears already grouped.
-                    awaitingStacks={settings.inboxGroupByStack && !stackBranches.settled && result?.prs.some((pr) => pr.state === 'OPEN') === true}
+                    stackPlaces={places}
+                    // Until its open rows' branches are known, a section shows skeleton rows, so it appears already grouped.
+                    awaitingStacks={stackBranches.awaiting(view.id)}
                     more={more}
                     onSort={(by) => sortSection(view.id, by)}
                     onRowShown={(pr) => enrichment.want(dashboardRows.get(pr.id) ?? pr)}
@@ -639,22 +644,26 @@ function useRowEnrichment(source: DataSource) {
 }
 
 /**
- * The open rows' branches, by PR id, by which "Group by stack" chains them before (and whether or not) a row is enriched.
- * What GitHub named is remembered in storage.local (`stackBranches`) for a week after it last did; while `enabled`, GitHub
- * is asked (each PR's page header) about every open row with nothing remembered, or nothing from the last day, 25 rows a
- * request and one request at a time, each row once a page load. `settled` once every open row given so far has its
- * branches, or GitHub had none for it, or 4 s after the first question, whichever comes first; it stays so, and rows given
- * later join their stacks as their branches arrive. Without storage (the harness) nothing is remembered.
+ * The open rows' branches, by PR id, by which "Group by stack" chains them before (and whether or not) a row is enriched,
+ * and which sections wait for theirs. What GitHub named is remembered in storage.local (`stackBranches`) for a week after
+ * it last did; while `enabled`, GitHub is asked (each PR's page header) about every open row with nothing remembered, or
+ * nothing from the last day, each row once a page load: 25 rows a request and up to three requests at once, the rows of
+ * the sections higher up first (`sections` comes in their order). A section is `awaiting` until each of its open rows has
+ * its branches, or GitHub had none for it, or 8 s after its rows were first asked about, whichever comes first; once
+ * shown it stays so, and rows that join it later join their stacks as their branches arrive. Without storage (the
+ * harness) nothing is remembered.
  */
-function useStackBranches(source: DataSource, enabled: boolean, openRows: PrSummary[]) {
+function useStackBranches(source: DataSource, enabled: boolean, sections: Array<{ viewId: string; openRows: PrSummary[] }>) {
   // Null until the remembered copy has been read; a row GitHub named no branches for maps to null.
   const [found, setFound] = useState<ReadonlyMap<string, StackBranches | null> | null>(null);
-  const [firstAskedAt, setFirstAskedAt] = useState<number | null>(null);
-  const [settledBefore, setSettledBefore] = useState(false);
+  // When each section's rows were first asked about, and the sections shown since, by view id.
+  const [askedAt, setAskedAt] = useState<ReadonlyMap<string, number>>(new Map());
+  const [shown, setShown] = useState<ReadonlySet<string>>(new Set());
   const remembered = useRef<Record<string, StackBranches & { seenAt: string }>>({});
   const asked = useRef(new Set<string>());
   const queue = useRef<PrSummary[]>([]);
-  const asking = useRef(false);
+  // The requests asking GitHub now, each taking the next 25 rows of the queue until it is empty.
+  const inFlight = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -702,43 +711,51 @@ function useStackBranches(source: DataSource, enabled: boolean, openRows: PrSumm
         console.debug('[gg]', 'the branches looked up could not be remembered:', error instanceof Error ? error.message : error);
       }
     }
-    asking.current = false;
+    inFlight.current -= 1;
   }
 
   const askAboutRows = useEffectEvent(() => {
     if (!found) return;
     const wanted: PrSummary[] = [];
-    for (const pr of openRows) {
+    for (const pr of sections.flatMap((section) => section.openRows)) {
       const seenAt = remembered.current[pr.id]?.seenAt;
       if (asked.current.has(pr.id) || (seenAt !== undefined && Date.now() - Date.parse(seenAt) < DAY)) continue;
       asked.current.add(pr.id);
       wanted.push(pr);
     }
+    // A section with rows not answered yet, asked about now or before for another section, waits 8 s at most from now.
+    const waiting = sections.filter(({ viewId, openRows }) => !askedAt.has(viewId) && !openRows.every((pr) => found.has(pr.id)));
+    if (waiting.length > 0) setAskedAt((at) => new Map([...waiting.map(({ viewId }) => [viewId, Date.now()] as const), ...at]));
     if (wanted.length === 0) return;
     queue.current.push(...wanted);
-    setFirstAskedAt((at) => at ?? Date.now());
-    if (asking.current) return;
-    asking.current = true;
-    void askInTurn();
+    // Up to three requests at once: each takes its first 25 rows now, and the next 25 left once it is answered.
+    while (inFlight.current < 3 && queue.current.length > 0) {
+      inFlight.current += 1;
+      void askInTurn();
+    }
   });
-  const openKey = openRows.map((pr) => pr.id).join(' ');
+  // A section shown once stays shown, whatever rows join it later.
+  const keepShown = useEffectEvent(() => {
+    if (!enabled || !found) return;
+    const answered = sections.filter(({ viewId, openRows }) => !shown.has(viewId) && openRows.every((pr) => found.has(pr.id)));
+    if (answered.length > 0) setShown((ids) => new Set([...ids, ...answered.map(({ viewId }) => viewId)]));
+  });
+  const sectionsKey = sections.map(({ viewId, openRows }) => `${viewId}:${openRows.map((pr) => pr.id).join(',')}`).join(' ');
   useEffect(() => {
     if (enabled) askAboutRows();
-  }, [enabled, openKey, found === null]);
+  }, [enabled, sectionsKey, found === null]);
+  useEffect(() => keepShown(), [enabled, sectionsKey, found]);
 
-  // Every open row given so far has its branches, or GitHub had none for it.
-  const answered = found !== null && openRows.length > 0 && openRows.every((pr) => found.has(pr.id));
+  // A slow GitHub holds a section's rows back 8 s at most.
   useEffect(() => {
-    if (answered) setSettledBefore(true);
-  }, [answered]);
-  // A slow GitHub holds the rows back 4 s at most.
-  useEffect(() => {
-    if (firstAskedAt === null) return;
-    const timer = setTimeout(() => setSettledBefore(true), Math.max(0, firstAskedAt + 4000 - Date.now()));
-    return () => clearTimeout(timer);
-  }, [firstAskedAt]);
+    const timers = [...askedAt].map(([viewId, at]) => setTimeout(() => setShown((ids) => (ids.has(viewId) ? ids : new Set(ids).add(viewId))), Math.max(0, at + 8000 - Date.now())));
+    return () => timers.forEach((timer) => clearTimeout(timer));
+  }, [askedAt]);
 
-  return { branchesOf: (prId: string) => found?.get(prId) ?? undefined, settled: settledBefore || answered };
+  return {
+    branchesOf: (prId: string) => found?.get(prId) ?? undefined,
+    awaiting: (viewId: string) => enabled && !shown.has(viewId) && sections.some((section) => section.viewId === viewId && !section.openRows.every((pr) => found?.has(pr.id))),
+  };
 }
 
 /**

@@ -142,7 +142,10 @@ from the top bar's toggle.
 Rows follow Graphite's columns (`src/inbox/InboxSection.tsx`): unread dot, avatar, title with `author · owner/repo #N`,
 stacked reviewer avatars (three, then `+N`; a bot without an avatar gets its GitHub App's, else a bot glyph; the tooltip
 names each reviewer with their state, "jlord · approved"), a labels chip, Graphite's conversation counter (review threads
-resolved of all, "2/3", hidden without any; the PR page's stack card shows it on each entry too), the stack chip, then
+resolved of all, "2/3", hidden without any; the PR page's stack card shows it on each entry too), the stack chip (GitHub's
+own stack's position, grey; for a stack GitHub doesn't track, found from branch names as "Group by stack" finds it, the
+row's place counted up from the bottom-most PR the inbox knows, amber, grouped or not; `stackPlaces` in
+`src/inbox/stacks.ts`), then
 fixed Review, CI and Merge icon columns, line counts and age, under a header row whose Title, Changes and Updated sort
 the section (page state only); Changes and Updated keep 16px from their neighbours. Every icon says what it means on
 hover. Each status column is one function from the row's data to an icon, a tone and a tooltip (`reviewStatusIcon`,
@@ -188,11 +191,12 @@ repository (in any section) sits on it, and a section shows the stack where the 
 and the rest indented under it, top down. The branches come from each open PR's page header (`inbox.branches`:
 `page_data/header`'s `baseBranch` and `headBranch`, a fork's head branch left out, `branchesIn` in
 `src/lib/github-web/inbox.ts`; six PRs at a time, each kept 10 minutes), looked up first: while the switch is on, the
-inbox asks about every open row, 25 a request and one request at a time, and remembers the answers in `storage.local`
-(`stackBranches`) for a week, asking again after a day; a row's merge box, once enriched, has the last word. Until that
-first lookup has settled (every open row answered, or 4 s) a section with open rows shows skeleton rows, so it appears
-already grouped (at once when every row is remembered); rows that come later ("Load more", a refresh) join their stacks
-as their branches arrive.
+inbox asks about every open row, 25 a request and up to three requests at once, the rows of the sections higher up
+first, and remembers the answers in `storage.local` (`stackBranches`) for a week, asking again after a day; a row's merge
+box, once enriched, has the last word. Until each of its open rows is answered (or 8 s after they were first asked
+about) a section shows skeleton rows, so it appears already grouped (at once when every row is remembered), each section
+on its own; once shown it stays so, and rows that come later ("Load more", a refresh) join their stacks as their
+branches arrive.
 
 Section counts read `sectionCount` (`99+` above 99, `<limit>+` for a view cut short below that). A section shows
 GitHub's first page of rows (cut to the view's `limit`, default 50); while GitHub counts more, "Load more" at its foot

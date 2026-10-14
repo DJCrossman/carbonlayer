@@ -6,10 +6,41 @@ import type { PrSummary } from '../lib/model';
 
 /**
  * A section's rows, in its order, with each stack's together: the stack where the first of its rows sorts, its top (the
- * row furthest from trunk) first and the others below it, top down, `stacked`. A row's place in its stack is found among
- * `known`, every row the inbox has, so a stack joins through a PR another section shows.
+ * row furthest from trunk) first and the others below it, top down, `stacked`. A row's place in its stack is the one
+ * `stackPlaces` found among every row the inbox has, so a stack joins through a PR another section shows.
  */
-export function rowsByStack(prs: PrSummary[], known: PrSummary[]): Array<{ pr: PrSummary; stacked: boolean }> {
+export function rowsByStack(prs: PrSummary[], places: ReadonlyMap<string, StackPlace>): Array<{ pr: PrSummary; stacked: boolean }> {
+  // Each stack's rows by the PR at its bottom (a row in no stack is its own). Groups keep the order their first rows
+  // came in.
+  const stacks = new Map<string, Array<{ pr: PrSummary; position: number }>>();
+  for (const pr of prs) {
+    const place = places.get(pr.id);
+    const bottomId = place?.bottomId ?? pr.id;
+    const stack = stacks.get(bottomId) ?? [];
+    stack.push({ pr, position: place?.position ?? 1 });
+    stacks.set(bottomId, stack);
+  }
+
+  return [...stacks.values()].flatMap((stack) => stack.toSorted((a, b) => b.position - a.position).map(({ pr }, index) => ({ pr, stacked: index > 0 })));
+}
+
+/** Where a row sits in its stack, among the pull requests the inbox knows. */
+export interface StackPlace {
+  /** The stack's bottom-most known PR, the same for each of its rows. */
+  bottomId: string;
+  /** Counted from the bottom, as GitHub counts: the bottom-most known PR is 1. */
+  position: number;
+  /** How many known PRs the stack has, a fork's branches included. */
+  size: number;
+  /** GitHub doesn't track the row's stack (the row has no native stack): its place is worked out from branch names alone. */
+  untracked: boolean;
+}
+
+/**
+ * Where each of `known`'s rows sits in its stack, by PR id: only rows in a stack of two or more, so a row on nothing
+ * known, or whose branches are not known yet, has no place.
+ */
+export function stackPlaces(known: PrSummary[]): Map<string, StackPlace> {
   // The PR whose head is each branch, by `owner/name:branch`; the first known wins.
   const byHead = new Map<string, PrSummary>();
   for (const pr of known) {
@@ -17,10 +48,11 @@ export function rowsByStack(prs: PrSummary[], known: PrSummary[]): Array<{ pr: P
     if (pr.headRefName && !byHead.has(branch)) byHead.set(branch, pr);
   }
 
-  // Each stack's rows by the PR at its bottom (a row on nothing known, or not enriched yet, is its own), each with its
-  // height, the steps down to that bottom. Groups keep the order their first rows came in.
-  const stacks = new Map<string, Array<{ pr: PrSummary; height: number }>>();
-  for (const pr of prs) {
+  // Each row's bottom (a row on nothing known, or not looked up yet, is its own) and its height, the steps down to that
+  // bottom; a PR two sections show counts once.
+  const chains = new Map<string, { pr: PrSummary; bottomId: string; height: number }>();
+  for (const pr of known) {
+    if (chains.has(pr.id)) continue;
     let bottom = pr;
     let height = 0;
     if (pr.headRefName && pr.baseRefName) {
@@ -35,10 +67,15 @@ export function rowsByStack(prs: PrSummary[], known: PrSummary[]): Array<{ pr: P
         below = byHead.get(`${repository}:${below.baseRefName}`);
       }
     }
-    const stack = stacks.get(bottom.id) ?? [];
-    stack.push({ pr, height });
-    stacks.set(bottom.id, stack);
+    chains.set(pr.id, { pr, bottomId: bottom.id, height });
   }
 
-  return [...stacks.values()].flatMap((stack) => stack.toSorted((a, b) => b.height - a.height).map(({ pr }, index) => ({ pr, stacked: index > 0 })));
+  const sizes = new Map<string, number>();
+  for (const { bottomId } of chains.values()) sizes.set(bottomId, (sizes.get(bottomId) ?? 0) + 1);
+  const places = new Map<string, StackPlace>();
+  for (const [id, { pr, bottomId, height }] of chains) {
+    const size = sizes.get(bottomId) ?? 1;
+    if (size > 1) places.set(id, { bottomId, position: height + 1, size, untracked: pr.nativeStack === null });
+  }
+  return places;
 }
