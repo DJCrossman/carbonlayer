@@ -152,6 +152,14 @@
   background: var(--gg-success-bg);
 }
 .merge-confirm .merge-row { justify-content: flex-end; }
+.side-status-revert { margin-left: auto; }
+.revert-confirm {
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: var(--gg-radius);
+  background: var(--gg-bg-subtle);
+}
+.revert-confirm .merge-row { justify-content: flex-end; margin-top: 8px; }
 
 .side-list {
   margin: 0;

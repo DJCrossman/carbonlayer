@@ -6,7 +6,7 @@ import type { PrDetail } from '../model';
 import type { MergeMethod, RpcMethods } from '../rpc';
 import { rerunWorkflowJobs } from './actions';
 import type { MergeBox } from './merge-box';
-import { getJson, send } from './session';
+import { SIGNED_OUT, getJson, send } from './session';
 
 export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox.fetchMore' | 'inbox.enrich' | 'inbox.branches' | 'repos.search' | 'repos.top' | 'orgs.list' | `pr.fetch${string}` | 'pr.reviewerCandidates'>]: (args: RpcMethods[M]['args']) => Promise<RpcMethods[M]['result']> } = {
   'pr.review': async ({ prId, event, body, threads }) => {
@@ -77,6 +77,29 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
   },
   'pr.setDraft': async ({ prId, draft }) => {
     await send(`${pullRequestFor(prId).path}/page_data/${draft ? 'convert_to_draft' : 'mark_ready_for_review'}`, 'POST');
+  },
+  'pr.revert': async ({ prId }) => {
+    // GitHub's own Revert button: an empty POST that makes a branch undoing the merge, then redirects to the prefilled
+    // "Open a pull request" page for it, where the revert pull request is created (GitHub's PR bundle, 2026-10-14).
+    let response: Response;
+    try {
+      response = await fetch(`${pullRequestFor(prId).path}/revert`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'GitHub-Verified-Fetch': 'true',
+          'GitHub-Is-React': 'true',
+          'X-Requested-With': 'XMLHttpRequest',
+          'X-Fetch-Nonce': document.querySelector('meta[name="fetch-nonce"]')?.getAttribute('content') ?? '',
+          'X-GitHub-Client-Version': document.querySelector('meta[name="release"]')?.getAttribute('content') ?? '',
+        },
+      });
+    } catch {
+      throw new Error('Could not reach GitHub (network error)');
+    }
+    if (response.redirected && new URL(response.url).pathname === '/login') throw new Error(SIGNED_OUT);
+    if (!response.ok) throw new Error(`GitHub answered ${response.status} to the revert`);
+    return { url: response.url };
   },
   'pr.modifyReviewers': async ({ prId, add, remove }) => {
     // GitHub's picker sends the whole change once, naming users and teams by numeric id.

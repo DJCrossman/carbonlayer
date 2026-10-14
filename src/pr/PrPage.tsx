@@ -21,7 +21,7 @@ import { useCheckReruns } from './check-reruns';
 import { Markdown } from './Comment';
 import { FilesSection, useFileReview } from './Files';
 import { usePrKeybindings } from './keybindings';
-import { goToPr, openOnGitHub } from './navigation';
+import { followLink, goToPr, openOnGitHub } from './navigation';
 import { prDetailFrom, usePrPageData, type PrPageData } from './page-data';
 import { StageError, Staged, StatePill } from './primitives';
 import { QuickApproveDialog, ReviewComposer, type ReviewEvent } from './ReviewComposer';
@@ -335,6 +335,18 @@ function PrView({
             'Could not change Merge when ready',
             { undo: () => setEdits((current) => ({ ...current, autoMerge: null })) },
           );
+        }}
+        onRevert={async () => {
+          try {
+            const { url } = await source.revert(pr.id);
+            // GitHub's prefilled page for the revert pull request, where it is created.
+            if (url) followLink(url);
+            else showToast('GitHub made the revert branch; open its pull request from GitHub');
+            return true;
+          } catch (reason) {
+            showToast(`Could not revert: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger');
+            return false;
+          }
         }}
         onMarkReady={() => setDraft(false)}
         onMerge={(method) => mutate(STAGES_A_WRITE_CHANGES['pr.merge'], () => source.merge(pr.id, method, pr.headOid), 'Could not merge', { success: `Merged #${pr.number}` })}

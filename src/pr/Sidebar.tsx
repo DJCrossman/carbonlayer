@@ -24,6 +24,7 @@ export function Sidebar({
   onRetry,
   mergeMethod,
   onAutoMerge,
+  onRevert,
   onMarkReady,
   onMerge,
   onViewThreads,
@@ -37,6 +38,8 @@ export function Sidebar({
   /** The method the viewer prefers, already narrowed to what the repository allows. */
   mergeMethod: MergeMethod;
   onAutoMerge: (enabled: boolean, method: MergeMethod) => Promise<boolean>;
+  /** Reverts the merged PR; resolves false when it did not, after saying why. */
+  onRevert: () => Promise<boolean>;
   onMarkReady: () => Promise<boolean>;
   onMerge: (method: MergeMethod) => Promise<boolean>;
   onViewThreads: () => void;
@@ -46,7 +49,7 @@ export function Sidebar({
 }) {
   return (
     <aside className="pr-sidebar" aria-label="Status">
-      <StatusCard pr={pr} mergeMethod={mergeMethod} onAutoMerge={onAutoMerge} />
+      <StatusCard pr={pr} mergeMethod={mergeMethod} onAutoMerge={onAutoMerge} onRevert={onRevert} />
       <ActionCard pr={pr} data={data} onRetry={onRetry} mergeMethod={mergeMethod} onMarkReady={onMarkReady} onMerge={onMerge} onViewThreads={onViewThreads} />
       <Staged state={data.checks} what="the checks" onRetry={() => onRetry(['checks'])} skeleton={<SideCardSkeleton title="Checks" rows={3} />}>
         {({ emptyReason }) =>
@@ -110,8 +113,20 @@ export function Sidebar({
   );
 }
 
-function StatusCard({ pr, mergeMethod, onAutoMerge }: { pr: PrDetail; mergeMethod: MergeMethod; onAutoMerge: (enabled: boolean, method: MergeMethod) => Promise<boolean> }) {
+function StatusCard({
+  pr,
+  mergeMethod,
+  onAutoMerge,
+  onRevert,
+}: {
+  pr: PrDetail;
+  mergeMethod: MergeMethod;
+  onAutoMerge: (enabled: boolean, method: MergeMethod) => Promise<boolean>;
+  onRevert: () => Promise<boolean>;
+}) {
   const [busy, setBusy] = useState(false);
+  // Reverting creates a branch on GitHub, so it asks first.
+  const [revert, setRevert] = useState<'idle' | 'confirming' | 'reverting'>('idle');
   // The method Merge when ready merges with: auto-merge's own while it is on, else the one picked here.
   const [picked, setPicked] = useState<MergeMethod>(mergeMethod);
   const method = pr.autoMerge?.method ?? picked;
@@ -134,7 +149,36 @@ function StatusCard({ pr, mergeMethod, onAutoMerge }: { pr: PrDetail; mergeMetho
             {endedAt && <RelativeTime date={endedAt} ago />}
           </span>
         )}
+        {pr.state === 'MERGED' && pr.viewerCanUpdate && revert === 'idle' && (
+          <Button size="sm" className="side-status-revert" title="Make a branch that undoes this pull request, and open its pull request" onClick={() => setRevert('confirming')}>
+            Revert
+          </Button>
+        )}
       </div>
+      {revert !== 'idle' && (
+        <div className="revert-confirm">
+          <div>
+            Create a branch that undoes <strong>#{pr.number}</strong>, then open its pull request on GitHub?
+          </div>
+          <div className="merge-row">
+            <Button onClick={() => setRevert('idle')} disabled={revert === 'reverting'}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              autoFocus
+              disabled={revert === 'reverting'}
+              onClick={async () => {
+                setRevert('reverting');
+                // On success the page moves on to GitHub's; on failure it stays, with the reason in a toast.
+                if (!(await onRevert())) setRevert('confirming');
+              }}
+            >
+              {revert === 'reverting' ? 'Reverting…' : 'Revert'}
+            </Button>
+          </div>
+        </div>
+      )}
       {pr.state === 'OPEN' && (pr.viewerCanEnableAutoMerge || pr.autoMerge !== null) && (
         <div className="side-switch-row">
           <label className="side-switch">

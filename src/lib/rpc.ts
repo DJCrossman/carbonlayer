@@ -63,6 +63,8 @@ export interface RpcMethods {
   'pr.resolveThread': { args: { threadId: string; resolved: boolean }; result: undefined };
   'pr.markFileViewed': { args: { prId: string; path: string; viewed: boolean }; result: undefined };
   'pr.setDraft': { args: { prId: string; draft: boolean }; result: undefined };
+  /** Reverts a merged PR as GitHub's Revert button does: a branch undoing it, and where GitHub opens its pull request. */
+  'pr.revert': { args: { prId: string }; result: { url: string } };
   'pr.setAutoMerge': { args: { prId: string; enabled: boolean; method: MergeMethod }; result: undefined };
   /** Whom the viewer can ask for a review: GitHub's suggestions, then everyone else matching `query`. */
   'pr.reviewerCandidates': { args: { prId: string; query: string }; result: { suggested: ReviewerCandidate[]; reviewers: ReviewerCandidate[] } };
@@ -93,6 +95,8 @@ export const STAGES_A_WRITE_CHANGES = {
   'pr.resolveThread': ['threads'],
   'pr.markFileViewed': ['files'],
   'pr.setDraft': ['header', 'activity', 'mergeBox'],
+  // The page moves on to GitHub's page for the revert pull request; nothing shown here changes.
+  'pr.revert': [],
   'pr.setAutoMerge': ['mergeBox'],
   'pr.modifyReviewers': ['mergeBox'],
   'pr.reRequestReview': ['mergeBox'],

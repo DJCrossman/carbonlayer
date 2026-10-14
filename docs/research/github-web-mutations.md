@@ -61,6 +61,13 @@ Returned 200 signed out (curl), keys confirmed:
 - `diff_entry_lines?path=&context_line_ranges[]=<json>&w=&range=`: `{ diffEntryLines }`.
 - Also 200: `review_requests`, `stacks`, `conversation_comments`, `timeline`, `header`, `description`,
   `participants`, `labels`, `assignees`, `development`, `deployments`, `code_button`, `annotations?end_commit_oid=`.
+- **Revert a merged PR** (read from GitHub's PR bundle, `RevertPRAction`, 2026-10-14; not yet sent): an empty
+  `POST /{owner}/{repo}/pull/{n}/revert` through `verifiedFetch` (`GitHub-Verified-Fetch`, `GitHub-Is-React`,
+  `X-Requested-With`, `X-Fetch-Nonce`, `X-GitHub-Client-Version`), no body. GitHub's UI ignores the answer's body, follows
+  the redirect and sends the browser to `response.url`, labelled "Opening revert pull request"; that is presumably the
+  prefilled compare page for the `revert-<n>-<head branch>` branch (title `Revert "<title>"`, body `Reverts <owner>/<repo>#<n>`),
+  unseen signed in. GitHub shows the button for MERGED PRs when the overview route's `user.canRevert` is true; the
+  layout route has no such flag, so CarbonLayer shows it to viewers who can edit the PR and lets GitHub refuse the rest.
 Need a session (404 signed out): `status_checks`, `merge_box`, `stack_mergeability`, `pending_review`,
 `merge_instructions`, `stack_rebase_status`, `user_diff_view_settings`; `catch_up` → 422.
 - `status_checks` (no params; VERIFIED signed in on 2026-10-12 from the React Query cache of GitHub's own PR page):

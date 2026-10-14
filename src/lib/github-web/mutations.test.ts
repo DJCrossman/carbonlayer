@@ -111,6 +111,18 @@ describe('mutations', () => {
     ]);
   });
 
+  it("reverts as GitHub's Revert button does, and says where GitHub went next", async () => {
+    const landed = 'https://github.com/o/r/compare/main...revert-1-feature?expand=1';
+    const fetch = vi.fn(async () => Object.defineProperty(new Response('<html></html>'), 'url', { value: landed }));
+    vi.stubGlobal('fetch', fetch);
+    await expect(mutations['pr.revert']({ prId: 'PR_1' })).resolves.toEqual({ url: landed });
+    expect(fetch).toHaveBeenCalledWith('/o/r/pull/1/revert', expect.objectContaining({ method: 'POST', credentials: 'same-origin' }));
+    expect(fetch.mock.calls[0]).not.toHaveProperty([1, 'body']);
+    expect(fetch.mock.calls[0]).toHaveProperty([1, 'headers', 'GitHub-Verified-Fetch'], 'true');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 422 })));
+    await expect(mutations['pr.revert']({ prId: 'PR_1' })).rejects.toThrow('GitHub answered 422 to the revert');
+  });
+
   it('refuses to write to a pull request the app has not loaded', async () => {
     await expect(mutations['pr.comment']({ prId: 'PR_unknown', body: 'x' })).rejects.toThrow('Open the pull request first');
     await expect(mutations['pr.resolveThread']({ threadId: 'nope', resolved: true })).rejects.toThrow('Open the pull request first');

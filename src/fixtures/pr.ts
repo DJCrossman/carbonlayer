@@ -583,4 +583,20 @@ const detail41: PrDetail = {
   unresolvedThreadCount: 0,
 };
 
-export const prFixtures: PrDetail[] = [detail42, detail41];
+export const prFixtures: PrDetail[] = [
+  detail42,
+  detail41,
+  // A merged pull request, for the harness's merged state (its Revert button): #41 as it looks once merged.
+  {
+    ...detail41,
+    id: 'PR_kwDOAcme39',
+    number: 39,
+    title: 'Add the PARCS client settings',
+    url: 'https://github.com/acme/widgets/pull/39',
+    state: 'MERGED',
+    mergedAt: '2026-10-09T15:20:00Z',
+    mergeStatus: 'UNKNOWN',
+    viewerCanMerge: false,
+    stack: { entries: [], currentIndex: 0, trunk: 'main', source: 'none' },
+  },
+];

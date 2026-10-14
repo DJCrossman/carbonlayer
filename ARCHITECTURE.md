@@ -37,7 +37,8 @@ App (iframe) → `window.parent.postMessage` RPC (`src/lib/rpc.ts`) → content 
 uses (`/pulls/inbox/queries`, `/pulls/search`, `/pulls/…/deferred`, `/{o}/{r}/pull/{n}/page_data/*`,
 `/repositories/picker/search`, the pages' embedded `react-app.embeddedData`) with the session cookies → normalised domain objects
 (`src/lib/model.ts`) are posted back. Writes go to the `page_data/*` routes GitHub's PR page posts
-to, except re-running checks: the PR page cannot, so `github-web/actions.ts` submits the classic form GitHub's Actions
+to (reverting a merged PR is an empty POST to `/pull/{n}/revert`, as GitHub's Revert button sends, landing on GitHub's
+prefilled page for the revert pull request), except re-running checks: the PR page cannot, so `github-web/actions.ts` submits the classic form GitHub's Actions
 run page loads into its re-run dialog. See `docs/research/github-web-endpoints.md`, `github-web-mutations.md` and
 `github-web-reviewers.md`. No api.github.com, no token. The background service worker only brokers the one-click copy from Graphite (below).
 

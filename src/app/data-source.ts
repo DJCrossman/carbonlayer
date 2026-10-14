@@ -44,6 +44,8 @@ export interface DataSource {
   resolveThread(threadId: string, resolved: boolean): Promise<void>;
   markFileViewed(prId: string, path: string, viewed: boolean): Promise<void>;
   setDraft(prId: string, draft: boolean): Promise<void>;
+  /** Reverts a merged PR; resolves with GitHub's page for the revert pull request. */
+  revert(prId: string): Promise<{ url: string }>;
   setAutoMerge(prId: string, enabled: boolean, method: MergeMethod): Promise<void>;
   reviewerCandidates(prId: string, query: string): Promise<{ suggested: ReviewerCandidate[]; reviewers: ReviewerCandidate[] }>;
   modifyReviewers(prId: string, add: ReviewerChange[], remove: ReviewerChange[]): Promise<void>;
@@ -75,6 +77,7 @@ export function createRpcDataSource(): DataSource {
     resolveThread: (threadId, resolved) => rpc('pr.resolveThread', { threadId, resolved }),
     markFileViewed: (prId, path, viewed) => rpc('pr.markFileViewed', { prId, path, viewed }),
     setDraft: (prId, draft) => rpc('pr.setDraft', { prId, draft }),
+    revert: (prId) => rpc('pr.revert', { prId }),
     setAutoMerge: (prId, enabled, method) => rpc('pr.setAutoMerge', { prId, enabled, method }),
     reviewerCandidates: (prId, query) => rpc('pr.reviewerCandidates', { prId, query }),
     modifyReviewers: (prId, add, remove) => rpc('pr.modifyReviewers', { prId, add, remove }),
@@ -228,6 +231,10 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     resolveThread: (...args) => log('resolveThread', ...args),
     markFileViewed: (...args) => log('markFileViewed', ...args),
     setDraft: (...args) => log('setDraft', ...args),
+    revert: async (...args) => {
+      await log('revert', ...args);
+      return { url: 'https://github.com/acme/widgets/compare/main...revert-41-parcs-client?expand=1' };
+    },
     setAutoMerge: (...args) => log('setAutoMerge', ...args),
     reviewerCandidates: async (_prId, query) => {
       const needle = query.trim().toLowerCase();
