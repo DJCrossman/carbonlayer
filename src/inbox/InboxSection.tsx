@@ -241,8 +241,9 @@ function PrRow({
   // One line a reviewer: "jlord · approved".
   const reviewersTitle = pr.reviewers.map((reviewer) => `${reviewer.user.login} · ${REVIEWER_STATE_WORDS[reviewer.state]}`).join('\n');
 
+  // `data-pr-id` tells the copy keys (InboxPage) which PR the row under the pointer is.
   return (
-    <div ref={row} className={`gg-row${stacked ? ' gg-row--stacked' : ''}${selected ? ' is-selected' : ''}`} onClick={open}>
+    <div ref={row} className={`gg-row${stacked ? ' gg-row--stacked' : ''}${selected ? ' is-selected' : ''}`} data-pr-id={pr.id} onClick={open}>
       <span className="gg-row__unread">{pr.unread && <span className="gg-row__dot" title="Unread" />}</span>
       <Avatar user={pr.author} size={20} />
       <div className="gg-row__main">

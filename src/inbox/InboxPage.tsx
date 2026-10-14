@@ -1,16 +1,19 @@
 // The inbox (the github.com homepage): one organization's pull requests at a time, chosen in the top bar (or, before any
 // is chosen, on a first screen of its own), with Graphite's sections sidebar beside one collapsible card per saved view,
-// Graphite-dense rows, j/k keyboard navigation, shareable view lists, and Graphite's section editor in a drawer. Data
-// comes through the DataSource; navigation goes through the parent page (src/app/bridge.ts).
+// Graphite-dense rows, j/k keyboard navigation, Linear's copy shortcuts for the row under the pointer, shareable view
+// lists, and Graphite's section editor in a drawer. Data comes through the DataSource; navigation goes through the
+// parent page (src/app/bridge.ts).
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { postToParent } from '../app/bridge';
+import { COPY_KEYBINDINGS, copyPullRequest } from '../app/copy-pull-request';
 import type { DataSource } from '../app/data-source';
 import { useRefreshOnReturn } from '../app/refresh-on-return';
 import { toGitHubUrl, type AppRoute } from '../app/routes';
 import type { Organization, PrEnrichment, PrSummary, RepoRef, StackBranches, TopRepository, View, ViewResult } from '../lib/model';
 import type { Settings } from '../lib/settings';
 import { encodeViewsShareLink, sectionCount } from '../lib/views';
+import { createChordReader } from '../pr/keybindings';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
 import { RelativeTime } from '../ui/RelativeTime';
@@ -111,6 +114,18 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
     const target = event.target;
     if (target instanceof HTMLElement && (target.isContentEditable || target.matches('input, textarea, select'))) return;
+    const copy = readCopyKey(event);
+    if (copy !== null && copy !== 'pending') {
+      // The row under the pointer, else the one selected. With neither, or for ⌘C with text selected, the key stays the
+      // browser's.
+      const row = document.querySelector<HTMLElement>('.gg-row:hover');
+      const at = row?.dataset.prId ? { viewId: row.closest<HTMLElement>('[data-view-id]')?.dataset.viewId ?? '', prId: row.dataset.prId } : selected;
+      const pr = at && resultsByView.get(at.viewId)?.prs.find((candidate) => candidate.id === at.prId);
+      if (!pr || (copy.action === 'copy-title-link' && document.getSelection()?.type === 'Range')) return;
+      event.preventDefault();
+      void copyPullRequest(pr, copy.action);
+      return;
+    }
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     if (event.key === 'Escape') {
       if (!helpOpen) return;
@@ -890,3 +905,6 @@ function openOnGitHub(url: string, newTab: boolean) {
   if (window.parent === window) window.open(url, '_blank');
   else postToParent({ type: 'gg:navigate', url, newTab });
 }
+
+/** Reads ⌘. / ⌘C / ⌘, (Ctrl off macOS), which copy a row's PR. */
+const readCopyKey = createChordReader(COPY_KEYBINDINGS, { isMac: navigator.userAgent.includes('Mac') });

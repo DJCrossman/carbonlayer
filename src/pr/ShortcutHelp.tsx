@@ -68,7 +68,8 @@ function ChordKeys({ chord }: { chord: string }) {
           {stroke.mod ? (isMac ? '⌘' : 'Ctrl+') : ''}
           {stroke.shift ? '⇧' : ''}
           {stroke.alt ? (isMac ? '⌥' : 'Alt+') : ''}
-          {({ ArrowDown: '↓', ArrowUp: '↑', Escape: 'Esc', Enter: '↵' } as Record<string, string>)[stroke.key] ?? stroke.key}
+          {/* ⌘C as menus write it; a key on its own stays as typed, since c and C are different bindings. */}
+          {({ ArrowDown: '↓', ArrowUp: '↑', Escape: 'Esc', Enter: '↵' } as Record<string, string>)[stroke.key] ?? (stroke.mod ? stroke.key.toUpperCase() : stroke.key)}
         </Kbd>
       ))}
     </span>

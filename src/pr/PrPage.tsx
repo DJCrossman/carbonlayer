@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { postToParent } from '../app/bridge';
+import { copyPullRequest } from '../app/copy-pull-request';
 import type { DataSource, ReviewThreadDraft } from '../app/data-source';
 import { useRefreshOnReturn } from '../app/refresh-on-return';
 import type { AppRoute } from '../app/routes';
@@ -290,6 +291,10 @@ function PrView({
         return document.getElementById('pr-description')?.scrollIntoView({ block: 'start' });
       case 'go-files':
         return document.getElementById('pr-files')?.scrollIntoView({ block: 'start' });
+      case 'copy-number':
+      case 'copy-title-link':
+      case 'copy-url':
+        return void copyPullRequest(pr, action);
       case 'help':
         return setHelpOpen((open) => !open);
       case 'close':

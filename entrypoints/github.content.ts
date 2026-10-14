@@ -283,6 +283,13 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
       // Enter and Space on a focused link or button belong to that control.
       if ((event.key === 'Enter' || event.key === ' ') && target instanceof Element && target.closest('a[href], button, summary, [role="button"], [role="menuitem"]')) return;
       if (document.querySelector('dialog[open], [aria-modal="true"]')) return;
+      // ⌘. / ⌘C / ⌘, copy the app's PR (src/app/copy-pull-request.ts), and only the focused document may write to the
+      // clipboard, so the frame takes the focus first. ⌘C with text selected on GitHub's page copies that text, as ever.
+      const copyKey = (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && ['.', 'c', ','].includes(event.key);
+      if (copyKey) {
+        if (event.key === 'c' && document.getSelection()?.type === 'Range') return;
+        ui.iframe.focus();
+      }
       post({
         type: 'gg:keydown',
         key: event.key,
@@ -293,10 +300,11 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute) {
         shiftKey: event.shiftKey,
       });
       const ownedByApp =
+        copyKey ||
         ((event.metaKey || event.ctrlKey) && event.shiftKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) ||
         (!event.metaKey && !event.ctrlKey && !event.altKey && APP_KEYS.has(event.key.toLowerCase()));
       if (!ownedByApp) return;
-      // GitHub binds several of these keys too, and they would act on the hidden page.
+      // GitHub binds several of these keys too, and they would act on the hidden page; Chrome binds ⌘, and ⌘. as well.
       event.preventDefault();
       event.stopPropagation();
     },

@@ -87,4 +87,23 @@ describe('createChordReader', () => {
     expect(mac()(key('r', 0, { metaKey: true }))).toBeNull();
     expect(mac()(key('f', 0, { ctrlKey: true }))).toBeNull();
   });
+
+  it("reads Linear's copy keys with ⌘ on macOS and Ctrl elsewhere, apart from c and its chords", () => {
+    expect(mac()(key('.', 0, { metaKey: true }))).toEqual({ action: 'copy-number' });
+    expect(mac()(key('c', 0, { metaKey: true }))).toEqual({ action: 'copy-title-link' });
+    expect(mac()(key(',', 0, { metaKey: true }))).toEqual({ action: 'copy-url' });
+    expect(mac()(key('c', 0, { ctrlKey: true }))).toBeNull();
+    const other = createChordReader(PR_KEYBINDINGS, { isMac: false });
+    expect(other(key(',', 0, { ctrlKey: true }))).toEqual({ action: 'copy-url' });
+    expect(other(key('c', 0, { metaKey: true }))).toBeNull();
+    const read = mac();
+    expect(read(key('c', 0))).toBe('pending');
+    expect(read(key('c', 100, { metaKey: true }))).toEqual({ action: 'copy-title-link' });
+  });
+
+  it('leaves ⌘⇧ and ⌘⌥ variants of the copy keys to the browser, even when the key does not show shift', () => {
+    expect(mac()(key('c', 0, { metaKey: true, shiftKey: true }))).toBeNull();
+    expect(mac()(key(',', 0, { metaKey: true, shiftKey: true }))).toBeNull();
+    expect(mac()(key('.', 0, { metaKey: true, altKey: true }))).toBeNull();
+  });
 });

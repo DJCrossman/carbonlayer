@@ -1,9 +1,11 @@
-// Graphite's PR-page keybindings: the document-level listener, the binding table (also rendered by the
-// help overlay and the legend), and a chord reader that understands sequences like "r c".
+// Graphite's PR-page keybindings, with Linear's copy shortcuts (src/app/copy-pull-request.ts): the document-level
+// listener, the binding table (also rendered by the help overlay and the legend), and a chord reader that understands
+// sequences like "r c".
 // The parent github.com page replays its own keystrokes into this document (entrypoints/app/main.tsx),
 // so one `keydown` listener on `document` sees both.
 
 import { useEffect, useRef } from 'react';
+import { COPY_KEYBINDINGS, type CopyAction } from '../app/copy-pull-request';
 
 /** Runs `onAction` for every PR keybinding pressed outside a text field. */
 export function usePrKeybindings(onAction: (action: PrAction) => void): void {
@@ -22,6 +24,9 @@ export function usePrKeybindings(onAction: (action: PrAction) => void): void {
       }
       const result = read(event);
       if (result === null) return;
+      // ⌘C copies the PR only while no text is selected; otherwise it is the browser's copy. A selection in a diff's shadow
+      // root reads as collapsed from here, but its type is still Range.
+      if (result !== 'pending' && result.action === 'copy-title-link' && document.getSelection()?.type === 'Range') return;
       event.preventDefault();
       if (result !== 'pending') onActionRef.current(result.action);
     };
@@ -54,6 +59,7 @@ export const PR_KEYBINDINGS: ReadonlyArray<{ chord: string; action: PrAction; la
   { chord: 'g d', action: 'go-description', label: 'Go to description' },
   { chord: 'g f', action: 'go-files', label: 'Go to files' },
   { chord: 'g h', action: 'open-github', label: 'Open on GitHub' },
+  ...COPY_KEYBINDINGS,
   { chord: '?', action: 'help', label: 'Show all shortcuts', legend: true },
   { chord: 'Escape', action: 'close', label: 'Close overlay' },
 ];
@@ -97,8 +103,9 @@ export function createChordReader<A>(
     const otherMod = isMac ? event.ctrlKey : event.metaKey;
     if (stroke.mod !== mod || otherMod || stroke.alt !== event.altKey) return false;
     // A printable key already carries its shift state ("?" is shift+/), so shift only matters for
-    // named keys such as ArrowDown.
-    if (stroke.key.length === 1) return event.key === stroke.key;
+    // named keys such as ArrowDown, and beside ⌘ / Ctrl, where the key may not show it (macOS can report
+    // ⌘⇧C as "c"): ⌘C must not take DevTools' ⌘⇧C.
+    if (stroke.key.length === 1 && !stroke.mod) return event.key === stroke.key;
     return event.key === stroke.key && stroke.shift === event.shiftKey;
   }
 }
@@ -138,6 +145,7 @@ type PrAction =
   | 'open-github'
   | 'go-description'
   | 'go-files'
+  | CopyAction
   | 'help'
   | 'close';
 

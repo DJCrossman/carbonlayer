@@ -85,6 +85,21 @@ whole `PrDetail` at once, composed from the stages.
 Stacks: GitHub-native `stack` from the PR page's embedded data first; otherwise Graphite's stack
 comment in the timeline, enriched through a `/pulls/search` query on the author's open PRs.
 
+## Keyboard
+
+The PR page's bindings are one table (`PR_KEYBINDINGS` in `src/pr/keybindings.ts`) that its `?` help and the legend at
+the foot of the page render; the inbox's keys are in `InboxPage`, listed by its own `?` help. None acts in a text field.
+A key typed on GitHub's page while the frame lacks focus reaches the app as `gg:keydown` and is replayed on its document.
+
+Both pages have Linear's copy shortcuts (`src/app/copy-pull-request.ts`), Ctrl for ⌘ off macOS, each confirmed in a
+toast: ⌘. copies the PR's number (`#9003`, which GitHub links within the repository), ⌘C its title as a link (an anchor
+as `text/html` for Slack, Linear or Docs, `[title](url)` as `text/plain`) and ⌘, its URL. The PR page copies its PR, the
+inbox the row under the pointer, else the row j / k selected, else nothing. ⌘C stays the browser's copy while text is
+selected, in a diff's shadow root too (the document's selection reads as collapsed there, but its type is `Range`). Only
+the focused document may write to the clipboard, so for a copy key typed on GitHub's page the content script focuses the
+frame before forwarding it, and keeps it from GitHub and Chrome; ⌘C with text selected on GitHub's page stays GitHub's.
+The legend has no room for them; Linear's ⌘⇧, for the URL is not bound.
+
 ## Organizations (inbox)
 
 The inbox shows one organization's pull requests at a time (`currentOrg` in settings: an organization the viewer belongs

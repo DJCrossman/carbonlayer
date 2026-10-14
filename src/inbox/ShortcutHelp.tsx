@@ -27,6 +27,9 @@ export function ShortcutHelp({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** ⌘ on macOS, Ctrl elsewhere; defined first, as SHORTCUTS is built when the module loads. */
+const MOD = navigator.userAgent.includes('Mac') ? '⌘' : 'Ctrl+';
+
 const SHORTCUTS: Array<[keys: string[], action: string]> = [
   [['j'], 'Next pull request'],
   [['k'], 'Previous pull request'],
@@ -34,6 +37,9 @@ const SHORTCUTS: Array<[keys: string[], action: string]> = [
   [['⇧O', '⇧↵'], 'Open in a new tab'],
   [['c'], 'Collapse or expand the section'],
   [['r'], 'Refresh'],
+  [[`${MOD}.`], "Copy the hovered PR's number"],
+  [[`${MOD}C`], 'Copy its title with link'],
+  [[`${MOD},`], 'Copy its URL'],
   [['?'], 'Show or hide shortcuts'],
   [['esc'], 'Close'],
 ];
