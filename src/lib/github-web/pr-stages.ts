@@ -16,7 +16,7 @@ import { rememberPullRequest } from './mutations';
 import { reviewDecisionOf, reviewersOf } from './reviews';
 import { SIGNED_OUT, embeddedPayload, getJson, getPage, githubUser } from './session';
 import { graphiteStackComment, resolveStack, type NativeStack } from './stack';
-import { reviewThreads } from './threads';
+import { conversationsIn, reviewThreads } from './threads';
 import { reactionsIn, timelineFrom } from './timeline';
 
 /** One stage of a PR's page. */
@@ -164,11 +164,24 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
       unread: null,
       isInMergeQueue: false,
       autoMerge: null,
+      // The page counts them from the threads it shows.
+      conversations: null,
     };
     return {
       stack: await resolveStack(
         { current, nativeStack: stack?.pulls?.length ? stack : null, page },
-        { mergeability: () => github.stackMergeability(), authorsOpenPulls: () => github.authorsOpenPulls(header.author.login) },
+        {
+          mergeability: () => github.stackMergeability(),
+          authorsOpenPulls: () => github.authorsOpenPulls(header.author.login),
+          // Kept with that PR's own answers, so its page reads them from memory should the viewer open it next.
+          conversations: (number) =>
+            answersFor({ repo: pull.repo, number, path: `/${pull.repo.owner}/${pull.repo.name}/pull/${number}` }, [])
+              .threads()
+              .then(conversationsIn, (error: unknown) => {
+                console.debug('[gg]', `page_data/threads for ${pull.repo.owner}/${pull.repo.name}#${number} failed; its stack entry shows no conversations:`, error instanceof Error ? error.message : error);
+                return null;
+              }),
+        },
       ),
     };
   },

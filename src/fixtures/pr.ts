@@ -48,6 +48,7 @@ const summary41: PrSummary = {
   isInMergeQueue: false,
   autoMerge: null,
   nativeStack: null,
+  conversations: { resolved: 1, total: 1 },
 };
 
 const checks42: PrSummary['ci']['checks'] = [
@@ -95,6 +96,7 @@ const summary42: PrSummary = {
   isInMergeQueue: false,
   autoMerge: null,
   nativeStack: null,
+  conversations: { resolved: 2, total: 3 },
 };
 
 const summary43: PrSummary = {
@@ -128,6 +130,7 @@ const summary43: PrSummary = {
   isInMergeQueue: false,
   autoMerge: null,
   nativeStack: null,
+  conversations: { resolved: 0, total: 0 },
 };
 
 const stackEntries = [summary41, summary42, summary43];
@@ -564,13 +567,35 @@ const detail41: PrDetail = {
       bodyHtml: '',
       createdAt: '2026-10-08T16:20:00Z',
       url: 'https://github.com/acme/widgets/pull/41#pullrequestreview-41',
-      threadIds: [],
+      threadIds: ['PRRT_fixture41'],
       // An approval without a body: GitHub offers nothing to react to.
       subjectId: null,
       reactions: [],
     },
   ],
-  threads: [],
+  threads: [
+    {
+      id: 'PRRT_fixture41',
+      path: 'src/parcs/client.ts',
+      line: 13,
+      startLine: null,
+      side: 'RIGHT',
+      isResolved: true,
+      isOutdated: false,
+      diffHunk: '@@ -0,0 +1,13 @@\n+    if (!response.ok) throw new Error(`PARCS ${response.status}`);',
+      comments: [
+        {
+          id: 'PRRC_fixture41',
+          author: hubot,
+          bodyHtml: '<p>Nit: the error could name the path, so the logs say which call failed.</p>',
+          createdAt: '2026-10-08T16:20:00Z',
+          url: 'https://github.com/acme/widgets/pull/41#discussion_r41',
+          subjectId: 'PRRC_fixture41',
+          reactions: [],
+        },
+      ],
+    },
+  ],
   files: [
     {
       path: 'src/parcs/client.ts',

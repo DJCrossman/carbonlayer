@@ -1,10 +1,11 @@
 // Inbox fixtures for the dev harness (`app.html?fixtures=1#/inbox`): every default view (Graphite's sections, with the
 // filters the section editor shows), covering each review, CI and merge state a row can show, native stack positions,
-// unread rows, long titles, labels, team and bot reviewers, and one row of globex's, the viewer's other organization. The
-// viewer is octocat. Ages are relative to page load so the harness always looks current. Each row has its checks, which
-// the fixture source hands out only as GitHub would: the dashboard's rollup at first, the list (with the required ones)
-// when enriching a failing rollup. The rows in "Needs anyone's review" have no line counts and no merge state. The native
-// stacks' rows chain by branch, which the fixture source names when asked for branches ("Group by stack").
+// conversation counters (with and without a stack), unread rows, long titles, labels, team and bot reviewers, and one
+// row of globex's, the viewer's other organization. The viewer is octocat. Ages are relative to page load so the
+// harness always looks current. Each row has its checks, which the fixture source hands out only as GitHub would: the
+// dashboard's rollup at first, the list (with the required ones) when enriching a failing rollup. The rows in "Needs
+// anyone's review" have no line counts and no merge state. The native stacks' rows chain by branch, which the fixture
+// source names when asked for branches ("Group by stack").
 import type { Fixtures, InboxFixtureRow } from '../app/data-source';
 import type { CheckRunSummary, CheckState, CiSummary, UserRef } from '../lib/model';
 import { DEFAULT_VIEWS } from '../lib/views';
@@ -79,6 +80,7 @@ function prsFor(viewId: string): InboxFixtureRow[] {
           deletions: 38,
           changedFiles: 9,
           commentCount: 3,
+          conversations: { resolved: 0, total: 2 },
           labels: [
             { name: 'enhancement', color: 'a2eeef' },
             { name: 'accessibility', color: '0e8a16' },
@@ -97,6 +99,7 @@ function prsFor(viewId: string): InboxFixtureRow[] {
           deletions: 612,
           changedFiles: 47,
           commentCount: 14,
+          conversations: { resolved: 12, total: 34 },
           labels: [
             { name: 'infra', color: '5319e7' },
             { name: 'breaking change', color: 'b60205' },
@@ -154,6 +157,7 @@ function prsFor(viewId: string): InboxFixtureRow[] {
           additions: 88,
           deletions: 141,
           commentCount: 2,
+          conversations: { resolved: 2, total: 3 },
         }),
         // Another of octocat's organizations: shown when the inbox shows globex.
         pr({
@@ -214,6 +218,7 @@ function prsFor(viewId: string): InboxFixtureRow[] {
           additions: 45,
           deletions: 12,
           commentCount: 6,
+          conversations: { resolved: 1, total: 4 },
         }),
         pr({
           repo: 'acme/platform',
@@ -230,6 +235,7 @@ function prsFor(viewId: string): InboxFixtureRow[] {
           deletions: 20,
           changedFiles: 12,
           commentCount: 9,
+          conversations: { resolved: 5, total: 5 },
           labels: [{ name: 'enhancement', color: 'a2eeef' }],
         }),
       ];
@@ -280,6 +286,7 @@ function prsFor(viewId: string): InboxFixtureRow[] {
           additions: 260,
           deletions: 12,
           commentCount: 2,
+          conversations: { resolved: 2, total: 2 },
         }),
       ];
     case 'graphite-drafts':
@@ -356,6 +363,7 @@ function prsFor(viewId: string): InboxFixtureRow[] {
           additions: 140,
           deletions: 76,
           commentCount: 1,
+          conversations: { resolved: 0, total: 1 },
         }),
         pr({
           repo: 'acme/api',
@@ -420,6 +428,7 @@ function prsFor(viewId: string): InboxFixtureRow[] {
           additions: 35,
           deletions: 188,
           commentCount: 5,
+          conversations: { resolved: 4, total: 4 },
           labels: [{ name: 'breaking change', color: 'b60205' }],
         }),
       ];
@@ -456,6 +465,7 @@ function prsFor(viewId: string): InboxFixtureRow[] {
           additions: 512,
           deletions: 230,
           commentCount: 7,
+          conversations: { resolved: 3, total: 5 },
           labels: [{ name: 'performance', color: 'fbca04' }],
         }),
       ];
@@ -493,6 +503,8 @@ function pr(fields: Omit<Partial<InboxFixtureRow>, 'repo'> & { repo: string; num
     isInMergeQueue: false,
     autoMerge: null,
     nativeStack: null,
+    // None, as GitHub's threads would say once the row is enriched.
+    conversations: { resolved: 0, total: 0 },
     ...overrides,
   };
 }

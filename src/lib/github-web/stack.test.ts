@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { PrSummary } from '../model';
 import { graphiteStackComment, resolveStack } from './stack';
 
-const noLookups = { mergeability: async () => null, authorsOpenPulls: async () => [] };
+const noLookups = { mergeability: async () => null, authorsOpenPulls: async () => [], conversations: async () => null };
 
 describe('native stacks', () => {
   it('orders the stack from trunk up (GitHub lists the top first) and chains the branches', async () => {
@@ -33,6 +33,46 @@ describe('native stacks', () => {
     ]);
     expect(stack.entries[0]).toMatchObject({ url: 'https://github.com/o/r/pull/1', nativeStack: { position: 1, size: 3 } });
     expect(stack.entries[2]?.mergeStatus).toBe('DRAFT');
+  });
+
+  it("counts every other entry's conversations from its own threads, three at a time, and leaves the viewed PR's to the page", async () => {
+    const current = summary(2, 'b2');
+    const asked: number[] = [];
+    let inFlight = 0;
+    let mostInFlight = 0;
+    const stack = await resolveStack(
+      {
+        current,
+        page: emptyPage(),
+        nativeStack: {
+          baseBranch: 'main',
+          position: 2,
+          size: 6,
+          pulls: [6, 5, 4, 3, 2, 1].map((number) => ({ number, title: `PR ${number}`, state: 'OPEN', url: `/o/r/pull/${number}`, headBranch: `b${number}` })),
+        },
+      },
+      {
+        ...noLookups,
+        conversations: async (number) => {
+          asked.push(number);
+          mostInFlight = Math.max(mostInFlight, ++inFlight);
+          await new Promise((resolve) => setTimeout(resolve, 1));
+          inFlight--;
+          return { resolved: number - 1, total: number };
+        },
+      },
+    );
+    expect(stack.entries[1]).toBe(current);
+    expect(stack.entries.map((entry) => entry.conversations)).toEqual([
+      { resolved: 0, total: 1 },
+      null,
+      { resolved: 2, total: 3 },
+      { resolved: 3, total: 4 },
+      { resolved: 4, total: 5 },
+      { resolved: 5, total: 6 },
+    ]);
+    expect(asked.toSorted()).toEqual([1, 3, 4, 5, 6]);
+    expect(mostInFlight).toBe(3);
   });
 });
 
@@ -68,7 +108,7 @@ describe("Graphite's stack comment", () => {
     const fromSearch = summary(29, 'layer-3');
     const stack = await resolveStack({ current, page, nativeStack: null }, { ...noLookups, authorsOpenPulls: async () => [fromSearch] });
     expect(stack).toMatchObject({ currentIndex: 1, trunk: 'main', source: 'graphite-comment' });
-    expect(stack.entries[2]).toBe(fromSearch);
+    expect(stack.entries[2]).toEqual(fromSearch);
     expect(stack.entries[0]).toMatchObject({ number: 22, title: 'Layer 1', state: 'MERGED', author: current.author });
   });
 });
@@ -110,5 +150,6 @@ function summary(number: number, head: string): PrSummary {
     isInMergeQueue: false,
     autoMerge: null,
     nativeStack: null,
+    conversations: null,
   };
 }

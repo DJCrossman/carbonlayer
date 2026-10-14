@@ -278,14 +278,14 @@
   outline-offset: -2px;
 }
 
-/* Column header row and rows, in Graphite's columns: unread · avatar · title/byline · reviewers · labels · stack ·
-   review · CI · merge · changes · updated. Fixed widths so the status icons line up across rows and sections, and 16px
-   at least between the status icons, Changes and Updated, which are right-aligned; narrower sections drop reviewers and
-   labels, then stack and changes. */
+/* Column header row and rows, in Graphite's columns: unread · avatar · title/byline · reviewers · labels · conversations
+   · stack · review · CI · merge · changes · updated. Fixed widths so the status icons line up across rows and sections,
+   and 16px at least between the status icons, Changes and Updated, which are right-aligned; narrower sections drop
+   reviewers and labels, then conversations, stack and changes. */
 .gg-section__columns,
 .gg-row {
   display: grid;
-  grid-template-columns: 6px 20px minmax(0, 1fr) 60px 60px 44px 16px 16px 16px 94px 70px;
+  grid-template-columns: 6px 20px minmax(0, 1fr) 60px 60px 60px 44px 16px 16px 16px 94px 70px;
   column-gap: 10px;
   align-items: center;
   padding: 0 var(--gg-space-3) 0 8px;
@@ -419,6 +419,7 @@
   font-variant-numeric: tabular-nums;
 }
 .gg-row__labels,
+.gg-row__conversations,
 .gg-row__stack {
   display: flex;
   min-width: 0;
@@ -474,7 +475,7 @@
 @container (max-width: 860px) {
   .gg-section__columns,
   .gg-row {
-    grid-template-columns: 6px 20px minmax(0, 1fr) 44px 16px 16px 16px 94px 70px;
+    grid-template-columns: 6px 20px minmax(0, 1fr) 60px 44px 16px 16px 16px 94px 70px;
   }
   .gg-row__reviewers,
   .gg-row__labels {
@@ -488,6 +489,7 @@
   }
   .gg-row__reviewers,
   .gg-row__labels,
+  .gg-row__conversations,
   .gg-row__stack,
   .gg-row__diff {
     display: none;

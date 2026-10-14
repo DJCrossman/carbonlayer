@@ -2,7 +2,7 @@
 // stack Graphite lists in its PR comment, else the PR alone.
 
 import type { PrSummary, Stack } from '../model';
-import { findInPayload, noteShape } from './session';
+import { findInPayload, noteShape, politely } from './session';
 
 export async function resolveStack(
   subject: { current: PrSummary; nativeStack: NativeStack | null; page: Document },
@@ -11,6 +11,8 @@ export async function resolveStack(
     mergeability(): Promise<unknown>;
     /** The author's open PRs in this repository, for the Graphite comment's entries; empty when GitHub did not answer. */
     authorsOpenPulls(): Promise<PrSummary[]>;
+    /** Another entry's conversations, from its own page_data/threads; null when GitHub did not answer. */
+    conversations(number: number): Promise<PrSummary['conversations']>;
   },
 ): Promise<Stack> {
   const { current, nativeStack } = subject;
@@ -39,7 +41,7 @@ export async function resolveStack(
             nativeStack: { position: index + 1, size: nativeStack.size },
           }),
     );
-    return { entries, currentIndex: entries.indexOf(current), trunk: nativeStack.baseBranch, source: 'native' };
+    return { entries: await withConversations(entries, current, lookups), currentIndex: entries.indexOf(current), trunk: nativeStack.baseBranch, source: 'native' };
   }
 
   const comment = graphiteStackComment(subject.page);
@@ -54,7 +56,7 @@ export async function resolveStack(
         : (open.get(entry.number) ??
           stackNeighbour(current, { ...entry, headRefName: '', baseRefName: '', mergeStatus: entry.isDraft ? 'DRAFT' : 'UNKNOWN', nativeStack: null })),
     );
-    return { entries, currentIndex: entries.indexOf(current), trunk: comment.trunk ?? current.baseRefName, source: 'graphite-comment' };
+    return { entries: await withConversations(entries, current, lookups), currentIndex: entries.indexOf(current), trunk: comment.trunk ?? current.baseRefName, source: 'graphite-comment' };
   }
 
   return { entries: [current], currentIndex: 0, trunk: current.baseRefName, source: 'none' };
@@ -117,7 +119,16 @@ function stackNeighbour(
     unread: null,
     isInMergeQueue: false,
     autoMerge: null,
+    conversations: null,
   };
+}
+
+/**
+ * The entries, each but the viewed PR with its conversations, three at a time; the page counts the viewed PR's from the
+ * threads it shows.
+ */
+function withConversations(entries: PrSummary[], current: PrSummary, lookups: { conversations(number: number): Promise<PrSummary['conversations']> }): Promise<PrSummary[]> {
+  return politely(entries, 3, async (entry) => (entry === current ? entry : { ...entry, conversations: await lookups.conversations(entry.number) }));
 }
 
 /** `pullRequestsLayoutRoute.stack` (observed): pulls listed top of the stack first. */

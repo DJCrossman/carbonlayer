@@ -123,7 +123,7 @@ describe('enrichPull', () => {
   const widgets = { owner: 'acme', name: 'widgets' };
   const row = { repo: widgets, number: 7, state: 'OPEN', isDraft: false, author: { login: 'ana', avatarUrl: '', url: '' }, ci: { state: 'SUCCESS' } } as const;
 
-  it('reads mergeability, why merging is blocked and the reviewers it names from the merge box, line counts from the diffstat', async () => {
+  it('reads mergeability, why merging is blocked and the reviewers it names from the merge box, line counts from the diffstat, conversations from the threads', async () => {
     const requested: string[] = [];
     vi.stubGlobal(
       'fetch',
@@ -138,6 +138,7 @@ describe('enrichPull', () => {
         }
         // Signed out, review_requests names nobody.
         if (url.includes('/page_data/review_requests')) return Response.json({});
+        if (url.includes('/page_data/threads')) return Response.json({ threads: [{ id: 'PRRT_1', isResolved: true }, { id: 'PRRT_2', isResolved: false }] });
         return Response.json({ diffstat: { linesAdded: 12, linesDeleted: 3, linesChanged: 15 } });
       }),
     );
@@ -151,12 +152,14 @@ describe('enrichPull', () => {
       viewerReview: 'APPROVED',
       additions: 12,
       deletions: 3,
+      conversations: { resolved: 1, total: 2 },
     });
     expect(requested.sort()).toEqual([
       '/acme/widgets/pull/7/page_data/diffstat',
       '/acme/widgets/pull/7/page_data/merge_box?merge_method=SQUASH&bypass_requirements=false',
       '/acme/widgets/pull/7/page_data/review_requests',
       '/acme/widgets/pull/7/page_data/status_checks',
+      '/acme/widgets/pull/7/page_data/threads',
     ]);
   });
 
@@ -277,8 +280,8 @@ describe('enrichPull', () => {
   });
 
   it.each([
-    ['a merged pull request', { state: 'MERGED', isDraft: false }, { additions: 4, deletions: 1 }],
-    ['a closed pull request', { state: 'CLOSED', isDraft: false }, { additions: 4, deletions: 1 }],
+    ['a merged pull request', { state: 'MERGED', isDraft: false }, { additions: 4, deletions: 1, conversations: { resolved: 0, total: 0 } }],
+    ['a closed pull request', { state: 'CLOSED', isDraft: false }, { additions: 4, deletions: 1, conversations: { resolved: 0, total: 0 } }],
   ] as const)('asks no merge box for %s', async (_, pr, found) => {
     const requested: string[] = [];
     vi.stubGlobal(
@@ -289,7 +292,7 @@ describe('enrichPull', () => {
       }),
     );
     expect(await enrichPull({ ...row, number: 8, ...pr }, 'MERGE', null)).toEqual(found);
-    expect(requested.sort()).toEqual(['/acme/widgets/pull/8/page_data/diffstat', '/acme/widgets/pull/8/page_data/review_requests']);
+    expect(requested.sort()).toEqual(['/acme/widgets/pull/8/page_data/diffstat', '/acme/widgets/pull/8/page_data/review_requests', '/acme/widgets/pull/8/page_data/threads']);
   });
 
   it('leaves out what GitHub refuses, and reviewers nobody names', async () => {

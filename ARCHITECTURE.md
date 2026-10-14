@@ -68,8 +68,9 @@ once and each rendered as it arrives (`src/pr/page-data.ts`): `pr.fetchHeader` (
 (`base_comparison_info`: every file, with the diffs GitHub sends along), then `pr.fetchFileDiffs` for the rest, 20
 paths a `diff_entries` request and four requests at a time in the order the files show, `pr.fetchThreads` (`threads`
 placed by the comparison's markers), `pr.fetchMergeBox` (`merge_box`, `review_requests`), `pr.fetchChecks`
-(`status_checks`), `pr.fetchStack` (`stack_mergeability` or Graphite's comment and the author's open PRs) and
-`pr.fetchMeta` (`labels`, `assignees`). The content script keeps each of GitHub's answers per PR for 30 s and shares it
+(`status_checks`), `pr.fetchStack` (`stack_mergeability` or Graphite's comment and the author's open PRs, then every
+other entry's own `threads`, three at a time, for its conversation counter) and `pr.fetchMeta` (`labels`,
+`assignees`). The content script keeps each of GitHub's answers per PR for 30 s and shares it
 between the stages that read it, so the HTML is fetched once; `force` repeats only the requests a stage makes for
 itself. Until the header arrives (one round trip) the page is a skeleton; after it each section has its own skeleton
 and, should its stage fail, an inline error with a retry. Only a signed-out header fails the whole page. A write
@@ -140,11 +141,12 @@ from the top bar's toggle.
 
 Rows follow Graphite's columns (`src/inbox/InboxSection.tsx`): unread dot, avatar, title with `author · owner/repo #N`,
 stacked reviewer avatars (three, then `+N`; a bot without an avatar gets its GitHub App's, else a bot glyph; the tooltip
-names each reviewer with their state, "jlord · approved"), a labels chip, the stack chip, then fixed Review, CI and Merge
-icon columns, line counts and age, under a header row whose Title, Changes and Updated sort the section (page state
-only); Changes and Updated keep 16px from their neighbours. Every icon says what it means on hover. Each status column
-is one function from the row's data to an icon, a tone and a tooltip (`reviewStatusIcon`, `ciStatusIcon`,
-`mergeStatusIcon` in `src/ui/status-icons.ts`, drawn by `StatusIcon`), tested case by case:
+names each reviewer with their state, "jlord · approved"), a labels chip, Graphite's conversation counter (review threads
+resolved of all, "2/3", hidden without any; the PR page's stack card shows it on each entry too), the stack chip, then
+fixed Review, CI and Merge icon columns, line counts and age, under a header row whose Title, Changes and Updated sort
+the section (page state only); Changes and Updated keep 16px from their neighbours. Every icon says what it means on
+hover. Each status column is one function from the row's data to an icon, a tone and a tooltip (`reviewStatusIcon`,
+`ciStatusIcon`, `mergeStatusIcon` in `src/ui/status-icons.ts`, drawn by `StatusIcon`), tested case by case:
 
 | column | icon · tone · tooltip | when |
 | --- | --- | --- |
@@ -172,8 +174,9 @@ within 200px of view (an `IntersectionObserver` per row, rooted at the page's ow
 `inbox.enrich` for it, up to 10 rows a request and one request at a time, and the content script answers from each PR's
 `page_data/merge_box` (mergeability and the first unmet requirement as the reason it is blocked; skipped for drafts and
 merged or closed PRs), `page_data/review_requests` (reviewers, bots and teams included, and the viewer's own review,
-by the page's `meta[name="user-login"]`; else the reviewers the merge box names), `page_data/diffstat` and, for an
-open PR, `page_data/status_checks` (which checks fail and which are required, `checksFrom` in
+by the page's `meta[name="user-login"]`; else the reviewers the merge box names), `page_data/diffstat`,
+`page_data/threads` (its conversations, `conversationsIn` in `src/lib/github-web/threads.ts`) and, for an open PR,
+`page_data/status_checks` (which checks fail and which are required, `checksFrom` in
 `src/lib/github-web/checks.ts`) with GitHub's own dynamic workflow runs on the head commit (above), three PRs at a time,
 each answer kept 2 minutes (`enrichPull` in `src/lib/github-web/inbox.ts`). A row is asked again when it was updated or
 its rollup changed; the checks it found are its CI. Until a row's answer arrives its Reviewers and Changes columns show a

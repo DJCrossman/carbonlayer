@@ -65,6 +65,17 @@ export function reviewThreads(data: unknown, comparison: BaseComparison, page: D
 }
 
 /**
+ * How many of a PR's review conversations (threads) are resolved, of how many: Graphite's counter, for a PR the page
+ * does not show. The threads are read as `reviewThreads` reads them.
+ */
+export function conversationsIn(data: unknown): { resolved: number; total: number } {
+  const record = (data ?? {}) as { threads?: unknown };
+  const list = (Array.isArray(record.threads) ? record.threads : Array.isArray(data) ? data : Object.values(record.threads ?? {})) as RawThread[];
+  const threads = list.filter((thread) => thread?.id);
+  return { resolved: threads.filter((thread) => thread.isResolved).length, total: threads.length };
+}
+
+/**
  * The thread as the conversation shows it (`turbo-frame#review-thread-or-comment-id-<id>`): its file, whether it
  * is outdated, and, when expanded, its diff excerpt, whose last row is the commented line.
  */

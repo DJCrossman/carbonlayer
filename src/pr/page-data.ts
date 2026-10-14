@@ -110,13 +110,17 @@ export function prDetailFrom(header: PrStages['header'], data: PrPageData): PrDe
   const meta: PrStages['meta'] = data.meta.value ?? { labels: [], assignees: [] };
   const listed = data.files.value;
   const stack = data.stack.value?.stack;
-  const summary: PrSummary = { ...header, ...mergeBox, ...checks, labels: meta.labels, unread: null };
+  // Counted from the threads the page shows, so the PR's own entry in the stack follows a resolve once they reload.
+  const threads = data.threads.value?.threads;
+  const conversations = threads ? { resolved: threads.filter((thread) => thread.isResolved).length, total: threads.length } : null;
+  const summary: PrSummary = { ...header, ...mergeBox, ...checks, labels: meta.labels, unread: null, conversations };
   return {
     ...header,
     ...mergeBox,
     ...checks,
     ...meta,
     unread: null,
+    conversations,
     // Lists that have not arrived stay the same empty list, so the diffs they feed are not rendered again for nothing.
     timeline: data.activity.value?.timeline ?? NO_TIMELINE,
     threads: data.threads.value?.threads ?? NO_THREADS,

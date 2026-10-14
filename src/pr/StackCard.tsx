@@ -80,10 +80,14 @@ function StackRow({ pr, current }: { pr: PrSummary; current: boolean }) {
         </a>
       )}
       <span className="stack-status">
-        {pr.commentCount > 0 && (
-          <span className="stack-comments pr-muted" title={`${pr.commentCount} comments`}>
-            <Icon name="comment" size={12} />
-            {pr.commentCount}
+        {/* Graphite's conversation counter, resolved of all; an entry with none, or whose threads GitHub did not send, shows nothing. */}
+        {pr.conversations && pr.conversations.total > 0 && (
+          <span
+            className="stack-conversations pr-muted"
+            title={`${pr.conversations.resolved} of ${pr.conversations.total} ${pr.conversations.total === 1 ? 'conversation' : 'conversations'} resolved`}
+          >
+            <Icon name="comment-discussion" size={12} />
+            {pr.conversations.resolved}/{pr.conversations.total}
           </span>
         )}
         {/* An entry known only from the stack's own listing has no review decision; leave it out rather than say "none". */}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { reviewThreads } from './threads';
+import { conversationsIn, reviewThreads } from './threads';
 
 describe('reviewThreads', () => {
   // Thread 1 is anchored on the current diff; thread 2 is outdated and only the conversation says where it was.
@@ -69,5 +69,22 @@ describe('reviewThreads', () => {
     });
     expect(threads[1]!.comments[0]!.url).toBe('https://github.com/o/r/pull/1/files#r502');
     expect(threadIdsByReview.get('77')).toEqual(['1', '2']);
+  });
+});
+
+describe('conversationsIn', () => {
+  // A thread without an id is no thread, as reviewThreads reads them.
+  const threads = [{ id: '1', isResolved: true }, { id: '2', isResolved: false }, { id: 3, isResolved: true }, { isResolved: true }];
+
+  it.each([
+    ['a list under `threads`', { threads }],
+    ['an object of threads under `threads`', { threads: Object.fromEntries(threads.map((thread, index) => [String(index), thread])) }],
+    ['a bare list', threads],
+  ])('counts the resolved threads of all, from %s', (_, data) => {
+    expect(conversationsIn(data)).toEqual({ resolved: 2, total: 3 });
+  });
+
+  it('counts none in an answer without threads', () => {
+    expect(conversationsIn({})).toEqual({ resolved: 0, total: 0 });
   });
 });

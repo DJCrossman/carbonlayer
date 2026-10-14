@@ -131,14 +131,17 @@ export interface PrSummary {
   autoMerge: { method: 'MERGE' | 'SQUASH' | 'REBASE' } | null;
   /** GitHub-native stacked PR position (1 = closest to trunk); null for Graphite stacks and plain PRs. */
   nativeStack: { position: number; size: number } | null;
+  /** Its review conversations (threads), how many resolved of how many, as Graphite counts them; null while unknown. */
+  conversations: { resolved: number; total: number } | null;
 }
 
 /**
  * What the inbox learns about a row after GitHub's dashboard listed it, from the PR's own page data: its mergeability,
- * reviewers and line counts, the viewer's own review, for failing checks which checks fail and which are required, and
- * for an open PR its branches, by which the inbox finds its stack. A field is absent where GitHub did not say.
+ * reviewers, line counts and conversations, the viewer's own review, for failing checks which checks fail and which
+ * are required, and for an open PR its branches, by which the inbox finds its stack. A field is absent where GitHub did
+ * not say.
  */
-export type PrEnrichment = Partial<Pick<PrSummary, 'mergeStatus' | 'reviewers' | 'additions' | 'deletions' | 'ci' | 'headRefName' | 'baseRefName'>> & {
+export type PrEnrichment = Partial<Pick<PrSummary, 'mergeStatus' | 'reviewers' | 'additions' | 'deletions' | 'ci' | 'headRefName' | 'baseRefName' | 'conversations'>> & {
   /** The signed-in viewer's own state among the reviewers; null when they are not one. */
   viewerReview?: ReviewerSummary['state'] | null;
   /** The names of the required checks, once GitHub has listed the checks and said which are required. */

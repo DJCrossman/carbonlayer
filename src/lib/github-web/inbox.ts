@@ -11,6 +11,7 @@ import { checksFrom } from './checks';
 import { mergeState } from './merge-box';
 import { reviewersOf } from './reviews';
 import { embeddedPayload, findInPayload, getJson, githubUser, noteShape, politely, request } from './session';
+import { conversationsIn } from './threads';
 
 /** Every view's first page of rows, cut to its limit, three views at a time so at most three requests are in flight. */
 export async function fetchInbox(views: View[], scope: string): Promise<ViewResult[]> {
@@ -152,19 +153,21 @@ export function summarisePull(pull: Pull, section: GitHubInboxFilter | null): Pr
     isInMergeQueue: section === 'merge-queue',
     autoMerge: null,
     nativeStack: pull.stackPosition != null && pull.stackSize != null ? { position: pull.stackPosition, size: pull.stackSize } : null,
+    // Not in the dashboard data: the row's own threads say, once it is enriched.
+    conversations: null,
   };
 }
 
 /**
  * What GitHub's dashboard leaves out of a row, from the PR's own page data: mergeability, and why merging is blocked,
- * from its merge box (`page_data/merge_box`, read as the PR page reads it); reviewers, and the viewer's own review, from
- * `page_data/review_requests`, else from what the merge box names (`latestOpinionatedReviews`, pending requests); line
- * counts from `page_data/diffstat`; and for an open PR, the checks themselves (which fail, which are required, and
- * whether anything but Graphite's mergeability check is still running) from `page_data/status_checks`, with GitHub's own
- * dynamic workflow runs on the head commit, which only the branch's Actions list names. A merged or closed PR's merge
- * status is its state, so it does not ask the merge box; a draft does, and shows how it would merge. A route that fails
- * is logged and leaves its fields out: the row keeps what it had. The merge box also names the branches, which chain the
- * inbox's stacks (a fork's head branch left out).
+ * from its merge box (`page_data/merge_box`, read as the PR page reads it); reviewers, and the viewer's own review,
+ * from `page_data/review_requests`, else from what the merge box names (`latestOpinionatedReviews`, pending requests);
+ * line counts from `page_data/diffstat`; its conversations, resolved of all, from `page_data/threads`; and for an open
+ * PR, the checks themselves (which fail, which are required, and whether anything but Graphite's mergeability check is
+ * still running) from `page_data/status_checks`, with GitHub's own dynamic workflow runs on the head commit, which only
+ * the branch's Actions list names. A merged or closed PR's merge status is its state, so it does not ask the merge box;
+ * a draft does, and shows how it would merge. A route that fails is logged and leaves its fields out: the row keeps
+ * what it had. The merge box also names the branches, which chain the inbox's stacks (a fork's head branch left out).
  */
 export async function enrichPull(pr: InboxRowToEnrich, mergeMethod: MergeMethod, viewerLogin: string | null): Promise<PrEnrichment> {
   const data = `/${pr.repo.owner}/${pr.repo.name}/pull/${pr.number}/page_data`;
@@ -173,11 +176,12 @@ export async function enrichPull(pr: InboxRowToEnrich, mergeMethod: MergeMethod,
   // Graphite's mergeability check, which the checks leave out; a passed one may hide a failed run of GitHub's own dynamic
   // workflows (Copilot's review), which Graphite counts.
   const asksChecks = pr.state === 'OPEN';
-  const [mergeBox, diffstat, reviewRequests, statusChecks] = await Promise.allSettled([
+  const [mergeBox, diffstat, reviewRequests, statusChecks, threads] = await Promise.allSettled([
     asksMergeBox ? getJson<unknown>(`${data}/merge_box?merge_method=${mergeMethod}&bypass_requirements=false`) : null,
     getJson<{ diffstat?: { linesAdded?: number; linesDeleted?: number } }>(`${data}/diffstat`),
     getJson<{ pendingReviewRequests?: unknown; completedReviews?: unknown }>(`${data}/review_requests`),
     asksChecks ? getJson<unknown>(`${data}/status_checks`) : null,
+    getJson<unknown>(`${data}/threads`),
   ]);
   const where = `${pr.repo.owner}/${pr.repo.name}#${pr.number}`;
   const found: PrEnrichment = {};
@@ -224,6 +228,13 @@ export async function enrichPull(pr: InboxRowToEnrich, mergeMethod: MergeMethod,
   } else if (diffstat.status === 'rejected') {
     const reason: unknown = diffstat.reason;
     console.debug('[gg]', `page_data/diffstat for ${where} failed; the row shows no line counts:`, reason instanceof Error ? reason.message : reason);
+  }
+
+  if (threads.status === 'fulfilled') {
+    found.conversations = conversationsIn(threads.value);
+  } else {
+    const reason: unknown = threads.reason;
+    console.debug('[gg]', `page_data/threads for ${where} failed; the row shows no conversations:`, reason instanceof Error ? reason.message : reason);
   }
 
   if (asksChecks && statusChecks.status === 'fulfilled') {

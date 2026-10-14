@@ -82,5 +82,6 @@ function pr(number: number, head: string, base: string, repo = 'acme/widgets'): 
     isInMergeQueue: false,
     autoMerge: null,
     nativeStack: null,
+    conversations: null,
   };
 }

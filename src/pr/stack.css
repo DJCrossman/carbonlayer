@@ -91,5 +91,5 @@ a.stack-title:hover { color: var(--gg-accent); }
   font-size: 12px;
 }
 .stack-status > span { display: inline-flex; }
-.stack-comments { align-items: center; gap: 3px; }
+.stack-conversations { align-items: center; gap: 3px; font-variant-numeric: tabular-nums; }
 .stack-status .gg-time { min-width: 52px; text-align: right; }

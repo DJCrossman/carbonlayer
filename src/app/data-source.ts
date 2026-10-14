@@ -138,7 +138,7 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
   };
   return {
     // Rows as GitHub's dashboard lists them: a CI rollup without its checks, and no branches; their branches come later,
-    // from branchesOf, and their merge status, reviewers and line counts from enrichInbox.
+    // from branchesOf, and their merge status, reviewers, line counts and conversations from enrichInbox.
     fetchInbox: (views) =>
       Promise.all(
         views.map(async (view) => {
@@ -147,7 +147,7 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
           return {
             ...result,
             totalCount: prs.length === result.prs.length ? result.totalCount : prs.length,
-            prs: prs.map((pr) => ({ ...pr, ci: { ...pr.ci, checks: [] }, mergeStatus: pr.isDraft ? 'DRAFT' : 'UNKNOWN', reviewers: [], additions: 0, deletions: 0, headRefName: '', baseRefName: '' })),
+            prs: prs.map((pr) => ({ ...pr, ci: { ...pr.ci, checks: [] }, mergeStatus: pr.isDraft ? 'DRAFT' : 'UNKNOWN', reviewers: [], additions: 0, deletions: 0, headRefName: '', baseRefName: '', conversations: null })),
           };
         }),
       ),
@@ -159,7 +159,7 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
         view,
         totalCount: first?.totalCount ?? 0,
         fetchedAt: new Date().toISOString(),
-        prs: prs.map((pr) => ({ ...pr, ci: { ...pr.ci, checks: [] }, reviewers: [], additions: 0, deletions: 0, headRefName: '', baseRefName: '' })),
+        prs: prs.map((pr) => ({ ...pr, ci: { ...pr.ci, checks: [] }, reviewers: [], additions: 0, deletions: 0, headRefName: '', baseRefName: '', conversations: null })),
       };
     },
     // The fixture rows' own values, a moment later, as GitHub's page data would give them: the checks only for a failing
@@ -176,6 +176,7 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
           viewerReview: pr.reviewers.find((reviewer) => reviewer.user.login === 'octocat')?.state ?? null,
           additions: pr.additions,
           deletions: pr.deletions,
+          conversations: pr.conversations,
           ...(pr.ci.state === 'FAILURE' && { ci: pr.ci, requiredCheckNames: pr.requiredCheckNames ?? [] }),
           ...(pr.mergeBlockedReason && { mergeBlockedReason: pr.mergeBlockedReason }),
           ...(pr.state === 'OPEN' && { headRefName: pr.headRefName, baseRefName: pr.baseRefName }),
@@ -209,7 +210,7 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     fetchPrStage: async (stage, repo, number) => {
       const pr = fixturePr(repo, number);
       await new Promise((resolve) => setTimeout(resolve, FIXTURE_STAGE_DELAYS[stage]));
-      const { timeline, threads, unresolvedThreadCount, files, baseOid, stack, labels, assignees, ci, requiredCheckNames, unread, ...rest } = pr;
+      const { timeline, threads, unresolvedThreadCount, files, baseOid, stack, labels, assignees, ci, requiredCheckNames, unread, conversations, ...rest } = pr;
       const { mergeStatus, reviewers, reviewDecision, viewerCanMerge, viewerCanEnableAutoMerge, allowedMergeMethods, defaultMergeMethod, autoMerge, isInMergeQueue, ...header } = rest;
       const stages: PrStages = {
         header: { ...header, viewerLogin: 'octocat', stackSource: stack.source },

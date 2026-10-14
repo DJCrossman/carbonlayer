@@ -21,12 +21,14 @@ export async function fetchPullRequestPage(repo: RepoRef, number: number): Promi
   const missing = files.files.map((file) => file.path).filter((path) => !(path in files.diffs));
   const batches = Array.from({ length: Math.ceil(missing.length / 20) }, (_, i) => missing.slice(i * 20, i * 20 + 20));
   const diffs: Record<string, ChangedFileDiff> = Object.assign({ ...files.diffs }, ...(await politely(batches, 4, (paths) => fetchFileDiffs({ ...pull, paths }))));
-  const summary: PrSummary = { ...header, ...mergeBox, ...checks, labels: meta.labels, unread: null };
+  const conversations = { resolved: threads.threads.filter((thread) => thread.isResolved).length, total: threads.threads.length };
+  const summary: PrSummary = { ...header, ...mergeBox, ...checks, labels: meta.labels, unread: null, conversations };
   return {
     ...header,
     ...mergeBox,
     ...checks,
     unread: null,
+    conversations,
     ...activity,
     ...threads,
     ...meta,

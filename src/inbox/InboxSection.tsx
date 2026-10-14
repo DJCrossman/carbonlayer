@@ -84,6 +84,7 @@ export function InboxSection({
           <SortHeader by="title" label="Title" sort={sort} onSort={onSort} />
           <span className="gg-row__reviewers" />
           <span className="gg-row__labels" />
+          <span className="gg-row__conversations" />
           <span className="gg-row__stack" />
           <span className="gg-row__status" title="Review status">
             <Icon name="person-check" size={14} />
@@ -240,6 +241,18 @@ function PrRow({
           </span>
         )}
       </span>
+      {/* Graphite's conversation counter, resolved of all; it comes with the row's details, and a PR with none shows nothing. */}
+      <span className="gg-row__conversations">
+        {pr.conversations && pr.conversations.total > 0 && (
+          <span
+            className="gg-row__chip"
+            title={`${pr.conversations.resolved} of ${pr.conversations.total} ${pr.conversations.total === 1 ? 'conversation' : 'conversations'} resolved`}
+          >
+            <Icon name="comment-discussion" size={12} />
+            {pr.conversations.resolved}/{pr.conversations.total}
+          </span>
+        )}
+      </span>
       <span className="gg-row__stack">
         {pr.nativeStack && (
           <span className="gg-row__chip" title={`Stacked: ${pr.nativeStack.position} of ${pr.nativeStack.size}`}>
@@ -306,6 +319,7 @@ function SkeletonRow({ titleWidth }: { titleWidth: string }) {
       </div>
       <span className="gg-row__reviewers" />
       <span className="gg-row__labels" />
+      <span className="gg-row__conversations" />
       <span className="gg-row__stack" />
       <span className="gg-row__status">
         <Skeleton width={12} height={3} />
