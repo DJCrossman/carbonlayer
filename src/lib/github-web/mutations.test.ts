@@ -71,6 +71,38 @@ describe('mutations', () => {
     ]);
   });
 
+  it("sends a comment on several lines as GitHub's multi-line comment, posted now or batched into a review", async () => {
+    const range = { path: 'a.ts', line: 18, side: 'RIGHT', startLine: 12, startSide: 'LEFT', body: 'Extract this' } as const;
+    await mutations['pr.addThread']({ prId: 'PR_1', ...range });
+    await mutations['pr.review']({ prId: 'PR_1', event: 'COMMENT', body: '', threads: [range] });
+    const body = {
+      text: 'Extract this',
+      comparisonStartOid: 'base',
+      comparisonEndOid: 'head',
+      subjectType: 'multiline',
+      path: 'a.ts',
+      line: 18,
+      side: 'right',
+      startLine: 12,
+      startSide: 'left',
+      positioning: {
+        type: 'multiline',
+        baseCommitOid: 'base',
+        headCommitOid: 'head',
+        startPath: 'a.ts',
+        startLine: 12,
+        startCommitOid: 'base',
+        endPath: 'a.ts',
+        endLine: 18,
+        endCommitOid: 'head',
+      },
+    };
+    expect(sent.slice(0, 2)).toEqual([
+      { method: 'POST', path: `${P}/create_review_comment`, body: { ...body, submitBatch: true } },
+      { method: 'POST', path: `${P}/create_review_comment`, body: { ...body, submitBatch: false } },
+    ]);
+  });
+
   it('merges with the commit message GitHub proposes, but not after new pushes', async () => {
     reads = {
       [`${P}/header`]: { pullRequest: { headSha: 'head' } },

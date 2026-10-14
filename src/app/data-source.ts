@@ -9,6 +9,9 @@ export interface ReviewThreadDraft {
   path: string;
   line: number;
   side: 'LEFT' | 'RIGHT';
+  /** A multi-line comment's first line, possibly on the other side; both absent for one line. */
+  startLine?: number;
+  startSide?: 'LEFT' | 'RIGHT';
   body: string;
 }
 
@@ -39,7 +42,7 @@ export interface DataSource {
   review(prId: string, event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT', body: string, threads?: ReviewThreadDraft[]): Promise<void>;
   comment(prId: string, body: string): Promise<void>;
   merge(prId: string, method: MergeMethod, expectedHeadOid: string): Promise<void>;
-  addThread(prId: string, path: string, line: number, side: 'LEFT' | 'RIGHT', body: string): Promise<void>;
+  addThread(prId: string, thread: ReviewThreadDraft): Promise<void>;
   replyThread(threadId: string, body: string): Promise<void>;
   resolveThread(threadId: string, resolved: boolean): Promise<void>;
   markFileViewed(prId: string, path: string, viewed: boolean): Promise<void>;
@@ -72,7 +75,7 @@ export function createRpcDataSource(): DataSource {
     review: (prId, event, body, threads) => rpc('pr.review', { prId, event, body, threads }),
     comment: (prId, body) => rpc('pr.comment', { prId, body }),
     merge: (prId, method, expectedHeadOid) => rpc('pr.merge', { prId, method, expectedHeadOid }),
-    addThread: (prId, path, line, side, body) => rpc('pr.addThread', { prId, path, line, side, body }),
+    addThread: (prId, thread) => rpc('pr.addThread', { prId, ...thread }),
     replyThread: (threadId, body) => rpc('pr.replyThread', { threadId, body }),
     resolveThread: (threadId, resolved) => rpc('pr.resolveThread', { threadId, resolved }),
     markFileViewed: (prId, path, viewed) => rpc('pr.markFileViewed', { prId, path, viewed }),

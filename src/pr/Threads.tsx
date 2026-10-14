@@ -126,7 +126,13 @@ function ThreadNote({ thread, current, actions }: { thread: ReviewThread; curren
 function InlineComposer({ anchor, actions }: { anchor: ComposerAnchor; actions: NoteActions }) {
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
-  const draft: ReviewThreadDraft = { path: anchor.path, line: anchor.line, side: anchor.side === 'deletions' ? 'LEFT' : 'RIGHT', body };
+  const draft: ReviewThreadDraft = {
+    path: anchor.path,
+    line: anchor.line,
+    side: anchor.side === 'deletions' ? 'LEFT' : 'RIGHT',
+    ...(anchor.startLine !== undefined && { startLine: anchor.startLine, startSide: anchor.startSide === 'deletions' ? 'LEFT' : 'RIGHT' }),
+    body,
+  };
   const commentNow = async () => {
     setBusy(true);
     const ok = await actions.commentNow(draft);
@@ -140,7 +146,11 @@ function InlineComposer({ anchor, actions }: { anchor: ComposerAnchor; actions: 
         onChange={setBody}
         onSubmit={commentNow}
         onCancel={actions.closeComposer}
-        placeholder={`Comment on line ${anchor.side === 'deletions' ? 'L' : 'R'}${anchor.line}`}
+        placeholder={
+          draft.startLine === undefined
+            ? `Comment on line ${draft.side === 'LEFT' ? 'L' : 'R'}${draft.line}`
+            : `Comment on lines ${draft.startSide === 'LEFT' ? 'L' : 'R'}${draft.startLine}–${draft.side === 'LEFT' ? 'L' : 'R'}${draft.line}`
+        }
         autoFocus
         disabled={busy}
       />

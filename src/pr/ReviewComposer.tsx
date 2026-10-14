@@ -84,7 +84,8 @@ export function ReviewComposer({
             {batch.map((draft, index) => (
               <li key={`${draft.path}:${draft.side}:${draft.line}:${index}`}>
                 <span className="pr-mono review-batch-where">
-                  {draft.path.split('/').at(-1)}:{draft.side === 'LEFT' ? 'L' : 'R'}
+                  {draft.path.split('/').at(-1)}:{draft.startLine !== undefined && `${draft.startSide === 'LEFT' ? 'L' : 'R'}${draft.startLine}–`}
+                  {draft.side === 'LEFT' ? 'L' : 'R'}
                   {draft.line}
                 </span>
                 <span className="review-batch-body">{draft.body}</span>

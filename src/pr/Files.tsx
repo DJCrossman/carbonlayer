@@ -4,14 +4,14 @@
 // file and thread, collapsed files, the open composer) so page-level keybindings can drive it.
 // Until the file list arrives the section shows the header's file count over skeleton cards; then each file
 // shows a skeleton until its diff arrives.
-import { FileDiff, type FileDiffOptions } from '@pierre/diffs/react';
+import { FileDiff, type FileDiffOptions, type SelectedLineRange } from '@pierre/diffs/react';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReviewThreadDraft } from '../app/data-source';
 import type { ChangedFile, PrDetail, PrStages } from '../lib/model';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
 import { Skeleton } from '../ui/Skeleton';
-import { fileNotes, filesInTreeOrder, fileTree, renderableDiff, type ComposerAnchor, type DiffNote, type FileTreeNode } from './diff';
+import { composerAnchorFor, fileNotes, filesInTreeOrder, fileTree, renderableDiff, type ComposerAnchor, type DiffNote, type FileTreeNode } from './diff';
 import type { StageState } from './page-data';
 import { StageError } from './primitives';
 import { DiffNoteView, type NoteActions } from './Threads';
@@ -328,8 +328,15 @@ function FileCard({
   const fileDiff = useMemo(() => renderableDiff(file), [file.path, file.previousPath, file.status, file.patch]);
   const composer = review.composer?.path === file.path ? review.composer : null;
   const notes = useMemo(() => fileNotes(file.path, pr.threads, batch, composer), [file.path, pr.threads, batch, composer]);
-  // The commented line stays highlighted while the composer is open, and only then.
-  const selectedLines = useMemo(() => (composer ? { start: composer.line, end: composer.line, side: composer.side } : null), [composer]);
+  // Lines being selected, until the pointer is released and the composer opens for them.
+  const [selecting, setSelecting] = useState<SelectedLineRange | null>(null);
+  // The commented lines stay highlighted while the composer is open, and only then; a selection shows as it grows.
+  const selectedLines = useMemo(
+    () =>
+      selecting ??
+      (composer ? { start: composer.startLine ?? composer.line, side: composer.startSide ?? composer.side, end: composer.line, endSide: composer.side } : null),
+    [selecting, composer],
+  );
   const collapsed = review.isCollapsed(file);
   const viewed = file.viewerViewedState === 'VIEWED';
   const threadCount = pr.threads.filter((thread) => thread.path === file.path).length;
@@ -351,12 +358,22 @@ function FileCard({
       lineDiffType: 'word-alt',
       collapsed,
       enableGutterUtility: true,
-      onGutterUtilityClick: (range) =>
-        openComposer.current({ path: file.path, line: range.end, side: range.endSide ?? range.side ?? 'additions' }),
+      // A line number pressed and dragged across others, or clicked and then shift-clicked, selects those lines, as
+      // does the "+" pressed and dragged; the composer opens for them when the pointer is released.
+      enableLineSelection: true,
+      onLineSelectionStart: setSelecting,
+      onLineSelectionChange: setSelecting,
+      onLineSelectionEnd: (range) => {
+        setSelecting(null);
+        // Null when the one line already selected was clicked again: the composer stays, with whatever it holds.
+        if (range && fileDiff) openComposer.current(composerAnchorFor(file.path, fileDiff, range));
+      },
+      // The "+" selects only while this is set; its selection ends above like any other.
+      onGutterUtilityClick: () => undefined,
       // Sticky file headers stop under the Files toolbar instead of at the very top.
       unsafeCSS: `[data-sticky] { top: ${STICKY_TOP}px; }`,
     }),
-    [diffStyle, themeType, collapsed, file.path],
+    [diffStyle, themeType, collapsed, file.path, fileDiff],
   );
 
   const viewedToggle = (

@@ -211,7 +211,7 @@ function PrView({
     },
     addToReview: (draft) => setBatch((current) => [...current, draft]),
     commentNow: (draft) =>
-      mutate(STAGES_A_WRITE_CHANGES['pr.addThread'], () => source.addThread(pr.id, draft.path, draft.line, draft.side, draft.body), 'Could not post the comment', {
+      mutate(STAGES_A_WRITE_CHANGES['pr.addThread'], () => source.addThread(pr.id, draft), 'Could not post the comment', {
         success: 'Comment posted',
       }),
     removePending: (index) => setBatch((current) => current.filter((_, at) => at !== index)),

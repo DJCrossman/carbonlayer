@@ -49,14 +49,15 @@ export interface RpcMethods {
       event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
       body: string;
       /** Inline comments batched into this review (Graphite's "Add to review"). */
-      threads?: Array<{ path: string; line: number; side: 'LEFT' | 'RIGHT'; body: string }>;
+      threads?: Array<{ path: string; line: number; side: 'LEFT' | 'RIGHT'; startLine?: number; startSide?: 'LEFT' | 'RIGHT'; body: string }>;
     };
     result: undefined;
   };
   'pr.comment': { args: { prId: string; body: string }; result: undefined };
   'pr.merge': { args: { prId: string; method: MergeMethod; expectedHeadOid: string }; result: undefined };
   'pr.addThread': {
-    args: { prId: string; path: string; line: number; side: 'LEFT' | 'RIGHT'; body: string };
+    /** `startLine` on `startSide` to `line` on `side` for a comment on several lines. */
+    args: { prId: string; path: string; line: number; side: 'LEFT' | 'RIGHT'; startLine?: number; startSide?: 'LEFT' | 'RIGHT'; body: string };
     result: undefined;
   };
   'pr.replyThread': { args: { threadId: string; body: string }; result: undefined };

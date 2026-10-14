@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { prFixtures } from '../fixtures/pr';
 import type { ChangedFile, ReviewThread } from '../lib/model';
-import { fileNotes, filesInTreeOrder, fileTree, renderableDiff } from './diff';
+import { composerAnchorFor, fileNotes, filesInTreeOrder, fileTree, renderableDiff } from './diff';
 
 const pr42 = prFixtures.find((pr) => pr.number === 42)!;
 const fileAt = (path: string) => pr42.files.find((file) => file.path === path)!;
@@ -90,6 +90,42 @@ describe('fileNotes', () => {
       { side: 'deletions', lineNumber: 9, metadata: { kind: 'pending', draft: batch[1], index: 1 } },
       { side: 'additions', lineNumber: 2, metadata: { kind: 'composer' } },
     ]);
+  });
+});
+
+describe('composerAnchorFor', () => {
+  // The second hunk, -38,11 +39,20: five unchanged lines, L43–L44 deleted, R44–R54 added, then unchanged lines from L45/R55.
+  const adapter = renderableDiff(fileAt('src/parcs/adapter.ts'))!;
+
+  it('opens under the last line of a selection, with its first line in the unified diff as the start', () => {
+    // Dragged upwards over added lines.
+    expect(composerAnchorFor('a.ts', adapter, { start: 50, side: 'additions', end: 46 })).toEqual({
+      path: 'a.ts',
+      line: 50,
+      side: 'additions',
+      startLine: 46,
+      startSide: 'additions',
+    });
+    // From the first added line up to the last deleted one, which the change block lists before it.
+    expect(composerAnchorFor('a.ts', adapter, { start: 44, side: 'additions', end: 44, endSide: 'deletions' })).toEqual({
+      path: 'a.ts',
+      line: 44,
+      side: 'additions',
+      startLine: 44,
+      startSide: 'deletions',
+    });
+    // Split: an unchanged line in the old file's column, numbered lower, dragged up to an added line above it.
+    expect(composerAnchorFor('a.ts', adapter, { start: 45, side: 'deletions', end: 50, endSide: 'additions' })).toEqual({
+      path: 'a.ts',
+      line: 45,
+      side: 'deletions',
+      startLine: 50,
+      startSide: 'additions',
+    });
+  });
+
+  it('opens under one line with no start', () => {
+    expect(composerAnchorFor('a.ts', adapter, { start: 46, side: 'additions', end: 46 })).toEqual({ path: 'a.ts', line: 46, side: 'additions' });
   });
 });
 

@@ -19,9 +19,9 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
   'pr.comment': async ({ prId, body }) => {
     await send(`${pullRequestFor(prId).path}/page_data/create_timeline_comment`, 'POST', { text: body });
   },
-  'pr.addThread': async ({ prId, path, line, side, body }) => {
+  'pr.addThread': async ({ prId, ...comment }) => {
     const pull = pullRequestFor(prId);
-    await send(`${pull.path}/page_data/create_review_comment`, 'POST', lineComment(pull, { path, line, side, body }, true));
+    await send(`${pull.path}/page_data/create_review_comment`, 'POST', lineComment(pull, comment, true));
   },
   'pr.replyThread': async ({ threadId, body }) => {
     const thread = threadFor(threadId);
@@ -139,13 +139,41 @@ export function pullRequestFor(prId: string): KnownPullRequest {
   return pull;
 }
 
-/** GitHub's request body for a one-line comment: on the old file (LEFT, base commit) or the new one (RIGHT, head). */
-function lineComment(pull: KnownPullRequest, comment: { path: string; line: number; side: 'LEFT' | 'RIGHT'; body: string }, submitBatch: boolean) {
+/**
+ * GitHub's request body for a comment on one line, or on a range from `startLine` to `line` (multi-line); each line is
+ * on the old file (LEFT, base commit) or the new one (RIGHT, head).
+ */
+function lineComment(
+  pull: KnownPullRequest,
+  comment: { path: string; line: number; side: 'LEFT' | 'RIGHT'; startLine?: number; startSide?: 'LEFT' | 'RIGHT'; body: string },
+  submitBatch: boolean,
+) {
+  const common = { text: comment.body, submitBatch, comparisonStartOid: pull.baseOid, comparisonEndOid: pull.headOid };
+  const startSide = comment.startSide ?? comment.side;
+  if (comment.startLine !== undefined && (comment.startLine !== comment.line || startSide !== comment.side)) {
+    return {
+      ...common,
+      subjectType: 'multiline',
+      path: comment.path,
+      line: comment.line,
+      side: comment.side.toLowerCase(),
+      startLine: comment.startLine,
+      startSide: startSide.toLowerCase(),
+      positioning: {
+        type: 'multiline',
+        baseCommitOid: pull.baseOid,
+        headCommitOid: pull.headOid,
+        startPath: comment.path,
+        startLine: comment.startLine,
+        startCommitOid: startSide === 'LEFT' ? pull.baseOid : pull.headOid,
+        endPath: comment.path,
+        endLine: comment.line,
+        endCommitOid: comment.side === 'LEFT' ? pull.baseOid : pull.headOid,
+      },
+    };
+  }
   return {
-    text: comment.body,
-    submitBatch,
-    comparisonStartOid: pull.baseOid,
-    comparisonEndOid: pull.headOid,
+    ...common,
     subjectType: 'line',
     path: comment.path,
     line: comment.line,

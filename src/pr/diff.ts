@@ -1,8 +1,8 @@
 // Pure diff logic for the Files section: what the diff library can render for a changed file, which
-// notes (review threads, batched comments, the open composer) sit on which of its lines, and the file
-// tree that orders the files.
+// notes (review threads, batched comments, the open composer) sit on which of its lines, where the
+// composer opens for selected lines, and the file tree that orders the files.
 
-import { parsePatchFiles, type DiffLineAnnotation, type FileDiffMetadata } from '@pierre/diffs';
+import { parsePatchFiles, type DiffLineAnnotation, type FileDiffMetadata, type SelectedLineRange } from '@pierre/diffs';
 import type { ReviewThreadDraft } from '../app/data-source';
 import type { ChangedFile, ReviewThread } from '../lib/model';
 
@@ -12,11 +12,14 @@ export type DiffNote =
   | { kind: 'pending'; draft: ReviewThreadDraft; index: number }
   | { kind: 'composer' };
 
-/** Where the inline comment composer is open: a line on one side of one file. */
+/** Where the inline comment composer is open: under a line, or the last line of a range, on one side of one file. */
 export interface ComposerAnchor {
   path: string;
   line: number;
   side: 'deletions' | 'additions';
+  /** A range's first line, possibly on the other side; both absent for one line. */
+  startLine?: number;
+  startSide?: 'deletions' | 'additions';
 }
 
 /**
@@ -65,6 +68,39 @@ export function fileNotes(
   });
   if (composer?.path === path) notes.push({ side: composer.side, lineNumber: composer.line, metadata: { kind: 'composer' } });
   return notes;
+}
+
+/**
+ * Where the composer opens for lines selected in a file's diff: under the range's last line, its first line as the
+ * start. The library reports the line pressed first as `start`, so a selection dragged upwards comes reversed, and
+ * GitHub wants the start first in its unified diff whatever the layout: a change block lists its deleted lines before
+ * its added ones, so on different sides the line numbers alone cannot tell.
+ */
+export function composerAnchorFor(path: string, diff: FileDiffMetadata, range: SelectedLineRange): ComposerAnchor {
+  const pressed = { line: range.start, side: range.side ?? 'additions' };
+  const released = { line: range.end, side: range.endSide ?? pressed.side };
+  const [first, last] = unifiedRow(pressed) <= unifiedRow(released) ? [pressed, released] : [released, pressed];
+  if (first.line === last.line && first.side === last.side) return { path, line: last.line, side: last.side };
+  return { path, line: last.line, side: last.side, startLine: first.line, startSide: first.side };
+
+  // As the library places a line (FileDiff's getLineIndexForDiff): unchanged lines outside the hunks, shown once
+  // expanded, are one row each on both sides.
+  function unifiedRow({ line, side }: { line: number; side: 'deletions' | 'additions' }): number {
+    let row = 0;
+    let number = 1;
+    for (const hunk of diff.hunks) {
+      row = hunk.unifiedLineStart;
+      number = side === 'deletions' ? hunk.deletionStart : hunk.additionStart;
+      if (line < number) return row - (number - line);
+      for (const content of hunk.hunkContent) {
+        const lines = content.type === 'context' ? content.lines : side === 'deletions' ? content.deletions : content.additions;
+        if (line < number + lines) return row + (content.type === 'change' && side === 'additions' ? content.deletions : 0) + (line - number);
+        number += lines;
+        row += content.type === 'context' ? content.lines : content.deletions + content.additions;
+      }
+    }
+    return row + (line - number);
+  }
 }
 
 export type FileTreeNode =
