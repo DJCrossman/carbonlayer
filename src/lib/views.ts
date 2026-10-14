@@ -275,13 +275,20 @@ export function decodeViewsShareHash(hash: string): View[] | null {
 export function resolveViewQuery(view: View, scope: string, now = new Date()): string {
   if (inboxFilterOf(view)) return view.query.trim();
   // GitHub's dashboard search ANDs repeated repo: terms (no pull request is in two repositories), so bare ones, as
-  // earlier imports and hand-written scopes have them, mean any of them.
+  // earlier imports and hand-written scopes have them, mean any of them. Those inside parentheses already say how they
+  // combine: the middle ones of `(repo:a OR repo:b OR repo:c OR repo:d)` stand alone between ORs.
   const anyRepository = (text: string) => {
     const terms = text.trim().split(/\s+/);
-    const repos = terms.filter((term) => /^repo:[^\s()]+$/.test(term));
+    let depth = 0;
+    const bare = terms.map((term) => {
+      const outside = depth === 0 && /^repo:[^\s()]+$/.test(term);
+      depth += term.split('(').length - term.split(')').length;
+      return outside;
+    });
+    const repos = terms.filter((_, index) => bare[index]);
     if (repos.length < 2) return text.trim();
-    const rest = terms.filter((term) => !repos.includes(term));
-    rest.splice(terms.indexOf(repos[0]!), 0, `(${repos.join(' OR ')})`);
+    const rest = terms.filter((_, index) => !bare[index]);
+    rest.splice(bare.indexOf(true), 0, `(${repos.join(' OR ')})`);
     return rest.join(' ');
   };
   // A date alone counts the whole day: "merged in the last 7 days" needs the time too.

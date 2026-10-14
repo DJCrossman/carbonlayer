@@ -77,6 +77,15 @@ describe('resolveViewQuery', () => {
     expect(resolveViewQuery(view, '')).toBe('is:pr (repo:acme/web OR repo:acme/api) author:@me');
   });
 
+  it('leaves the repositories of a group as they are, however many the picker chose', () => {
+    const repos = ['web', 'api', 'ios', 'android'].map((name) => ({ owner: 'acme', name }));
+    const group = '(repo:acme/web OR repo:acme/api OR repo:acme/ios OR repo:acme/android)';
+    const view = { id: 'r', name: 'Repos', query: 'is:pr author:@me' };
+    expect(resolveViewQuery(view, organizationScope({ login: 'acme', isViewer: false }, repos))).toBe(`${group} is:pr author:@me`);
+    // A section's own repositories, as the section editor compiles them.
+    expect(resolveViewQuery({ ...view, query: `is:pr ${group} author:@me` }, 'org:acme')).toBe(`is:pr ${group} author:@me`);
+  });
+
   it('searches the repositories a query names instead of the inbox scope, as a Graphite section with its own does', () => {
     const view = { id: 'r', name: 'Repos', query: 'is:pr (repo:acme/web OR repo:acme/api) author:@me' };
     expect(resolveViewQuery(view, 'org:acme')).toBe(view.query);
