@@ -152,6 +152,22 @@
 .pr-menu-list button:hover { background: var(--gg-bg-hover); }
 .pr-menu-list .gg-icon { color: var(--gg-fg-muted); }
 
+/* The header's actions again, under the reviewers: one row across the sidebar, Finish review taking what the other two
+   leave (its popover floats below its right edge, review.css). The menu is fixed to its button, so the sidebar's
+   scrolling cannot clip it, and opens above it when there is no room below. */
+.side-pr-actions { display: flex; align-items: center; gap: 6px; }
+.side-pr-actions > .pr-review-anchor { display: flex; flex: 1; min-width: 0; }
+.side-pr-actions > .pr-review-anchor > .gg-btn { flex: 1; justify-content: center; }
+.side-pr-actions .pr-menu > .gg-btn { anchor-name: --side-pr-menu; }
+.side-pr-actions .pr-menu-list {
+  position: fixed;
+  position-anchor: --side-pr-menu;
+  top: anchor(bottom);
+  right: anchor(right);
+  margin-top: 4px;
+  position-try-fallbacks: flip-block;
+}
+
 /* Description and section headings */
 .pr-description {
   padding: 12px 16px;

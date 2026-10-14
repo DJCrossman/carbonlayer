@@ -59,8 +59,11 @@ export function CommentsDrawer({
   useEffect(() => panel.current?.focus({ preventScroll: true }), []);
 
   const close = () => {
-    // Focus inside it goes back to the header's Comments button rather than nowhere.
-    if (panel.current?.contains(document.activeElement)) document.querySelector<HTMLElement>('.pr-comments-toggle')?.focus({ preventScroll: true });
+    // Focus inside it goes back to the Comments button in view rather than nowhere: the sidebar's, while it shows one.
+    if (panel.current?.contains(document.activeElement)) {
+      const toggle = document.querySelector<HTMLElement>('.side-pr-actions .pr-comments-toggle') ?? document.querySelector<HTMLElement>('.pr-comments-toggle');
+      toggle?.focus({ preventScroll: true });
+    }
     onClose();
   };
 

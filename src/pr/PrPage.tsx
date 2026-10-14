@@ -106,15 +106,17 @@ function PrView({
   const retry = (stages: PrStage[]) => void reload(stages, true).catch(() => {});
   const [batch, setBatch] = useState<ReviewThreadDraft[]>([]);
   const [review, setReview] = useState<{ open: boolean; event: ReviewEvent; body: string }>({ open: false, event: 'COMMENT', body: '' });
-  // Once the header's Finish review button scrolls out of sight, another appears under the reviewers (FinishReviewAgain).
-  const [finishReviewInView, setFinishReviewInView] = useState(true);
+  // Once the header's actions scroll out of sight, they appear again under the reviewers (PrActions, twice).
+  const [headerActionsInView, setHeaderActionsInView] = useState(true);
   useEffect(() => {
     const button = document.querySelector('.pr-header .pr-review-anchor');
     if (!button) return;
-    const observer = new IntersectionObserver(([entry]) => setFinishReviewInView(entry?.isIntersecting ?? true), { root: document });
+    const observer = new IntersectionObserver(([entry]) => setHeaderActionsInView(entry?.isIntersecting ?? true), { root: document });
     observer.observe(button);
     return () => observer.disconnect();
   }, []);
+  // More actions' menu, open beside whichever of the two shows, as the review popover is.
+  const [menuOpen, setMenuOpen] = useState(false);
   const [quickApprove, setQuickApprove] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [reviewerPickerOpen, setReviewerPickerOpen] = useState(false);
@@ -323,6 +325,16 @@ function PrView({
         />
       )
   );
+  const actions = {
+    pr,
+    batchCount: batch.length,
+    commentsOpen,
+    onToggleComments: () => setCommentsOpen((open) => !open),
+    onFinishReview: () => (review.open ? closeReview() : openReview(review.event)),
+    onMenuOpenChange: setMenuOpen,
+    onSetDraft: setDraft,
+    onCopied: () => showToast('Link copied'),
+  };
 
   return (
     <PrReactions value={{ changed: edits.reactions, react }}>
@@ -330,13 +342,7 @@ function PrView({
         <div className="pr-conversation">
           <PrHeader
             pr={pr}
-            batchCount={batch.length}
-            commentsOpen={commentsOpen}
-            onToggleComments={() => setCommentsOpen((open) => !open)}
-            onFinishReview={() => (review.open ? closeReview() : openReview(review.event))}
-            onSetDraft={setDraft}
-            onCopied={() => showToast('Link copied')}
-            reviewPopover={finishReviewInView ? reviewPopover : null}
+            actions={<PrActions {...actions} reviewPopover={headerActionsInView ? reviewPopover : null} menuOpen={menuOpen && headerActionsInView} />}
           />
           {data.header.status === 'error' && <StageError what="the header again" error={data.header.error} onRetry={() => retry(['header'])} />}
           {/* No stack card, not even its skeleton, when the page shows no stack. */}
@@ -361,14 +367,11 @@ function PrView({
           pr={pr}
           data={data}
           onRetry={retry}
-          finishReview={
-            !finishReviewInView && (
-              <FinishReviewAgain
-                batchCount={batch.length}
-                open={review.open}
-                onToggle={() => (review.open ? closeReview() : openReview(review.event))}
-                popover={reviewPopover}
-              />
+          actions={
+            !headerActionsInView && (
+              <div className="side-pr-actions">
+                <PrActions {...actions} reviewPopover={reviewPopover} menuOpen={menuOpen} inSidebar />
+              </div>
             )
           }
           mergeMethod={mergeMethod}
@@ -463,41 +466,7 @@ function PrView({
   );
 }
 
-function PrHeader({
-  pr,
-  batchCount,
-  commentsOpen,
-  onToggleComments,
-  onFinishReview,
-  onSetDraft,
-  onCopied,
-  reviewPopover,
-}: {
-  pr: PrDetail;
-  batchCount: number;
-  commentsOpen: boolean;
-  onToggleComments: () => void;
-  onFinishReview: () => void;
-  onSetDraft: (draft: boolean) => Promise<boolean>;
-  onCopied: () => void;
-  reviewPopover: ReactNode;
-}) {
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onPointerDown = (event: PointerEvent) => {
-      if (!(event.target instanceof Element) || !event.target.closest('.pr-menu')) setMenuOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => event.key === 'Escape' && setMenuOpen(false);
-    document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [menuOpen]);
-
+function PrHeader({ pr, actions }: { pr: PrDetail; /** The comments button, Finish review and More actions (PrActions). */ actions: ReactNode }) {
   return (
     <header className="pr-header">
       <div className="pr-header-top">
@@ -505,55 +474,7 @@ function PrHeader({
           {pr.repo.owner}/{pr.repo.name} <span className="pr-header-number">#{pr.number}</span>
         </span>
         <span className="pr-header-spacer" />
-        {/* Opens the comments drawer; counts the open conversations once the threads have arrived. */}
-        <Button
-          className="pr-comments-toggle"
-          icon="comment-discussion"
-          onClick={onToggleComments}
-          aria-pressed={commentsOpen}
-          aria-label={pr.conversations ? `Comments: ${pr.unresolvedThreadCount} open` : 'Comments'}
-          title="Comments (C)"
-        >
-          {pr.conversations ? pr.unresolvedThreadCount : null}
-        </Button>
-        <div className="pr-review-anchor">
-          <Button variant="primary" onClick={onFinishReview} aria-expanded={Boolean(reviewPopover)} title="Finish review (r c)">
-            Finish review
-            {batchCount > 0 && <span className="pr-badge pr-review-badge">{batchCount}</span>}
-          </Button>
-          {reviewPopover}
-        </div>
-        <div className="pr-menu">
-          <Button onClick={() => setMenuOpen((open) => !open)} aria-haspopup="menu" aria-expanded={menuOpen} aria-label="More actions">
-            <Icon name="kebab-horizontal" size={14} />
-          </Button>
-          {menuOpen && (
-            <div className="pr-menu-list" role="menu">
-              {pr.state === 'OPEN' && pr.viewerCanUpdate && (
-                <button
-                  role="menuitem"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    void onSetDraft(!pr.isDraft);
-                  }}
-                >
-                  <Icon name={pr.isDraft ? 'eye' : 'git-pull-request-draft'} size={14} />
-                  {pr.isDraft ? 'Ready for review' : 'Convert to draft'}
-                </button>
-              )}
-              <button
-                role="menuitem"
-                onClick={() => {
-                  setMenuOpen(false);
-                  navigator.clipboard.writeText(pr.url).then(onCopied, () => showToast('Could not copy the link', 'danger'));
-                }}
-              >
-                <Icon name="link-external" size={14} />
-                Copy link
-              </button>
-            </div>
-          )}
-        </div>
+        {actions}
       </div>
       <h1 className="pr-title">{pr.title}</h1>
       <div className="pr-meta">
@@ -660,14 +581,109 @@ function optimisticPr(pr: PrDetail, edits: PendingEdits): PrDetail {
 }
 
 /**
- * The Finish review button again, under the reviewers, for while the header's is scrolled out of sight. Its popover
- * floats beside it, rendered into the body since the sidebar would clip it.
+ * The PR's actions: the comments drawer's button, Finish review and More actions. In the header, and again under the
+ * reviewers while the header's are scrolled out of sight; the review popover and the menu open beside the ones in view.
  */
-function FinishReviewAgain({ batchCount, open, onToggle, popover }: { batchCount: number; open: boolean; onToggle: () => void; popover: ReactNode }) {
+function PrActions({
+  pr,
+  batchCount,
+  commentsOpen,
+  onToggleComments,
+  onFinishReview,
+  reviewPopover,
+  menuOpen,
+  onMenuOpenChange,
+  onSetDraft,
+  onCopied,
+  inSidebar = false,
+}: {
+  pr: PrDetail;
+  batchCount: number;
+  commentsOpen: boolean;
+  onToggleComments: () => void;
+  onFinishReview: () => void;
+  /** The review popover, when it is open and opens here. */
+  reviewPopover: ReactNode;
+  menuOpen: boolean;
+  onMenuOpenChange: (open: boolean) => void;
+  onSetDraft: (draft: boolean) => Promise<boolean>;
+  onCopied: () => void;
+  inSidebar?: boolean;
+}) {
+  const menu = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Node) || !menu.current?.contains(event.target)) onMenuOpenChange(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => event.key === 'Escape' && onMenuOpenChange(false);
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [menuOpen, onMenuOpenChange]);
+
+  return (
+    <>
+      {/* Opens the comments drawer; counts the open conversations once the threads have arrived. */}
+      <Button
+        className="pr-comments-toggle"
+        icon="comment-discussion"
+        onClick={onToggleComments}
+        aria-pressed={commentsOpen}
+        aria-label={pr.conversations ? `Comments: ${pr.unresolvedThreadCount} open` : 'Comments'}
+        title="Comments (C)"
+      >
+        {pr.conversations ? pr.unresolvedThreadCount : null}
+      </Button>
+      <FinishReview batchCount={batchCount} onToggle={onFinishReview} popover={reviewPopover} floating={inSidebar} />
+      <div className="pr-menu" ref={menu}>
+        <Button onClick={() => onMenuOpenChange(!menuOpen)} aria-haspopup="menu" aria-expanded={menuOpen} aria-label="More actions">
+          <Icon name="kebab-horizontal" size={14} />
+        </Button>
+        {menuOpen && (
+          <div className="pr-menu-list" role="menu">
+            {pr.state === 'OPEN' && pr.viewerCanUpdate && (
+              <button
+                role="menuitem"
+                onClick={() => {
+                  onMenuOpenChange(false);
+                  void onSetDraft(!pr.isDraft);
+                }}
+              >
+                <Icon name={pr.isDraft ? 'eye' : 'git-pull-request-draft'} size={14} />
+                {pr.isDraft ? 'Ready for review' : 'Convert to draft'}
+              </button>
+            )}
+            <button
+              role="menuitem"
+              onClick={() => {
+                onMenuOpenChange(false);
+                navigator.clipboard.writeText(pr.url).then(onCopied, () => showToast('Could not copy the link', 'danger'));
+              }}
+            >
+              <Icon name="link-external" size={14} />
+              Copy link
+            </button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+/**
+ * Finish review, its popover under it; in the sidebar the popover floats beside it instead, rendered into the body since
+ * the sidebar would clip it.
+ */
+function FinishReview({ batchCount, onToggle, popover, floating }: { batchCount: number; onToggle: () => void; popover: ReactNode; floating: boolean }) {
   const anchor = useRef<HTMLDivElement>(null);
   const [at, setAt] = useState<{ top: number; right: number; above: boolean } | null>(null);
   useLayoutEffect(() => {
-    if (!popover) return;
+    if (!popover || !floating) return;
     // Below the button when the popover fits there, else above it (the button often sits low in the sidebar).
     const place = () => {
       const rect = anchor.current?.getBoundingClientRect();
@@ -683,22 +699,24 @@ function FinishReviewAgain({ batchCount, open, onToggle, popover }: { batchCount
       window.removeEventListener('resize', place);
       document.removeEventListener('scroll', place, true);
     };
-  }, [popover]);
+  }, [popover, floating]);
   return (
-    <div className="pr-review-anchor side-finish-review" ref={anchor}>
-      <Button variant="primary" onClick={onToggle} aria-expanded={open} title="Finish review (r c)">
+    <div className="pr-review-anchor" ref={anchor}>
+      <Button variant="primary" onClick={onToggle} aria-expanded={Boolean(popover)} title="Finish review (r c)">
         Finish review
         {batchCount > 0 && <span className="pr-badge pr-review-badge">{batchCount}</span>}
       </Button>
-      {popover &&
-        at &&
-        // In the body, past the sidebar's clipping; still a `.pr-review-anchor`, so clicks inside it keep it open.
-        createPortal(
-          <div className={`pr-review-anchor review-popover-float ${at.above ? 'is-above' : ''}`} style={{ top: at.top, right: at.right }}>
-            {popover}
-          </div>,
-          document.body,
-        )}
+      {!floating
+        ? popover
+        : popover &&
+          at &&
+          // In the body, past the sidebar's clipping; still a `.pr-review-anchor`, so clicks inside it keep it open.
+          createPortal(
+            <div className={`pr-review-anchor review-popover-float ${at.above ? 'is-above' : ''}`} style={{ top: at.top, right: at.right }}>
+              {popover}
+            </div>,
+            document.body,
+          )}
     </div>
   );
 }
