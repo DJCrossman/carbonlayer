@@ -97,6 +97,32 @@ Need a session (404 signed out): `status_checks`, `merge_box`, `stack_mergeabili
   the page also sends `POST /{owner}/{repo}/commits/checks-statuses-rollups`.
 - `_graphql` is only generic plumbing (`{ query: <persisted id>, variables, persistedQueryName }`); no PR action uses it.
 
+## Markdown preview (the comment box's Preview tab; read from the bundle 2026-10-14, not yet sent)
+GitHub's React comment box (`MarkdownEditor`, module `L7`) renders its Preview tab on the server. The request
+(function `w` in `tvt-07c6c8edb6d417bf.js`): `POST /preview` (site root, not under the repository) through the bare
+`verifiedFetch` (`DI` in module `Qh`): `GitHub-Verified-Fetch: true`, `X-Requested-With: XMLHttpRequest`,
+`X-Fetch-Nonce`, `X-GitHub-Client-Version`, no `GitHub-Is-React`, no `Accept`; the body a `FormData` (multipart), fields
+in this order:
+- `text`: the Markdown; `issue`: the subject's database id; `repository`: the repository's database id; `project`: the
+  subject's database id again (GitHub sends both);
+- only for a line comment: `path`, `line_number`, `start_commit_oid`, `end_commit_oid`, `base_commit_oid` (= start);
+- `subject`: the pull request's number; `start_line_number` (multi-line comments only); `subject_type`: `PullRequest`
+  for every comment box on a PR (its surfaces `issue_comment`, `review` and `description` all map there), `Issue` on
+  issues, `Project` on projects.
+
+The answer is HTML, used as is (`await response.text()`); on a non-2xx GitHub shows "Markdown preview unavailable". For a PR,
+GitHub's subject (module `xoR` in `0m-0ae59ad9dc9eab60.js`) takes the database ids from the PR context: the PR's `id`
+(its `relayId` is the node id) and `baseRepository.id`, the same values as the page's embedded
+`pullRequestsLayoutRoute.pullRequest.id` and `.repository.id`; CarbonLayer reads those with the header stage. It sends
+what GitHub sends for a comment in the conversation (no comparison or line fields), for every comment box, inline ones
+too: a ```suggestion block previews as a code block rather than a suggestion.
+The same chunk's "Add a suggestion" button (file-diff icon) appends `` ```suggestion\n<lines>\n``` `` after the comment
+(a newline before it unless the comment is empty) and puts the caret at the end of the lines; its toolbar's formatting
+is `@github/markdown-toolbar-element` (chunk `hj-ece3bec966e8a2b6.js`), its shortcuts are GitHub's command list
+(`markdown-editor:*` in `86g-dffecec336e77800.js`: bold ⌘B, italic ⌘I, code ⌘E, link ⌘K, quote ⌘⇧., numbered list ⌘⇧7, task list
+⌘⇧L, toggle preview ⌘⇧P) and the docs' "Keyboard shortcuts → Comments" (which also lists ⌘⇧8 for a bulleted list
+and ⌘G for a suggestion).
+
 ## Where to re-check (all at https://github.githubassets.com/assets/<file>)
 | File | Matched string(s) |
 |---|---|
@@ -110,6 +136,10 @@ Need a session (404 signed out): `status_checks`, `merge_box`, `stack_mergeabili
 | `fetch-utilities-804a14996977c014.js` | `"X-Requested-With":"XMLHttpRequest"`; `X-Fetch-Nonce`; `meta[name="fetch-nonce"]` |
 | `app-foundation-156c6259e31cc551.js` | `"X-GitHub-Client-Version"` with `meta[name="release"]` |
 | `m5-5f88247ecf67473e.js` | route configs (`page_data/tab_counts`, `partials/…`) |
+| `tvt-07c6c8edb6d417bf.js` | `` (0,v.DI)("/preview",{body:f,method:"POST"}) ``; `"Markdown preview unavailable"`; `"Add a suggestion"` |
+| `0m-0ae59ad9dc9eab60.js` | `case"issue_comment":return"pull_request_comment"` (the PR comment box's subject) |
+| `app-runtime-e674540d54849b57.js` | `"Can not make cross-origin requests from verifiedFetch"` (`DI`, module `Qh`) |
+| `hj-ece3bec966e8a2b6.js` | `"header-3":{prefix:"### "}` (markdown-toolbar-element's styles) |
 
 Limits: no POST/PUT/DELETE was sent; bodies come from the code; the signed-out page loads 248 of 1,537
 chunks, but every action above is in those.

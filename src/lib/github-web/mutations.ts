@@ -8,7 +8,7 @@ import { rerunWorkflowJobs } from './actions';
 import type { MergeBox } from './merge-box';
 import { SIGNED_OUT, getJson, send } from './session';
 
-export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox.fetchMore' | 'inbox.enrich' | 'inbox.branches' | 'repos.search' | 'repos.top' | 'orgs.list' | `pr.fetch${string}` | 'pr.reviewerCandidates'>]: (args: RpcMethods[M]['args']) => Promise<RpcMethods[M]['result']> } = {
+export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox.fetchMore' | 'inbox.enrich' | 'inbox.branches' | 'repos.search' | 'repos.top' | 'orgs.list' | `pr.fetch${string}` | 'pr.reviewerCandidates' | 'markdown.preview'>]: (args: RpcMethods[M]['args']) => Promise<RpcMethods[M]['result']> } = {
   'pr.review': async ({ prId, event, body, threads }) => {
     const pull = pullRequestFor(prId);
     // Batched inline comments join the viewer's pending review; submitting the review publishes them.
@@ -117,14 +117,28 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
 
 /**
  * Remembers what later writes about a PR need, from whichever part of it has loaded: the page's id, head and stack, the
- * comparison's base, the threads (the PR page loads them in stages, pr-stages.ts).
+ * comparison's base, the threads (the PR page loads them in stages, pr-stages.ts), and the database ids a preview names.
  */
-export function rememberPullRequest(loaded: Pick<PrDetail, 'repo' | 'number'> & Partial<Pick<PrDetail, 'id' | 'headOid' | 'baseOid' | 'nativeStack' | 'threads'>>): void {
+export function rememberPullRequest(
+  loaded: Pick<PrDetail, 'repo' | 'number'> &
+    Partial<Pick<PrDetail, 'id' | 'headOid' | 'baseOid' | 'nativeStack' | 'threads'>> & { databaseId?: number; repositoryDatabaseId?: number },
+): void {
   const path = `/${loaded.repo.owner}/${loaded.repo.name}/pull/${loaded.number}`;
-  const known = pullRequests.get(path) ?? { path, repoPath: `/${loaded.repo.owner}/${loaded.repo.name}`, headOid: '', baseOid: '', isNativeStack: false };
+  const known = pullRequests.get(path) ?? {
+    path,
+    repoPath: `/${loaded.repo.owner}/${loaded.repo.name}`,
+    number: loaded.number,
+    headOid: '',
+    baseOid: '',
+    isNativeStack: false,
+    databaseId: '',
+    repositoryDatabaseId: '',
+  };
   if (loaded.headOid !== undefined) known.headOid = loaded.headOid;
   if (loaded.baseOid !== undefined) known.baseOid = loaded.baseOid;
   if (loaded.nativeStack !== undefined) known.isNativeStack = loaded.nativeStack !== null;
+  if (loaded.databaseId !== undefined) known.databaseId = String(loaded.databaseId);
+  if (loaded.repositoryDatabaseId !== undefined) known.repositoryDatabaseId = String(loaded.repositoryDatabaseId);
   pullRequests.set(path, known);
   if (loaded.id) pullPaths.set(loaded.id, path);
   for (const thread of loaded.threads ?? []) {
@@ -223,9 +237,13 @@ interface KnownPullRequest {
   path: string;
   /** `/{owner}/{repo}`, where its workflow runs live. */
   repoPath: string;
+  number: number;
   headOid: string;
   baseOid: string;
   isNativeStack: boolean;
+  /** GitHub's database ids of the PR and its repository, as a preview names them; empty until the header has loaded. */
+  databaseId: string;
+  repositoryDatabaseId: string;
 }
 
 interface KnownThread {

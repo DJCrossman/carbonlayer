@@ -4,6 +4,7 @@ import type { RpcRequest } from '../rpc';
 import { DEFAULT_SETTINGS } from '../settings';
 import { handleRpc } from './index';
 import { enrichPull, fetchInbox, fetchViewPage } from './inbox';
+import { rememberPullRequest } from './mutations';
 import { fetchPullRequestPage } from './pull-request';
 import { topRepositories } from './repositories';
 
@@ -83,5 +84,21 @@ describe('handleRpc', () => {
     expect(enrichPull).toHaveBeenCalledWith(prs[0], DEFAULT_SETTINGS.mergeMethod, 'octocat');
     await call('inbox.enrich', { prs: prs.slice(0, 2) });
     expect(enrichPull).toHaveBeenCalledTimes(7);
+  });
+
+  it("previews Markdown with the form GitHub's comment box posts for a pull request, and keeps what it read", async () => {
+    document.head.innerHTML = '<meta name="fetch-nonce" content="v2:n1"><meta name="release" content="r1">';
+    rememberPullRequest({ id: 'PR_9', repo: { owner: 'o', name: 'r' }, number: 9, databaseId: 900, repositoryDatabaseId: 77 });
+    await call('pr.fetch', { repo: { owner: 'o', name: 'r' }, number: 9 });
+    const fetch = vi.fn(async (_path: string, _init: RequestInit) => new Response('<p><strong>Hi</strong></p>'));
+    vi.stubGlobal('fetch', fetch);
+
+    expect(await call('markdown.preview', { text: '**Hi**', prId: 'PR_9' })).toMatchObject({ ok: true, result: { html: '<p><strong>Hi</strong></p>' } });
+    const [path, init] = fetch.mock.calls[0]!;
+    expect([path, init.method]).toEqual(['/preview', 'POST']);
+    expect(Object.fromEntries(init.body as FormData)).toEqual({ text: '**Hi**', issue: '900', repository: '77', project: '900', subject: '9', subject_type: 'PullRequest' });
+    expect(init.headers).toEqual({ 'GitHub-Verified-Fetch': 'true', 'X-Requested-With': 'XMLHttpRequest', 'X-Fetch-Nonce': 'v2:n1', 'X-GitHub-Client-Version': 'r1' });
+    await call('pr.fetch', { repo: { owner: 'o', name: 'r' }, number: 9 });
+    expect(fetchPullRequestPage).toHaveBeenCalledTimes(1);
   });
 });

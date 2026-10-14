@@ -82,6 +82,37 @@ export async function send<T>(path: string, method: 'POST' | 'PUT' | 'DELETE', b
 }
 
 /**
+ * A form GitHub's React UI posts to have something rendered, not changed (its comment box's Preview tab): multipart
+ * fields with only the headers GitHub's `verifiedFetch` adds, answered with HTML.
+ */
+export async function render(path: string, fields: Record<string, string>): Promise<string> {
+  const nonce = document.querySelector('meta[name="fetch-nonce"]');
+  const body = new FormData();
+  for (const [name, value] of Object.entries(fields)) body.append(name, value);
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'GitHub-Verified-Fetch': 'true',
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-Fetch-Nonce': nonce?.getAttribute('content') ?? '',
+        'X-GitHub-Client-Version': document.querySelector('meta[name="release"]')?.getAttribute('content') ?? '',
+      },
+      body,
+    });
+  } catch {
+    throw new Error('Could not reach GitHub (network error)');
+  }
+  const nextNonce = response.headers.get('X-Fetch-Nonce');
+  if (nonce && nextNonce) nonce.setAttribute('content', nextNonce);
+  if (response.redirected && new URL(response.url).pathname === '/login') throw new Error(SIGNED_OUT);
+  if (!response.ok) throw new Error(`GitHub answered ${response.status} to POST ${path}`);
+  return response.text();
+}
+
+/**
  * A classic, server-rendered form, submitted as the browser would: form-encoded, with the fields it carries (its own
  * `authenticity_token` among them). Only ever to github.com itself. A 2xx, or a redirect anywhere but sign-in, is success.
  */

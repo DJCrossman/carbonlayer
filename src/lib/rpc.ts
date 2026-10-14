@@ -43,6 +43,8 @@ export interface RpcMethods {
   'pr.fetchChecks': { args: PrPageRequest; result: PrStages['checks'] };
   'pr.fetchStack': { args: PrPageRequest; result: PrStages['stack'] };
   'pr.fetchMeta': { args: PrPageRequest; result: PrStages['meta'] };
+  /** A comment's Markdown as GitHub renders it on this PR, for a comment box's Preview tab; it changes nothing. */
+  'markdown.preview': { args: { text: string; prId: string }; result: { html: string } };
   'pr.review': {
     args: {
       prId: string;

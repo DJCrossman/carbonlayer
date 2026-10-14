@@ -79,7 +79,7 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
       viewerLogin,
       stackSource: nativeStack ? 'native' : graphiteStackComment(page) ? 'graphite-comment' : 'none',
     };
-    rememberPullRequest(header);
+    rememberPullRequest({ ...header, databaseId: pr.id, repositoryDatabaseId: layout.repository?.id });
     return header;
   },
 
@@ -311,6 +311,8 @@ interface LayoutRoute {
     mergedTime?: string | null;
   };
   stack?: NativeStack | null;
+  /** The base repository; `id` is its database id. */
+  repository?: { id?: number } | null;
   mergeStatusButtonData?: { defaultMergeMethod?: MergeMethod } | null;
   user?: { canEditTitle?: boolean } | null;
 }

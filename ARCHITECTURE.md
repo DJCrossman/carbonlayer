@@ -39,8 +39,11 @@ uses (`/pulls/inbox/queries`, `/pulls/search`, `/pulls/…/deferred`, `/{o}/{r}/
 (`src/lib/model.ts`) are posted back. Writes go to the `page_data/*` routes GitHub's PR page posts
 to (reverting a merged PR is an empty POST to `/pull/{n}/revert`, as GitHub's Revert button sends, landing on GitHub's
 prefilled page for the revert pull request), except re-running checks: the PR page cannot, so `github-web/actions.ts` submits the classic form GitHub's Actions
-run page loads into its re-run dialog. See `docs/research/github-web-endpoints.md`, `github-web-mutations.md` and
-`github-web-reviewers.md`. No api.github.com, no token. The background service worker only brokers the one-click copy from Graphite (below).
+run page loads into its re-run dialog. A comment box's Preview tab is GitHub's own rendering: the multipart POST to
+`/preview` GitHub's comment box sends for a comment on the PR (`markdown.preview`), which changes nothing. The comment
+boxes themselves (`CommentInput` in `src/pr/primitives.tsx`) work like GitHub's: its toolbar, shortcuts, lists that
+continue and links on paste, each a pure command in `src/pr/markdown-editing.ts`. See
+`docs/research/github-web-endpoints.md`, `github-web-mutations.md` and `github-web-reviewers.md`. No api.github.com, no token. The background service worker only brokers the one-click copy from Graphite (below).
 
 Signed-in state comes from the fetched PR page's `meta[name="user-login"]`: empty means the PR page
 shows "Sign in to github.com in this tab". Signed in, the routes behind the sidebar (`merge_box`,

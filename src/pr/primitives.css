@@ -16,20 +16,83 @@
   color: inherit;
 }
 
-.pr-textarea {
-  display: block;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 6px 8px;
+/* The comment box, as GitHub's: Write / Preview tabs and the toolbar on a subtle header, the selected tab open onto the
+   text below it, which has no border of its own. */
+.pr-comment-box {
   border: 1px solid var(--gg-border);
   border-radius: var(--gg-radius);
   background: var(--gg-bg);
+}
+.pr-comment-box:focus-within { border-color: var(--gg-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gg-accent) 25%, transparent); }
+.pr-comment-box-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0 6px;
+  padding: 6px 6px 0;
+  border-bottom: 1px solid var(--gg-border);
+  border-radius: calc(var(--gg-radius) - 1px) calc(var(--gg-radius) - 1px) 0 0;
+  background: var(--gg-bg-subtle);
+}
+.pr-comment-box-tabs { display: flex; margin-bottom: -1px; }
+.pr-comment-box-tab {
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: var(--gg-radius) var(--gg-radius) 0 0;
+  background: transparent;
+  color: var(--gg-fg-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.pr-comment-box-tab:hover:not(:disabled) { color: var(--gg-fg); }
+.pr-comment-box-tab[aria-selected='true'] { border-color: var(--gg-border); background: var(--gg-bg); color: var(--gg-fg); }
+.pr-comment-box-tab:focus-visible { outline: 2px solid var(--gg-accent); outline-offset: -2px; }
+.pr-comment-box-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-left: auto;
+  padding-bottom: 3px;
+}
+.pr-comment-box-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--gg-radius);
+  background: transparent;
+  color: var(--gg-fg-muted);
+  cursor: pointer;
+}
+.pr-comment-box-tool:hover:not(:disabled) { background: color-mix(in srgb, var(--gg-fg-subtle) 18%, transparent); color: var(--gg-fg); }
+.pr-comment-box-tool:focus-visible { outline: 2px solid var(--gg-accent); outline-offset: -2px; }
+.pr-comment-box-tool:disabled { opacity: 0.5; cursor: default; }
+.pr-comment-box-divider { width: 1px; height: 16px; margin: 0 4px; background: var(--gg-border); }
+.pr-comment-box-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 0 0 var(--gg-radius) var(--gg-radius);
+  outline: none;
+  background: transparent;
   color: var(--gg-fg);
   font: 13px/1.45 var(--gg-font);
   resize: vertical;
 }
-.pr-textarea:focus { outline: none; border-color: var(--gg-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gg-accent) 25%, transparent); }
-.pr-textarea::placeholder { color: var(--gg-fg-subtle); }
+.pr-comment-box-input[hidden] { display: none; }
+.pr-comment-box-input::placeholder { color: var(--gg-fg-subtle); }
+.pr-comment-box.is-disabled .pr-comment-box-input { color: var(--gg-fg-muted); }
+.pr-comment-box-preview { box-sizing: border-box; padding: 8px 10px; overflow-wrap: anywhere; }
+.pr-comment-box-raw { margin: 6px 0 0; white-space: pre-wrap; font: 12px/1.45 var(--gg-font-mono); color: var(--gg-fg); }
 
 /* A stage of the page's data that failed to load: one line where its part would be, with a retry. */
 .pr-stage-error {

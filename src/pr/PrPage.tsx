@@ -24,7 +24,7 @@ import { FilesSection, useFileReview } from './Files';
 import { usePrKeybindings } from './keybindings';
 import { followLink, goToPr, openOnGitHub } from './navigation';
 import { prDetailFrom, usePrPageData, type PrPageData } from './page-data';
-import { StageError, Staged, StatePill } from './primitives';
+import { MarkdownPreview, StageError, Staged, StatePill } from './primitives';
 import { QuickApproveDialog, ReviewComposer, type ReviewEvent } from './ReviewComposer';
 import { ReviewersCard } from './Reviewers';
 import { ShortcutHelp, ShortcutLegend } from './ShortcutHelp';
@@ -63,12 +63,19 @@ export function PrPage({ source, route }: { source: DataSource; route: Extract<A
 function PrStagesView({ source, route, settings }: { source: DataSource; route: Extract<AppRoute, { page: 'pr' }>; settings: Settings | null }) {
   const { data, reload } = usePrPageData(source, route.repo, route.number);
   const header = data.header;
+  const prId = header.value?.id;
+  // Every comment box on the page previews its Markdown as GitHub renders it on this PR.
+  const previewMarkdown = useCallback((text: string) => source.previewMarkdown(text, prId ?? ''), [source, prId]);
   if (header.status === 'error' && header.error === SIGNED_OUT) return <PrError message={header.error} />;
   if (!header.value || !settings) {
     const retry = () => void reload(['header'], true).catch(() => {});
     return <PrSkeleton headerError={header.status === 'error' ? <StageError what="this pull request" error={header.error} onRetry={retry} /> : null} />;
   }
-  return <PrView header={header.value} data={data} reload={reload} settings={settings} source={source} section={route.section} />;
+  return (
+    <MarkdownPreview value={previewMarkdown}>
+      <PrView header={header.value} data={data} reload={reload} settings={settings} source={source} section={route.section} />
+    </MarkdownPreview>
+  );
 }
 
 function PrView({

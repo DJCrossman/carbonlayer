@@ -12,7 +12,7 @@ import { fetchPullRequestPage } from './pull-request';
 import { listOrganizations } from './organizations';
 import { pickableRepositories, topRepositories } from './repositories';
 import { reviewerCandidatesFrom } from './reviews';
-import { getJson, getPage, noteShape, politely } from './session';
+import { getJson, getPage, noteShape, politely, render } from './session';
 
 export async function handleRpc(request: RpcRequest): Promise<RpcResponse> {
   try {
@@ -106,6 +106,20 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
       cached(`suggested-reviewers:${path}`, 60_000, false, () => getJson<unknown>(`${path}/page_data/suggested_reviewers`)),
     ]);
     return reviewerCandidatesFrom(available, suggested, q);
+  },
+  'markdown.preview': async ({ text, prId }) => {
+    // The fields GitHub's own comment box sends for a comment on a pull request (docs/research/github-web-mutations.md).
+    const pull = pullRequestFor(prId);
+    return {
+      html: await render('/preview', {
+        text,
+        issue: pull.databaseId,
+        repository: pull.repositoryDatabaseId,
+        project: pull.databaseId,
+        subject: String(pull.number),
+        subject_type: 'PullRequest',
+      }),
+    };
   },
   ...mutations,
 };

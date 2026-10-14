@@ -56,6 +56,8 @@ export interface DataSource {
   /** `offered: false` when GitHub has no such re-run for the workflow run. */
   rerunFailedJobs(prId: string, runId: string): Promise<{ offered: boolean }>;
   rerunAllJobs(prId: string, runId: string): Promise<{ offered: boolean }>;
+  /** A comment's Markdown as GitHub renders it on the PR, as HTML: what a comment box's Preview tab shows. */
+  previewMarkdown(text: string, prId: string): Promise<string>;
   getSettings(): Promise<Settings>;
   setSettings(patch: Partial<Settings>): Promise<Settings>;
   watchSettings(onChange: (settings: Settings) => void): () => void;
@@ -87,6 +89,7 @@ export function createRpcDataSource(): DataSource {
     reRequestReview: (prId, reviewerId) => rpc('pr.reRequestReview', { prId, reviewerId }),
     rerunFailedJobs: (prId, runId) => rpc('pr.rerunFailedJobs', { prId, runId }),
     rerunAllJobs: (prId, runId) => rpc('pr.rerunAllJobs', { prId, runId }),
+    previewMarkdown: async (text, prId) => (await rpc('markdown.preview', { text, prId })).html,
     getSettings,
     setSettings,
     watchSettings,
@@ -253,6 +256,15 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     rerunAllJobs: async (...args) => {
       await log('rerunAllJobs', ...args);
       return { offered: true };
+    },
+    // No GitHub to render it: each paragraph as it was typed, escaped, a moment later.
+    previewMarkdown: async (text) => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return text
+        .split(/\n\s*\n/)
+        .filter((paragraph) => paragraph.trim() !== '')
+        .map((paragraph) => `<p>${paragraph.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('\n', '<br>')}</p>`)
+        .join('\n');
     },
     getSettings: () => getSettings(memory),
     setSettings: async (patch) => {

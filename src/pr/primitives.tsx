@@ -1,10 +1,26 @@
 // PR-page pieces the shared primitives in src/ui/ do not cover: the Open / Draft / Merged / Closed state
-// pill, the composer textarea, and a part of the page fed by one stage of its data.
-import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
+// pill, the comment box, and a part of the page fed by one stage of its data.
+import { createContext, Fragment, useContext, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
 import type { PrSummary } from '../lib/model';
 import { Button } from '../ui/Button';
-import { Icon } from '../ui/Icon';
+import { Icon, type IconName } from '../ui/Icon';
 import { StatusPill } from '../ui/StatusPill';
+import { Markdown } from './Comment';
+import {
+  continueList,
+  insertHeading,
+  insertLink,
+  insertSuggestion,
+  linkPastedUrl,
+  toggleBold,
+  toggleCode,
+  toggleItalic,
+  toggleNumberedList,
+  toggleQuote,
+  toggleTaskList,
+  toggleUnorderedList,
+  type Draft,
+} from './markdown-editing';
 import type { StageState } from './page-data';
 import './primitives.css';
 
@@ -17,8 +33,9 @@ export function StatePill({ pr }: { pr: Pick<PrSummary, 'state' | 'isDraft'> }) 
 }
 
 /**
- * The textarea every composer on the page uses: ⌘↵ / Ctrl+↵ submits, Esc cancels, and it grows with
- * its content.
+ * The comment box every composer on the page uses, as GitHub's: Write and Preview tabs, GitHub's formatting toolbar and
+ * the shortcuts GitHub documents for comments, lists that carry on with Enter, and a URL pasted over text linking it
+ * (markdown-editing.ts says what each does to the text). ⌘↵ / Ctrl+↵ submits, Esc cancels, and it grows with its content.
  */
 export function CommentInput({
   value,
@@ -29,6 +46,7 @@ export function CommentInput({
   autoFocus,
   disabled,
   minRows = 2,
+  suggestion,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -38,8 +56,23 @@ export function CommentInput({
   autoFocus?: boolean;
   disabled?: boolean;
   minRows?: number;
+  /** The commented lines' current text: adds GitHub's "Add a suggestion", which puts them in a suggestion block. */
+  suggestion?: () => string;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const previewTab = useRef<HTMLButtonElement>(null);
+  const preview = useContext(MarkdownPreview);
+  // While Preview shows: the height Write had, which the preview keeps so the box does not jump.
+  const [previewing, setPreviewing] = useState<{ height: number } | null>(null);
+  // ⌘⇧V / Ctrl+Shift+V pastes a URL as it is, over a selection too.
+  const pasteAsIs = useRef(false);
+  // Where a command's selection goes once React shows its text, when the browser could not type the text in itself.
+  const selectionAfter = useRef<Draft | null>(null);
+  const isMac = navigator.userAgent.includes('Mac');
+  const tools: Tool[][] = suggestion
+    ? [[{ label: 'Add a suggestion', icon: 'file-diff', keys: 'G', stroke: 'g', command: (draft) => insertSuggestion(draft, suggestion()) }], ...TOOLBAR]
+    : TOOLBAR;
+
   // `autoFocus` alone is not enough inside a diff: the annotation is mounted before the library slots it
   // into a rendered line, and an unrendered element cannot take focus. Retry for a few frames.
   useEffect(() => {
@@ -51,28 +84,160 @@ export function CommentInput({
     });
     return () => cancelAnimationFrame(frame);
   }, [autoFocus]);
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+
+  // A comment sent from Preview clears the text; the next one starts on Write.
+  useEffect(() => {
+    if (value === '') setPreviewing(null);
+  }, [value]);
+
+  useLayoutEffect(() => {
+    const textarea = ref.current;
+    const after = selectionAfter.current;
+    if (!textarea || !after || textarea.value !== after.value) return;
+    textarea.setSelectionRange(after.selectionStart, after.selectionEnd);
+    selectionAfter.current = null;
+  });
+
+  /**
+   * Carries out a command on the text; false when it had nothing to do. Only the stretch it changes is typed in, by the
+   * browser, so ⌘Z undoes it as it would typing.
+   */
+  const carryOut = (command: (draft: Draft) => Draft | null): boolean => {
+    const textarea = ref.current;
+    const after = textarea && !disabled ? command(textarea) : null;
+    if (!textarea || !after) return false;
+    const before = textarea.value;
+    let from = 0;
+    while (from < before.length && from < after.value.length && before[from] === after.value[from]) from++;
+    let to = before.length;
+    let end = after.value.length;
+    while (to > from && end > from && before[to - 1] === after.value[end - 1]) {
+      to--;
+      end--;
+    }
+    textarea.focus();
+    textarea.setSelectionRange(from, to);
+    if (before === after.value || document.execCommand(end > from ? 'insertText' : 'delete', false, after.value.slice(from, end))) {
+      textarea.setSelectionRange(after.selectionStart, after.selectionEnd);
+    } else {
+      selectionAfter.current = after;
+      onChange(after.value);
+    }
+    return true;
+  };
+
+  const showPreview = (show: boolean) => {
+    if (show === !!previewing) return;
+    if (!show) {
+      setPreviewing(null);
+      requestAnimationFrame(() => ref.current?.focus());
+      return;
+    }
+    // Keyboard focus moves from the text, about to hide, to the Preview tab, where ⌘⇧P still reaches the box.
+    if (document.activeElement === ref.current) previewTab.current?.focus();
+    setPreviewing({ height: ref.current?.offsetHeight ?? 0 });
+  };
+
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    pasteAsIs.current = false;
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
-      if (value.trim()) onSubmit();
-    } else if (event.key === 'Escape' && onCancel) {
+      if (value.trim() && !disabled) onSubmit();
+      return;
+    }
+    if (event.key === 'Escape' && onCancel) {
       event.preventDefault();
       onCancel();
+      return;
+    }
+    if ((isMac ? event.metaKey : event.ctrlKey) && !event.altKey) {
+      // Letters by the character they type; digits and punctuation by their key, whose character shift changes.
+      const stroke = `${event.shiftKey ? 'shift+' : ''}${/^[a-z]$/i.test(event.key) ? event.key.toLowerCase() : event.code}`;
+      const tool = previewing ? undefined : tools.flat().find((candidate) => candidate.stroke === stroke);
+      if (stroke === 'shift+p') {
+        event.preventDefault();
+        showPreview(!previewing);
+      } else if (stroke === 'shift+v') {
+        pasteAsIs.current = true;
+      } else if (tool) {
+        event.preventDefault();
+        carryOut(tool.command);
+      }
+      return;
+    }
+    if (event.key === 'Enter' && !event.shiftKey && !event.altKey && !event.nativeEvent.isComposing && event.target === ref.current && carryOut(continueList)) {
+      event.preventDefault();
     }
   };
+
+  const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const pasted = event.clipboardData.getData('text/plain');
+    if (!pasteAsIs.current && carryOut((draft) => linkPastedUrl(draft, pasted))) event.preventDefault();
+  };
+
   return (
-    <textarea
-      ref={ref}
-      className="pr-textarea"
-      value={value}
-      placeholder={placeholder}
-      rows={Math.max(minRows, Math.min(12, value.split('\n').length))}
-      disabled={disabled}
-      onChange={(event) => onChange(event.target.value)}
-      onKeyDown={onKeyDown}
-    />
+    <div className={`pr-comment-box ${disabled ? 'is-disabled' : ''}`} onKeyDown={onKeyDown}>
+      <div className="pr-comment-box-header">
+        <div className="pr-comment-box-tabs" role="tablist" aria-label="Comment">
+          <button type="button" role="tab" aria-selected={!previewing} className="pr-comment-box-tab" disabled={disabled} onClick={() => showPreview(false)}>
+            Write
+          </button>
+          <button
+            ref={previewTab}
+            type="button"
+            role="tab"
+            aria-selected={!!previewing}
+            className="pr-comment-box-tab"
+            disabled={disabled}
+            title={`Preview (${isMac ? '⌘⇧P' : 'Ctrl+Shift+P'})`}
+            onClick={() => showPreview(true)}
+          >
+            Preview
+          </button>
+        </div>
+        {!previewing && (
+          <div className="pr-comment-box-toolbar" role="toolbar" aria-label="Formatting">
+            {tools.map((group, index) => (
+              <Fragment key={group[0]!.label}>
+                {index > 0 && <span className="pr-comment-box-divider" />}
+                {group.map((tool) => (
+                  <button
+                    key={tool.label}
+                    type="button"
+                    className="pr-comment-box-tool"
+                    aria-label={tool.label}
+                    title={tool.keys ? `${tool.label} (${isMac ? `⌘${tool.keys.replace('Shift+', '⇧')}` : `Ctrl+${tool.keys}`})` : tool.label}
+                    disabled={disabled}
+                    // The text keeps its focus and selection, which the command acts on.
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => carryOut(tool.command)}
+                  >
+                    <Icon name={tool.icon} />
+                  </button>
+                ))}
+              </Fragment>
+            ))}
+          </div>
+        )}
+      </div>
+      <textarea
+        ref={ref}
+        className="pr-comment-box-input"
+        hidden={!!previewing}
+        value={value}
+        placeholder={placeholder}
+        rows={Math.max(minRows, Math.min(12, value.split('\n').length))}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        onPaste={onPaste}
+      />
+      {previewing && <CommentPreview text={value} render={preview} minHeight={previewing.height} />}
+    </div>
   );
 }
+
+/** Renders a comment's Markdown as GitHub will show it, for the Preview tab of every comment box inside it. */
+export const MarkdownPreview = createContext<((text: string) => Promise<string>) | null>(null);
 
 /**
  * A part of the page fed by one stage of its data: its skeleton until the stage first arrives, then what `children`
@@ -116,3 +281,74 @@ export function StageError({ what, error, onRetry }: { what: string; error: stri
     </div>
   );
 }
+
+/** A comment box's Preview tab: GitHub's rendering of the text, or the text as it is when GitHub cannot render it. */
+function CommentPreview({ text, render, minHeight }: { text: string; render: ((text: string) => Promise<string>) | null; minHeight: number }) {
+  const [rendered, setRendered] = useState<{ text: string; html: string } | { text: string; error: string } | null>(null);
+  useEffect(() => {
+    if (!render || text.trim() === '') return;
+    let current = true;
+    render(text).then(
+      (html) => current && setRendered({ text, html }),
+      (reason: unknown) => current && setRendered({ text, error: reason instanceof Error ? reason.message : String(reason) }),
+    );
+    return () => {
+      current = false;
+    };
+  }, [render, text]);
+
+  if (text.trim() === '') {
+    return (
+      <div className="pr-comment-box-preview pr-muted" style={{ minHeight }}>
+        Nothing to preview
+      </div>
+    );
+  }
+  if (!render || (rendered?.text === text && 'error' in rendered)) {
+    return (
+      <div className="pr-comment-box-preview" style={{ minHeight }}>
+        <div className="pr-muted" title={rendered && 'error' in rendered ? rendered.error : undefined}>
+          Preview is not available
+        </div>
+        <pre className="pr-comment-box-raw">{text}</pre>
+      </div>
+    );
+  }
+  return (
+    <div className="pr-comment-box-preview" style={{ minHeight }} aria-busy={rendered?.text !== text}>
+      {rendered?.text === text && 'html' in rendered ? <Markdown html={rendered.html} /> : <span className="pr-muted">Loading preview…</span>}
+    </div>
+  );
+}
+
+/**
+ * A toolbar button of the comment box. `keys` is its shortcut after ⌘ / Ctrl as GitHub's docs write it; `stroke` is
+ * how the box's keydown reads that shortcut.
+ */
+interface Tool {
+  label: string;
+  icon: IconName;
+  command: (draft: Draft) => Draft;
+  keys?: string;
+  stroke?: string;
+}
+
+/**
+ * GitHub's comment toolbar, in its order and groups, with the shortcuts GitHub documents for comments ("Keyboard
+ * shortcuts", docs.github.com) and its task list's ⌘⇧L (GitHub's command list; the docs leave it out).
+ */
+const TOOLBAR: Tool[][] = [
+  [
+    { label: 'Heading', icon: 'heading', command: insertHeading },
+    { label: 'Bold', icon: 'bold', command: toggleBold, keys: 'B', stroke: 'b' },
+    { label: 'Italic', icon: 'italic', command: toggleItalic, keys: 'I', stroke: 'i' },
+    { label: 'Quote', icon: 'quote', command: toggleQuote, keys: 'Shift+.', stroke: 'shift+Period' },
+    { label: 'Code', icon: 'code', command: toggleCode, keys: 'E', stroke: 'e' },
+    { label: 'Link', icon: 'link', command: insertLink, keys: 'K', stroke: 'k' },
+  ],
+  [
+    { label: 'Numbered list', icon: 'list-ordered', command: toggleNumberedList, keys: 'Shift+7', stroke: 'shift+Digit7' },
+    { label: 'Unordered list', icon: 'list-unordered', command: toggleUnorderedList, keys: 'Shift+8', stroke: 'shift+Digit8' },
+    { label: 'Task list', icon: 'tasklist', command: toggleTaskList, keys: 'Shift+L', stroke: 'shift+l' },
+  ],
+];
