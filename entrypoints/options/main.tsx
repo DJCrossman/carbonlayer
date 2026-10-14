@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { OrgPicker, useOrganizations } from '../../src/inbox/OrgPicker';
 import { RepoPicker } from '../../src/inbox/RepoPicker';
 import { listOrganizations } from '../../src/lib/github-web/organizations';
+import { organizationPeople } from '../../src/lib/github-web/people';
 import { pickableRepositories } from '../../src/lib/github-web/repositories';
 import type { Organization } from '../../src/lib/model';
 import { getSettings, setSettings, type Settings } from '../../src/lib/settings';
@@ -179,6 +180,8 @@ function OptionsPage() {
 function OrganizationInbox({ org, settings, update }: { org: Organization; settings: Settings; update: (patch: Partial<Settings>, debounceMs?: number) => void }) {
   // GitHub's repository picker, the organization's repositories only.
   const searchRepos = (query: string) => pickableRepositories(query.trim(), org, async (path) => (await fromGitHub(path, 'application/json')).json());
+  // Its People page, for the section editor's username fields.
+  const listPeople = () => organizationPeople(org, async (path) => new DOMParser().parseFromString(await (await fromGitHub(path, 'text/html')).text(), 'text/html'));
   return (
     <>
       <div className="field">
@@ -195,7 +198,7 @@ function OrganizationInbox({ org, settings, update }: { org: Organization; setti
         <code>{settings.inboxScope}</code>.
       </p>
       {/* Another organization's views start their own draft. */}
-      <ViewsEditor key={org.login} views={settings.views} searchRepos={searchRepos} onChange={(views, typing) => update({ views }, typing ? 400 : 0)} />
+      <ViewsEditor key={org.login} views={settings.views} searchRepos={searchRepos} listPeople={listPeople} onChange={(views, typing) => update({ views }, typing ? 400 : 0)} />
     </>
   );
 }

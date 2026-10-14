@@ -2,11 +2,12 @@
 // edited row by row as Graphite does (each row one rule: what, how, which values; rows ANDed, "Add filter" ORs another
 // group), or, under "Advanced", its search query by hand. Saving compiles the filter into the view's query with the same
 // mapping as the Graphite import (src/lib/graphite.ts). Opened from the inbox and the options page.
-import { useId, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { RULE_KINDS, searchForFilter, type GraphiteFilter, type GraphiteRule } from '../lib/graphite';
-import type { RepoCandidate, RepoRef, View } from '../lib/model';
+import type { OrgMember, RepoCandidate, RepoRef, View } from '../lib/model';
 import { GITHUB_INBOX_FILTERS } from '../lib/views';
+import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
 import { RepoPicker } from './RepoPicker';
@@ -15,6 +16,7 @@ import './section-editor.css';
 export function SectionEditor({
   view,
   searchRepos,
+  listPeople,
   onSave,
   onDelete,
   onClose,
@@ -23,6 +25,8 @@ export function SectionEditor({
   view: View | null;
   /** Candidates for the Repositories field, from GitHub's repository picker. */
   searchRepos: (query: string) => Promise<RepoCandidate[]>;
+  /** Whom the username fields (Author, reviewers, …) offer as the user types: the organization's people. */
+  listPeople: () => Promise<OrgMember[]>;
   onSave: (view: View) => void;
   /** Absent for a view not saved yet. */
   onDelete?: () => void;
@@ -43,6 +47,19 @@ export function SectionEditor({
   const [setAside, setSetAside] = useState<RuleGroup[] | null>(null);
   const [advanced, setAdvanced] = useState(groups === null);
   const [problem, setProblem] = useState<string | null>(null);
+  // Asked for once, as the editor opens; until they come, or should they not, a login is typed as before.
+  const [people, setPeople] = useState<OrgMember[]>([]);
+
+  useEffect(() => {
+    let current = true;
+    listPeople().then(
+      (found) => current && setPeople(found),
+      (error: unknown) => console.debug('[gg]', "The organization's people did not load; logins are typed:", error instanceof Error ? error.message : error),
+    );
+    return () => {
+      current = false;
+    };
+  }, []);
 
   // A rule still waiting for its first value stays out of the search until it has one.
   const filter: GraphiteFilter | null = groups && {
@@ -138,6 +155,7 @@ export function SectionEditor({
                       key={rule.key}
                       rule={rule}
                       first={ruleIndex === 0}
+                      people={people}
                       onChange={(changed) => changeRule(groupIndex, ruleIndex, changed)}
                       onRemove={() => changeRule(groupIndex, ruleIndex, null)}
                     />
@@ -237,7 +255,7 @@ export function SectionEditor({
 }
 
 /** One rule of the filter as a row: what it looks at, how (is or is not), and its values, ORed. */
-function RuleRow({ rule, first, onChange, onRemove }: { rule: Rule; first: boolean; onChange: (rule: Rule) => void; onRemove: () => void }) {
+function RuleRow({ rule, first, people, onChange, onRemove }: { rule: Rule; first: boolean; people: OrgMember[]; onChange: (rule: Rule) => void; onRemove: () => void }) {
   const { label, field, verbs = ['is', 'is not'] } = RULE_KINDS[rule.kind] ?? { label: rule.kind };
   // Imported filters can hold kinds the editor does not offer; they stay as they are.
   const kinds = OFFERED_KINDS.includes(rule.kind) ? OFFERED_KINDS : [...OFFERED_KINDS, rule.kind];
@@ -311,9 +329,11 @@ function RuleRow({ rule, first, onChange, onRemove }: { rule: Rule; first: boole
           </>
         ) : (
           <ValuesInput
+            label={label}
             values={values.map(String)}
             placeholder={field === 'username' ? 'login' : field === 'label' ? 'label' : field === 'mergeBase' ? 'branch' : 'text'}
             suggestion={field === 'username' ? '@me' : undefined}
+            people={field === 'username' ? people : undefined}
             onChange={setValues}
           />
         )}
@@ -325,25 +345,46 @@ function RuleRow({ rule, first, onChange, onRemove }: { rule: Rule; first: boole
 
 /**
  * Free-form values as chips: Enter, a comma or leaving the field adds what was typed, Backspace in the empty field takes
- * the last one back. `suggestion` is offered as a one-click chip while it is not among the values.
+ * the last one back. `suggestion` is offered as a one-click chip while it is not among the values. With `people` (a
+ * username field) the field is a combobox: the people matching what is typed are listed under it, ↑ / ↓ reach one, Enter
+ * or a click adds that one's login, and Esc closes the list, not the drawer; Enter with nobody reached adds what was typed.
  */
 function ValuesInput({
+  label,
   values,
   placeholder,
   suggestion,
+  people,
   onChange,
 }: {
+  label: string;
   values: string[];
   placeholder: string;
   suggestion?: string;
+  people?: OrgMember[];
   onChange: (values: string[]) => void;
 }) {
+  const listId = useId();
+  const list = useRef<HTMLUListElement>(null);
   const [text, setText] = useState('');
+  // Whether the people matching what is typed show under the field, and which of them ↑ / ↓ or the mouse reached.
+  const [listing, setListing] = useState(false);
+  const [active, setActive] = useState<number | null>(null);
+  const offered = people && listing ? peopleMatching(people, text, values) : [];
+  const expanded = offered.length > 0;
   const add = (typed: string) => {
     const value = typed.trim();
     if (value && !values.includes(value)) onChange([...values, value]);
     setText('');
+    setListing(false);
+    setActive(null);
   };
+
+  useEffect(() => {
+    // The list in view as it opens, low in the drawer too, and the person reached in view in the list.
+    (active === null ? list.current : list.current?.children[active])?.scrollIntoView({ block: 'nearest' });
+  }, [expanded, active]);
+
   return (
     <div className="gg-editor__chips">
       {values.map((value) => (
@@ -357,19 +398,71 @@ function ValuesInput({
       <input
         type="text"
         value={text}
+        aria-label={`${label}: add a value`}
         placeholder={values.length > 0 ? '' : placeholder}
         spellCheck={false}
-        onChange={(event) => (event.target.value.endsWith(',') ? add(event.target.value.slice(0, -1)) : setText(event.target.value))}
+        role={people ? 'combobox' : undefined}
+        aria-autocomplete={people ? 'list' : undefined}
+        aria-expanded={people ? expanded : undefined}
+        aria-controls={expanded ? listId : undefined}
+        aria-activedescendant={expanded && active !== null ? `${listId}-${active}` : undefined}
+        onFocus={() => setListing(true)}
+        onClick={() => setListing(true)}
+        onChange={(event) => {
+          if (event.target.value.endsWith(',')) return add(event.target.value.slice(0, -1));
+          setText(event.target.value);
+          setListing(true);
+          setActive(null);
+        }}
         onBlur={() => add(text)}
         onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
-          if (event.key === 'Enter') {
+          if (people && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
             event.preventDefault();
-            add(text);
+            const options = peopleMatching(people, text, values);
+            if (options.length === 0) return;
+            const step = event.key === 'ArrowDown' ? 1 : -1;
+            setListing(true);
+            setActive(!expanded || active === null ? (step === 1 ? 0 : options.length - 1) : (active + step + options.length) % options.length);
+          } else if (event.key === 'Enter') {
+            event.preventDefault();
+            add((active !== null && offered[active]?.login) || text);
+          } else if (event.key === 'Escape' && expanded) {
+            // Esc closes the list, not the drawer around it.
+            event.stopPropagation();
+            setListing(false);
+            setActive(null);
           } else if (event.key === 'Backspace' && !text && values.length > 0) {
             onChange(values.slice(0, -1));
           }
         }}
       />
+      {expanded && (
+        <ul
+          ref={list}
+          id={listId}
+          role="listbox"
+          aria-label={`${label}: people`}
+          className="gg-editor__people"
+          // Choosing keeps the focus in the field, so leaving it adds nothing half-typed.
+          onMouseDown={(event) => event.preventDefault()}
+        >
+          {offered.map((person, index) => (
+            <li
+              key={person.login}
+              id={`${listId}-${index}`}
+              role="option"
+              aria-selected={index === active}
+              className="gg-editor__person"
+              onMouseMove={() => setActive(index)}
+              onClick={() => add(person.login)}
+            >
+              <Avatar user={{ login: person.login, avatarUrl: person.avatarUrl, url: '' }} size={20} />
+              <span className="gg-editor__person-login">{person.login}</span>
+              {person.name && <span className="gg-editor__person-name">{person.name}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
       {suggestion && !values.includes(suggestion) && (
         <button type="button" className="gg-editor__suggestion" onClick={() => onChange([...values, suggestion])}>
           + {suggestion}
@@ -377,6 +470,25 @@ function ValuesInput({
       )}
     </div>
   );
+}
+
+/**
+ * The people to offer for what was typed (a leading @ aside), none already chosen: everyone while nothing is typed, else
+ * those whose login or name has it, case aside; first those whose login begins with it, then those with a word of their
+ * name that does, then the rest, each in the People page's order.
+ */
+function peopleMatching(people: OrgMember[], typed: string, chosen: string[]): OrgMember[] {
+  const needle = typed.trim().replace(/^@/, '').toLowerCase();
+  const rank = (person: OrgMember) => {
+    const login = person.login.toLowerCase();
+    const name = person.name?.toLowerCase() ?? '';
+    if (login.startsWith(needle)) return 0;
+    if (` ${name}`.includes(` ${needle}`)) return 1;
+    return login.includes(needle) || name.includes(needle) ? 2 : 3;
+  };
+  return people
+    .filter((person) => rank(person) < 3 && !chosen.some((value) => value.toLowerCase() === person.login.toLowerCase()))
+    .sort((a, b) => rank(a) - rank(b));
 }
 
 /** A rule as a row: its kind kept apart from its conditions, which are empty until the user gives a value. */

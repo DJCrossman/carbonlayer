@@ -10,6 +10,7 @@ import { mutations, pullRequestFor, rememberPullRequest } from './mutations';
 import { fetchFileDiffs, fetchPrStage, forgetPrStages } from './pr-stages';
 import { fetchPullRequestPage } from './pull-request';
 import { listOrganizations } from './organizations';
+import { organizationPeople } from './people';
 import { pickableRepositories, topRepositories } from './repositories';
 import { reviewerCandidatesFrom } from './reviews';
 import { getJson, getPage, noteShape, politely, render } from './session';
@@ -80,6 +81,9 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
     cached('orgs', 600_000, false, () =>
       listOrganizations({ json: getJson, page: getPage }, document.querySelector('meta[name="user-login"]')?.getAttribute('content') || null),
     ),
+  'orgs.people': ({ org }) =>
+    // An organization's people change slowly: each one's are asked for once in 10 minutes.
+    cached(`people:${org.login}`.toLowerCase(), 600_000, false, () => organizationPeople(org, getPage)),
   'pr.fetch': async ({ repo, number, force }) => {
     const { mergeMethod } = await getSettings();
     const key = `pr:${repo.owner}/${repo.name}#${number}:${mergeMethod}`.toLowerCase();

@@ -29,6 +29,14 @@ export interface Organization {
   isViewer: boolean;
 }
 
+/** Someone in an organization, as its People page lists them. */
+export interface OrgMember {
+  login: string;
+  /** Their name, when they gave GitHub one. */
+  name: string | null;
+  avatarUrl: string;
+}
+
 export interface UserRef {
   login: string;
   avatarUrl: string;

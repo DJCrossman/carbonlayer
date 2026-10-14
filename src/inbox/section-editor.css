@@ -134,6 +134,7 @@
   min-height: 24px;
 }
 .gg-editor__chips {
+  position: relative;
   padding: 1px 2px 1px 3px;
   border: 1px solid var(--gg-border);
   border-radius: var(--gg-radius);
@@ -200,6 +201,56 @@
 .gg-editor__suggestion:hover {
   border-color: var(--gg-accent);
   color: var(--gg-accent);
+}
+
+/* The organization's people under a username field, as wide as the field: 28px rows of avatar, login and name (the
+   name gives way first), eight before the list scrolls. */
+.gg-editor__people {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: -1px;
+  left: -1px;
+  z-index: 10;
+  max-height: calc(8 * 28px + 8px);
+  margin: 0;
+  padding: 4px 0;
+  overflow: auto;
+  border: 1px solid var(--gg-border);
+  border-radius: 8px;
+  background: var(--gg-bg);
+  box-shadow: var(--gg-shadow-overlay);
+  list-style: none;
+  cursor: default;
+}
+.gg-editor__person {
+  display: flex;
+  align-items: center;
+  gap: var(--gg-space-2);
+  height: 28px;
+  padding: 0 var(--gg-space-2);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.gg-editor__person[aria-selected='true'] {
+  background: var(--gg-bg-hover);
+}
+.gg-editor__person .gg-avatar {
+  flex: none;
+}
+.gg-editor__person-login,
+.gg-editor__person-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gg-editor__person-login {
+  flex: 0 1 auto;
+  font-weight: 600;
+}
+.gg-editor__person-name {
+  flex: 0 100 auto;
+  color: var(--gg-fg-muted);
 }
 .gg-editor .gg-editor__add-value {
   width: 80px;

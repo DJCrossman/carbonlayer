@@ -1,7 +1,7 @@
 // Everything the UI needs from the outside world, behind one interface so the same pages render
 // from the content script's RPC in the extension and from fixtures in the dev harness (`?fixtures=1`).
 
-import type { ChangedFileDiff, Organization, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, TopRepository, View, ViewResult } from '../lib/model';
+import type { ChangedFileDiff, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, TopRepository, View, ViewResult } from '../lib/model';
 import { rpc, type InboxRowToEnrich, type MergeMethod } from '../lib/rpc';
 import { getSettings, setSettings, watchSettings, type Settings, type SettingsStorage } from '../lib/settings';
 import { resolveViewQuery } from '../lib/views';
@@ -34,6 +34,8 @@ export interface DataSource {
   searchRepos(query: string, owner?: Organization | null): Promise<RepoCandidate[]>;
   /** The organizations the viewer belongs to, then their own account: whose pull requests the inbox can show. */
   listOrgs(): Promise<Organization[]>;
+  /** The people of an organization, as its People page lists them; none for the viewer's own account. */
+  listOrgPeople(org: Organization): Promise<OrgMember[]>;
   /** A page of the repositories GitHub's homepage lists under "Top repositories": the first, or the one after `cursor`. */
   listTopRepositories(cursor?: number | null): Promise<{ repos: TopRepository[]; nextCursor: number | null }>;
   /** One stage of a PR's page (PrStages); `force` asks GitHub again instead of reusing what the content script has. */
@@ -74,6 +76,7 @@ export function createRpcDataSource(): DataSource {
     branchesOf: (prs) => rpc('inbox.branches', { prs }),
     searchRepos: (query, owner) => rpc('repos.search', { query, owner: owner && { login: owner.login, isViewer: owner.isViewer } }),
     listOrgs: () => rpc('orgs.list', {}),
+    listOrgPeople: (org) => rpc('orgs.people', { org: { login: org.login, isViewer: org.isViewer } }),
     listTopRepositories: (cursor) => rpc('repos.top', { cursor }),
     fetchPrStage: (stage, repo, number, force) => prStageRequests[stage]({ repo, number, force }),
     fetchPrFileDiffs: (repo, number, paths, force) => rpc('pr.fetchFileDiffs', { repo, number, paths, force }),
@@ -206,6 +209,10 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
       await new Promise((resolve) => setTimeout(resolve, 200));
       return FIXTURE_ORGANIZATIONS;
     },
+    listOrgPeople: async (org) => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return FIXTURE_PEOPLE[org.login] ?? [];
+    },
     // Five on the first page, then the rest after cursor 1, as GitHub's "Show more" would.
     listTopRepositories: async (cursor) => {
       await new Promise((resolve) => setTimeout(resolve, 300));
@@ -296,6 +303,29 @@ const FIXTURE_ORGANIZATIONS: Organization[] = [
   { login: 'globex', avatarUrl: '', isViewer: false },
   { login: 'octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/583231?v=4', isViewer: true },
 ];
+
+/**
+ * Who is in the harness's organizations, as their People pages list them, by login: the fixture rows' people and a few
+ * more, one of them without a name. The viewer's own account has none.
+ */
+const FIXTURE_PEOPLE: Record<string, OrgMember[]> = {
+  acme: [
+    { login: 'amanda-l', name: 'Amanda Liu', avatarUrl: 'https://avatars.githubusercontent.com/u/990000106?v=4' },
+    { login: 'dana-r', name: 'Dana Reyes', avatarUrl: 'https://avatars.githubusercontent.com/u/990000107?v=4' },
+    { login: 'jdoe', name: null, avatarUrl: 'https://avatars.githubusercontent.com/u/990000104?v=4' },
+    { login: 'kenji-w', name: 'Kenji Watanabe', avatarUrl: 'https://avatars.githubusercontent.com/u/990000105?v=4' },
+    { login: 'mona', name: 'Mona Lisa Octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/990000101?v=4' },
+    { login: 'nat-k', name: 'Nat Kowalski', avatarUrl: 'https://avatars.githubusercontent.com/u/990000103?v=4' },
+    { login: 'octocat', name: 'The Octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/583231?v=4' },
+    { login: 'priya-s', name: 'Priya Sharma', avatarUrl: 'https://avatars.githubusercontent.com/u/990000102?v=4' },
+    { login: 'sdavies', name: 'Sam Davies', avatarUrl: 'https://avatars.githubusercontent.com/u/990000108?v=4' },
+  ],
+  globex: [
+    { login: 'hank-s', name: 'Hank Scorpio', avatarUrl: 'https://avatars.githubusercontent.com/u/990000201?v=4' },
+    { login: 'lena-p', name: 'Lena Park', avatarUrl: 'https://avatars.githubusercontent.com/u/990000202?v=4' },
+    { login: 'octocat', name: 'The Octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/583231?v=4' },
+  ],
+};
 
 /** What the harness's repository picker offers: the fixture PRs' repositories and a few more. */
 const FIXTURE_REPOSITORIES: RepoCandidate[] = [

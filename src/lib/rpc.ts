@@ -2,7 +2,7 @@
 // GitHub with the user's session. Inside github.com the app posts requests to its parent window, the
 // content script answers them with same-origin fetches (cookies included); see src/lib/github-web/.
 
-import type { ChangedFileDiff, Organization, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, TopRepository, View, ViewResult } from './model';
+import type { ChangedFileDiff, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, TopRepository, View, ViewResult } from './model';
 
 export type MergeMethod = 'MERGE' | 'SQUASH' | 'REBASE';
 
@@ -30,6 +30,11 @@ export interface RpcMethods {
   'repos.top': { args: { cursor?: number | null }; result: { repos: TopRepository[]; nextCursor: number | null } };
   /** The organizations the viewer belongs to, then their own account: whose pull requests the inbox can show. */
   'orgs.list': { args: Record<string, never>; result: Organization[] };
+  /**
+   * The people of an organization, as its People page lists them: whom the section editor's username fields offer. None
+   * for the viewer's own account.
+   */
+  'orgs.people': { args: { org: Pick<Organization, 'login' | 'isViewer'> }; result: OrgMember[] };
   /** The whole PR at once, all its stages put together (the PR page itself loads them one by one, below). */
   'pr.fetch': { args: { repo: RepoRef; number: number; force?: boolean }; result: PrDetail };
   // The PR page, a stage at a time (PrStages in model.ts). `force` repeats the requests the stage itself makes to GitHub.

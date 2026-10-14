@@ -174,6 +174,21 @@ ADDITION with `+`, DELETION with `-`, CONTEXT with a space).
   with another such form while more remain (none on the last page). GitHub's own fragment loader sends
   `X-Requested-With: XMLHttpRequest`; `topRepositories` in `src/lib/github-web/repositories.ts` does too.
 
+## An organization's people (`/orgs/<login>/people`, signed in) — classic HTML page (VERIFIED signed in 2026-10-14)
+- `GET /orgs/<login>/people` (`Accept: text/html`) → 200, the whole People page. Each member is
+  `<li class="… member-list-item js-bulk-…" data-bulk-actions-id="<user id>">` holding
+  `<a class="d-inline-block" data-hovercard-type="user" data-hovercard-url="/users/<login>/hovercard" href="/<login>">
+  <img class="avatar avatar-user" src="https://avatars.githubusercontent.com/…" alt="@<login>"></a>` and
+  `<a class="f4 d-block" id="member-<login>" data-test-selector="linked-name-is-full-if-exists" href="/<login>">` reading
+  the member's name, or their login again when they gave none.
+- A 14-member organization listed all 14 on the one page, with no pagination links. How a bigger organization pages is
+  UNVERIFIED: `organizationPeople` (`src/lib/github-web/people.ts`) assumes GitHub's classic `a[rel="next"]` link to
+  `?page=N` of the same page and follows it, ten pages at most. `?query=<text>` filters server-side (`?query=da` returned
+  one row); not used.
+- The viewer's own account is no organization and has no People page; nothing is asked for it.
+- Not this: `GET /autocomplete/users?q=` answers `text/fragment+html` `li.autocomplete-item[data-autocomplete-value=<login>]`
+  from all of GitHub, not the organization's people.
+
 ## Writes
 Review submit, comment, inline comment, resolve, merge, auto-merge, viewed and draft: see
 `github-web-mutations.md` (read from GitHub's bundles; none sent yet).

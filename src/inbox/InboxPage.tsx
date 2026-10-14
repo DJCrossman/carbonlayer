@@ -425,6 +425,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
         <SectionEditor
           // The organization's repositories only.
           searchRepos={(query) => source.searchRepos(query, org)}
+          listPeople={async () => (org ? source.listOrgPeople(org) : [])}
           key={editing === 'new' ? 'new' : editing.id}
           view={editing === 'new' ? null : editing}
           onSave={saveSection}

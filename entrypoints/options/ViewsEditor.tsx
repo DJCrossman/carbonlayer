@@ -2,7 +2,7 @@
 // reordering, Graphite's defaults, share links in both directions and Graphite's own section links. Only a list where
 // every view is valid is passed on to be saved.
 import { useState } from 'react';
-import type { RepoCandidate, View } from '../../src/lib/model';
+import type { OrgMember, RepoCandidate, View } from '../../src/lib/model';
 import { GraphiteImport } from '../../src/inbox/GraphiteImport';
 import { importViews } from '../../src/inbox/import-views';
 import { SectionEditor } from '../../src/inbox/SectionEditor';
@@ -11,10 +11,12 @@ import { DEFAULT_VIEWS, decodeViewsShareHash, encodeViewsShareLink } from '../..
 export function ViewsEditor({
   views,
   searchRepos,
+  listPeople,
   onChange,
 }: {
   views: View[];
   searchRepos: (query: string) => Promise<RepoCandidate[]>;
+  listPeople: () => Promise<OrgMember[]>;
   onChange: (views: View[], typing: boolean) => void;
 }) {
   const [draft, setDraft] = useState(views);
@@ -170,6 +172,7 @@ export function ViewsEditor({
           key={editing === 'new' ? 'new' : editing.id}
           view={editing === 'new' ? null : editing}
           searchRepos={searchRepos}
+          listPeople={listPeople}
           onSave={(saved) => {
             change(draft.some((view) => view.id === saved.id) ? draft.map((view) => (view.id === saved.id ? saved : view)) : [...draft, saved]);
             setEditing(null);

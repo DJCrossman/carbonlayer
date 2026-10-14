@@ -136,6 +136,13 @@ A view with a `filter` (Graphite's share-link form, `{ groups: [{ rules: [{ isNe
 row by row in the section editor (`src/inbox/SectionEditor.tsx`, a right-side drawer like Graphite's "Update section",
 opened from a section's gear in the inbox and from "Edit…" on the options page), and its `query` is compiled from the
 filter and its own `repos` on every save with the import's mapping (`searchForFilter` in `src/lib/graphite.ts`).
+A username field there (Author, the reviewer and assignee fields, Mentions) is a combobox over the organization's people
+beside its `+ @me` chip: as the user types, those whose login or name has the text are listed under it (a login that
+begins with it first, then a name with a word that does), ↑ / ↓ and Enter or a click add one's login, Esc closes only the
+list, and Enter with nobody reached adds the text as typed. The people come from `orgs.people`, which the content script
+answers with `organizationPeople` (`src/lib/github-web/people.ts`) from the organization's People page (`GET
+/orgs/<login>/people`, HTML, signed in; further pages read while one links to the next, ten at most), kept 10 minutes;
+the options page asks github.com itself, and the viewer's own account has nobody.
 "Advanced" there shows that query and lets the user write one by hand instead, which drops the filter. Beside the
 section cards, Graphite's sections sidebar (`src/inbox/SectionsSidebar.tsx`) lists every section with its count, the one
 in view highlighted; a click scrolls to the section (expanding it), ↑ / ↓ reorder, the gear opens the editor and "Add
