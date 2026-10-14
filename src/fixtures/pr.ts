@@ -1,7 +1,7 @@
 // PR page fixtures for the dev harness (`app.html?fixtures=1#/pr/acme/widgets/42`): a three-PR stack in
-// acme/widgets. #41 (bottom) is approved and green, #42 (middle) has review feedback and a failing check,
-// #43 (top) is a draft. Patches are written as line arrays so blank context lines keep their leading space;
-// every hunk header's counts match its body (the diff parser validates them).
+// acme/widgets. #41 (bottom) is approved and green, #42 (middle) has review feedback and a failing check, both
+// mona's; #43 (top) is jlord's draft. Patches are written as line arrays so blank context lines keep their
+// leading space; every hunk header's counts match its body (the diff parser validates them).
 
 import type { PrDetail, PrSummary, ReviewThread, UserRef } from '../lib/model';
 
@@ -105,13 +105,13 @@ const summary43: PrSummary = {
   number: 43,
   title: 'Show the zone switcher in the operator console',
   url: 'https://github.com/acme/widgets/pull/43',
-  author: mona,
+  author: jlord,
   state: 'OPEN',
   isDraft: true,
   createdAt: '2026-10-08T11:40:00Z',
   updatedAt: '2026-10-09T07:05:00Z',
   mergedAt: null,
-  headRefName: 'mona/zone-switcher-ui',
+  headRefName: 'jlord/zone-switcher-ui',
   baseRefName: 'mona/parcs-zone-switching',
   reviewDecision: 'REVIEW_REQUIRED',
   reviewers: [],

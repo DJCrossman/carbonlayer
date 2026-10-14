@@ -1,6 +1,7 @@
 // The stack card: every PR in the stack on a vertical rail, tip at the top and trunk at the bottom; and the card as it
 // looks while the stack loads.
-import type { PrSummary, Stack } from '../lib/model';
+import type { Stack, StackEntry } from '../lib/model';
+import { Avatar } from '../ui/Avatar';
 import { Card } from '../ui/Card';
 import { CiStatus } from '../ui/CiStatus';
 import { Icon } from '../ui/Icon';
@@ -51,6 +52,9 @@ export function StackSkeleton() {
         {['55%', '45%', '50%'].map((width, index) => (
           <li key={index} className="stack-row">
             <span className="stack-dot" />
+            <span className="stack-author">
+              <Skeleton width={16} height={16} />
+            </span>
             <Skeleton width={28} height={10} />
             <Skeleton width={width} height={10} />
           </li>
@@ -60,10 +64,12 @@ export function StackSkeleton() {
   );
 }
 
-function StackRow({ pr, current }: { pr: PrSummary; current: boolean }) {
+function StackRow({ pr, current }: { pr: StackEntry; current: boolean }) {
   return (
     <li className={`stack-row ${current ? 'is-current' : ''} ${pr.state === 'MERGED' ? 'is-merged' : ''}`}>
       <span className="stack-dot" />
+      {/* Who opened it; an entry whose page header GitHub did not answer keeps the space empty. */}
+      <span className="stack-author">{pr.author && <Avatar user={pr.author} size={16} />}</span>
       <span className="stack-number pr-muted">#{pr.number}</span>
       {current ? (
         <span className="stack-title">{pr.title}</span>

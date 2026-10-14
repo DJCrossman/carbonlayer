@@ -15,7 +15,7 @@ import { mergeState } from './merge-box';
 import { rememberPullRequest } from './mutations';
 import { reviewDecisionOf, reviewersOf } from './reviews';
 import { SIGNED_OUT, embeddedPayload, getJson, getPage, githubUser } from './session';
-import { graphiteStackComment, resolveStack, type NativeStack } from './stack';
+import { authorIn, graphiteStackComment, resolveStack, type NativeStack } from './stack';
 import { conversationsIn, reviewThreads } from './threads';
 import { reactionsIn, timelineFrom } from './timeline';
 
@@ -181,6 +181,13 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
                 console.debug('[gg]', `page_data/threads for ${pull.repo.owner}/${pull.repo.name}#${number} failed; its stack entry shows no conversations:`, error instanceof Error ? error.message : error);
                 return null;
               }),
+          author: (number) =>
+            answersFor({ repo: pull.repo, number, path: `/${pull.repo.owner}/${pull.repo.name}/pull/${number}` }, [])
+              .author()
+              .catch((error: unknown) => {
+                console.debug('[gg]', `page_data/header for ${pull.repo.owner}/${pull.repo.name}#${number} failed; its stack entry shows no author:`, error instanceof Error ? error.message : error);
+                return null;
+              }),
         },
       ),
     };
@@ -203,13 +210,13 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
  * `repeat`, which are made again, once for all the stages forced together. Failures are not kept.
  */
 function answersFor(pull: Pull, repeat: readonly GitHubRequest[]) {
-  const ask = <T,>(request: GitHubRequest, variant: string, load: () => Promise<T>): Promise<T> => {
+  const ask = <T,>(request: GitHubRequest, variant: string, load: () => Promise<T>, keepFor = 30_000): Promise<T> => {
     const key = `${pull.path.toLowerCase()} ${request} ${variant}`;
     const kept = answers.get(key);
     const repeating = repeat.includes(request);
     // Another stage forced alongside this one is already asking GitHub again.
     if (kept && (repeating ? kept.repeating : kept.expiresAt > Date.now())) return kept.value as Promise<T>;
-    const entry = { expiresAt: Date.now() + 30_000, value: load(), repeating };
+    const entry = { expiresAt: Date.now() + keepFor, value: load(), repeating };
     answers.set(key, entry);
     entry.value.then(
       () => {
@@ -236,6 +243,8 @@ function answersFor(pull: Pull, repeat: readonly GitHubRequest[]) {
     diffstat: () => ask('diffstat', '', () => getJson<{ diffstat?: { linesAdded?: number; linesDeleted?: number } }>(`${data}/diffstat`)),
     description: () => ask('description', '', () => sideDetail<{ bodyHtml?: string }>('description')),
     threads: () => ask('threads', '', () => getJson<unknown>(`${data}/threads`)),
+    // Who opened the PR, for its entry in another PR's stack: that never changes, so it is kept 10 minutes.
+    author: () => ask('author', '', () => getJson<unknown>(`${data}/header`).then(authorIn), 600_000),
     comparison: () =>
       ask('comparison', '', () => getJson<BaseComparison>(`${data}/base_comparison_info`).then((info) => ({ ...info, diffSummaries: info.diffSummaries ?? [] }))),
     // The comparison is only asked for should GitHub want a range after all.
@@ -292,7 +301,10 @@ const OWN_REQUESTS: { [S in PrStage]: readonly GitHubRequest[] } = {
   meta: ['labels', 'assignees'],
 };
 
-/** GitHub's answers by `<pull path> <request> <variant>`, kept 30 s; `repeating` while a forced stage's is on its way. */
+/**
+ * GitHub's answers by `<pull path> <request> <variant>`, kept 30 s (who opened a PR 10 minutes); `repeating` while a
+ * forced stage's is on its way.
+ */
 const answers = new Map<string, { expiresAt: number; value: Promise<unknown>; repeating: boolean }>();
 
 type GitHubAnswers = ReturnType<typeof answersFor>;
@@ -303,6 +315,7 @@ type GitHubRequest =
   | 'diffstat'
   | 'description'
   | 'threads'
+  | 'author'
   | 'comparison'
   | 'diffs'
   | 'mergeBox'

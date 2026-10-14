@@ -69,8 +69,9 @@ once and each rendered as it arrives (`src/pr/page-data.ts`): `pr.fetchHeader` (
 paths a `diff_entries` request and four requests at a time in the order the files show, `pr.fetchThreads` (`threads`
 placed by the comparison's markers), `pr.fetchMergeBox` (`merge_box`, `review_requests`), `pr.fetchChecks`
 (`status_checks`), `pr.fetchStack` (`stack_mergeability` or Graphite's comment and the author's open PRs, then every
-other entry's own `threads`, three at a time, for its conversation counter) and `pr.fetchMeta` (`labels`,
-`assignees`). The content script keeps each of GitHub's answers per PR for 30 s and shares it
+other entry's own `threads`, for its conversation counter, and, where the stack's listing did not say who opened it,
+its `page_data/header`, three entries at a time) and `pr.fetchMeta` (`labels`, `assignees`). The content script keeps
+each of GitHub's answers per PR for 30 s and shares it
 between the stages that read it, so the HTML is fetched once; `force` repeats only the requests a stage makes for
 itself. Until the header arrives (one round trip) the page is a skeleton; after it each section has its own skeleton
 and, should its stage fail, an inline error with a retry. Only a signed-out header fails the whole page. A write
@@ -83,7 +84,14 @@ files load again only once the header finds the head commit moved or the base ch
 whole `PrDetail` at once, composed from the stages.
 
 Stacks: GitHub-native `stack` from the PR page's embedded data first; otherwise Graphite's stack
-comment in the timeline, enriched through a `/pulls/search` query on the author's open PRs.
+comment in the timeline, enriched through a `/pulls/search` query on the author's open PRs. The stack card
+(`src/pr/StackCard.tsx`) shows each entry as Graphite does: its dot on the rail, its author's avatar, number and title,
+then its conversations, statuses and age. Neither GitHub's stack (`stack.pulls[]`) nor Graphite's comment names who
+opened an entry, and the search finds only the viewed PR's author's, so each other entry's author is its own
+`page_data/header`'s `pullRequest.author` (`authorIn` in `src/lib/github-web/stack.ts`), asked alongside its threads
+and kept 10 minutes, since it never changes. Until the stack arrives its skeleton has a round placeholder there; an
+entry whose header GitHub did not answer leaves the place empty (`StackEntry.author` is null), never the viewed PR's
+author.
 
 ## Keyboard
 

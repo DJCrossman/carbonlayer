@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { PrSummary } from '../model';
-import { graphiteStackComment, resolveStack } from './stack';
+import { githubUser } from './session';
+import { authorIn, graphiteStackComment, resolveStack } from './stack';
 
-const noLookups = { mergeability: async () => null, authorsOpenPulls: async () => [], conversations: async () => null };
+const noLookups = { mergeability: async () => null, authorsOpenPulls: async () => [], conversations: async () => null, author: async () => null };
 
 describe('native stacks', () => {
   it('orders the stack from trunk up (GitHub lists the top first) and chains the branches', async () => {
@@ -74,6 +75,48 @@ describe('native stacks', () => {
     expect(asked.toSorted()).toEqual([1, 3, 4, 5, 6]);
     expect(mostInFlight).toBe(3);
   });
+
+  it("gives every other entry the author its own page header names, and none where GitHub did not answer, never the viewed PR's", async () => {
+    const current = summary(2, 'b');
+    const asked: number[] = [];
+    const stack = await resolveStack(
+      {
+        current,
+        page: emptyPage(),
+        nativeStack: {
+          baseBranch: 'main',
+          position: 2,
+          size: 3,
+          pulls: [3, 2, 1].map((number) => ({ number, title: `PR ${number}`, state: 'OPEN', url: `/o/r/pull/${number}`, headBranch: `b${number}` })),
+        },
+      },
+      {
+        ...noLookups,
+        author: async (number) => {
+          asked.push(number);
+          return number === 3 ? githubUser('riley') : null;
+        },
+      },
+    );
+    expect(stack.entries[1]).toBe(current);
+    expect(stack.entries.map((entry) => entry.author?.login ?? null)).toEqual([null, 'ana', 'riley']);
+    expect(asked.toSorted()).toEqual([1, 3]);
+  });
+});
+
+describe("a stack entry's author", () => {
+  it('is who its page header says opened the PR, a bot as GitHub names it, and nobody for a header without the PR', () => {
+    expect(authorIn({ pullRequest: { author: { isAgent: false, slug: 'riley', login: 'riley', displayName: 'Riley', avatarUrl: 'https://avatars.githubusercontent.com/u/7?v=4' } } })).toEqual({
+      login: 'riley',
+      avatarUrl: 'https://avatars.githubusercontent.com/u/7?v=4',
+      url: 'https://github.com/riley',
+    });
+    expect(authorIn({ pullRequest: { author: { isAgent: true, login: 'app/dependabot' } } })?.login).toBe('app/dependabot');
+    // A deleted account, as the PR's own page shows it.
+    expect(authorIn({ pullRequest: { author: null } })?.login).toBe('ghost');
+    expect(authorIn({ stack: null })).toBeNull();
+    expect(authorIn(null)).toBeNull();
+  });
 });
 
 describe("Graphite's stack comment", () => {
@@ -103,13 +146,25 @@ describe("Graphite's stack comment", () => {
     expect(graphiteStackComment(emptyPage())).toBeNull();
   });
 
-  it("orders the stack by the comment, using the author's open PRs where the search has them", async () => {
+  it("orders the stack by the comment, using the author's open PRs where the search has them, and asks who opened the others", async () => {
     const current = summary(26, 'layer-2');
     const fromSearch = summary(29, 'layer-3');
-    const stack = await resolveStack({ current, page, nativeStack: null }, { ...noLookups, authorsOpenPulls: async () => [fromSearch] });
+    const asked: number[] = [];
+    const stack = await resolveStack(
+      { current, page, nativeStack: null },
+      {
+        ...noLookups,
+        authorsOpenPulls: async () => [fromSearch],
+        author: async (number) => {
+          asked.push(number);
+          return githubUser('riley');
+        },
+      },
+    );
     expect(stack).toMatchObject({ currentIndex: 1, trunk: 'main', source: 'graphite-comment' });
     expect(stack.entries[2]).toEqual(fromSearch);
-    expect(stack.entries[0]).toMatchObject({ number: 22, title: 'Layer 1', state: 'MERGED', author: current.author });
+    expect(stack.entries[0]).toMatchObject({ number: 22, title: 'Layer 1', state: 'MERGED', author: { login: 'riley' } });
+    expect(asked).toEqual([22]);
   });
 });
 

@@ -169,13 +169,19 @@ export interface StackBranches {
 
 export interface Stack {
   /** Ordered from the PR closest to trunk (index 0) to the top of the stack. */
-  entries: PrSummary[];
+  entries: StackEntry[];
   /** Index of the PR being viewed in `entries`. */
   currentIndex: number;
   trunk: string;
   /** Where the ordering came from; 'none' means a single, unstacked PR. */
   source: 'native' | 'graphite-comment' | 'none';
 }
+
+/**
+ * One PR in a stack. Its author is null where GitHub did not say who opened it: an entry the stack's own listing names
+ * (which names nobody) whose page header GitHub did not answer.
+ */
+export type StackEntry = Omit<PrSummary, 'author'> & { author: UserRef | null };
 
 /** GitHub's eight reactions, in the order its reaction picker offers them. */
 export const REACTION_CONTENTS = ['THUMBS_UP', 'THUMBS_DOWN', 'LAUGH', 'HOORAY', 'CONFUSED', 'HEART', 'ROCKET', 'EYES'] as const;

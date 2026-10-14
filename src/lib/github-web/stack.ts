@@ -1,8 +1,8 @@
 // Where the PR sits in its stack: GitHub's native stack (from the PR page's layout data) first, else the
 // stack Graphite lists in its PR comment, else the PR alone.
 
-import type { PrSummary, Stack } from '../model';
-import { findInPayload, noteShape, politely } from './session';
+import type { PrSummary, Stack, StackEntry, UserRef } from '../model';
+import { findInPayload, githubUser, noteShape, politely } from './session';
 
 export async function resolveStack(
   subject: { current: PrSummary; nativeStack: NativeStack | null; page: Document },
@@ -13,6 +13,8 @@ export async function resolveStack(
     authorsOpenPulls(): Promise<PrSummary[]>;
     /** Another entry's conversations, from its own page_data/threads; null when GitHub did not answer. */
     conversations(number: number): Promise<PrSummary['conversations']>;
+    /** Who opened another entry the stack's listing names, from its own page_data/header; null when GitHub did not answer. */
+    author(number: number): Promise<UserRef | null>;
   },
 ): Promise<Stack> {
   const { current, nativeStack } = subject;
@@ -41,7 +43,7 @@ export async function resolveStack(
             nativeStack: { position: index + 1, size: nativeStack.size },
           }),
     );
-    return { entries: await withConversations(entries, current, lookups), currentIndex: entries.indexOf(current), trunk: nativeStack.baseBranch, source: 'native' };
+    return { entries: await withConversationsAndAuthors(entries, current, lookups), currentIndex: entries.indexOf(current), trunk: nativeStack.baseBranch, source: 'native' };
   }
 
   const comment = graphiteStackComment(subject.page);
@@ -50,13 +52,13 @@ export async function resolveStack(
     // At most 25 entries, centred on the PR being viewed.
     const index = comment.entries.findIndex((entry) => entry.number === current.number);
     const start = Math.max(0, Math.min(index - 12, comment.entries.length - 25));
-    const entries = comment.entries.slice(start, start + 25).map((entry) =>
+    const entries = comment.entries.slice(start, start + 25).map((entry): StackEntry =>
       entry.number === current.number
         ? current
         : (open.get(entry.number) ??
           stackNeighbour(current, { ...entry, headRefName: '', baseRefName: '', mergeStatus: entry.isDraft ? 'DRAFT' : 'UNKNOWN', nativeStack: null })),
     );
-    return { entries: await withConversations(entries, current, lookups), currentIndex: entries.indexOf(current), trunk: comment.trunk ?? current.baseRefName, source: 'graphite-comment' };
+    return { entries: await withConversationsAndAuthors(entries, current, lookups), currentIndex: entries.indexOf(current), trunk: comment.trunk ?? current.baseRefName, source: 'graphite-comment' };
   }
 
   return { entries: [current], currentIndex: 0, trunk: current.baseRefName, source: 'none' };
@@ -95,16 +97,29 @@ export function graphiteStackComment(page: Document): { entries: GraphiteEntry[]
   return entries.length > 0 ? { entries: entries.reverse(), trunk } : null;
 }
 
-/** A stack entry known only from what the stack lists about it; author and repository are the viewed PR's. */
+/**
+ * Who opened a PR, as its page header (`page_data/header`) names them, for its entry in another PR's stack:
+ * `pullRequest.author`, a bot or app as GitHub gives it, and the ghost account when GitHub names nobody, as the PR's own
+ * page does. Null when the header says nothing about the pull request.
+ */
+export function authorIn(header: unknown): UserRef | null {
+  const pull = (header as { pullRequest?: { author?: { login?: string; avatarUrl?: string } | null } } | null)?.pullRequest;
+  return pull ? githubUser(pull.author?.login ?? 'ghost', pull.author?.avatarUrl) : null;
+}
+
+/**
+ * A stack entry known only from what the stack lists about it, in the viewed PR's repository. The listing names nobody,
+ * so who opened it is unknown until its own page header says.
+ */
 function stackNeighbour(
   current: PrSummary,
   known: Pick<PrSummary, 'number' | 'title' | 'url' | 'state' | 'isDraft' | 'headRefName' | 'baseRefName' | 'mergeStatus' | 'nativeStack'>,
-): PrSummary {
+): StackEntry {
   return {
     ...known,
     id: `${current.repo.owner}/${current.repo.name}#${known.number}`,
     repo: current.repo,
-    author: current.author,
+    author: null,
     createdAt: '',
     updatedAt: '',
     mergedAt: null,
@@ -124,11 +139,19 @@ function stackNeighbour(
 }
 
 /**
- * The entries, each but the viewed PR with its conversations, three at a time; the page counts the viewed PR's from the
- * threads it shows.
+ * The entries, each but the viewed PR with its conversations and, where the stack's listing did not say, who opened it,
+ * three entries at a time; the page counts the viewed PR's conversations from the threads it shows.
  */
-function withConversations(entries: PrSummary[], current: PrSummary, lookups: { conversations(number: number): Promise<PrSummary['conversations']> }): Promise<PrSummary[]> {
-  return politely(entries, 3, async (entry) => (entry === current ? entry : { ...entry, conversations: await lookups.conversations(entry.number) }));
+function withConversationsAndAuthors(
+  entries: StackEntry[],
+  current: PrSummary,
+  lookups: { conversations(number: number): Promise<PrSummary['conversations']>; author(number: number): Promise<UserRef | null> },
+): Promise<StackEntry[]> {
+  return politely(entries, 3, async (entry) => {
+    if (entry === current) return entry;
+    const [conversations, author] = await Promise.all([lookups.conversations(entry.number), entry.author ?? lookups.author(entry.number)]);
+    return { ...entry, conversations, author };
+  });
 }
 
 /** `pullRequestsLayoutRoute.stack` (observed): pulls listed top of the stack first. */

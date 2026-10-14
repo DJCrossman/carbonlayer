@@ -1,6 +1,6 @@
 // The single next step a pull request is waiting on, as shown in the sidebar's action card.
 
-import type { PrDetail, PrStage, PrSummary } from '../lib/model';
+import type { PrDetail, PrStage, StackEntry } from '../lib/model';
 
 /**
  * What stands between this PR and being merged, most fundamental first: its state, then conflicts,
@@ -90,5 +90,5 @@ type NextAction = {
         | 'blocked'
         | 'ready';
     }
-  | { kind: 'downstack'; pr: PrSummary }
+  | { kind: 'downstack'; pr: StackEntry }
 );

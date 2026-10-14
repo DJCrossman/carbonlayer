@@ -67,6 +67,15 @@
 .stack-row.is-trunk .stack-dot { border-radius: 3px; border-color: var(--gg-fg-muted); background: var(--gg-fg-muted); }
 .stack-row.is-trunk { color: var(--gg-fg-muted); gap: 8px; }
 
+/* Who opened the PR, between the dot and its number; round while it loads. */
+.stack-author {
+  flex: none;
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+}
+.stack-author .gg-skeleton { border-radius: 50%; }
+
 .stack-number {
   flex: none;
   min-width: 28px;

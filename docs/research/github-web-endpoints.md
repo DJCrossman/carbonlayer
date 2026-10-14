@@ -104,10 +104,15 @@ Data endpoints (all `page_data/*` need a session; `tab_counts`, `diffstat` and `
   counts the dashboard rows lack (`enrichPull` in `src/lib/github-web/inbox.ts`). Whether the merge box names reviewers
   (`latestOpinionatedReviews`, `pendingReviewRequests` / `pendingRequestedReviews`) has not been seen signed in; without
   them the row shows no reviewer avatars.
-- `GET …/page_data/header` → `{ pullRequest: { baseBranch, headBranch, headRepositoryOwnerLogin, headRepositoryName,
-  headSha, number, state, … }, stack, … }`, lighter than the merge box. A PR from a fork has a head repository other
-  than its own, whose head branch says nothing about this repository's stacks. `pr.merge` reads `headSha` here to refuse
-  a merge after a push; "Group by stack" reads the branches (`branchesIn` in `src/lib/github-web/inbox.ts`).
+- `GET …/page_data/header` → `{ pullRequest: { author, baseBranch, headBranch, headRepositoryOwnerLogin,
+  headRepositoryName, headSha, number, state, … }, stack, … }`, lighter than the merge box. A PR from a fork has a head
+  repository other than its own, whose head branch says nothing about this repository's stacks. `pr.merge` reads
+  `headSha` here to refuse a merge after a push; "Group by stack" reads the branches (`branchesIn` in
+  `src/lib/github-web/inbox.ts`). `pullRequest.author` is `{ isAgent, slug, login, displayName, avatarUrl }`
+  (verified signed in, 2026-10-14, with the React headers `getJson` sends): the stack card reads who opened each other
+  entry here (`authorIn` in `src/lib/github-web/stack.ts`), because `stack.pulls[]` entries carry exactly
+  `{ isInAutoMergeRange, isUnstackable, title, number, state, url, headBranch, headOid }` and no author (verified the
+  same day).
 - `GET …/page_data/status_checks` → the checks list: `{ statusChecks: [{ displayName, state, isRequired, targetUrl,
   description, additionalContext, stateChangedAt, durationInSeconds, avatarUrl, … }], statusRollup: { combinedState,
   summary, pendingWorkflowApprovalRollup }, aliveChannels }` (verified signed in, 2026-10-12; headers in
