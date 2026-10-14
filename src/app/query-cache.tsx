@@ -4,15 +4,16 @@
 // are never kept, and signed out nothing is.
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
 import { focusManager, QueryClient, QueryClientProvider, useIsRestoring } from '@tanstack/react-query';
-import { PersistQueryClientProvider, type AsyncStorage, type PersistQueryClientProviderProps } from '@tanstack/react-query-persist-client';
-import { useEffect, useState, type ReactNode } from 'react';
+import { PersistQueryClientProvider, persistQueryClientSave, type AsyncStorage, type PersistQueryClientProviderProps } from '@tanstack/react-query-persist-client';
+import { createContext, useEffect, useState, type ReactNode } from 'react';
 import type { PrStage } from '../lib/model';
 import { GITHUB_ORIGIN, isBridgeMessage, type ParentToAppMessage } from './bridge';
 
 /**
  * The page's queries, kept on the device for `owner` (who is signed in, with which version of the extension), or only in
  * memory when nobody is (signed out, the harness, the options page). The page renders once what was kept is back, so its
- * first frame shows it. Coming back to the page asks GitHub again for what has gone stale.
+ * first frame shows it, and saves what it has as it goes (SaveCacheNow). Coming back to the page asks GitHub again for
+ * what has gone stale.
  */
 export function PageQueries({ owner, children }: { owner: CacheOwner | null; children: ReactNode }) {
   const [client] = useState(
@@ -31,14 +32,31 @@ export function PageQueries({ owner, children }: { owner: CacheOwner | null; chi
       }),
   );
   const [kept] = useState(() => owner && keptOnDevice(owner));
+  // The cache is saved within a second of a change; a page about to go saves it at once, so the next finds it all.
+  const [saveNow] = useState(() => async () => {
+    if (owner) await persistQueryClientSave({ queryClient: client, ...keptOnDevice(owner, indexedDbStorage, 0) });
+  });
   useEffect(() => focusManager.setEventListener(listenForReturns), []);
+  useEffect(() => {
+    const onHide = () => void saveNow();
+    window.addEventListener('pagehide', onHide);
+    return () => window.removeEventListener('pagehide', onHide);
+  }, [saveNow]);
   if (!kept) return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   return (
     <PersistQueryClientProvider client={client} persistOptions={kept}>
-      <Restored>{children}</Restored>
+      <SaveCacheNow value={saveNow}>
+        <Restored>{children}</Restored>
+      </SaveCacheNow>
     </PersistQueryClientProvider>
   );
 }
+
+/** Saves the page's cache on the device now: before opening a PR, so its page finds what the inbox loaded for it. */
+export const SaveCacheNow = createContext<() => Promise<void>>(() => Promise.resolve());
+
+/** The stages of the PR page kept on the device: never one with comments or diffs (the timeline, files, threads). */
+export const KEPT_STAGES: PrStage[] = ['header', 'stack', 'mergeBox', 'checks', 'meta'];
 
 /** Whose cache a page keeps: the viewer signed in to github.com, with this version of the extension. */
 export interface CacheOwner {
@@ -47,12 +65,13 @@ export interface CacheOwner {
 }
 
 /**
- * How `owner`'s cache is kept in `storage`: only what loaded, never a diff or a comment, and nothing older than 24 hours.
- * Another viewer or version finds nothing: restoring a cache kept for someone else discards it.
+ * How `owner`'s cache is kept in `storage`, saved at most once every `throttleTime` ms: only what loaded, never a diff or a
+ * comment, and nothing older than 24 hours. Another viewer or version finds nothing: restoring a cache kept for someone
+ * else discards it.
  */
-export function keptOnDevice(owner: CacheOwner, storage: AsyncStorage<string> = indexedDbStorage): PersistQueryClientProviderProps['persistOptions'] {
+export function keptOnDevice(owner: CacheOwner, storage: AsyncStorage<string> = indexedDbStorage, throttleTime = 1000): PersistQueryClientProviderProps['persistOptions'] {
   return {
-    persister: createAsyncStoragePersister({ storage, key: 'queries' }),
+    persister: createAsyncStoragePersister({ storage, key: 'queries', throttleTime }),
     maxAge: KEPT_FOR_MS,
     buster: `${owner.version}:${owner.login}`,
     dehydrateOptions: {
@@ -62,7 +81,7 @@ export function keptOnDevice(owner: CacheOwner, storage: AsyncStorage<string> = 
         // The diffs, the file list GitHub sends some of them with, the review threads and the timeline stay in memory,
         // asked of GitHub on every page load.
         queryKey[0] !== 'pr-diff' &&
-        !(queryKey[0] === 'pr' && IN_MEMORY_STAGES.includes(queryKey[4] as PrStage)),
+        (queryKey[0] !== 'pr' || KEPT_STAGES.includes(queryKey[4] as PrStage)),
     },
   };
 }
@@ -95,9 +114,6 @@ function listenForReturns(onReturn: () => void): () => void {
     window.removeEventListener('message', onMessage);
   };
 }
-
-/** The PR page's stages that hold comments or diffs. */
-const IN_MEMORY_STAGES: PrStage[] = ['activity', 'files', 'threads'];
 
 /** One object store in the extension's IndexedDB, opened when first used. */
 const indexedDbStorage: AsyncStorage<string> = {

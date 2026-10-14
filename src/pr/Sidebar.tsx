@@ -244,8 +244,8 @@ function ActionCard({
   onMerge: (method: MergeMethod) => Promise<boolean>;
   onViewThreads: () => void;
 }) {
-  // The stages the next step depends on that have not arrived, loading or failed.
-  const unknown = (['mergeBox', 'stack', 'threads', 'checks'] as const).filter((stage) => data[stage].value === null);
+  // The stages the next step depends on that have not arrived, loading or failed; what the inbox showed does not decide it.
+  const unknown = (['mergeBox', 'stack', 'threads', 'checks'] as const).filter((stage) => data[stage].value === null || data[stage].status === 'placeholder');
   const action = nextActionFor(pr, unknown);
   const [busy, setBusy] = useState(false);
   if (action.kind === 'checking') {

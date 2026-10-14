@@ -30,6 +30,7 @@ export function InboxSection({
   more,
   onSort,
   onRowShown,
+  onRowIntent,
   onLoadMore,
   onToggleCollapsed,
   onEdit,
@@ -61,6 +62,8 @@ export function InboxSection({
   onLoadMore: () => void;
   /** A row came within 200px of view (again, after it was updated): time to ask for what the dashboard leaves out. */
   onRowShown: (pr: PrSummary) => void;
+  /** The pointer rested on a row: the viewer may open it next. */
+  onRowIntent: (pr: PrSummary) => void;
   onToggleCollapsed: () => void;
   onEdit: () => void;
   onOpen: (pr: PrSummary, newTab: boolean) => void;
@@ -135,6 +138,7 @@ export function InboxSection({
                 stackPlace={stackPlaces.get(pr.id)}
                 overdueAfterHours={overdueAfterHours}
                 onShown={onRowShown}
+                onIntent={onRowIntent}
                 onOpen={onOpen}
               />
             ))
@@ -191,6 +195,7 @@ function PrRow({
   stackPlace,
   overdueAfterHours,
   onShown,
+  onIntent,
   onOpen,
 }: {
   /** The row with its enrichment applied. */
@@ -204,9 +209,13 @@ function PrRow({
   stackPlace: StackPlace | undefined;
   overdueAfterHours: number | undefined;
   onShown: (pr: PrSummary) => void;
+  onIntent: (pr: PrSummary) => void;
   onOpen: (pr: PrSummary, newTab: boolean) => void;
 }) {
   const row = useRef<HTMLDivElement>(null);
+  // The pointer resting 150 ms on the row, not passing over it.
+  const resting = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(resting.current), []);
   useEffect(() => {
     if (selected) row.current?.scrollIntoView({ block: 'nearest' });
   }, [selected]);
@@ -243,7 +252,14 @@ function PrRow({
 
   // `data-pr-id` tells the copy keys (InboxPage) which PR the row under the pointer is.
   return (
-    <div ref={row} className={`gg-row${stacked ? ' gg-row--stacked' : ''}${selected ? ' is-selected' : ''}`} data-pr-id={pr.id} onClick={open}>
+    <div
+      ref={row}
+      className={`gg-row${stacked ? ' gg-row--stacked' : ''}${selected ? ' is-selected' : ''}`}
+      data-pr-id={pr.id}
+      onClick={open}
+      onMouseEnter={() => (resting.current = setTimeout(() => onIntent(pr), 150))}
+      onMouseLeave={() => clearTimeout(resting.current)}
+    >
       <span className="gg-row__unread">{pr.unread && <span className="gg-row__dot" title="Unread" />}</span>
       <Avatar user={pr.author} size={20} />
       <div className="gg-row__main">

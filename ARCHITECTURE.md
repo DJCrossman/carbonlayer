@@ -90,6 +90,18 @@ organizations (`['orgs']`), an organization's people (`['org-people', org]`) and
 (`['top-repositories']`, pages of one infinite query), 10 minutes each, and the repository picker's searches (`['repos',
 org, text]`, a minute). All of them are kept on the device.
 
+What the inbox knows about a PR makes opening it instant. Resting the pointer on a row for 150 ms, or selecting it with
+j / k, loads that PR's page stages kept on the device (`KEPT_STAGES`: header, stack, merge box, checks, labels; never the
+timeline, files or threads) through the same queries the PR page uses (`prStageQuery` in `src/pr/page-data.ts`), one
+PR at a time, the latest intent first, three waiting at most, none whose stages are 30 s fresh (`useLoadAhead` in
+`src/inbox/InboxPage.tsx`). The cache is saved within a second of a change; it is saved at once (`SaveCacheNow`) when
+such a PR has loaded, before a row opens its PR (the navigation waits for it), and as the page goes (`pagehide`, which
+an unloading page does not always finish). A PR page whose stages the cache does not have uses what the inbox showed
+of it as TanStack placeholders, never cached and never fresh (`stagesFromInbox`): the header from its row (branches
+from its details or its stack lookup; the description shows a skeleton until the page's own header), its labels, and,
+once the row's details were found, its reviewers and merge status and its checks. A stage standing in so is
+`placeholder`: the sidebar's next step waits for the real one, and each is replaced as its own answer arrives.
+
 The PR page loads in stages (`PrStages` in `src/lib/model.ts`, `src/lib/github-web/pr-stages.ts`), all requested at
 once and each rendered as it arrives (`src/pr/page-data.ts`, one query per stage, `['pr', owner, repo, number, stage]`): `pr.fetchHeader` (the page's HTML, `tab_counts`,
 `diffstat`; the description is the conversation's first comment, `page_data/description` only without one),
@@ -103,8 +115,8 @@ other entry's own `threads`, for its conversation counter, and, where the stack'
 its `page_data/header`, three entries at a time) and `pr.fetchMeta` (`labels`, `assignees`). The content script asks
 GitHub for every stage every time, and shares a request between the stages that make it while it is on its way, so the
 HTML is fetched once for the stages asked together; after a successful write it shares none made before it. Opening
-the page asks GitHub for every stage, whatever the cache had. Until the header arrives (from the cache, or one round
-trip) the page is a skeleton; after it each section has its own skeleton and, should its stage fail before it ever
+the page asks GitHub for every stage, whatever the cache had. Until the header arrives (from the cache, the inbox's
+row, or one round trip) the page is a skeleton; after it each section has its own skeleton and, should its stage fail before it ever
 arrived, an inline error with a retry. Only a signed-out header with nothing to show fails the whole page. A write
 invalidates the stages it changes (`STAGES_A_WRITE_CHANGES` in `src/lib/rpc.ts`) and the page loads those again, the
 others untouched (a reload that fails says so in a toast); marking a file viewed only changes it in place. Coming back to

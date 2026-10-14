@@ -4,18 +4,20 @@
 // lists, and Graphite's section editor in a drawer. Data comes through the DataSource; navigation goes through the
 // parent page (src/app/bridge.ts).
 import { hashKey, useInfiniteQuery, useQueries, useQueryClient, type Query, type QueryClient } from '@tanstack/react-query';
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { askedTogether } from '../app/asked-together';
 import { postToParent } from '../app/bridge';
 import { COPY_KEYBINDINGS, copyPullRequest } from '../app/copy-pull-request';
 import type { DataSource } from '../app/data-source';
+import { KEPT_STAGES, SaveCacheNow } from '../app/query-cache';
 import { toGitHubUrl, type AppRoute } from '../app/routes';
 import type { Organization, PrEnrichment, PrSummary, RepoRef, StackBranches, TopRepository, View, ViewResult } from '../lib/model';
 import type { MergeMethod } from '../lib/rpc';
 import type { Settings } from '../lib/settings';
 import { encodeViewsShareLink, sectionCount } from '../lib/views';
 import { createChordReader } from '../pr/keybindings';
+import { prStageQuery } from '../pr/page-data';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
 import { RelativeTime } from '../ui/RelativeTime';
@@ -49,6 +51,8 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   // which the enriched checks replace on screen, so the row is asked again when the rollup moves on and not before.
   const dashboardRows = new Map(dashboard.flatMap(({ result, added }) => [...result.prs, ...added].map((pr) => [pr.id, pr] as const)));
   const enrichment = useRowEnrichment(source, [...dashboardRows.values()], settings?.mergeMethod ?? 'MERGE');
+  const loadAhead = useLoadAhead(source);
+  const saveCacheNow = useContext(SaveCacheNow);
   const viewerLogin = organizations.list?.find((candidate) => candidate.isViewer)?.login ?? null;
   const [selected, setSelected] = useState<SelectedRow | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -104,6 +108,11 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
     }),
   );
   const firstResult = settings?.views[0] && resultsByView.get(settings.views[0].id);
+  // The row j / k selected is the one the viewer may open next.
+  const selectedPr = selected && resultsByView.get(selected.viewId)?.prs.find((candidate) => candidate.id === selected.prId);
+  useEffect(() => {
+    if (selectedPr) loadAhead(selectedPr);
+  }, [selectedPr?.id]);
   const toReview = firstResult && !firstResult.error ? sectionCount(firstResult) : undefined;
 
   useEffect(() => {
@@ -149,9 +158,8 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
     } else if (event.key === 'Enter' || event.key === 'o' || event.key === 'O') {
       // Enter on a focused button or link belongs to that control.
       if (event.key === 'Enter' && target instanceof Element && target.closest('a, button')) return;
-      const pr = selected && resultsByView.get(selected.viewId)?.prs.find((candidate) => candidate.id === selected.prId);
-      if (!pr) return;
-      openOnGitHub(pr.url, event.shiftKey);
+      if (!selectedPr) return;
+      openPr(selectedPr, event.shiftKey);
     } else if (event.key === 'r') {
       inbox.refresh();
     } else if (event.key === 'c') {
@@ -168,6 +176,11 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
     document.addEventListener('keydown', listener);
     return () => document.removeEventListener('keydown', listener);
   }, []);
+
+  /** Opens a PR's page once what the inbox loaded for it is saved, so the page finds it. */
+  function openPr(pr: PrSummary, newTab: boolean) {
+    void saveCacheNow().finally(() => openOnGitHub(pr.url, newTab));
+  }
 
   function toggleCollapsed(viewId: string) {
     if (!settings) return;
@@ -418,12 +431,13 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
                     more={more}
                     onSort={(by) => sortSection(view.id, by)}
                     onRowShown={(pr) => enrichment.want(dashboardRows.get(pr.id) ?? pr)}
+                    onRowIntent={loadAhead}
                     onLoadMore={() => void moreRows.loadMore(view, settings.inboxScope, result?.prs ?? [])}
                     onToggleCollapsed={() => toggleCollapsed(view.id)}
                     onEdit={() => setEditing(view)}
                     onOpen={(pr, newTab) => {
                       setSelected({ viewId: view.id, prId: pr.id });
-                      openOnGitHub(pr.url, newTab);
+                      openPr(pr, newTab);
                     }}
                   />
                 </div>
@@ -750,6 +764,36 @@ function useStackBranches(source: DataSource, enabled: boolean, sections: Array<
   return {
     branchesOf: (prId: string) => found.get(prId) ?? undefined,
     awaiting: (viewId: string) => enabled && !shown.has(viewId) && sections.some((section) => section.viewId === viewId && !section.openRows.every((pr) => found.has(pr.id))),
+  };
+}
+
+/**
+ * Loads the page of a PR the viewer may open next (its row hovered a moment, or selected with j / k) into the cache, as
+ * Graphite does, so opening it shows it at once: the stages kept on the device (never the timeline, files or threads),
+ * one PR at a time, the latest intent first, the three latest at most waiting, and none whose stages are fresh; each
+ * saved on the device as soon as it has loaded.
+ */
+function useLoadAhead(source: DataSource) {
+  const queryClient = useQueryClient();
+  const saveCacheNow = useContext(SaveCacheNow);
+  const waiting = useRef<PrSummary[]>([]);
+  const loading = useRef(false);
+
+  async function loadInTurn() {
+    for (let pr = waiting.current.pop(); pr; pr = waiting.current.pop()) {
+      const { repo, number } = pr;
+      await Promise.all(KEPT_STAGES.map((stage) => queryClient.prefetchQuery({ ...prStageQuery(source, repo, number, stage), staleTime: 30_000 })));
+      // Saved at once rather than within the second, should the PR be opened some other way than its row.
+      await saveCacheNow();
+    }
+    loading.current = false;
+  }
+
+  return (pr: PrSummary) => {
+    waiting.current = [...waiting.current.filter((other) => other.id !== pr.id), pr].slice(-3);
+    if (loading.current) return;
+    loading.current = true;
+    void loadInTurn();
   };
 }
 

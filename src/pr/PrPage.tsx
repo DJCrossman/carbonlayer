@@ -358,7 +358,14 @@ function PrView({
           )}
           <section className="pr-description" id="pr-description" aria-label="Description">
             {pr.descriptionUrl && <CopyLink url={pr.descriptionUrl} subject="description" />}
-            {pr.bodyHtml.trim() ? <Markdown html={pr.bodyHtml} /> : <p className="pr-muted pr-description-empty">No description provided.</p>}
+            {/* The inbox's row has no description; the page's own header brings it. */}
+            {data.header.status === 'placeholder' ? (
+              <Skeleton width="100%" height={110} />
+            ) : pr.bodyHtml.trim() ? (
+              <Markdown html={pr.bodyHtml} />
+            ) : (
+              <p className="pr-muted pr-description-empty">No description provided.</p>
+            )}
             <Reactions subjectId={pr.id} reactions={pr.descriptionReactions} />
           </section>
           <Activity

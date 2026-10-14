@@ -1,13 +1,14 @@
 // The PR page's data as its stages arrive (PrStages in src/lib/model.ts), each a query of the page's cache
 // (src/app/query-cache.tsx). Every stage loads at once and on its own; each part of the page renders from the stages it
 // needs, with a skeleton until they arrive and an inline error, with a retry, for one that failed. What the viewer saw
-// last shows at once from the cache while the page asks GitHub again. A write reloads only the stages it changed.
-import { useQueries, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+// last shows at once from the cache while the page asks GitHub again; a PR the viewer has not opened but the inbox showed
+// stands in with what its row said. A write reloads only the stages it changed.
+import { useQueries, useQueryClient, type QueryClient, type UseQueryResult } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { askedTogether } from '../app/asked-together';
 import type { DataSource } from '../app/data-source';
 import { SIGNED_OUT } from '../lib/github-web/session';
-import type { ChangedFile, ChangedFileDiff, PrDetail, PrStage, PrStages, PrSummary, RepoRef, ReviewThread, TimelineItem } from '../lib/model';
+import type { ChangedFile, ChangedFileDiff, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, RepoRef, ReviewThread, StackBranches, TimelineItem, ViewResult } from '../lib/model';
 import { filesInTreeOrder, fileTree } from './diff';
 
 /**
@@ -15,19 +16,21 @@ import { filesInTreeOrder, fileTree } from './diff';
  * it 20 files a request, four requests at a time, in the order the files show, so the first files fill in first.
  * `reload` loads stages again (keeping what they showed meanwhile) and rejects with the first failure. Coming back to the
  * page once a stage is 30 s old asks GitHub for it again in the background; the diffs follow the head commit, loading
- * again only once it moved. A stage GitHub does not answer then keeps what it showed.
+ * again only once it moved. A stage GitHub does not answer then keeps what it showed. Until a stage first arrives, what
+ * the inbox showed of the PR stands in for it, where it can (`placeholder`).
  */
 export function usePrPageData(source: DataSource, repo: RepoRef, number: number): { data: PrPageData; reload: (stages: readonly PrStage[]) => Promise<void> } {
   const { owner, name } = repo;
   const queryClient = useQueryClient();
+  const [fromInbox] = useState(() => stagesFromInbox(queryClient, repo, number));
   const stages = useQueries({
     queries: PR_STAGES.map((stage) => ({
-      queryKey: ['pr', owner, name, number, stage],
-      queryFn: () => source.fetchPrStage(stage, { owner, name }, number),
+      ...prStageQuery(source, { owner, name }, number, stage),
       // Opening the page asks GitHub, whatever the cache had.
       refetchOnMount: 'always' as const,
       // The files follow the head commit (below).
       staleTime: stage === 'files' ? Infinity : 30_000,
+      placeholderData: fromInbox[stage],
     })),
     combine: (results) => Object.fromEntries(PR_STAGES.map((stage, index) => [stage, results[index]!])) as { [S in PrStage]: UseQueryResult<PrStages[S]> },
   });
@@ -113,6 +116,11 @@ export function usePrPageData(source: DataSource, repo: RepoRef, number: number)
   return { data, reload };
 }
 
+/** The query for one stage of a PR's page, as the page asks it and as the inbox loads it ahead of a click. */
+export function prStageQuery<S extends PrStage>(source: DataSource, repo: RepoRef, number: number, stage: S) {
+  return { queryKey: ['pr', repo.owner, repo.name, number, stage], queryFn: () => source.fetchPrStage(stage, repo, number) };
+}
+
 /**
  * The PR as far as the page has it: the header and every stage that has arrived, and for each stage still loading (or
  * failed) what the page shows without it. Its own entry in the stack is this PR as the page has it.
@@ -156,8 +164,15 @@ export function prDetailFrom(header: PrStages['header'], data: PrPageData): PrDe
   };
 }
 
-/** A stage of the PR page: loading (still showing what it had, if anything), arrived, or failed. */
-export type StageState<T> = { status: 'loading'; value: T | null } | { status: 'ready'; value: T } | { status: 'error'; value: T | null; error: string };
+/**
+ * A stage of the PR page: loading (still showing what it had, if anything), arrived, failed, or, until it first arrives,
+ * what the inbox showed of the PR in its place.
+ */
+export type StageState<T> =
+  | { status: 'loading'; value: T | null }
+  | { status: 'ready'; value: T }
+  | { status: 'error'; value: T | null; error: string }
+  | { status: 'placeholder'; value: T };
 
 export type PrPageData = { [S in PrStage]: StageState<PrStages[S]> };
 
@@ -165,10 +180,80 @@ export type PrPageData = { [S in PrStage]: StageState<PrStages[S]> };
 const PR_STAGES: PrStage[] = ['header', 'stack', 'activity', 'files', 'threads', 'mergeBox', 'checks', 'meta'];
 
 /**
+ * What the inbox showed of this PR (its row in a section or a "Load more" page, the details found for the row, its
+ * branches), in the place of the stages it can stand in for until theirs arrive: the header without its description,
+ * the labels, and, once the row's details were found, the reviewers and merge status, and the checks. Nothing when the
+ * inbox has not shown the PR.
+ */
+function stagesFromInbox(queryClient: QueryClient, repo: RepoRef, number: number): Partial<PrStages> {
+  const isThisPr = (pr: Pick<PrSummary, 'repo' | 'number'>) =>
+    pr.number === number && pr.repo.owner.toLowerCase() === repo.owner.toLowerCase() && pr.repo.name.toLowerCase() === repo.name.toLowerCase();
+  const newestFirst = (queryKey: string) =>
+    queryClient
+      .getQueryCache()
+      .findAll({ queryKey: [queryKey], predicate: ({ state }) => state.data !== undefined })
+      .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt);
+  const row = [...newestFirst('inbox'), ...newestFirst('inbox-page')].flatMap((query) => (query.state.data as ViewResult).prs).find(isThisPr);
+  if (!row) return {};
+  const details = newestFirst('inbox-row').find(({ queryKey }) => queryKey[1] === row.id)?.state.data as PrEnrichment | undefined;
+  const branches = queryClient.getQueryData<StackBranches | null>(['stack-branches', row.repo.owner, row.repo.name, row.number]);
+  const pr: PrSummary = { ...row, ...details };
+  const { id, title, url, author, state, isDraft, createdAt, updatedAt, mergedAt, additions, deletions, changedFiles, commentCount, nativeStack } = pr;
+  const header: PrStages['header'] = {
+    id,
+    repo: pr.repo,
+    number,
+    title,
+    url,
+    author,
+    state,
+    isDraft,
+    createdAt,
+    updatedAt,
+    mergedAt,
+    additions,
+    deletions,
+    changedFiles,
+    commentCount,
+    nativeStack,
+    headRefName: pr.headRefName || branches?.headRefName || '',
+    baseRefName: pr.baseRefName || branches?.baseRefName || '',
+    // Not on the row: the page's own header brings them.
+    bodyHtml: '',
+    descriptionUrl: null,
+    descriptionReactions: [],
+    headOid: '',
+    viewerCanUpdate: false,
+    viewerDidAuthor: false,
+    viewerLogin: '',
+    stackSource: pr.nativeStack ? 'native' : 'none',
+  };
+  return {
+    header,
+    meta: { labels: pr.labels, assignees: [] },
+    ...(details?.reviewers && {
+      mergeBox: {
+        mergeStatus: pr.mergeStatus,
+        reviewers: pr.reviewers,
+        reviewDecision: pr.reviewDecision,
+        viewerCanMerge: false,
+        viewerCanEnableAutoMerge: false,
+        allowedMergeMethods: ['MERGE', 'SQUASH', 'REBASE'],
+        defaultMergeMethod: 'MERGE',
+        autoMerge: pr.autoMerge,
+        isInMergeQueue: pr.isInMergeQueue,
+      },
+    }),
+    ...(details?.ci && { checks: { ci: details.ci, requiredCheckNames: details.requiredCheckNames ?? [], emptyReason: null } }),
+  };
+}
+
+/**
  * What the page shows of a stage: once it has arrived, what it has, through a reload or a return to the page that GitHub
  * does not answer; before that, its first failure, with a retry.
  */
 function stageShown<T>(query: UseQueryResult<T>): StageState<T> {
+  if (query.isPlaceholderData) return { status: 'placeholder', value: query.data };
   if (query.data !== undefined) return { status: query.isFetching ? 'loading' : 'ready', value: query.data };
   if (query.isError && !query.isFetching) return { status: 'error', value: null, error: query.error.message };
   return { status: 'loading', value: null };
