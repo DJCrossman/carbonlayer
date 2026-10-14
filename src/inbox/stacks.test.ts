@@ -65,15 +65,15 @@ describe('stackPlaces', () => {
     );
   });
 
-  it("counts every PR of a fork in its stack's size, each at its own height", () => {
+  it("sizes a fork's PR by its own line: those below it and the tallest line above it", () => {
     // 1 ← 2 ← 4, and 1 ← 3.
     const [one, two, three, four] = [pr(1, 'a', 'main'), pr(2, 'b', 'a'), pr(3, 'c', 'a'), pr(4, 'd', 'b')];
     expect(stackPlaces([three, one, four, two])).toEqual(
       new Map([
-        [one.id, { bottomId: one.id, position: 1, size: 4, untracked: true }],
-        [two.id, { bottomId: one.id, position: 2, size: 4, untracked: true }],
-        [three.id, { bottomId: one.id, position: 2, size: 4, untracked: true }],
-        [four.id, { bottomId: one.id, position: 3, size: 4, untracked: true }],
+        [one.id, { bottomId: one.id, position: 1, size: 3, untracked: true }],
+        [two.id, { bottomId: one.id, position: 2, size: 3, untracked: true }],
+        [three.id, { bottomId: one.id, position: 2, size: 2, untracked: true }],
+        [four.id, { bottomId: one.id, position: 3, size: 3, untracked: true }],
       ]),
     );
   });

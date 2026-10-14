@@ -30,7 +30,10 @@ export interface StackPlace {
   bottomId: string;
   /** Counted from the bottom, as GitHub counts: the bottom-most known PR is 1. */
   position: number;
-  /** How many known PRs the stack has, a fork's branches included. */
+  /**
+   * How many known PRs the row's own line of the stack has, as Graphite counts: those below it down to the bottom, the
+   * row, and the tallest line above it. A fork's other branches are not counted.
+   */
   size: number;
   /** GitHub doesn't track the row's stack (the row has no native stack): its place is worked out from branch names alone. */
   untracked: boolean;
@@ -49,8 +52,9 @@ export function stackPlaces(known: PrSummary[]): Map<string, StackPlace> {
   }
 
   // Each row's bottom (a row on nothing known, or not looked up yet, is its own) and its height, the steps down to that
-  // bottom; a PR two sections show counts once.
+  // bottom; a PR two sections show counts once. Walking down also tells each PR passed how tall a line stands on it.
   const chains = new Map<string, { pr: PrSummary; bottomId: string; height: number }>();
+  const tallestAbove = new Map<string, number>();
   for (const pr of known) {
     if (chains.has(pr.id)) continue;
     let bottom = pr;
@@ -64,17 +68,16 @@ export function stackPlaces(known: PrSummary[]): Map<string, StackPlace> {
         seen.add(below.id);
         bottom = below;
         height += 1;
+        tallestAbove.set(below.id, Math.max(tallestAbove.get(below.id) ?? 0, height));
         below = byHead.get(`${repository}:${below.baseRefName}`);
       }
     }
     chains.set(pr.id, { pr, bottomId: bottom.id, height });
   }
 
-  const sizes = new Map<string, number>();
-  for (const { bottomId } of chains.values()) sizes.set(bottomId, (sizes.get(bottomId) ?? 0) + 1);
   const places = new Map<string, StackPlace>();
   for (const [id, { pr, bottomId, height }] of chains) {
-    const size = sizes.get(bottomId) ?? 1;
+    const size = height + 1 + (tallestAbove.get(id) ?? 0);
     if (size > 1) places.set(id, { bottomId, position: height + 1, size, untracked: pr.nativeStack === null });
   }
   return places;

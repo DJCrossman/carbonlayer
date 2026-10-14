@@ -144,7 +144,7 @@ stacked reviewer avatars (three, then `+N`; a bot without an avatar gets its Git
 names each reviewer with their state, "jlord · approved"), a labels chip, Graphite's conversation counter (review threads
 resolved of all, "2/3", hidden without any; the PR page's stack card shows it on each entry too), the stack chip (GitHub's
 own stack's position, grey; for a stack GitHub doesn't track, found from branch names as "Group by stack" finds it, the
-row's place counted up from the bottom-most PR the inbox knows, amber, grouped or not; `stackPlaces` in
+row's place counted up from the bottom-most PR the inbox knows, of its own line (a fork's other branches left out), amber, grouped or not; `stackPlaces` in
 `src/inbox/stacks.ts`), then
 fixed Review, CI and Merge icon columns, line counts and age, under a header row whose Title, Changes and Updated sort
 the section (page state only); Changes and Updated keep 16px from their neighbours. Every icon says what it means on
