@@ -7,7 +7,7 @@ import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persi
 import { focusManager, QueryClient, QueryClientProvider, useIsRestoring } from '@tanstack/react-query';
 import { PersistQueryClientProvider, persistQueryClientSave, type AsyncStorage, type PersistQueryClientProviderProps } from '@tanstack/react-query-persist-client';
 import { createContext, useEffect, useState, type ReactNode } from 'react';
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import type { PrStage } from '../lib/model';
 import { GITHUB_ORIGIN, parentToAppMessage } from './bridge';
 
@@ -127,13 +127,13 @@ const keptCacheSchema = z.object({
           errorUpdatedAt: z.number(),
           fetchFailureCount: z.number(),
           fetchFailureReason: z.null(),
-          fetchMeta: z.object({ fetchMore: z.object({ direction: z.enum(['forward', 'backward']) }).optional() }).nullable(),
+          fetchMeta: z.nullable(z.object({ fetchMore: z.optional(z.object({ direction: z.enum(['forward', 'backward']) })) })),
           isInvalidated: z.boolean(),
           status: z.enum(['pending', 'error', 'success']),
           fetchStatus: z.enum(['fetching', 'paused', 'idle']),
         }),
-        meta: z.record(z.string(), z.unknown()).optional(),
-        queryType: z.literal('infinite').optional(),
+        meta: z.optional(z.record(z.string(), z.unknown())),
+        queryType: z.optional(z.literal('infinite')),
       }),
     ),
   }),
@@ -172,7 +172,7 @@ function listenForReturns(onReturn: () => void): () => void {
  * saves nothing more.
  */
 const indexedDbStorage: AsyncStorage<string> = {
-  getItem: (key) => inQueryStore('readonly', (store) => store.get(key)).then((kept: unknown) => z.string().optional().parse(kept)),
+  getItem: (key) => inQueryStore('readonly', (store) => store.get(key)).then((kept: unknown) => z.optional(z.string()).parse(kept)),
   setItem: (key, value) => (forgotten ? undefined : inQueryStore('readwrite', (store) => store.put(value, key)).then(() => {})),
   removeItem: (key) => inQueryStore('readwrite', (store) => store.delete(key)),
 };

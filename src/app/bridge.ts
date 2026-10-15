@@ -3,7 +3,7 @@
 // only from https://github.com. Each reads what it got by the other side's schema: GitHub's own page posts to the
 // frame too, so a message of no shape here is someone else's and is left alone.
 
-import { z } from 'zod';
+import { z } from 'zod/mini';
 
 /** What the github.com page tells the app. */
 export const parentToAppMessage = z.discriminatedUnion('type', [
@@ -22,7 +22,7 @@ export const parentToAppMessage = z.discriminatedUnion('type', [
   /** The top window was focused: the iframe's own window hears of a window focus only when it lands inside the frame. */
   z.object({ type: z.literal('gg:focus') }),
   /** Who is signed in to github.com (`<meta name="user-login">`), null for no one: whose cache the app restores. */
-  z.object({ type: z.literal('gg:viewer'), login: z.string().nullable() }),
+  z.object({ type: z.literal('gg:viewer'), login: z.nullable(z.string()) }),
 ]);
 
 export type ParentToAppMessage = z.infer<typeof parentToAppMessage>;
@@ -31,7 +31,7 @@ export type ParentToAppMessage = z.infer<typeof parentToAppMessage>;
 export const appToParentMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('gg:ready') }),
   /** Navigate the top window (same tab unless `newTab`). */
-  z.object({ type: z.literal('gg:navigate'), url: z.string(), newTab: z.boolean().optional() }),
+  z.object({ type: z.literal('gg:navigate'), url: z.string(), newTab: z.optional(z.boolean()) }),
   /** Replace the top window's URL without reloading (stack navigation that the app handled itself). */
   z.object({ type: z.literal('gg:replace-url'), url: z.string() }),
   z.object({ type: z.literal('gg:title'), title: z.string() }),

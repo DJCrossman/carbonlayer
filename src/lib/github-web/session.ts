@@ -3,7 +3,7 @@
 // A signed-out session gets a redirect to /login, a JSON 404 from the session-only endpoints, and pages whose
 // `meta[name="user-login"]` is empty; the PR page decides from that meta (pull-request.ts).
 
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import type { UserRef } from '../model';
 
 export const SIGNED_OUT = 'Sign in to github.com in this tab, then reload.';
@@ -78,7 +78,7 @@ export async function send(path: string, method: 'POST' | 'PUT' | 'DELETE', body
   if (response.redirected && new URL(response.url).pathname === '/login') throw new Error(SIGNED_OUT);
   const answer: unknown = await response.json().catch(() => null);
   if (!response.ok) {
-    const refused = z.object({ error: z.string().min(1) }).safeParse(answer);
+    const refused = z.object({ error: z.string().check(z.minLength(1)) }).safeParse(answer);
     throw new Error(refused.success ? refused.data.error : `GitHub answered ${response.status} to ${method} ${path.split('?')[0]}`);
   }
   return answer;
@@ -138,7 +138,7 @@ export async function submitForm(action: string, fields: Array<[string, string]>
 }
 
 /** A JSON endpoint of GitHub's web UI, read by `schema`: the fields its reader relies on (see `readAnswer`). */
-export async function getJson<S extends z.ZodType>(path: string, schema: S): Promise<z.infer<S>> {
+export async function getJson<S extends z.ZodMiniType>(path: string, schema: S): Promise<z.infer<S>> {
   const answer: unknown = await (await request(path, 'application/json')).json();
   return readAnswer(path.split('?')[0] ?? path, schema, answer);
 }
@@ -149,7 +149,7 @@ export async function getJson<S extends z.ZodType>(path: string, schema: S): Pro
  * error takes the reader's own way to the page (a stage's error with its Retry, a section's error, a row or card left as
  * it was).
  */
-export function readAnswer<S extends z.ZodType>(endpoint: string, schema: S, answer: unknown): z.infer<S> {
+export function readAnswer<S extends z.ZodMiniType>(endpoint: string, schema: S, answer: unknown): z.infer<S> {
   const read = schema.safeParse(answer);
   if (!read.success) throw new Error(`${endpoint} did not match: ${z.prettifyError(read.error)}`);
   return read.data;
@@ -165,7 +165,7 @@ export async function getPage(path: string): Promise<Document> {
  * `{ payload: { <routeKey>: … } }`), read by `schema` as `readAnswer` reads an answer. A page can carry several; this is
  * the one whose payload has `routeKey`, or null when none has.
  */
-export function embeddedPayload<S extends z.ZodType>(page: Document, routeKey: string, schema: S): z.infer<S> | null {
+export function embeddedPayload<S extends z.ZodMiniType>(page: Document, routeKey: string, schema: S): z.infer<S> | null {
   for (const script of page.querySelectorAll('script[type="application/json"][data-target="react-app.embeddedData"]')) {
     let data: unknown;
     try {

@@ -4,7 +4,7 @@
 // session). Without them, verdicts come from the merge box's `latestOpinionatedReviews` when present, else from the reviews
 // in the timeline. Whom the viewer can ask instead comes from GitHub's reviewer picker routes (see reviewerCandidatesFrom).
 
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import type { ReviewDecision, ReviewerCandidate, ReviewerSummary, TimelineItem } from '../model';
 import { githubUser } from './session';
 
@@ -102,49 +102,49 @@ export function reviewerCandidatesFrom(
 
 /** A user, bot or team, as review requests, reviews and the reviewer picker name them (the fields read here). */
 const reviewerSchema = z.object({
-  __typename: z.string().nullish(),
-  id: z.string().nullish(),
-  login: z.string().nullish(),
-  displayLogin: z.string().nullish(),
-  name: z.string().nullish(),
-  slug: z.string().nullish(),
-  combinedSlug: z.string().nullish(),
-  avatarUrl: z.string().nullish(),
-  reviewerType: z.string().nullish(),
+  __typename: z.nullish(z.string()),
+  id: z.nullish(z.string()),
+  login: z.nullish(z.string()),
+  displayLogin: z.nullish(z.string()),
+  name: z.nullish(z.string()),
+  slug: z.nullish(z.string()),
+  combinedSlug: z.nullish(z.string()),
+  avatarUrl: z.nullish(z.string()),
+  reviewerType: z.nullish(z.string()),
 });
 
 /** A pending review request, in page_data/review_requests and (where GitHub names them) the merge box. */
-export const pendingReviewRequestSchema = z.object({ reviewer: reviewerSchema.nullish() });
+export const pendingReviewRequestSchema = z.object({ reviewer: z.nullish(reviewerSchema) });
 
 /** page_data/review_requests (the fields read here); signed out it is `{}`, and completed reviews need a session. */
 export const reviewRequestsAnswer = z.object({
-  pendingReviewRequests: z.array(pendingReviewRequestSchema).nullish(),
-  completedReviews: z
-    .array(
+  pendingReviewRequests: z.nullish(z.array(pendingReviewRequestSchema)),
+  completedReviews: z.nullish(
+    z.array(
       z.object({
-        reviewer: reviewerSchema.nullish(),
+        reviewer: z.nullish(reviewerSchema),
         /** REVIEW_STATE_APPROVED | _COMMENTED | _CHANGES_REQUESTED | _DISMISSED | _PENDING */
-        state: z.string().nullish(),
-        submittedAt: z.string().nullish(),
-        canReRequest: z.boolean().nullish(),
+        state: z.nullish(z.string()),
+        submittedAt: z.nullish(z.string()),
+        canReRequest: z.nullish(z.boolean()),
       }),
-    )
-    .nullish(),
+    ),
+  ),
 });
 
 type ReviewRequestsAnswer = z.infer<typeof reviewRequestsAnswer>;
 
 /** One of the merge box's `latestOpinionatedReviews` (the fields read here). */
-export const opinionatedReviewSchema = z.object({ author: reviewerSchema.nullish(), state: z.string().nullish() });
+export const opinionatedReviewSchema = z.object({ author: z.nullish(reviewerSchema), state: z.nullish(z.string()) });
 
 type OpinionatedReview = z.infer<typeof opinionatedReviewSchema>;
 
 /** page_data/reviewers[?q=] (the fields read here). */
-export const availableReviewersAnswer = z.object({ availableReviewers: z.array(reviewerSchema.nullable()).nullish() });
+export const availableReviewersAnswer = z.object({ availableReviewers: z.nullish(z.array(z.nullable(reviewerSchema))) });
 
 type AvailableReviewersAnswer = z.infer<typeof availableReviewersAnswer>;
 
 /** page_data/suggested_reviewers (the fields read here). */
-export const suggestedReviewersAnswer = z.object({ suggestedReviewers: z.array(z.object({ reviewer: reviewerSchema.nullish() }).nullable()).nullish() });
+export const suggestedReviewersAnswer = z.object({ suggestedReviewers: z.nullish(z.array(z.nullable(z.object({ reviewer: z.nullish(reviewerSchema) })))) });
 
 type SuggestedReviewersAnswer = z.infer<typeof suggestedReviewersAnswer>;

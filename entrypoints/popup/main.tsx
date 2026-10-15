@@ -1,4 +1,6 @@
 // Toolbar popup: switch the inbox and PR page takeovers on or off, open the inbox or the options.
+// First: zod's messages (src/lib/zod-messages.ts).
+import '../../src/lib/zod-messages';
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { getSettings, setSettings, watchSettings, type Settings } from '../../src/lib/settings';

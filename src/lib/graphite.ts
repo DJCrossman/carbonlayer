@@ -6,7 +6,7 @@
 // becomes one view: GitHub's search ORs parenthesised groups, `is:pr ((a b) OR (c))`, up to five operators a query.
 // See docs/research/graphite-sections.md.
 
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import type { RepoRef, View } from './model';
 import { repositoryScope } from './views';
 
@@ -173,16 +173,16 @@ export const graphiteInboxSnapshot = z.object({
   sections: z.array(
     z.object({
       name: z.string(),
-      filter: z.unknown().optional(),
-      repos: z.unknown().optional(),
-      usesDefaultRepos: z.unknown().optional(),
-      includeInTotalCount: z.unknown().optional(),
+      filter: z.optional(z.unknown()),
+      repos: z.optional(z.unknown()),
+      usesDefaultRepos: z.optional(z.unknown()),
+      includeInTotalCount: z.optional(z.unknown()),
     }),
   ),
   /** The repositories the inbox covers (its "N repos selected"). */
   defaultRepos: z.array(z.unknown()),
   /** Who is signed in to Graphite, when the page said. */
-  viewerLogin: z.string().optional(),
+  viewerLogin: z.optional(z.string()),
 });
 
 export type GraphiteInboxSnapshot = z.infer<typeof graphiteInboxSnapshot>;
@@ -204,14 +204,16 @@ interface GraphiteSection {
  * needs (RULE_KINDS' `field`: a number of hours, else a string).
  */
 const graphiteRuleSchema = z
-  .object({ isNegated: z.boolean(), conditions: z.array(z.looseObject({ kind: z.string() })).min(1) })
-  .refine(
-    ({ conditions }) =>
-      conditions.every((condition) => {
-        const field = Object.hasOwn(RULE_KINDS, condition.kind) ? RULE_KINDS[condition.kind]?.field : undefined;
-        return condition.kind === conditions[0]?.kind && (!field || typeof condition[field] === (field === 'hours' ? 'number' : 'string'));
-      }),
-    'Every condition of a rule is of one kind, with the value that kind needs',
+  .object({ isNegated: z.boolean(), conditions: z.array(z.looseObject({ kind: z.string() })).check(z.minLength(1)) })
+  .check(
+    z.refine(
+      ({ conditions }) =>
+        conditions.every((condition) => {
+          const field = Object.hasOwn(RULE_KINDS, condition.kind) ? RULE_KINDS[condition.kind]?.field : undefined;
+          return condition.kind === conditions[0]?.kind && (!field || typeof condition[field] === (field === 'hours' ? 'number' : 'string'));
+        }),
+      'Every condition of a rule is of one kind, with the value that kind needs',
+    ),
   );
 
 export type GraphiteRule = z.infer<typeof graphiteRuleSchema>;
@@ -560,24 +562,26 @@ function groupsOf(filter: unknown): GraphiteFilter | null {
 const graphiteRepos = z.array(z.object({ owner: z.string(), name: z.string() }));
 
 /** A React fiber the way `inboxSnapshotOf` walks it: page objects, so nothing about them is certain. */
-const fiberSchema = z.object({ memoizedProps: z.unknown().optional(), return: z.unknown().optional() });
+const fiberSchema = z.object({ memoizedProps: z.optional(z.unknown()), return: z.optional(z.unknown()) });
 
 /** The props of the component holding Graphite's inbox: its `snapshot` of the sections and the synced repositories. */
 const inboxStateProps = z.object({
   snapshot: z.object({
     sections: z.array(
-      z
-        .object({
-          name: z.unknown().optional(),
-          filter: z.unknown().optional(),
-          repos: z.unknown().optional(),
-          usesDefaultRepos: z.unknown().optional(),
-          includeInTotalCount: z.unknown().optional(),
-        })
-        .nullable()
-        .catch(null),
+      z.catch(
+        z.nullable(
+          z.object({
+            name: z.optional(z.unknown()),
+            filter: z.optional(z.unknown()),
+            repos: z.optional(z.unknown()),
+            usesDefaultRepos: z.optional(z.unknown()),
+            includeInTotalCount: z.optional(z.unknown()),
+          }),
+        ),
+        null,
+      ),
     ),
-    syncedRepos: z.array(z.object({ owner: z.unknown().optional(), name: z.unknown().optional(), isInvalid: z.unknown().optional() }).nullable().catch(null)).catch([]),
+    syncedRepos: z.catch(z.array(z.catch(z.nullable(z.object({ owner: z.optional(z.unknown()), name: z.optional(z.unknown()), isInvalid: z.optional(z.unknown()) })), null)), []),
   }),
 });
 
@@ -587,27 +591,27 @@ type InboxState = z.infer<typeof inboxStateProps>['snapshot'];
 const signedInUserProps = z.object({
   value: z.object({
     user: z.object({
-      githubLogin: z.string().nullish().catch(null),
-      github: z.object({ login: z.string().nullish().catch(null) }).nullish().catch(null),
+      githubLogin: z.catch(z.nullish(z.string()), null),
+      github: z.catch(z.nullish(z.object({ login: z.catch(z.nullish(z.string()), null) })), null),
     }),
   }),
 });
 
 /** A `?shared-sections=` link's sections: each named, with a filter in either form and, maybe, its repositories. */
-const graphiteSharedSections = z.array(z.object({ name: z.string(), filter: z.unknown(), repos: graphiteRepos.optional() })).min(1);
+const graphiteSharedSections = z.array(z.object({ name: z.string(), filter: z.unknown(), repos: z.optional(graphiteRepos) })).check(z.minLength(1));
 
 /** What Graphite's inbox page holds, read: each section on the inbox's repositories (`usesDefaultRepos`) or its own. */
 const graphiteInboxSections = z.object({
   sections: z
     .array(
       z.union([
-        z.object({ name: z.string(), filter: z.unknown().optional(), usesDefaultRepos: z.literal(true) }),
-        z.object({ name: z.string(), filter: z.unknown().optional(), repos: graphiteRepos }),
+        z.object({ name: z.string(), filter: z.optional(z.unknown()), usesDefaultRepos: z.literal(true) }),
+        z.object({ name: z.string(), filter: z.optional(z.unknown()), repos: graphiteRepos }),
       ]),
     )
-    .min(1),
+    .check(z.minLength(1)),
   defaultRepos: graphiteRepos,
 });
 
 /** A node of the inbox page's filter tree: a connective over `exprs`, NOT over `expr`, or a condition. */
-const graphiteTreeNode = z.object({ kind: z.string(), exprs: z.array(z.unknown()).optional().catch(undefined), expr: z.unknown().optional() });
+const graphiteTreeNode = z.object({ kind: z.string(), exprs: z.catch(z.optional(z.array(z.unknown())), undefined), expr: z.optional(z.unknown()) });

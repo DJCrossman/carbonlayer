@@ -2,7 +2,7 @@
 // inbox sections (`inbox:<filter>`, served by /pulls/inbox/queries), plus the share-link format
 // (`https://github.com/#views=<base64url json>`).
 
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import { viewSchema, type Organization, type RepoRef, type View, type ViewResult } from './model';
 
 /**
@@ -258,7 +258,7 @@ export function decodeViewsShareHash(hash: string): View[] | null {
   try {
     const binary = atob(encoded.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(encoded.length / 4) * 4, '='));
     const parsed: unknown = JSON.parse(new TextDecoder().decode(Uint8Array.from(binary, (c) => c.charCodeAt(0))));
-    return z.array(viewSchema).min(1).safeParse(parsed).data ?? null;
+    return z.array(viewSchema).check(z.minLength(1)).safeParse(parsed).data ?? null;
   } catch {
     return null;
   }

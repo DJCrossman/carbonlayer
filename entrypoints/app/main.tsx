@@ -1,4 +1,6 @@
 // The app page. Lives in an iframe on github.com (see ARCHITECTURE.md) or standalone in the harness.
+// First: zod's messages (src/lib/zod-messages.ts).
+import '../../src/lib/zod-messages';
 import { Component, StrictMode, useEffect, useLayoutEffect, useState, type ErrorInfo, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { browser } from 'wxt/browser';

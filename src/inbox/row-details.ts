@@ -4,7 +4,7 @@
 // once (src/app/query-cache.tsx keeps it on the device).
 import { hashKey, useQueries, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import { askedTogether } from '../app/asked-together';
 import type { DataSource } from '../app/data-source';
 import { prEnrichmentSchema, prSummarySchema, repoRefSchema, type PrEnrichment, type PrSummary, type RepoRef, type StackEntry } from '../lib/model';

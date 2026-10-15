@@ -4,7 +4,7 @@
 // Each end reads what the other posted by the method's schemas (RPC_SCHEMAS): the content script a request's args
 // (readRpcRequest), the app an answer's result (rpc). One of another shape fails, saying what differs.
 
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import {
   changedFileDiffSchema,
   ciSummarySchema,
@@ -78,11 +78,10 @@ export const rpcRequestSchema = z.object({ kind: z.literal('gg-rpc'), id: z.stri
  * this build does not have or args of another shape; the content script answers that as the request's failure.
  */
 export function readRpcRequest({ id, method, args }: z.infer<typeof rpcRequestSchema>): RpcRequest {
-  const known = rpcMethodSchema.safeParse(method);
-  if (!known.success) throw new Error(`Unknown request: ${method}`);
-  const read = RPC_SCHEMAS[known.data].args.safeParse(args);
+  if (!isRpcMethod(method)) throw new Error(`Unknown request: ${method}`);
+  const read = RPC_SCHEMAS[method].args.safeParse(args);
   if (!read.success) throw new Error(`${method} was asked with args of another shape: ${z.prettifyError(read.error)}`);
-  return { kind: 'gg-rpc', id, method: known.data, args: read.data };
+  return { kind: 'gg-rpc', id, method, args: read.data };
 }
 
 /** Settles each request in flight, by id, with the answer posted for it. */
@@ -117,7 +116,7 @@ export function rpc<M extends RpcMethod>(method: M, args: RpcMethods[M]['args'])
     pending.set(id, (answer) => {
       if (!answer.ok) return reject(new Error(answer.error));
       // Each method's result schema, typed as reading that method's result, so this answer comes out as `M`'s.
-      const results: { [K in RpcMethod]: { result: z.ZodType<RpcMethods[K]['result']> } } = RPC_SCHEMAS;
+      const results: { [K in RpcMethod]: { result: z.ZodMiniType<RpcMethods[K]['result']> } } = RPC_SCHEMAS;
       const result = results[method].result.safeParse(answer.result);
       if (result.success) resolve(result.data);
       else reject(new Error(`The answer to ${method} did not match: ${z.prettifyError(result.error)}`));
@@ -130,23 +129,25 @@ export function rpc<M extends RpcMethod>(method: M, args: RpcMethods[M]['args'])
   });
 }
 
-/** A method this build has. */
-const rpcMethodSchema = z.string().refine((method): method is RpcMethod => Object.hasOwn(RPC_SCHEMAS, method));
+/** Whether a method is one this build has (zod/mini's refinements check a value but do not narrow its type). */
+function isRpcMethod(method: string): method is RpcMethod {
+  return Object.hasOwn(RPC_SCHEMAS, method);
+}
 
 /** Which PR page a stage request is for. */
 const prPageRequest = z.object({ repo: repoRefSchema, number: z.number() });
 
-const inboxRowToEnrichSchema = stackEntrySchema
-  .pick({ repo: true, number: true, state: true, isDraft: true, author: true })
-  .extend({ ci: ciSummarySchema.pick({ state: true }) });
+const inboxRowToEnrichSchema = z.extend(z.pick(stackEntrySchema, { repo: true, number: true, state: true, isDraft: true, author: true }), {
+  ci: z.pick(ciSummarySchema, { state: true }),
+});
 
 /** A comment on the diff: `startLine` on `startSide` to `line` on `side` for one on several lines. */
 const lineComment = {
   path: z.string(),
   line: z.number(),
   side: z.enum(['LEFT', 'RIGHT']),
-  startLine: z.number().optional(),
-  startSide: z.enum(['LEFT', 'RIGHT']).optional(),
+  startLine: z.optional(z.number()),
+  startSide: z.optional(z.enum(['LEFT', 'RIGHT'])),
   body: z.string(),
 };
 
@@ -165,32 +166,32 @@ const RPC_SCHEMAS = {
    */
   'inbox.enrich': { args: z.object({ prs: z.array(inboxRowToEnrichSchema) }), result: z.array(prEnrichmentSchema) },
   /** The branches of these pull requests, in the same order, by which "Group by stack" chains them; null where GitHub did not say. */
-  'inbox.branches': { args: z.object({ prs: z.array(z.object({ repo: repoRefSchema, number: z.number() })) }), result: z.array(stackBranchesSchema.nullable()) },
+  'inbox.branches': { args: z.object({ prs: z.array(z.object({ repo: repoRefSchema, number: z.number() })) }), result: z.array(z.nullable(stackBranchesSchema)) },
   /**
    * The repositories GitHub's repository picker offers for `query` (what the user typed; empty for its first list), only
    * `owner`'s when given.
    */
   'repos.search': {
-    args: z.object({ query: z.string(), owner: organizationSchema.pick({ login: true, isViewer: true }).nullish() }),
+    args: z.object({ query: z.string(), owner: z.nullish(z.pick(organizationSchema, { login: true, isViewer: true })) }),
     result: z.array(repoCandidateSchema),
   },
   /** A page of the repositories GitHub's homepage lists under "Top repositories": the first, or the one after `cursor`. */
-  'repos.top': { args: z.object({ cursor: z.number().nullish() }), result: z.object({ repos: z.array(topRepositorySchema), nextCursor: z.number().nullable() }) },
+  'repos.top': { args: z.object({ cursor: z.nullish(z.number()) }), result: z.object({ repos: z.array(topRepositorySchema), nextCursor: z.nullable(z.number()) }) },
   /** The organizations the viewer belongs to, then their own account: whose pull requests the inbox can show. */
   'orgs.list': { args: z.object({}), result: z.array(organizationSchema) },
   /**
    * The people of an organization, the way its People page lists them: whom the section editor's username fields offer.
    * None for the viewer's own account.
    */
-  'orgs.people': { args: z.object({ org: organizationSchema.pick({ login: true, isViewer: true }) }), result: z.array(orgMemberSchema) },
+  'orgs.people': { args: z.object({ org: z.pick(organizationSchema, { login: true, isViewer: true }) }), result: z.array(orgMemberSchema) },
   /** The whole PR at once, all its stages put together (the PR page itself loads them one by one, below). */
-  'pr.fetch': { args: prPageRequest.extend({ force: z.boolean().optional() }), result: prDetailSchema },
+  'pr.fetch': { args: z.extend(prPageRequest, { force: z.optional(z.boolean()) }), result: prDetailSchema },
   // The PR page, a stage at a time (PrStages in model.ts), each asked of GitHub every time.
   'pr.fetchHeader': { args: prPageRequest, result: prStagesSchema.shape.header },
   'pr.fetchActivity': { args: prPageRequest, result: prStagesSchema.shape.activity },
   'pr.fetchFiles': { args: prPageRequest, result: prStagesSchema.shape.files },
   /** The diffs of up to 20 of the PR's changed files, by path: one of GitHub's diff_entries requests. */
-  'pr.fetchFileDiffs': { args: prPageRequest.extend({ paths: z.array(z.string()) }), result: z.record(z.string(), changedFileDiffSchema) },
+  'pr.fetchFileDiffs': { args: z.extend(prPageRequest, { paths: z.array(z.string()) }), result: z.record(z.string(), changedFileDiffSchema) },
   'pr.fetchThreads': { args: prPageRequest, result: prStagesSchema.shape.threads },
   'pr.fetchMergeBox': { args: prPageRequest, result: prStagesSchema.shape.mergeBox },
   'pr.fetchChecks': { args: prPageRequest, result: prStagesSchema.shape.checks },
@@ -204,7 +205,7 @@ const RPC_SCHEMAS = {
       event: z.enum(['APPROVE', 'REQUEST_CHANGES', 'COMMENT']),
       body: z.string(),
       /** Inline comments batched into this review (Graphite's "Add to review"). */
-      threads: z.array(z.object(lineComment)).optional(),
+      threads: z.optional(z.array(z.object(lineComment))),
     }),
     result: z.undefined(),
   },
@@ -236,7 +237,7 @@ const RPC_SCHEMAS = {
 
 /** An answer the content script posted; `rpc` reads its result by the schema of the method it answers. */
 const rpcAnswerSchema = z.discriminatedUnion('ok', [
-  z.object({ kind: z.literal('gg-rpc-result'), id: z.string(), ok: z.literal(true), result: z.unknown().optional() }),
+  z.object({ kind: z.literal('gg-rpc-result'), id: z.string(), ok: z.literal(true), result: z.optional(z.unknown()) }),
   z.object({ kind: z.literal('gg-rpc-result'), id: z.string(), ok: z.literal(false), error: z.string() }),
 ]);
 

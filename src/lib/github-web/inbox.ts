@@ -3,7 +3,7 @@
 // screen later what the dashboard has not at all (mergeability, reviewers, line counts, failing checks) from each PR's
 // page data.
 
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import type { CheckState, PrEnrichment, PrSummary, RepoRef, StackBranches, View, ViewResult } from '../model';
 import type { InboxRowToEnrich, MergeMethod } from '../rpc';
 import { inboxFilterOf, resolveViewQuery, type GitHubInboxFilter } from '../views';
@@ -190,7 +190,7 @@ export async function enrichPull(pr: InboxRowToEnrich, mergeMethod: MergeMethod,
   const asksChecks = pr.state === 'OPEN';
   const [mergeBox, diffstat, reviewRequests, statusChecks, threads] = await Promise.allSettled([
     asksMergeBox ? getJson(`${data}/merge_box?merge_method=${mergeMethod}&bypass_requirements=false`, mergeBoxAnswer) : null,
-    getJson(`${data}/diffstat`, z.object({ diffstat: z.object({ linesAdded: z.number().nullish(), linesDeleted: z.number().nullish() }).nullish() })),
+    getJson(`${data}/diffstat`, z.object({ diffstat: z.nullish(z.object({ linesAdded: z.nullish(z.number()), linesDeleted: z.nullish(z.number()) })) })),
     getJson(`${data}/review_requests`, reviewRequestsAnswer),
     asksChecks ? getJson(`${data}/status_checks`, statusChecksAnswer) : null,
     getJson(`${data}/threads`, threadsAnswer),
@@ -281,40 +281,40 @@ export function branchesIn(header: BranchesHeaderAnswer, repo: RepoRef): StackBr
 /** A dashboard row ("Pull"), the fields the inbox reads, from GitHub's dashboard components' props. */
 const pullSchema = z.object({
   id: z.string(),
-  itemType: z.string().nullish(),
+  itemType: z.nullish(z.string()),
   number: z.number(),
-  title: z.string().nullish(),
-  permalink: z.string().nullish(),
-  repoNameWithOwner: z.string().nullish(),
-  author: z.object({ displayLogin: z.string() }).nullish(),
-  state: z.string().nullish(),
-  displayState: z.string().nullish(),
-  isDraft: z.boolean().nullish(),
-  category: z.string().nullish(),
+  title: z.nullish(z.string()),
+  permalink: z.nullish(z.string()),
+  repoNameWithOwner: z.nullish(z.string()),
+  author: z.nullish(z.object({ displayLogin: z.string() })),
+  state: z.nullish(z.string()),
+  displayState: z.nullish(z.string()),
+  isDraft: z.nullish(z.boolean()),
+  category: z.nullish(z.string()),
   createdAt: z.string(),
   updatedAt: z.string(),
-  mergedAt: z.string().nullish(),
-  closedAt: z.string().nullish(),
-  isReadByCurrentUser: z.boolean().nullish(),
-  commentCount: z.number().nullish(),
-  labels: z.array(z.object({ name: z.string(), color: z.string() })).nullish(),
-  stackPosition: z.number().nullish(),
-  stackSize: z.number().nullish(),
+  mergedAt: z.nullish(z.string()),
+  closedAt: z.nullish(z.string()),
+  isReadByCurrentUser: z.nullish(z.boolean()),
+  commentCount: z.nullish(z.number()),
+  labels: z.nullish(z.array(z.object({ name: z.string(), color: z.string() }))),
+  stackPosition: z.nullish(z.number()),
+  stackSize: z.nullish(z.number()),
   // Deferred fields, present after /deferred.
-  reviewDecisionState: z.string().nullish(),
-  statusCheckRollup: z.object({ state: z.string().nullish(), totalCount: z.number(), successCount: z.number() }).nullish(),
-  approvedReviewsCount: z.number().nullish(),
-  changesRequestedReviewsCount: z.number().nullish(),
+  reviewDecisionState: z.nullish(z.string()),
+  statusCheckRollup: z.nullish(z.object({ state: z.nullish(z.string()), totalCount: z.number(), successCount: z.number() })),
+  approvedReviewsCount: z.nullish(z.number()),
+  changesRequestedReviewsCount: z.nullish(z.number()),
 });
 
 export type Pull = z.infer<typeof pullSchema>;
 
 /** A section's or a search's page of rows (the fields read here). */
 const pullsPageSchema = z.object({
-  results: z.array(pullSchema).nullish(),
-  pulls: z.array(pullSchema).nullish(),
-  totalCount: z.number().nullish(),
-  pageInfo: z.object({ totalCount: z.number().nullish() }).nullish(),
+  results: z.nullish(z.array(pullSchema)),
+  pulls: z.nullish(z.array(pullSchema)),
+  totalCount: z.nullish(z.number()),
+  pageInfo: z.nullish(z.object({ totalCount: z.nullish(z.number()) })),
 });
 
 type PullsPage = z.infer<typeof pullsPageSchema>;
@@ -323,16 +323,16 @@ type PullsPage = z.infer<typeof pullsPageSchema>;
  * /pulls/inbox/queries: unconfirmed, expected `{ results, totalCount }` (docs/research/github-web-endpoints.md); a bare
  * list of rows is read as its `results`.
  */
-const sectionAnswer = z.preprocess((answer) => (Array.isArray(answer) ? { results: answer } : answer), pullsPageSchema);
+const sectionAnswer = z.pipe(z.transform((answer) => (Array.isArray(answer) ? { results: answer } : answer)), pullsPageSchema);
 
 /** `pullsDashboardSurfaceContentRoute`, a search's page: its rows, and `error`, why GitHub would not run it (else null). */
-const searchRoute = pullsPageSchema.extend({ error: z.string().nullish() });
+const searchRoute = z.extend(pullsPageSchema, { error: z.nullish(z.string()) });
 
 /** /pulls/search answered with JSON: the route's data in GitHub's `{ payload }`. */
 const searchAnswer = z.object({ payload: z.object({ pullsDashboardSurfaceContentRoute: searchRoute }) });
 
 /** A row's deferred fields (review decision, CI rollup, review counts), by its PR's relay id. */
-const deferredRowSchema = pullSchema.pick({ id: true, reviewDecisionState: true, statusCheckRollup: true, approvedReviewsCount: true, changesRequestedReviewsCount: true });
+const deferredRowSchema = z.pick(pullSchema, { id: true, reviewDecisionState: true, statusCheckRollup: true, approvedReviewsCount: true, changesRequestedReviewsCount: true });
 
 type DeferredRow = z.infer<typeof deferredRowSchema>;
 
@@ -343,14 +343,14 @@ const searchDeferredAnswer = z.object({
 
 /** page_data/header, for the branches "Group by stack" chains (the fields read here). */
 export const branchesHeaderAnswer = z.object({
-  pullRequest: z
-    .object({
-      baseBranch: z.string().nullish(),
-      headBranch: z.string().nullish(),
-      headRepositoryOwnerLogin: z.string().nullish(),
-      headRepositoryName: z.string().nullish(),
-    })
-    .nullish(),
+  pullRequest: z.nullish(
+    z.object({
+      baseBranch: z.nullish(z.string()),
+      headBranch: z.nullish(z.string()),
+      headRepositoryOwnerLogin: z.nullish(z.string()),
+      headRepositoryName: z.nullish(z.string()),
+    }),
+  ),
 });
 
 type BranchesHeaderAnswer = z.infer<typeof branchesHeaderAnswer>;

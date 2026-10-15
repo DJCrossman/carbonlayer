@@ -4,7 +4,7 @@
 // picker's and `pr.fetch`'s are kept briefly here, and pr-stages.ts shares a request between the PR page's stages while
 // it is on its way. Any successful write clears what is kept, and stops sharing the requests made before it.
 
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import type { PrDetail } from '../model';
 import type { RpcMethod, RpcMethods, RpcRequest, RpcResponse } from '../rpc';
 import { getSettings } from '../settings';

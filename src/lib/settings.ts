@@ -9,7 +9,7 @@
 // or not.
 
 import { browser } from 'wxt/browser';
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import { mergeMethodSchema, organizationSchema, repoRefSchema, viewSchema, type Organization, type RepoRef, type View } from './model';
 import { DEFAULT_VIEWS, organizationScope, repositoryScope } from './views';
 
@@ -147,21 +147,21 @@ export function watchSettings(onChange: (settings: Settings) => void): () => voi
  * synced storage may be written by another device's version.
  */
 const storedSettingsSchema = z.looseObject({
-  currentOrg: organizationSchema.nullable().optional().catch(null),
-  viewsByOrg: z.record(z.string(), z.object({ viewOrder: z.array(z.string()) })).optional().catch(undefined),
-  reposByOrg: z.record(z.string(), z.array(repoRefSchema)).optional().catch(undefined),
+  currentOrg: z.catch(z.optional(z.nullable(organizationSchema)), null),
+  viewsByOrg: z.catch(z.optional(z.record(z.string(), z.object({ viewOrder: z.array(z.string()) }))), undefined),
+  reposByOrg: z.catch(z.optional(z.record(z.string(), z.array(repoRefSchema))), undefined),
   /** Before views belonged to an organization: their order (as `view:<id>` items), or, earlier still, the views themselves. */
-  viewOrder: z.array(z.string()).optional().catch(undefined),
-  views: z.array(z.unknown()).optional().catch(undefined),
-  inboxRepos: z.array(repoRefSchema).optional().catch(undefined),
-  inboxScope: z.string().optional().catch(undefined),
-  sidebarCollapsed: z.boolean().optional().catch(DEFAULT_SETTINGS.sidebarCollapsed),
-  inboxGroupByStack: z.boolean().optional().catch(DEFAULT_SETTINGS.inboxGroupByStack),
-  inboxEnabled: z.boolean().optional().catch(DEFAULT_SETTINGS.inboxEnabled),
-  prEnabled: z.boolean().optional().catch(DEFAULT_SETTINGS.prEnabled),
-  diffLayout: z.enum(['unified', 'split']).optional().catch(DEFAULT_SETTINGS.diffLayout),
-  theme: z.enum(['auto', 'light', 'dark']).optional().catch(DEFAULT_SETTINGS.theme),
-  mergeMethod: mergeMethodSchema.optional().catch(DEFAULT_SETTINGS.mergeMethod),
+  viewOrder: z.catch(z.optional(z.array(z.string())), undefined),
+  views: z.catch(z.optional(z.array(z.unknown())), undefined),
+  inboxRepos: z.catch(z.optional(z.array(repoRefSchema)), undefined),
+  inboxScope: z.catch(z.optional(z.string()), undefined),
+  sidebarCollapsed: z.catch(z.optional(z.boolean()), DEFAULT_SETTINGS.sidebarCollapsed),
+  inboxGroupByStack: z.catch(z.optional(z.boolean()), DEFAULT_SETTINGS.inboxGroupByStack),
+  inboxEnabled: z.catch(z.optional(z.boolean()), DEFAULT_SETTINGS.inboxEnabled),
+  prEnabled: z.catch(z.optional(z.boolean()), DEFAULT_SETTINGS.prEnabled),
+  diffLayout: z.catch(z.optional(z.enum(['unified', 'split'])), DEFAULT_SETTINGS.diffLayout),
+  theme: z.catch(z.optional(z.enum(['auto', 'light', 'dark'])), DEFAULT_SETTINGS.theme),
+  mergeMethod: z.catch(z.optional(mergeMethodSchema), DEFAULT_SETTINGS.mergeMethod),
 });
 
 type StoredSettings = z.infer<typeof storedSettingsSchema>;

@@ -4,7 +4,7 @@
 // the header, the activity, the threads, the merge box and the stack; base_comparison_info feeds the files and the
 // threads' positions.
 
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import type { ChangedFileDiff, CheckRunSummary, PrStage, PrStages, PrSummary, RepoRef, UserRef } from '../model';
 import { getSettings } from '../settings';
 import { dynamicWorkflowChecks } from './actions';
@@ -223,7 +223,7 @@ function answersFor(pull: Pull) {
   // A route behind a side card. GitHub answers 404 for one the repository or viewer lacks, which leaves the card empty;
   // any other failure (no network, a 5xx, rate limiting, an answer of another shape) fails the stage, and the page offers
   // to retry it.
-  const sideDetail = <S extends z.ZodType>(route: string, schema: S): Promise<z.infer<S> | null> =>
+  const sideDetail = <S extends z.ZodMiniType>(route: string, schema: S): Promise<z.infer<S> | null> =>
     getJson(`${data}/${route}`, schema).catch((error: unknown) => {
       if (!(error instanceof Error) || !error.message.startsWith('GitHub answered 404')) throw error;
       console.debug('[gg]', `page_data/${route.split('?')[0]} failed; showing the page without it:`, error.message);
@@ -278,19 +278,19 @@ function layoutOf(page: Document, pull: Pull): LayoutRoute {
 }
 
 /** page_data/tab_counts (the fields read here). */
-const tabCountsAnswer = z.object({ filesChangedCount: z.number().nullish(), conversationCount: z.number().nullish(), unresolvedConversationCount: z.number().nullish() });
+const tabCountsAnswer = z.object({ filesChangedCount: z.nullish(z.number()), conversationCount: z.nullish(z.number()), unresolvedConversationCount: z.nullish(z.number()) });
 
 /** page_data/diffstat (the fields read here). */
-const diffstatAnswer = z.object({ diffstat: z.object({ linesAdded: z.number().nullish(), linesDeleted: z.number().nullish() }).nullish() });
+const diffstatAnswer = z.object({ diffstat: z.nullish(z.object({ linesAdded: z.nullish(z.number()), linesDeleted: z.nullish(z.number()) })) });
 
 /** page_data/description (the fields read here), for a PR whose conversation renders no description. */
-const descriptionAnswer = z.object({ bodyHtml: z.string().nullish() });
+const descriptionAnswer = z.object({ bodyHtml: z.nullish(z.string()) });
 
 /** page_data/labels (the fields read here). */
-const labelsAnswer = z.object({ labels: z.array(z.object({ name: z.string(), color: z.string() })).nullish() });
+const labelsAnswer = z.object({ labels: z.nullish(z.array(z.object({ name: z.string(), color: z.string() }))) });
 
 /** page_data/assignees (the fields read here). */
-const assigneesAnswer = z.object({ assignees: z.array(z.object({ login: z.string().nullish(), displayLogin: z.string().nullish(), avatarUrl: z.string().nullish() })).nullish() });
+const assigneesAnswer = z.object({ assignees: z.nullish(z.array(z.object({ login: z.nullish(z.string()), displayLogin: z.nullish(z.string()), avatarUrl: z.nullish(z.string()) }))) });
 
 /** GitHub's answers while they are on their way, a map for each request, by `<pull path> <variant>`. */
 const answers = {
@@ -349,19 +349,19 @@ const layoutRouteSchema = z.object({
     title: z.string(),
     /** 'OPEN' | 'DRAFT' | 'MERGED' | 'CLOSED' | … */
     state: z.string(),
-    author: z.object({ login: z.string(), avatarUrl: z.string().nullish() }).nullish(),
+    author: z.nullish(z.object({ login: z.string(), avatarUrl: z.nullish(z.string()) })),
     baseBranch: z.string(),
     headBranch: z.string(),
     headSha: z.string(),
     createdTime: z.string(),
-    closedTime: z.string().nullish(),
-    mergedTime: z.string().nullish(),
+    closedTime: z.nullish(z.string()),
+    mergedTime: z.nullish(z.string()),
   }),
-  stack: nativeStackSchema.nullish(),
+  stack: z.nullish(nativeStackSchema),
   /** The base repository; `id` is its database id. */
-  repository: z.object({ id: z.number().nullish() }).nullish(),
-  mergeStatusButtonData: z.object({ defaultMergeMethod: z.enum(['MERGE', 'SQUASH', 'REBASE']).nullish() }).nullish(),
-  user: z.object({ canEditTitle: z.boolean().nullish() }).nullish(),
+  repository: z.nullish(z.object({ id: z.nullish(z.number()) })),
+  mergeStatusButtonData: z.nullish(z.object({ defaultMergeMethod: z.nullish(z.enum(['MERGE', 'SQUASH', 'REBASE'])) })),
+  user: z.nullish(z.object({ canEditTitle: z.nullish(z.boolean()) })),
 });
 
 type LayoutRoute = z.infer<typeof layoutRouteSchema>;

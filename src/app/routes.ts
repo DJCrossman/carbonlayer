@@ -1,7 +1,7 @@
 // The two surfaces the extension takes over, parsed from either a github.com URL (content script)
 // or the app's own location hash (iframe). Both sides agree on one `AppRoute` shape.
 
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import { viewSchema, type RepoRef, type View } from '../lib/model';
 import { decodeViewsShareHash } from '../lib/views';
 
@@ -75,7 +75,7 @@ export function parseAppHash(hash: string): AppRoute {
     if (raw) {
       try {
         const parsed: unknown = JSON.parse(raw);
-        importViews = z.array(viewSchema).min(1).safeParse(parsed).data ?? null;
+        importViews = z.array(viewSchema).check(z.minLength(1)).safeParse(parsed).data ?? null;
       } catch {
         importViews = null;
       }

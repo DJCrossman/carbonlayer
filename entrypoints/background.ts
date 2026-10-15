@@ -3,9 +3,11 @@
 // copy the sections, stores them where the import dialog looks (`graphiteImport` in storage.local), then closes the
 // Graphite tab and returns to the one that asked. Which tab is copying lives in storage.session: the worker may stop
 // while Graphite loads, and a browser restart should forget it.
+// First: zod's messages (src/lib/zod-messages.ts).
+import '../src/lib/zod-messages';
 import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import { graphiteInboxSnapshot } from '../src/lib/graphite';
 
 export default defineBackground(() => {
@@ -52,13 +54,13 @@ export default defineBackground(() => {
 /** The Graphite tab copying sections for an import, and the tab that asked for them; none when no copy is under way. */
 async function copyingTab(): Promise<{ tabId: number; openerTabId?: number } | undefined> {
   const { graphiteImportTab } = await browser.storage.session.get('graphiteImportTab');
-  return z.object({ tabId: z.number(), openerTabId: z.number().optional() }).optional().parse(graphiteImportTab);
+  return z.optional(z.object({ tabId: z.number(), openerTabId: z.optional(z.number()) })).parse(graphiteImportTab);
 }
 
 /** What the import dialog (src/inbox/GraphiteImport.tsx) and the Graphite tab (graphite.content.ts) send here. */
 const backgroundMessage = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('carbonlayer-open-graphite-import') }),
   z.object({ kind: z.literal('carbonlayer-graphite-import-wanted') }),
-  graphiteInboxSnapshot.extend({ kind: z.literal('carbonlayer-graphite-sections') }),
+  z.extend(graphiteInboxSnapshot, { kind: z.literal('carbonlayer-graphite-sections') }),
   z.object({ kind: z.literal('carbonlayer-graphite-sections-error'), error: z.string() }),
 ]);

@@ -1,7 +1,7 @@
 // Changed files and their patches. page_data/base_comparison_info lists every file (`diffSummaries`) and
 // carries the first diffs (`diffContents`); the rest come from page_data/diff_entries, up to 20 paths per request.
 
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import type { ChangedFileDiff, ChangedFileSummary, RepoRef } from '../model';
 import { getJson } from './session';
 
@@ -83,34 +83,36 @@ export function patchOf(entry: DiffEntry): string | null {
 /** One file's diff in page_data/diff_entries and base_comparison_info's `diffContents` (the fields read here). */
 const diffEntrySchema = z.object({
   path: z.string(),
-  isBinary: z.boolean().nullish(),
-  isTooBig: z.boolean().nullish(),
-  oldTreeEntry: z.object({ path: z.string() }).nullish(),
-  diffLines: z.array(z.object({ type: z.string(), text: z.string(), displayNoNewLineWarning: z.boolean().nullish() })).nullish(),
+  isBinary: z.nullish(z.boolean()),
+  isTooBig: z.nullish(z.boolean()),
+  oldTreeEntry: z.nullish(z.object({ path: z.string() })),
+  diffLines: z.nullish(z.array(z.object({ type: z.string(), text: z.string(), displayNoNewLineWarning: z.nullish(z.boolean()) }))),
 });
 
 export type DiffEntry = z.infer<typeof diffEntrySchema>;
 
 /** page_data/base_comparison_info (the fields read here); a comparison without files lists none. */
 export const baseComparisonAnswer = z.object({
-  diffSummaries: z
-    .array(
-      z.object({
-        path: z.string(),
-        changeType: z.string().nullish(),
-        linesAdded: z.number().nullish(),
-        linesDeleted: z.number().nullish(),
-        markedAsViewed: z.boolean().nullish(),
-        /** Review thread anchors on the current diff: `{ R69: { threads: [{ id: 2694976171, start: 'R55' }] } }`. */
-        markersMap: z
-          .record(z.string(), z.object({ threads: z.array(z.object({ id: z.union([z.number(), z.string()]), start: z.string().nullish() })).nullish() }))
-          .nullish(),
-      }),
-    )
-    .nullish()
-    .transform((summaries) => summaries ?? []),
-  diffContents: z.array(diffEntrySchema).nullish(),
-  comparison: z.object({ fullDiff: z.object({ baseOid: z.string(), headOid: z.string() }).nullish() }).nullish(),
+  diffSummaries: z.pipe(
+    z.nullish(
+      z.array(
+        z.object({
+          path: z.string(),
+          changeType: z.nullish(z.string()),
+          linesAdded: z.nullish(z.number()),
+          linesDeleted: z.nullish(z.number()),
+          markedAsViewed: z.nullish(z.boolean()),
+          /** Review thread anchors on the current diff: `{ R69: { threads: [{ id: 2694976171, start: 'R55' }] } }`. */
+          markersMap: z.nullish(
+            z.record(z.string(), z.object({ threads: z.nullish(z.array(z.object({ id: z.union([z.number(), z.string()]), start: z.nullish(z.string()) }))) })),
+          ),
+        }),
+      ),
+    ),
+    z.transform((summaries) => summaries ?? []),
+  ),
+  diffContents: z.nullish(z.array(diffEntrySchema)),
+  comparison: z.nullish(z.object({ fullDiff: z.nullish(z.object({ baseOid: z.string(), headOid: z.string() })) })),
 });
 
 export type BaseComparison = z.infer<typeof baseComparisonAnswer>;

@@ -4,7 +4,7 @@
 // mapping as the Graphite import (src/lib/graphite.ts). Opened from the inbox and the options page.
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import { RULE_KINDS, searchForFilter, type GraphiteFilter, type GraphiteRule } from '../lib/graphite';
 import type { OrgMember, RepoCandidate, RepoRef, View } from '../lib/model';
 import { GITHUB_INBOX_FILTERS } from '../lib/views';

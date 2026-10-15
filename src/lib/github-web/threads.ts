@@ -2,7 +2,7 @@
 // positions; positions come from the anchors in base_comparison_info's `diffSummaries[].markersMap`. A thread with no
 // anchor is outdated: its path and diff excerpt are read from the thread as the conversation renders it.
 
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import { REACTION_CONTENTS, type Reaction, type ReviewThread } from '../model';
 import type { BaseComparison } from './files';
 import { githubUser } from './session';
@@ -101,43 +101,43 @@ function threadAsRendered(page: Document, id: string): { path: string; isOutdate
 
 /** page_data/threads (the fields read here); a PR without review threads may leave `threads` out. */
 export const threadsAnswer = z.object({
-  threads: z
-    .array(
+  threads: z.nullish(
+    z.array(
       z.object({
         id: z.union([z.string(), z.number()]),
-        isResolved: z.boolean().nullish(),
-        pullRequestReviewId: z.union([z.number(), z.string()]).nullish(),
-        commentsData: z
-          .object({
-            comments: z
-              .array(
+        isResolved: z.nullish(z.boolean()),
+        pullRequestReviewId: z.nullish(z.union([z.number(), z.string()])),
+        commentsData: z.nullish(
+          z.object({
+            comments: z.nullish(
+              z.array(
                 z.object({
-                  id: z.string().nullish(),
-                  databaseId: z.number().nullish(),
-                  reviewId: z.union([z.number(), z.string()]).nullish(),
-                  author: z.object({ login: z.string().nullish(), avatarUrl: z.string().nullish() }).nullish(),
-                  bodyHTML: z.string().nullish(),
-                  createdAt: z.string().nullish(),
-                  publishedAt: z.string().nullish(),
-                  url: z.string().nullish(),
-                  currentDiffResourcePath: z.string().nullish(),
-                  reactionGroups: z
-                    .array(
+                  id: z.nullish(z.string()),
+                  databaseId: z.nullish(z.number()),
+                  reviewId: z.nullish(z.union([z.number(), z.string()])),
+                  author: z.nullish(z.object({ login: z.nullish(z.string()), avatarUrl: z.nullish(z.string()) })),
+                  bodyHTML: z.nullish(z.string()),
+                  createdAt: z.nullish(z.string()),
+                  publishedAt: z.nullish(z.string()),
+                  url: z.nullish(z.string()),
+                  currentDiffResourcePath: z.nullish(z.string()),
+                  reactionGroups: z.nullish(
+                    z.array(
                       z.object({
-                        reaction: z.object({ content: z.string().nullish(), viewerHasReacted: z.boolean().nullish() }).nullish(),
-                        reactors: z.array(z.unknown()).nullish(),
-                        totalCount: z.number().nullish(),
+                        reaction: z.nullish(z.object({ content: z.nullish(z.string()), viewerHasReacted: z.nullish(z.boolean()) })),
+                        reactors: z.nullish(z.array(z.unknown())),
+                        totalCount: z.nullish(z.number()),
                       }),
-                    )
-                    .nullish(),
+                    ),
+                  ),
                 }),
-              )
-              .nullish(),
-          })
-          .nullish(),
+              ),
+            ),
+          }),
+        ),
       }),
-    )
-    .nullish(),
+    ),
+  ),
 });
 
 type ThreadsAnswer = z.infer<typeof threadsAnswer>;

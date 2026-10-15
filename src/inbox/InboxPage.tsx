@@ -6,6 +6,7 @@
 import { useInfiniteQuery, useQueries, useQueryClient, type Query, type QueryClient } from '@tanstack/react-query';
 import { useContext, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { browser } from 'wxt/browser';
+import { z } from 'zod/mini';
 import { askedTogether } from '../app/asked-together';
 import { postToParent } from '../app/bridge';
 import { COPY_KEYBINDINGS, copyPullRequest } from '../app/copy-pull-request';
@@ -528,7 +529,7 @@ function useInbox(source: DataSource, organizations: Organization[] | null) {
       // A section whose search changed (the repositories chosen, its query or limit) shows its last answer for the
       // organization until GitHub answers the new one.
       placeholderData: () =>
-        viewResultSchema.optional().parse(
+        z.optional(viewResultSchema).parse(
           queryClient
             .getQueryCache()
             .findAll({ queryKey: ['inbox', org?.login], predicate: ({ queryKey, state }) => queryKey[3] === view.id && state.data !== undefined })

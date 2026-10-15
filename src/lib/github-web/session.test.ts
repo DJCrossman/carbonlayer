@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import { SIGNED_OUT, embeddedPayload, getJson, request, send } from './session';
 
 afterEach(() => {

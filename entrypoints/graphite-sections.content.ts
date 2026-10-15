@@ -2,10 +2,12 @@
 // sees only the DOM). When entrypoints/graphite.content.ts asks, in the tab opened to copy the sections, it waits up to
 // 30 s for the inbox to render (the app is slow), copies the sections out of React's state (inboxSnapshotOf in
 // src/lib/graphite.ts) and posts them back; on every other Graphite page it only listens.
-// First: zod is told not to compile parsers before graphite.ts makes its schemas (src/lib/zod-in-page.ts says why).
+// First: zod is told not to compile parsers before graphite.ts makes its schemas (src/lib/zod-in-page.ts says why),
+// and given its messages (src/lib/zod-messages.ts).
 import '../src/lib/zod-in-page';
+import '../src/lib/zod-messages';
 import { defineContentScript } from 'wxt/utils/define-content-script';
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import { inboxSnapshotOf, type GraphiteInboxSnapshot } from '../src/lib/graphite';
 
 export default defineContentScript({

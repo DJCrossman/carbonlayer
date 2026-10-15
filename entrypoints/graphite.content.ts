@@ -3,9 +3,11 @@
 // asks entrypoints/graphite-sections.content.ts, which runs in the page's own JavaScript world where React's state is
 // visible, for the sections Graphite's inbox holds, and hands them to the background, which stores them for the import
 // dialog and closes the tab. A banner on the page says how it went.
+// First: zod's messages (src/lib/zod-messages.ts).
+import '../src/lib/zod-messages';
 import { browser } from 'wxt/browser';
 import { defineContentScript } from 'wxt/utils/define-content-script';
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import { graphiteInboxSnapshot } from '../src/lib/graphite';
 
 export default defineContentScript({
@@ -53,7 +55,7 @@ const postedByCarbonLayer = z.object({ source: z.literal('carbonlayer') });
  * hears too.
  */
 const fromPageWorld = z.discriminatedUnion('kind', [
-  graphiteInboxSnapshot.extend({ source: z.literal('carbonlayer'), kind: z.literal('graphite-sections') }),
+  z.extend(graphiteInboxSnapshot, { source: z.literal('carbonlayer'), kind: z.literal('graphite-sections') }),
   z.object({ source: z.literal('carbonlayer'), kind: z.literal('graphite-sections-error'), error: z.string() }),
   z.object({ source: z.literal('carbonlayer'), kind: z.literal('graphite-sections-request') }),
 ]);

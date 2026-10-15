@@ -1,5 +1,5 @@
 import { afterEach, assert, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { z } from 'zod';
+import type { z } from 'zod/mini';
 import { prStagesSchema, type PrStage, type PrStages } from '../model';
 import { readRpcRequest } from '../rpc';
 import { DEFAULT_SETTINGS } from '../settings';
@@ -168,7 +168,7 @@ async function call(method: string, args: unknown): Promise<unknown> {
 /** A stage of o/r#1 by its method (`pr.fetchHeader`, …), its result read by the stage's schema the way the app reads it. */
 async function loadStage<S extends PrStage>(stage: S): Promise<PrStages[S]> {
   // Each stage's schema, typed as reading that stage, so the answer comes out as `S`'s.
-  const schemas: { [K in PrStage]: z.ZodType<PrStages[K]> } = prStagesSchema.shape;
+  const schemas: { [K in PrStage]: z.ZodMiniType<PrStages[K]> } = prStagesSchema.shape;
   return schemas[stage].parse(await call(`pr.fetch${stage.charAt(0).toUpperCase()}${stage.slice(1)}`, { repo, number: 1 }));
 }
 

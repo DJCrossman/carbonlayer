@@ -5,6 +5,7 @@
 // stack card showed stands in with what its row or entry said. A write reloads only the stages it changed.
 import { useQueries, useQueryClient, type QueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { z } from 'zod/mini';
 import { askedTogether } from '../app/asked-together';
 import type { DataSource } from '../app/data-source';
 import { KEPT_STAGES, SaveCacheNow } from '../app/query-cache';
@@ -151,8 +152,8 @@ export function useLoadAhead(source: DataSource): (pr: PrToLoad) => void {
       const asked = new Map(PR_STAGES.map((stage) => [stage, queryClient.prefetchQuery({ ...prStageQuery(source, repo, number, stage), staleTime: 30_000 })]));
       void Promise.all([asked.get('header'), asked.get('files')]).then(() => {
         // What the cache holds for each, read by its stage's schema.
-        const header = prStagesSchema.shape.header.optional().parse(queryClient.getQueryData(prStageQuery(source, repo, number, 'header').queryKey));
-        const listed = prStagesSchema.shape.files.optional().parse(queryClient.getQueryData(prStageQuery(source, repo, number, 'files').queryKey));
+        const header = z.optional(prStagesSchema.shape.header).parse(queryClient.getQueryData(prStageQuery(source, repo, number, 'header').queryKey));
+        const listed = z.optional(prStagesSchema.shape.files).parse(queryClient.getQueryData(prStageQuery(source, repo, number, 'files').queryKey));
         if (!header || !listed) return;
         const askForDiff = askForDiffs(source, repo, number);
         for (const path of diffsToAsk(listed)) void queryClient.prefetchQuery(prDiffQuery(askForDiff, repo, number, header, path));
@@ -259,7 +260,7 @@ export function stagesStandingIn(queryClient: QueryClient, repo: RepoRef, number
   const known = row ?? stack?.entries.find(isThisPr);
   if (!known) return {};
   const details = enrichmentFoundBefore(queryClient).get(known.id);
-  const branches = stackBranchesSchema.nullable().optional().parse(queryClient.getQueryData(['stack-branches', known.repo.owner, known.repo.name, known.number]));
+  const branches = z.optional(z.nullable(stackBranchesSchema)).parse(queryClient.getQueryData(['stack-branches', known.repo.owner, known.repo.name, known.number]));
   const pr: StackEntry = { ...known, ...details };
   const { id, title, url, author, state, isDraft, createdAt, updatedAt, mergedAt, additions, deletions, changedFiles, commentCount, nativeStack } = pr;
   return {

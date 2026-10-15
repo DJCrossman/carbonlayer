@@ -9,7 +9,7 @@
 // replaces the views or is dismissed.
 import { Fragment, useEffect, useId, useState } from 'react';
 import { browser } from 'wxt/browser';
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import { graphiteInboxSnapshot, importGraphiteSections } from '../lib/graphite';
 import type { Organization, RepoRef, View } from '../lib/model';
 import { Button } from '../ui/Button';
@@ -69,12 +69,12 @@ export function GraphiteImport({
       }
     };
     void browser.storage.local.get('graphiteImport').then(({ graphiteImport }) => {
-      const copy = graphiteCopy.optional().parse(graphiteImport);
+      const copy = z.optional(graphiteCopy).parse(graphiteImport);
       // Why an earlier copy failed is not news now.
       if (copy && !('error' in copy)) show(copy);
     });
     const onChanged = (changes: Record<string, { newValue?: unknown }>, area: string) => {
-      if (area === 'local' && changes.graphiteImport) show(graphiteCopy.optional().parse(changes.graphiteImport.newValue));
+      if (area === 'local' && changes.graphiteImport) show(z.optional(graphiteCopy).parse(changes.graphiteImport.newValue));
     };
     browser.storage.onChanged.addListener(onChanged);
     return () => browser.storage.onChanged.removeListener(onChanged);
@@ -250,4 +250,4 @@ export function GraphiteImport({
 }
 
 /** What the background stores under `graphiteImport` in storage.local: the sections copied, or why copying failed. */
-const graphiteCopy = z.union([graphiteInboxSnapshot.extend({ at: z.string() }), z.object({ at: z.string(), error: z.string() })]);
+const graphiteCopy = z.union([z.extend(graphiteInboxSnapshot, { at: z.string() }), z.object({ at: z.string(), error: z.string() })]);

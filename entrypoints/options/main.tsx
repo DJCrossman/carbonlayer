@@ -1,8 +1,10 @@
 // Options page: the inbox's organization, and that organization's repositories and views; PR page preferences, on/off
 // switches. Every change is saved as it is made (text fields 400 ms after the last keystroke).
+// First: zod's messages (src/lib/zod-messages.ts).
+import '../../src/lib/zod-messages';
 import { StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import { PageQueries } from '../../src/app/query-cache';
 import { OrgPicker, useOrganizations } from '../../src/inbox/OrgPicker';
 import { RepoPicker } from '../../src/inbox/RepoPicker';

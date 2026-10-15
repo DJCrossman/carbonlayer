@@ -3,7 +3,7 @@
 // mergeRequirements: { state, conditions, commitMessageHeadline, commitMessageBody, … } }` (its keys verified signed in
 // 2026-10-12, docs/research/github-web-mutations.md; not every field in them has been seen, so each is optional).
 
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import type { MergeStatus } from '../model';
 import type { MergeMethod } from '../rpc';
 import { opinionatedReviewSchema, pendingReviewRequestSchema } from './reviews';
@@ -76,45 +76,46 @@ interface MergeState {
  * pending review requests, the branches and head commit). How many approvals the rules require is not recorded where
  * GitHub puts it; it is looked for by name, wherever nested, and read as `numReviewsRequired`.
  */
-export const mergeBoxAnswer = z.preprocess(
-  (answer) =>
+export const mergeBoxAnswer = z.pipe(
+  z.transform((answer) =>
     typeof answer === 'object' && answer !== null
       ? { ...answer, numReviewsRequired: findInPayload(answer, (key) => key === 'numReviewsRequired' || key === 'requiredApprovingReviewCount') }
       : answer,
+  ),
   z.object({
-    pullRequest: z
-      .object({
-        isDraft: z.boolean().nullish(),
-        isInMergeQueue: z.boolean().nullish(),
-        isCrossRepo: z.boolean().nullish(),
-        mergeStateStatus: z.string().nullish(),
-        autoMergeRequest: z.object({ mergeMethod: z.string().nullish() }).nullish(),
-        viewerCanEnableAutoMerge: z.boolean().nullish(),
-        viewerMergeActions: z
-          .array(
+    pullRequest: z.nullish(
+      z.object({
+        isDraft: z.nullish(z.boolean()),
+        isInMergeQueue: z.nullish(z.boolean()),
+        isCrossRepo: z.nullish(z.boolean()),
+        mergeStateStatus: z.nullish(z.string()),
+        autoMergeRequest: z.nullish(z.object({ mergeMethod: z.nullish(z.string()) })),
+        viewerCanEnableAutoMerge: z.nullish(z.boolean()),
+        viewerMergeActions: z.nullish(
+          z.array(
             z.object({
               name: z.string(),
-              isAllowable: z.boolean().nullish(),
-              mergeMethods: z.array(z.object({ name: z.string(), allowableStatus: z.string().nullish(), isDefault: z.boolean().nullish() })).nullish(),
+              isAllowable: z.nullish(z.boolean()),
+              mergeMethods: z.nullish(z.array(z.object({ name: z.string(), allowableStatus: z.nullish(z.string()), isDefault: z.nullish(z.boolean()) }))),
             }),
-          )
-          .nullish(),
-        latestOpinionatedReviews: z.array(opinionatedReviewSchema).nullish(),
-        pendingReviewRequests: z.array(pendingReviewRequestSchema).nullish(),
-        headRefName: z.string().nullish(),
-        headRefOid: z.string().nullish(),
-        baseRefName: z.string().nullish(),
-      })
-      .nullish(),
-    mergeRequirements: z
-      .object({
-        state: z.string().nullish(),
-        conditions: z
-          .array(z.object({ type: z.string(), result: z.string(), message: z.string().nullish(), description: z.string().nullish(), displayName: z.string().nullish() }))
-          .nullish(),
-      })
-      .nullish(),
-    numReviewsRequired: z.number().nullish(),
+          ),
+        ),
+        latestOpinionatedReviews: z.nullish(z.array(opinionatedReviewSchema)),
+        pendingReviewRequests: z.nullish(z.array(pendingReviewRequestSchema)),
+        headRefName: z.nullish(z.string()),
+        headRefOid: z.nullish(z.string()),
+        baseRefName: z.nullish(z.string()),
+      }),
+    ),
+    mergeRequirements: z.nullish(
+      z.object({
+        state: z.nullish(z.string()),
+        conditions: z.nullish(
+          z.array(z.object({ type: z.string(), result: z.string(), message: z.nullish(z.string()), description: z.nullish(z.string()), displayName: z.nullish(z.string()) })),
+        ),
+      }),
+    ),
+    numReviewsRequired: z.nullish(z.number()),
   }),
 );
 

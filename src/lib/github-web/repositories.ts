@@ -3,7 +3,7 @@
 // graphite-sections.md, "GitHub's repository picker"), so it is read tolerantly. Also the homepage's "Top repositories",
 // which GitHub's dashboard loads as classic HTML fragments (docs/research/github-web-endpoints.md).
 
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import type { Organization, RepoCandidate, TopRepository } from '../model';
 import { readAnswer, request } from './session';
 
@@ -32,13 +32,13 @@ export function repositoryPickerPath(text: string): string {
  * are skipped.
  */
 export function repositoryCandidatesFrom(answer: unknown): RepoCandidate[] {
-  const envelope = z.object({ repositories: z.unknown().optional(), items: z.unknown().optional(), results: z.unknown().optional() }).safeParse(answer);
+  const envelope = z.object({ repositories: z.optional(z.unknown()), items: z.optional(z.unknown()), results: z.optional(z.unknown()) }).safeParse(answer);
   const listed: unknown = Array.isArray(answer)
     ? answer
     : envelope.success
       ? [envelope.data.repositories, envelope.data.items, envelope.data.results].find(Array.isArray)
       : undefined;
-  const items = readAnswer('/repositories/picker/search', z.array(pickerRepositorySchema.nullable()), listed ?? []);
+  const items = readAnswer('/repositories/picker/search', z.array(z.nullable(pickerRepositorySchema)), listed ?? []);
   return items.flatMap((repo): RepoCandidate[] => {
     if (!repo) return [];
     const fullName = repo.nameWithOwner ?? (repo.name?.includes('/') ? repo.name : null);
@@ -84,11 +84,11 @@ export function topRepositoriesIn(html: string): { repos: TopRepository[]; nextC
 
 /** One repository GitHub's repository picker offers (the fields read here). */
 const pickerRepositorySchema = z.object({
-  name: z.string().nullish(),
-  ownerLogin: z.string().nullish(),
-  owner: z.object({ login: z.string().nullish() }).nullish(),
-  nameWithOwner: z.string().nullish(),
-  visibility: z.string().nullish(),
-  isPrivate: z.boolean().nullish(),
-  private: z.boolean().nullish(),
+  name: z.nullish(z.string()),
+  ownerLogin: z.nullish(z.string()),
+  owner: z.nullish(z.object({ login: z.nullish(z.string()) })),
+  nameWithOwner: z.nullish(z.string()),
+  visibility: z.nullish(z.string()),
+  isPrivate: z.nullish(z.boolean()),
+  private: z.nullish(z.boolean()),
 });

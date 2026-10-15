@@ -3,7 +3,7 @@
 // rows `{ displayName, state, isRequired, targetUrl, description, additionalContext, stateChangedAt, … }`. The rows'
 // other names for those fields (`name`, `conclusion`, `detailsUrl`, …) date from before that and are still read.
 
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import type { CheckRunSummary, CheckState, CiSummary } from '../model';
 
 /**
@@ -95,33 +95,33 @@ export function checksFrom(
  * GitHub sends no rows.
  */
 export const statusChecksAnswer = z.looseObject({
-  statusRollup: z.object({ combinedState: z.string().nullish() }).nullish(),
-  statusChecks: z
-    .array(
+  statusRollup: z.nullish(z.object({ combinedState: z.nullish(z.string()) })),
+  statusChecks: z.nullish(
+    z.array(
       z.object({
-        displayName: z.string().nullish(),
-        name: z.string().nullish(),
-        context: z.string().nullish(),
-        state: z.string().nullish(),
-        conclusion: z.string().nullish(),
-        status: z.string().nullish(),
-        stateChangedAt: z.string().nullish(),
-        targetUrl: z.string().nullish(),
-        detailsUrl: z.string().nullish(),
-        url: z.string().nullish(),
-        description: z.string().nullish(),
-        additionalContext: z.string().nullish(),
-        title: z.string().nullish(),
-        avatarDescription: z.string().nullish(),
-        workflowName: z.string().nullish(),
-        app: z.object({ name: z.string().nullish() }).nullish(),
-        startedAt: z.string().nullish(),
-        completedAt: z.string().nullish(),
-        isRequired: z.boolean().nullish(),
-        required: z.boolean().nullish(),
+        displayName: z.nullish(z.string()),
+        name: z.nullish(z.string()),
+        context: z.nullish(z.string()),
+        state: z.nullish(z.string()),
+        conclusion: z.nullish(z.string()),
+        status: z.nullish(z.string()),
+        stateChangedAt: z.nullish(z.string()),
+        targetUrl: z.nullish(z.string()),
+        detailsUrl: z.nullish(z.string()),
+        url: z.nullish(z.string()),
+        description: z.nullish(z.string()),
+        additionalContext: z.nullish(z.string()),
+        title: z.nullish(z.string()),
+        avatarDescription: z.nullish(z.string()),
+        workflowName: z.nullish(z.string()),
+        app: z.nullish(z.object({ name: z.nullish(z.string()) })),
+        startedAt: z.nullish(z.string()),
+        completedAt: z.nullish(z.string()),
+        isRequired: z.nullish(z.boolean()),
+        required: z.nullish(z.boolean()),
       }),
-    )
-    .nullish(),
+    ),
+  ),
 });
 
 type StatusChecksAnswer = z.infer<typeof statusChecksAnswer>;

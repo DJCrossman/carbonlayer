@@ -2,7 +2,7 @@
 // GitHub's bundle, not from captured requests). A write names its PR or thread by id, so the PRs the app has
 // loaded are remembered here with what the requests need.
 
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import type { PrDetail } from '../model';
 import type { MergeMethod, RpcMethods } from '../rpc';
 import { rerunWorkflowJobs } from './actions';
@@ -44,7 +44,7 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
     const giveUpAt = Date.now() + 45_000;
     const pull = pullRequestFor(prId);
     // GitHub's merge request has no head guard, so check that nobody pushed since the page was loaded.
-    const header = await getJson(`${pull.path}/page_data/header`, z.object({ pullRequest: z.object({ headSha: z.string().nullish() }).nullish() }));
+    const header = await getJson(`${pull.path}/page_data/header`, z.object({ pullRequest: z.nullish(z.object({ headSha: z.nullish(z.string()) })) }));
     const headOid = header.pullRequest?.headSha;
     if (headOid && expectedHeadOid && headOid !== expectedHeadOid) {
       throw new Error('New commits were pushed since this page loaded. Reload and review them before merging.');
@@ -57,7 +57,7 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
     // A GitHub-native stack merges through the stack queue, then reports progress by request id.
     const queued = readAnswer(
       `${pull.path}/page_data/enqueue_stack`,
-      z.object({ status: z.string().nullish(), uuid: z.string().nullish() }),
+      z.object({ status: z.nullish(z.string()), uuid: z.nullish(z.string()) }),
       await send(`${pull.path}/page_data/enqueue_stack`, 'POST', { mergeAction: 'DIRECT_MERGE', mergeMethod: method, ...commit, bypassRules: 'false' }),
     );
     if (queued.uuid) await stackMergeSettled(pull, queued.uuid, queued.status, giveUpAt);
@@ -227,7 +227,7 @@ function threadFor(threadId: string): KnownThread {
 async function proposedMergeCommit(pull: KnownPullRequest, method: MergeMethod): Promise<{ commitTitle: string; commitMessage: string }> {
   const box = await getJson(
     `${pull.path}/page_data/merge_box?merge_method=${method}&bypass_requirements=false`,
-    z.object({ mergeRequirements: z.object({ commitMessageHeadline: z.string().nullish(), commitMessageBody: z.string().nullish() }).nullish() }),
+    z.object({ mergeRequirements: z.nullish(z.object({ commitMessageHeadline: z.nullish(z.string()), commitMessageBody: z.nullish(z.string()) })) }),
   );
   return { commitTitle: box.mergeRequirements?.commitMessageHeadline ?? '', commitMessage: box.mergeRequirements?.commitMessageBody ?? '' };
 }
@@ -245,7 +245,7 @@ async function stackMergeSettled(pull: KnownPullRequest, uuid: string, initialSt
     delay *= 1.5;
     const progress = await getJson(
       `${pull.path}/page_data/merge_request_status/${encodeURIComponent(uuid)}`,
-      z.object({ status: z.string().nullish(), error: z.string().nullish(), message: z.string().nullish() }),
+      z.object({ status: z.nullish(z.string()), error: z.nullish(z.string()), message: z.nullish(z.string()) }),
     );
     status = progress.status?.toLowerCase();
     if (status === 'failed') throw new Error(progress.error || progress.message || 'GitHub could not merge the stack');

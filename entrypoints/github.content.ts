@@ -4,11 +4,13 @@
 // It also answers the app's data requests (src/lib/rpc.ts) with the user's github.com session.
 // `?gh=1` leaves GitHub untouched for one visit. On every handled route it adds a "GitHub | CarbonLayer" switch to
 // GitHub's header, which saves the surface's setting; while that is off, GitHub's page stays untouched.
+// First: zod's messages (src/lib/zod-messages.ts).
+import '../src/lib/zod-messages';
 import { browser } from 'wxt/browser';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { createIframeUi } from 'wxt/utils/content-script-ui/iframe';
 import { defineContentScript } from 'wxt/utils/define-content-script';
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import { appToParentMessage, type ParentToAppMessage } from '../src/app/bridge';
 import { parseGitHubLocation, routeInApp, toAppHash, type AppRoute } from '../src/app/routes';
 import { handleRpc } from '../src/lib/github-web';

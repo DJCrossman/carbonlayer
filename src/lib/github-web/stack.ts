@@ -1,7 +1,7 @@
 // Where the PR sits in its stack: GitHub's native stack (from the PR page's layout data) first, else the
 // stack Graphite lists in its PR comment, else the PR alone.
 
-import { z } from 'zod';
+import { z } from 'zod/mini';
 import type { PrSummary, Stack, StackEntry, UserRef } from '../model';
 import { findInPayload, githubUser, politely } from './session';
 
@@ -157,19 +157,20 @@ function withConversationsAndAuthors(
  * status, … }]`, the way GitHub's components receive them. Where the answer puts that list has not been seen, so it is
  * a list, or the first one nested in the answer whose entries name their pull; none lists no statuses.
  */
-export const stackMergeabilityAnswer = z.preprocess(
-  (answer) =>
+export const stackMergeabilityAnswer = z.pipe(
+  z.transform((answer) =>
     Array.isArray(answer)
       ? answer
       : (findInPayload(answer, (_, value) => Array.isArray(value) && value.some((row: unknown) => typeof row === 'object' && row !== null && 'pull' in row && !!row.pull)) ?? []),
-  z.array(z.object({ pull: z.object({ number: z.number().nullish() }).nullish(), status: z.string().nullish() })),
+  ),
+  z.array(z.object({ pull: z.nullish(z.object({ number: z.nullish(z.number()) })), status: z.nullish(z.string()) })),
 );
 
 type StackMergeabilityAnswer = z.infer<typeof stackMergeabilityAnswer>;
 
 /** page_data/header, for who opened the PR (the fields read here). */
 export const authorHeaderAnswer = z.object({
-  pullRequest: z.object({ author: z.object({ login: z.string().nullish(), avatarUrl: z.string().nullish() }).nullish() }).nullish(),
+  pullRequest: z.nullish(z.object({ author: z.nullish(z.object({ login: z.nullish(z.string()), avatarUrl: z.nullish(z.string()) })) })),
 });
 
 type AuthorHeaderAnswer = z.infer<typeof authorHeaderAnswer>;
@@ -179,7 +180,7 @@ export const nativeStackSchema = z.object({
   baseBranch: z.string(),
   position: z.number(),
   size: z.number(),
-  pulls: z.array(z.object({ number: z.number(), title: z.string(), state: z.string(), url: z.string(), headBranch: z.string(), headOid: z.string().nullish() })),
+  pulls: z.array(z.object({ number: z.number(), title: z.string(), state: z.string(), url: z.string(), headBranch: z.string(), headOid: z.nullish(z.string()) })),
 });
 
 export type NativeStack = z.infer<typeof nativeStackSchema>;
