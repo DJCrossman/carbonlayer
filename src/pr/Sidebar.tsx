@@ -12,7 +12,7 @@ import { LabelChip } from '../ui/LabelChip';
 import { RelativeTime } from '../ui/RelativeTime';
 import { Skeleton } from '../ui/Skeleton';
 import type { CheckReruns } from './check-reruns';
-import { goToPr } from './navigation';
+import { followLink, goToPr } from './navigation';
 import { nextActionFor } from './next-action';
 import type { PrPageData } from './page-data';
 import { StatePill, Staged } from './primitives';
@@ -310,7 +310,16 @@ function ActionCard({
         </Button>
       )}
       {action.kind === 'checks-failed' && failingCheck?.url && (
-        <a className="gg-btn gg-btn--default gg-btn--md side-action-button" href={failingCheck.url} target="_blank" rel="noopener">
+        <a
+          className="gg-btn gg-btn--default gg-btn--md side-action-button"
+          href={failingCheck.url}
+          onClick={(event) => {
+            // The run opens in this tab, as GitHub's own check links do; ⌘, Ctrl, Shift or Alt leave it to the browser.
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            followLink(event.currentTarget.href);
+          }}
+        >
           View check
         </a>
       )}
@@ -469,7 +478,17 @@ function ChecksCard({ pr, reruns }: { pr: PrDetail; reruns: CheckReruns }) {
                   : (['skip', 'muted'] as const);
           return (
             <li key={`${check.group ?? ''}/${check.name}`}>
-              <a className="check-row" href={check.url ?? undefined} target="_blank" rel="noopener" title={check.description ?? undefined}>
+              <a
+                className="check-row"
+                href={check.url ?? undefined}
+                title={check.description ?? undefined}
+                onClick={(event) => {
+                  // The run opens in this tab, as GitHub's own check links do; ⌘, Ctrl, Shift or Alt leave it to the browser.
+                  if (!event.currentTarget.href || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                  event.preventDefault();
+                  followLink(event.currentTarget.href);
+                }}
+              >
                 <Icon name={icon} size={14} className={`pr-fg-${tone}`} />
                 <span className="check-name">{check.name}</span>
                 {check.group && <span className="check-group pr-muted">{check.group}</span>}

@@ -18,7 +18,7 @@ export function openOnGitHub(prUrl: string): void {
   else postToParent({ type: 'gg:open-native' });
 }
 
-/** Follows a link from rendered Markdown: github.com links replace the top page, others open a new tab. */
+/** Follows a link from rendered Markdown or a check: github.com links replace the top page, others open a new tab. */
 export function followLink(url: string): void {
   if (window.parent === window) window.open(url, '_blank', 'noopener');
   else postToParent({ type: 'gg:navigate', url, newTab: !url.startsWith('https://github.com/') });
