@@ -9,6 +9,7 @@ import { Kbd } from '../ui/Kbd';
 import { RelativeTime } from '../ui/RelativeTime';
 import { Skeleton } from '../ui/Skeleton';
 import { Comment } from './Comment';
+import { followLink } from './navigation';
 import type { StageState } from './page-data';
 import { CommentInput, Staged } from './primitives';
 import { Reactions } from './Reactions';
@@ -84,10 +85,27 @@ export function Activity({
                         <div key={commit.id} className="timeline-commit">
                           <Icon name="git-commit" size={14} className="pr-fg-muted" />
                           {commit.author && <Avatar user={commit.author} size={16} />}
-                          <a className="timeline-commit-message" href={commit.url} target="_blank" rel="noopener">
+                          {/* A commit opens in this tab, as GitHub's own commit links do; ⌘, Ctrl, Shift or Alt leave it to the browser. */}
+                          <a
+                            className="timeline-commit-message"
+                            href={commit.url}
+                            onClick={(event) => {
+                              if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                              event.preventDefault();
+                              followLink(event.currentTarget.href);
+                            }}
+                          >
                             {commit.messageHeadline}
                           </a>
-                          <a className="pr-mono pr-muted" href={commit.url} target="_blank" rel="noopener">
+                          <a
+                            className="pr-mono pr-muted"
+                            href={commit.url}
+                            onClick={(event) => {
+                              if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                              event.preventDefault();
+                              followLink(event.currentTarget.href);
+                            }}
+                          >
                             {commit.abbreviatedOid}
                           </a>
                           <RelativeTime date={commit.committedAt} />
