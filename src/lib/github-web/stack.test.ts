@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PrSummary } from '../model';
 import { githubUser } from './session';
-import { authorHeaderAnswer, authorIn, graphiteStackComment, resolveStack } from './stack';
+import { authorHeaderAnswer, authorIn, graphiteStackComment, resolveStack, stackMergeabilityAnswer } from './stack';
 
 const noLookups = { mergeability: async () => null, authorsOpenPulls: async () => [], conversations: async () => null, author: async () => null };
 
@@ -23,10 +23,10 @@ describe('native stacks', () => {
           ],
         },
       },
-      { ...noLookups, mergeability: async () => [{ pull: { number: 3 }, status: 'MERGEABLE' }] },
+      noLookups,
     );
     expect(stack).toMatchObject({ currentIndex: 1, trunk: 'main', source: 'native' });
-    expect(stack.entries[1]).toBe(current);
+    expect(stack.entries[1]).toEqual({ ...current, readyToMergeAsStack: false });
     expect(stack.entries.map((entry) => [entry.number, entry.state, entry.isDraft, entry.baseRefName, entry.headRefName])).toEqual([
       [1, 'MERGED', false, 'main', 'a'],
       [2, 'OPEN', false, 'main', 'b'],
@@ -63,7 +63,7 @@ describe('native stacks', () => {
         },
       },
     );
-    expect(stack.entries[1]).toBe(current);
+    expect(stack.entries[1]).toEqual({ ...current, readyToMergeAsStack: false });
     expect(stack.entries.map((entry) => entry.conversations)).toEqual([
       { resolved: 0, total: 1 },
       null,
@@ -98,9 +98,80 @@ describe('native stacks', () => {
         },
       },
     );
-    expect(stack.entries[1]).toBe(current);
+    expect(stack.entries[1]).toEqual({ ...current, readyToMergeAsStack: false });
     expect(stack.entries.map((entry) => entry.author?.login ?? null)).toEqual([null, 'ana', 'riley']);
     expect(asked.toSorted()).toEqual([1, 3]);
+  });
+
+  it("asks each open PR from the bottom up to the viewed one for GitHub's verdict on merging it as a stack, and no other", async () => {
+    const current = summary(3, 'c');
+    const asked: number[] = [];
+    const stack = await resolveStack(
+      {
+        current,
+        page: emptyPage(),
+        nativeStack: {
+          baseBranch: 'main',
+          position: 3,
+          size: 4,
+          pulls: [
+            { number: 4, title: 'Top', state: 'OPEN', url: '/o/r/pull/4', headBranch: 'd' },
+            { number: 3, title: 'Viewed', state: 'OPEN', url: '/o/r/pull/3', headBranch: 'c' },
+            { number: 2, title: 'Below', state: 'OPEN', url: '/o/r/pull/2', headBranch: 'b' },
+            { number: 1, title: 'Bottom', state: 'MERGED', url: '/o/r/pull/1', headBranch: 'a' },
+          ],
+        },
+      },
+      {
+        ...noLookups,
+        mergeability: async (number) => {
+          asked.push(number);
+          return stackMergeabilityAnswer.parse(verifiedVerdict);
+        },
+      },
+    );
+    expect(asked.toSorted()).toEqual([2, 3]);
+    expect(stack.entries.map((entry) => [entry.number, entry.mergeStatus, entry.readyToMergeAsStack])).toEqual([
+      [1, 'UNKNOWN', false],
+      [2, 'CLEAN', true],
+      [3, 'UNKNOWN', true],
+      [4, 'UNKNOWN', false],
+    ]);
+  });
+
+  it('reads only READY as ready to merge as a stack: a status it does not know, or none, is not ready, and nothing fails', async () => {
+    const current = summary(3, 'c');
+    // What GitHub answers, before it is read.
+    const answers = new Map<number, unknown>([
+      [1, verifiedVerdict],
+      [2, { state: 'UNMERGEABLE', effectiveEntryStatus: 'A_STATUS_GITHUB_ADDS_LATER' }],
+      [3, {}],
+    ]);
+    const stack = await resolveStack(
+      {
+        current,
+        page: emptyPage(),
+        nativeStack: {
+          baseBranch: 'main',
+          position: 3,
+          size: 3,
+          pulls: [3, 2, 1].map((number) => ({ number, title: `PR ${number}`, state: 'OPEN', url: `/o/r/pull/${number}`, headBranch: `b${number}` })),
+        },
+      },
+      { ...noLookups, mergeability: async (number) => stackMergeabilityAnswer.parse(answers.get(number)) },
+    );
+    expect(stack.entries.map((entry) => [entry.number, entry.mergeStatus, entry.readyToMergeAsStack])).toEqual([
+      [1, 'CLEAN', true],
+      [2, 'UNKNOWN', false],
+      [3, 'UNKNOWN', false],
+    ]);
+  });
+});
+
+describe("GitHub's verdict on merging a PR as a stack", () => {
+  it('is read from the answer GitHub gives each PR, and an answer of another shape fails', () => {
+    expect(stackMergeabilityAnswer.parse(verifiedVerdict)).toEqual({ state: 'MERGEABLE', effectiveEntryStatus: 'READY' });
+    expect(() => stackMergeabilityAnswer.parse([{ pull: { number: 1 }, status: 'MERGEABLE' }])).toThrow();
   });
 });
 
@@ -171,6 +242,9 @@ it('leaves an unstacked PR on its own', async () => {
   const current = summary(5, 'feature');
   expect(await resolveStack({ current, page: emptyPage(), nativeStack: null }, noLookups)).toEqual({ entries: [current], currentIndex: 0, trunk: 'main', source: 'none' });
 });
+
+/** page_data/stack_mergeability as GitHub answered it for both PRs of a two-PR native stack (verified signed in, 2026-10-15). */
+const verifiedVerdict = { state: 'MERGEABLE', effectiveEntryStatus: 'READY', isInAutoMergeRange: false, channels: {}, statusCheckChannels: {} };
 
 function emptyPage(): Document {
   return new DOMParser().parseFromString('<html><body></body></html>', 'text/html');

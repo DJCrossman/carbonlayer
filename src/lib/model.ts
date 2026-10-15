@@ -185,7 +185,15 @@ export type StackBranches = z.infer<typeof stackBranchesSchema>;
  * One PR in a stack. Its author is null where GitHub did not say who opened it: an entry the stack's own listing names
  * (which names nobody) whose page header GitHub did not answer.
  */
-export const stackEntrySchema = z.extend(prSummarySchema, { author: z.nullable(userRefSchema) });
+export const stackEntrySchema = z.extend(prSummarySchema, {
+  author: z.nullable(userRefSchema),
+  /**
+   * Whether GitHub can merge it now with the open PRs below it, as one stack: its own `stack_mergeability` says READY.
+   * GitHub is asked for each open PR of a GitHub-native stack from the bottom up to the viewed one; false for the others
+   * of such a stack, absent outside one.
+   */
+  readyToMergeAsStack: z.optional(z.boolean()),
+});
 
 export type StackEntry = z.infer<typeof stackEntrySchema>;
 

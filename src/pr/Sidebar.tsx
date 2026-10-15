@@ -1,9 +1,9 @@
 // The right sidebar: status (with Merge when ready), the one next step, checks, reviewers (Reviewers.tsx), labels and
 // assignees. Each card shows a skeleton until the stage it comes from arrives; cards with nothing to show are left out,
 // except an open PR's checks, which says why it has none.
-import { useEffect, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import type { MergeMethod } from '../lib/rpc';
-import { mergeMethodSchema, type PrDetail, type PrStage } from '../lib/model';
+import { mergeMethodSchema, type PrDetail, type PrStage, type StackEntry } from '../lib/model';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
@@ -325,20 +325,41 @@ function ActionCard({
         </a>
       )}
       {action.kind === 'ready' && <MergeControls pr={pr} mergeMethod={mergeMethod} onMerge={onMerge} />}
+      {action.kind === 'ready-as-stack' && <MergeControls pr={pr} stack={action.prs} mergeMethod={mergeMethod} onMerge={onMerge} />}
     </Card>
   );
 }
 
-function MergeControls({ pr, mergeMethod, onMerge }: { pr: PrDetail; mergeMethod: MergeMethod; onMerge: (method: MergeMethod) => Promise<boolean> }) {
+function MergeControls({
+  pr,
+  stack,
+  mergeMethod,
+  onMerge,
+}: {
+  pr: PrDetail;
+  /** The open PRs a merge as a stack merges, bottom first and this one last; absent when this PR merges alone. */
+  stack?: StackEntry[];
+  mergeMethod: MergeMethod;
+  onMerge: (method: MergeMethod) => Promise<boolean>;
+}) {
   const [method, setMethod] = useState(mergeMethod);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  // A merge as a stack, sent from this PR, merges the PRs below it with it, into trunk.
+  const merging = stack ?? [pr];
 
   if (confirming) {
     return (
       <div className="merge-confirm">
         <div>
-          {MERGE_LABELS[method].verb} <strong>#{pr.number}</strong> into <span className="pr-mono">{pr.baseRefName}</span>?
+          {MERGE_LABELS[method].verb}{' '}
+          {merging.map((entry, index) => (
+            <Fragment key={entry.number}>
+              {index > 0 && (index === merging.length - 1 ? ' and ' : ', ')}
+              <strong>#{entry.number}</strong>
+            </Fragment>
+          ))}{' '}
+          into <span className="pr-mono">{stack ? pr.stack.trunk : pr.baseRefName}</span>?
         </div>
         <div className="merge-row">
           <Button onClick={() => setConfirming(false)} disabled={busy}>
@@ -380,7 +401,7 @@ function MergeControls({ pr, mergeMethod, onMerge }: { pr: PrDetail; mergeMethod
         onClick={() => setConfirming(true)}
       >
         <Icon name="git-merge" size={14} />
-        Merge
+        {stack ? `Merge ${stack.length} PRs` : 'Merge'}
       </Button>
     </div>
   );

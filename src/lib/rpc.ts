@@ -41,8 +41,9 @@ export type RpcMethod = keyof RpcMethods;
 export const STAGES_A_WRITE_CHANGES = {
   'pr.review': ['activity', 'mergeBox', 'threads'],
   'pr.comment': ['activity'],
-  // The header and the activity both read the PR page, which the header's reload fetches anyway.
-  'pr.merge': ['header', 'activity', 'mergeBox'],
+  // The header and the activity both read the PR page, which the header's reload fetches anyway. Merged as a stack, the
+  // PRs below it merge too.
+  'pr.merge': ['header', 'activity', 'mergeBox', 'stack'],
   'pr.addThread': ['threads', 'activity'],
   'pr.replyThread': ['threads'],
   'pr.resolveThread': ['threads'],

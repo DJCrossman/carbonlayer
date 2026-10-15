@@ -14,7 +14,9 @@ import { MergeStatus } from '../ui/MergeStatus';
 import { RelativeTime } from '../ui/RelativeTime';
 import { ReviewStatus } from '../ui/ReviewStatus';
 import { Skeleton } from '../ui/Skeleton';
+import { StatusPill } from '../ui/StatusPill';
 import { goToPr } from './navigation';
+import { stackToMerge } from './next-action';
 import { useLoadAhead } from './page-data';
 import './stack.css';
 
@@ -50,6 +52,8 @@ export function StackCard({
     if (!collapsed) for (const row of rows.values()) details.want(row);
   }, [rows, collapsed]);
   const tipFirst = stack.entries.map((pr, index) => ({ pr, index })).reverse();
+  // The PRs GitHub can merge with the viewed one as a stack, whose rows say so as Graphite's do.
+  const mergingAsStack = stackToMerge(stack);
   return (
     <Card className="stack-card">
       <button className="stack-header" onClick={onToggle} aria-expanded={!collapsed} title="Toggle stack (s)">
@@ -73,6 +77,7 @@ export function StackCard({
                 pr={shown}
                 current={index === stack.currentIndex}
                 waiting={row !== undefined && found === undefined}
+                readyToMerge={mergingAsStack?.includes(pr) ?? false}
                 onIntent={() => loadAhead(pr)}
               />
             );
@@ -116,12 +121,15 @@ function StackRow({
   pr,
   current,
   waiting,
+  readyToMerge,
   onIntent,
 }: {
   pr: StackEntry;
   current: boolean;
   /** Its row details have not arrived and the cache had none: its statuses show small skeletons. */
   waiting: boolean;
+  /** GitHub can merge it in merging the viewed PR as a stack: the viewed PR's row reads "Ready to merge as stack", one below it "Ready to merge". */
+  readyToMerge: boolean;
   /** The pointer rested on another entry: the viewer may open it next. */
   onIntent: () => void;
 }) {
@@ -169,7 +177,15 @@ function StackRow({
             merged or closed one says so at once. No review needed, no checks or no mergeability known shows nothing. */}
         {waiting ? <Skeleton width={14} height={14} /> : pr.reviewDecision !== 'NONE' && <ReviewStatus state={pr.reviewDecision} size={14} />}
         {waiting && pr.state === 'OPEN' ? <Skeleton width={28} height={10} /> : <CiStatus ci={pr.ci} variant="compact" />}
-        {waiting && pr.state === 'OPEN' ? <Skeleton width={48} height={10} /> : <MergeStatus status={pr.mergeStatus} state={pr.state} />}
+        {readyToMerge ? (
+          <StatusPill tone="success" icon="check">
+            {current ? 'Ready to merge as stack' : 'Ready to merge'}
+          </StatusPill>
+        ) : waiting && pr.state === 'OPEN' ? (
+          <Skeleton width={48} height={10} />
+        ) : (
+          <MergeStatus status={pr.mergeStatus} state={pr.state} />
+        )}
         <RelativeTime date={pr.updatedAt} />
       </span>
     </li>

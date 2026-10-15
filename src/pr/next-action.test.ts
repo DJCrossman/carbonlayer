@@ -62,6 +62,43 @@ describe('nextActionFor', () => {
     expect(nextActionFor({ ...pr42, stack: { ...pr42.stack, entries } })).toMatchObject({ kind: 'unresolved' });
   });
 
+  describe('in a stack GitHub merges as one', () => {
+    // #42 with nothing of its own in the way: approved, green, its threads resolved. #41 below it is open, #43 above a draft.
+    const ready42: PrDetail = { ...pr42, reviewDecision: 'APPROVED', reviewers: ready.reviewers, ci: ready.ci, requiredCheckNames: ready.requiredCheckNames, unresolvedThreadCount: 0, mergeStatus: 'CLEAN' };
+    /** #42 in a stack from `source`, whose PRs numbered in `readyAsStack` GitHub says are ready to merge as a stack. */
+    const inStack = (source: PrDetail['stack']['source'], readyAsStack: number[]): PrDetail => ({
+      ...ready42,
+      stack: { ...pr42.stack, source, entries: pr42.stack.entries.map((entry) => ({ ...entry, readyToMergeAsStack: readyAsStack.includes(entry.number) })) },
+    });
+
+    it('is ready to merge as a stack when GitHub says every open PR from the bottom up to this one is, and names them', () => {
+      const action = nextActionFor(inStack('native', [41, 42]));
+      expect(action).toMatchObject({ kind: 'ready-as-stack', tone: 'success', title: 'Ready to merge as stack', detail: 'This PR and all of its downstack PRs can be merged' });
+      expect(action.kind === 'ready-as-stack' && action.prs.map((entry) => entry.number)).toEqual([41, 42]);
+    });
+
+    it('waits on downstack while GitHub says a PR below this one, or this one, is not ready', () => {
+      expect(nextActionFor(inStack('native', [42]))).toMatchObject({ kind: 'downstack', title: 'Waiting on downstack · #41' });
+      expect(nextActionFor(inStack('native', [41]))).toMatchObject({ kind: 'downstack', title: 'Waiting on downstack · #41' });
+    });
+
+    it('waits on downstack in a stack only Graphite lists, which GitHub does not merge as one', () => {
+      expect(nextActionFor(inStack('graphite-comment', [41, 42]))).toMatchObject({ kind: 'downstack', title: 'Waiting on downstack · #41' });
+    });
+
+    it("still puts this PR's own steps first", () => {
+      expect(nextActionFor({ ...inStack('native', [41, 42]), unresolvedThreadCount: 2 })).toMatchObject({ kind: 'unresolved' });
+      expect(nextActionFor({ ...inStack('native', [41, 42]), isDraft: true })).toMatchObject({ kind: 'draft' });
+    });
+
+    it('merges this PR alone with nothing open below it, as a single PR does', () => {
+      const merged41 = inStack('native', [42]);
+      const entries = merged41.stack.entries.map((entry) => (entry.number === 41 ? { ...entry, state: 'MERGED' as const } : entry));
+      expect(nextActionFor({ ...merged41, stack: { ...merged41.stack, entries } })).toMatchObject({ kind: 'ready', title: 'Ready to merge' });
+      expect(nextActionFor({ ...ready, stack: { entries: [ready], currentIndex: 0, trunk: 'main', source: 'none' } })).toMatchObject({ kind: 'ready', title: 'Ready to merge' });
+    });
+  });
+
   it('puts state before conflicts, conflicts before the stack, and the stack before reviews', () => {
     expect(nextActionFor({ ...pr42, isDraft: true, mergeStatus: 'DIRTY' })).toMatchObject({ kind: 'draft' });
     expect(nextActionFor({ ...pr42, mergeStatus: 'DIRTY' })).toMatchObject({ kind: 'conflicts', title: 'Conflicts with mona/parcs-client' });

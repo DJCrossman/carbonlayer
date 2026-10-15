@@ -210,8 +210,9 @@ export function prDetailFrom(header: PrStages['header'], data: PrPageData): PrDe
     unresolvedThreadCount: data.threads.value?.unresolvedThreadCount ?? 0,
     baseOid: listed?.baseOid ?? '',
     files: listed ? listed.files.map((file) => ({ ...file, ...(listed.diffs[file.path] ?? { patch: null, previousPath: null }) })) : NO_FILES,
+    // Its own entry keeps GitHub's verdict on merging it as a stack, which only the stack has.
     stack: stack
-      ? { ...stack, entries: stack.entries.map((entry, index) => (index === stack.currentIndex ? summary : entry)) }
+      ? { ...stack, entries: stack.entries.map((entry, index) => (index === stack.currentIndex ? { ...summary, readyToMergeAsStack: entry.readyToMergeAsStack } : entry)) }
       : { entries: [summary], currentIndex: 0, trunk: header.baseRefName, source: 'none' },
   };
 }

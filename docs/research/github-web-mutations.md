@@ -41,7 +41,10 @@ No Relay / persisted-query ids and, reactions aside, no `authenticity_token` are
    P/enqueue_stack` with `{ mergeAction: "DIRECT_MERGE", mergeMethod, commitTitle, commitMessage, authorEmail?,
    bypassRules: "true"|"false" }` | `{ mergeAction: "MERGE_QUEUE" }` | `{ mergeAction: "AUTO_MERGE", … }` →
    `{ status, uuid }`; poll `GET P/merge_request_status/{uuid}` (1 s backoff ×1.5, 10 min cap) until
-   `merged` | `enqueued` | `failed`.
+   `merged` | `enqueued` | `failed`. GitHub's "Squash and merge stack [N]" sends `DIRECT_MERGE` from the PR viewed (its
+   own page data URL), which merges it and every open PR below it: N counts them, this one included (the stack's entries
+   neither above it nor merged or queued), and its stack section says "Merging this pull request will also merge N − 1
+   pull requests below it" (read from the bundle, 2026-10-15).
 5. **Viewed**: `POST /{owner}/{repo}/pull/{n}/file_review` `{ path, viewed: "viewed" }`; unviewed: `DELETE`
    same URL `{ path, _method: "delete" }`. Current state: `base_comparison_info` → `diffSummaries[].markedAsViewed`.
 6. **Draft**: `POST P/convert_to_draft` (no body); ready: `POST P/mark_ready_for_review` (optional body).

@@ -1,12 +1,13 @@
 // The single next step a pull request is waiting on, as shown in the sidebar's action card.
 
-import type { PrDetail, PrStage, StackEntry } from '../lib/model';
+import type { PrDetail, PrStage, Stack, StackEntry } from '../lib/model';
 
 /**
  * What stands between this PR and being merged, most fundamental first: its state, then conflicts,
  * the stack below it, open conversations, required checks, reviews, and finally branch protection. When nothing
- * does, it is ready to merge. While a stage that a step depends on has not arrived (`unknown`), the
- * answer stops at that step: "Checking mergeability…".
+ * does, it is ready to merge, and in a GitHub-native stack that GitHub can merge from the bottom up to it, ready to merge
+ * as a stack: GitHub's verdict then stands for the open PRs below it. While a stage that a step depends on has not
+ * arrived (`unknown`), the answer stops at that step: "Checking mergeability…".
  */
 export function nextActionFor(pr: PrDetail, unknown: readonly PrStage[] = []): NextAction {
   if (pr.state === 'MERGED') return { kind: 'merged', tone: 'done', title: 'Merged', detail: null };
@@ -20,9 +21,10 @@ export function nextActionFor(pr: PrDetail, unknown: readonly PrStage[] = []): N
     return { kind: 'conflicts', tone: 'danger', title: `Conflicts with ${pr.baseRefName}`, detail: 'Resolve them before this PR can merge.' };
   }
   if (unknown.includes('stack')) return checking;
-  // The PR closest to trunk that is still open has to merge first.
+  // The PR closest to trunk that is still open has to merge first, unless GitHub can merge it and this one as a stack.
   const downstack = pr.stack.entries.slice(0, pr.stack.currentIndex).find((entry) => entry.state === 'OPEN');
-  if (downstack) {
+  const asStack = stackToMerge(pr.stack);
+  if (downstack && !asStack) {
     return { kind: 'downstack', tone: 'attention', title: `Waiting on downstack · #${downstack.number}`, detail: downstack.title, pr: downstack };
   }
   if (unknown.includes('threads')) return checking;
@@ -61,6 +63,7 @@ export function nextActionFor(pr: PrDetail, unknown: readonly PrStage[] = []): N
     return { kind: 'behind', tone: 'attention', title: `Behind ${pr.baseRefName}`, detail: 'Update the branch on GitHub.' };
   }
   if (pr.mergeStatus === 'BLOCKED') return { kind: 'blocked', tone: 'danger', title: 'Blocked by branch protection', detail: null };
+  if (asStack) return { kind: 'ready-as-stack', tone: 'success', title: 'Ready to merge as stack', detail: 'This PR and all of its downstack PRs can be merged', prs: asStack };
   return {
     kind: 'ready',
     tone: 'success',
@@ -91,4 +94,16 @@ type NextAction = {
         | 'ready';
     }
   | { kind: 'downstack'; pr: StackEntry }
+  | { kind: 'ready-as-stack'; prs: StackEntry[] }
 );
+
+/**
+ * The PRs that merging this one as a stack merges, bottom first and this one last: in a GitHub-native stack, every open
+ * PR from the bottom up to this one, when there are open PRs below it and GitHub says each of them, and this one, is
+ * ready to merge as a stack. Null otherwise; a stack Graphite's comment lists merges a PR at a time.
+ */
+export function stackToMerge(stack: Stack): StackEntry[] | null {
+  if (stack.source !== 'native') return null;
+  const merging = stack.entries.slice(0, stack.currentIndex + 1).filter((entry) => entry.state === 'OPEN');
+  return merging.length > 1 && merging.every((entry) => entry.readyToMergeAsStack) ? merging : null;
+}

@@ -172,7 +172,7 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
       stack: await resolveStack(
         { current, nativeStack: stack?.pulls?.length ? stack : null, page },
         {
-          mergeability: () => github.stackMergeability(),
+          mergeability: (number) => answersFor({ repo: pull.repo, number, path: `/${pull.repo.owner}/${pull.repo.name}/pull/${number}` }).stackMergeability(),
           authorsOpenPulls: () => github.authorsOpenPulls(header.author.login),
           conversations: (number) =>
             answersFor({ repo: pull.repo, number, path: `/${pull.repo.owner}/${pull.repo.name}/pull/${number}` })

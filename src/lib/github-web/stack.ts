@@ -3,13 +3,13 @@
 
 import { z } from 'zod/mini';
 import type { PrSummary, Stack, StackEntry, UserRef } from '../model';
-import { findInPayload, githubUser, politely } from './session';
+import { githubUser, politely } from './session';
 
 export async function resolveStack(
   subject: { current: PrSummary; nativeStack: NativeStack | null; page: Document },
   lookups: {
-    /** page_data/stack_mergeability: each stack entry's merge status; null when GitHub did not answer. */
-    mergeability(): Promise<StackMergeabilityAnswer | null>;
+    /** An entry's own page_data/stack_mergeability: GitHub's verdict on merging it with those below it; null when GitHub did not answer. */
+    mergeability(number: number): Promise<StackMergeabilityAnswer | null>;
     /** The author's open PRs in this repository, for the Graphite comment's entries; empty when GitHub did not answer. */
     authorsOpenPulls(): Promise<PrSummary[]>;
     /** Another entry's conversations, from its own page_data/threads; null when GitHub did not answer. */
@@ -21,13 +21,16 @@ export async function resolveStack(
   const { current, nativeStack } = subject;
 
   if (nativeStack && nativeStack.pulls.length > 0) {
-    const rows = await lookups.mergeability();
-    const statusByNumber = new Map((rows ?? []).map((row) => [row.pull?.number, row.status?.toUpperCase()]));
     // GitHub lists the top of the stack first; position 1 is the PR closest to trunk.
     const bottomFirst = [...nativeStack.pulls].reverse();
+    // Merging the viewed PR as a stack merges every open PR from the bottom up to it, so GitHub's merge box asks each of
+    // them its own verdict, three at a time here; the PRs above it are neither merged nor asked.
+    const merging = bottomFirst.slice(0, bottomFirst.findIndex((pull) => pull.number === current.number) + 1).filter((pull) => pull.state === 'OPEN');
+    const verdicts = new Map(await politely(merging, 3, async (pull) => [pull.number, await lookups.mergeability(pull.number)] as const));
+    const viewed: StackEntry = { ...current, readyToMergeAsStack: verdicts.get(current.number)?.effectiveEntryStatus === 'READY' };
     const entries = bottomFirst.map((pull, index) =>
       pull.number === current.number
-        ? current
+        ? viewed
         : stackNeighbour(current, {
             number: pull.number,
             title: pull.title,
@@ -37,11 +40,12 @@ export async function resolveStack(
             headRefName: pull.headBranch,
             // The head of the PR below it; trunk for the bottom one.
             baseRefName: bottomFirst[index - 1]?.headBranch ?? nativeStack.baseBranch,
-            mergeStatus: pull.state === 'DRAFT' ? 'DRAFT' : ['MERGEABLE', 'CLEAN'].includes(statusByNumber.get(pull.number) ?? '') ? 'CLEAN' : 'UNKNOWN',
+            mergeStatus: pull.state === 'DRAFT' ? 'DRAFT' : verdicts.get(pull.number)?.state === 'MERGEABLE' ? 'CLEAN' : 'UNKNOWN',
             nativeStack: { position: index + 1, size: nativeStack.size },
+            readyToMergeAsStack: verdicts.get(pull.number)?.effectiveEntryStatus === 'READY',
           }),
     );
-    return { entries: await withConversationsAndAuthors(entries, current, lookups), currentIndex: entries.indexOf(current), trunk: nativeStack.baseBranch, source: 'native' };
+    return { entries: await withConversationsAndAuthors(entries, viewed, lookups), currentIndex: entries.indexOf(viewed), trunk: nativeStack.baseBranch, source: 'native' };
   }
 
   const comment = graphiteStackComment(subject.page);
@@ -111,7 +115,7 @@ export function authorIn(header: AuthorHeaderAnswer): UserRef | null {
  */
 function stackNeighbour(
   current: PrSummary,
-  known: Pick<PrSummary, 'number' | 'title' | 'url' | 'state' | 'isDraft' | 'headRefName' | 'baseRefName' | 'mergeStatus' | 'nativeStack'>,
+  known: Pick<StackEntry, 'number' | 'title' | 'url' | 'state' | 'isDraft' | 'headRefName' | 'baseRefName' | 'mergeStatus' | 'nativeStack' | 'readyToMergeAsStack'>,
 ): StackEntry {
   return {
     ...known,
@@ -142,7 +146,7 @@ function stackNeighbour(
  */
 function withConversationsAndAuthors(
   entries: StackEntry[],
-  current: PrSummary,
+  current: StackEntry,
   lookups: { conversations(number: number): Promise<PrSummary['conversations']>; author(number: number): Promise<UserRef | null> },
 ): Promise<StackEntry[]> {
   return politely(entries, 3, async (entry) => {
@@ -153,18 +157,14 @@ function withConversationsAndAuthors(
 }
 
 /**
- * page_data/stack_mergeability (the fields read here): each entry's merge status, `[{ pull: { number, … }, position,
- * status, … }]`, the way GitHub's components receive them. Where the answer puts that list has not been seen, so it is
- * a list, or the first one nested in the answer whose entries name their pull; none lists no statuses.
+ * page_data/stack_mergeability (the fields read here): GitHub's verdict on one PR of a native stack, asked of that PR's
+ * own page data, `{ state, effectiveEntryStatus, isInAutoMergeRange, channels, statusCheckChannels }` (verified signed in,
+ * 2026-10-15). `effectiveEntryStatus` is READY when GitHub can merge the PR with the open ones below it; GitHub's bundle
+ * names the others (NOT_READY, BLOCKED_DOWNSTACK, DRAFT, CLOSED, MERGE_CONFLICTS, NEEDS_REBASE, MERGED, …), each read
+ * here as not ready, as is an answer without one, which GitHub's own page reads as NOT_READY. `state` is the PR's merge
+ * requirements' state, as its merge box names it (MERGEABLE, MERGEABLE_IF_STATUSES_PASS, UNMERGEABLE, UNKNOWN).
  */
-export const stackMergeabilityAnswer = z.pipe(
-  z.transform((answer) =>
-    Array.isArray(answer)
-      ? answer
-      : (findInPayload(answer, (_, value) => Array.isArray(value) && value.some((row: unknown) => typeof row === 'object' && row !== null && 'pull' in row && !!row.pull)) ?? []),
-  ),
-  z.array(z.object({ pull: z.nullish(z.object({ number: z.nullish(z.number()) })), status: z.nullish(z.string()) })),
-);
+export const stackMergeabilityAnswer = z.object({ state: z.nullish(z.string()), effectiveEntryStatus: z.nullish(z.string()) });
 
 type StackMergeabilityAnswer = z.infer<typeof stackMergeabilityAnswer>;
 

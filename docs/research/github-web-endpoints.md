@@ -129,10 +129,19 @@ Data endpoints (all `page_data/*` need a session; `tab_counts`, `diffstat` and `
   `<relative-time datetime="…">`. The row does not name the commit; the run's page, `GET /{o}/{r}/actions/runs/<runId>`,
   does in its title: `<title>Running Copilot Code Review · acme/widgets@9824bb7</title>` (7 or 40 hex
   characters after `@`). `dynamicWorkflowChecks` in `src/lib/github-web/actions.ts` reads both.
-- `GET …/page_data/stack_mergeability?merge_method=MERGE&bypass_requirements=false` → stack entries:
-  `[{ pull: { number, title, state, url, headBranch, headOid, isInAutoMergeRange, isUnstackable },
-  position: 'CURRENT'|…, status: 'NEEDS_MERGE_STATE'|…, failedSubConditions, channels }]` (called for every
-  PR of a native stack).
+- `GET …/page_data/stack_mergeability?merge_method=SQUASH&bypass_requirements=false` → one PR's verdict as an entry of
+  its native stack, an object, not a list: `{ state: 'MERGEABLE', effectiveEntryStatus: 'READY', isInAutoMergeRange:
+  false, channels: {…}, statusCheckChannels: {…} }` (verified with a read-only GET, with the React headers `getJson`
+  sends, in David's signed-in session, 2026-10-15: both PRs of a two-PR stack, the top one and the one below it, answered
+  `MERGEABLE` / `READY`; GitHub's page then said "Able to merge as a stack"). Each PR is asked at its own URL: GitHub's
+  merge box asks it for every entry its `STACK` condition lists as `status: 'NEEDS_MERGE_STATE'` (that condition's
+  `entries` are the `[{ pull: { number, url, state, … }, position: 'BEFORE'|'CURRENT'|'AFTER', status, failedSubConditions }]`
+  once recorded here as this route's answer). From GitHub's bundle: `effectiveEntryStatus` is one of `READY`,
+  `NOT_READY`, `BLOCKED_DOWNSTACK`, `DRAFT`, `CLOSED`, `MERGE_CONFLICTS`, `NEEDS_REBASE`, `MERGED`, `MERGING`, `QUEUED`,
+  `LOADING`, `AFTER` (the page computes the last four itself too, and reads a missing one as `NOT_READY`); `state` is the
+  merge requirements' state, as in the merge box: `MERGEABLE`, `MERGEABLE_IF_STATUSES_PASS`, `UNMERGEABLE`, `UNKNOWN`.
+  `resolveStack` in `src/lib/github-web/stack.ts` asks each open PR from the bottom of the stack up to the viewed one
+  and counts only `READY` as ready to merge as a stack.
 - `GET …/page_data/threads` → review threads. Thread shape (from the changes store):
   `{ id, subjectType: 'LINE', isResolved, resolvedBy, resolutionReason, viewerCanReply, pullRequestReviewId,
   reviewCommentsLimit, positioning: { path, startLine, endLine, startDiffSide: 'LEFT'|'RIGHT', endDiffSide,

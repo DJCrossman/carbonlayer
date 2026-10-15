@@ -69,8 +69,8 @@ send as null is optional, as the reader already treated it. An answer of another
 it in place of its rows, and where a failure was already tolerated (the inbox's deferred fields and row details, a stack
 entry's conversations and author, "Group by stack"'s branches, the organizations' repository source) it is logged with
 `console.debug('[gg]', …)` and that part stays as it was. Where the docs record no place for what a reader needs (a
-section's deferred rows, the stack's mergeability list, how many approvals the rules require, the repository picker's
-envelope), it is looked for by name wherever GitHub nests it (`findInPayload`) and what is found is read by the schema.
+section's deferred rows, how many approvals the rules require, the repository picker's envelope), it is looked for by
+name wherever GitHub nests it (`findInPayload`) and what is found is read by the schema.
 
 What crosses between the extension's own parts is read the same way, by zod schemas, and the types are the schemas'
 (`z.infer`): the domain model (`src/lib/model.ts`) is schemas, which the app reads the content script's answers by; each
@@ -161,7 +161,8 @@ a file (`['pr-diff', owner, repo, number, headOid, baseRef, path]`, fresh for go
 asked 20 paths a `diff_entries` request and four requests at a time in the order the files show (those the cache has for
 the head the cached header names show at once; asking waits for a header GitHub sent the page), `pr.fetchThreads` (`threads`
 placed by the comparison's markers), `pr.fetchMergeBox` (`merge_box`, `review_requests`), `pr.fetchChecks`
-(`status_checks`), `pr.fetchStack` (`stack_mergeability` or Graphite's comment and the author's open PRs, then every
+(`status_checks`), `pr.fetchStack` (each open entry's own `stack_mergeability` from the bottom of GitHub's stack up to
+the PR, or Graphite's comment and the author's open PRs, then every
 other entry's own `threads`, for its conversation counter, and, where the stack's listing did not say who opened it,
 its `page_data/header`, three entries at a time) and `pr.fetchMeta` (`labels`, `assignees`). The content script asks
 GitHub for every stage every time, and shares a request between the stages that make it while it is on its way, so the
@@ -247,6 +248,15 @@ opened an entry, and the search finds only the viewed PR's author's, so each oth
 `page_data/header`'s `pullRequest.author` (`authorIn` in `src/lib/github-web/stack.ts`), asked alongside its threads. Until the stack arrives its skeleton has a round placeholder there; an
 entry whose header GitHub did not answer leaves the place empty (`StackEntry.author` is null), never the viewed PR's
 author.
+
+Merging a GitHub-native stack: GitHub merges the viewed PR and every open PR below it in one request, `enqueue_stack`
+from the viewed PR, as its own "Squash and merge stack" does (`pr.merge` sends it for any PR of a native stack). Each
+open entry from the bottom up to the viewed PR carries GitHub's verdict from its own `stack_mergeability`
+(`StackEntry.readyToMergeAsStack`: READY only, a status GitHub adds later is not). When every one is READY, the sidebar's next step
+is Graphite's "Ready to merge as stack" in place of "Waiting on downstack", once nothing of the viewed PR's own stands in
+the way (`stackToMerge` and `nextActionFor` in `src/pr/next-action.ts`); its button reads "Merge N PRs" and its confirm
+names them and trunk; the stack card's row for the viewed PR reads "Ready to merge as stack" and those below it "Ready to
+merge". A stack only Graphite's comment lists still merges a PR at a time. The merge reloads the stack too.
 
 ## Keyboard
 
