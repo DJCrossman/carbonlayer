@@ -14,13 +14,13 @@ INBOX
 The github.com homepage becomes an inbox with configurable sections: Needs your review, Returned to you, Approved, Waiting for reviewers, Drafts, Needs anyone's review, Merging and recently merged, Waiting for author. Each section is a GitHub search you can edit with a Graphite-style filter editor, scoped to one organization (or your own account) and the repositories you choose. Every row shows review status, CI status (required failures in red, optional ones in amber, running in between) and merge status, line counts, labels, stack position and the last update. Sections load more on demand, can be shared as a link, and can be imported from your Graphite inbox in one click.
 
 PULL REQUEST PAGE
-The stack at the top, one vertical scroll (description, activity, diff), the checks and reviewers on the right, and the diff rendered by @pierre/diffs. Approve, request changes, comment on lines, resolve threads, mark files viewed, add or re-request reviewers, re-run failed checks, convert to draft, enable auto-merge and merge, all in place. Graphite's keyboard shortcuts work: j/k to move, n/p between files, f to toggle a file viewed, r a to approve, c r to re-run failed checks, ? for the full list.
+The stack at the top, with each PR's review, checks and merge status, one vertical scroll (description, activity, diff), the checks and reviewers on the right, and the diff rendered by @pierre/diffs. Approve, request changes, comment on a line or a range of lines, suggest a change, react, resolve threads, mark files viewed, add or re-request reviewers, re-run failed checks, convert to draft, enable auto-merge, merge and revert, all in place. A comments drawer lists every conversation with its code, and every comment copies its GitHub link. Graphite's keyboard shortcuts work: j/k between files, n/p between unresolved threads, v to mark a file viewed, r a to approve, c r to re-run failed checks, ⌘C to copy the PR as a link, ? for the full list.
 
 SWITCH ANY TIME
 A "GitHub | CarbonLayer" switch sits in GitHub's header. It changes only the tab you are in, and new tabs open the way you last left it. Add ?gh=1 to any URL to see GitHub's page once. GitHub's own pull request dashboard at /pulls is never touched.
 
 PRIVACY
-CarbonLayer reads and writes github.com with your own browser session and stores your sections and settings in your Chrome profile (synced with your Chrome account). It collects nothing and sends nothing anywhere but github.com.
+CarbonLayer reads and writes github.com with your own browser session and stores your sections and settings in your Chrome profile (synced with your Chrome account). To open pages faster, it keeps what a page showed on your device for up to 24 hours; diffs and comments are never kept. It collects nothing and sends nothing anywhere but github.com.
 
 We have Graphite at home.
 ```
@@ -46,7 +46,8 @@ We have Graphite at home.
     across their Chrome profile.
   - Host permission `https://github.com/*`: the extension replaces the GitHub homepage and pull request pages with
     its own views, and reads and posts to github.com's own pages and JSON routes with the user's session to show and
-    act on pull requests. This is the product; it does nothing on any other site.
+    act on pull requests. This is the product. On app.graphite.com it only reads the user's inbox sections, once, when
+    they click "Import from Graphite"; it does nothing on any other site.
 - **Remote code**: No, I am not using remote code. (Everything ships in the package.)
 - **Privacy policy URL**: `https://github.com/DJCrossman/carbonlayer/blob/main/docs/privacy.md` (the same page the
   Google OAuth consent screen names).
