@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { encodeViewsShareLink } from '../lib/views';
-import { parseAppHash, parseGitHubLocation, routeInApp, toAppHash, toGitHubUrl, type AppRoute } from './routes';
+import { fileAnchor, parseAppHash, parseGitHubLocation, routeInApp, toAppHash, toGitHubUrl, type AppRoute } from './routes';
 
 describe('parseGitHubLocation', () => {
   it("takes over GitHub's homepage", () => {
@@ -40,6 +40,23 @@ describe('parseGitHubLocation', () => {
   it.each(['#diff-0123abcd', '#diff-0123abcdR12', '#issue-', '#discussion_r', '#partial-pull-merging'])('names no comment for the anchor %s', (hash) => {
     expect(parseGitHubLocation(new URL(`https://github.com/acme/widgets/pull/42${hash}`))).not.toHaveProperty('comment');
   });
+
+  it.each(['/files', '/changes'])('carries the file a link to %s#diff-<hash> names into the PR route', (tab) => {
+    expect(parseGitHubLocation(new URL(`https://github.com/acme/widgets/pull/42${tab}#diff-${README_SHA256}`))).toEqual({
+      page: 'pr',
+      repo: { owner: 'acme', name: 'widgets' },
+      number: 42,
+      section: 'files',
+      file: `diff-${README_SHA256}`,
+    });
+  });
+
+  it.each([`/acme/widgets/pull/42#diff-${README_SHA256}`, `/acme/widgets/pull/42/files#diff-${README_SHA256}R12`, `/acme/widgets/pull/42/files#diff-${README_SHA256.toUpperCase()}`])(
+    'names no file for %s',
+    (path) => {
+      expect(parseGitHubLocation(new URL(`https://github.com${path}`))).not.toHaveProperty('file');
+    },
+  );
 
   it('leaves everything else, and opted-out pages, to GitHub', () => {
     expect(parseGitHubLocation(new URL('https://github.com/acme/widgets/pulls'))).toEqual({ page: 'none' });
@@ -95,6 +112,7 @@ describe('app hash round trip', () => {
       parseGitHubLocation(new URL('https://github.com/acme/widgets/pull/42/files')),
       parseGitHubLocation(new URL('https://github.com/acme/widgets/pull/42#issuecomment-7')),
       parseGitHubLocation(new URL('https://github.com/acme/widgets/pull/42/files#r501')),
+      parseGitHubLocation(new URL(`https://github.com/acme/widgets/pull/42/changes#diff-${README_SHA256}`)),
       parseGitHubLocation(new URL(encodeViewsShareLink([{ id: 'a', name: 'A', query: 'is:pr' }]))),
     ];
     for (const route of routes) expect(parseAppHash(toAppHash(route))).toEqual(route);
@@ -102,6 +120,10 @@ describe('app hash round trip', () => {
 
   it('drops a comment that is not one of GitHub’s anchors from the app hash', () => {
     expect(parseAppHash('#/pr/acme/widgets/42?comment=javascript%3Aalert(1)')).not.toHaveProperty('comment');
+  });
+
+  it('drops a file that is not one of GitHub’s anchors from the app hash', () => {
+    expect(parseAppHash('#/pr/acme/widgets/42?section=files&file=diff-0123abcd')).not.toHaveProperty('file');
   });
 
   it('drops malformed import payloads from the app hash', () => {
@@ -115,3 +137,12 @@ describe('app hash round trip', () => {
     expect(toGitHubUrl(parseAppHash('#/inbox?import=' + encodeURIComponent('[{"id":"a","name":"A","query":"is:pr"}]')))).toBe('https://github.com/');
   });
 });
+
+describe('fileAnchor', () => {
+  it('names a file as GitHub’s files view does, by the SHA-256 of its path', async () => {
+    expect(await fileAnchor('README.md')).toBe(`diff-${README_SHA256}`);
+  });
+});
+
+/** `shasum -a 256` of `README.md`, the anchor GitHub's files view gives that file. */
+const README_SHA256 = 'b335630551682c19a781afebcf4d07bf978fb1f8ac04c6bf87428ed5106870f5';

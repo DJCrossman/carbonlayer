@@ -14,6 +14,8 @@ export type AppRoute =
       section: 'conversation' | 'files' | 'commits' | 'checks';
       /** The comment a GitHub link to the PR names, by its anchor (`discussion_r1`): the page opens at it. */
       comment?: string;
+      /** The file a GitHub link to the PR's files names, by its anchor (`fileAnchor`): the page opens at it. */
+      file?: string;
     }
   | { page: 'none' };
 
@@ -30,7 +32,16 @@ export function parseGitHubLocation(url: URL): AppRoute {
     const section = tab === 'changes' ? 'files' : (tab as 'conversation' | 'files' | 'commits' | 'checks');
     // GitHub's files view names a diff comment `#r<id>`, the conversation `#discussion_r<id>`.
     const comment = url.hash.slice(1).replace(/^r(?=\d+$)/, 'discussion_r');
-    return { page: 'pr', repo: { owner: match[1], name: match[2] }, number: Number(match[3]), section, ...(COMMENT_ANCHOR.test(comment) && { comment }) };
+    // Only the files view names a file.
+    const file = url.hash.slice(1);
+    return {
+      page: 'pr',
+      repo: { owner: match[1], name: match[2] },
+      number: Number(match[3]),
+      section,
+      ...(COMMENT_ANCHOR.test(comment) && { comment }),
+      ...(section === 'files' && FILE_ANCHOR.test(file) && { file }),
+    };
   }
   return { page: 'none' };
 }
@@ -58,6 +69,7 @@ export function toAppHash(route: AppRoute): string {
       const params = new URLSearchParams();
       if (route.section !== 'conversation') params.set('section', route.section);
       if (route.comment) params.set('comment', route.comment);
+      if (route.file) params.set('file', route.file);
       const query = params.toString();
       return `#/pr/${route.repo.owner}/${route.repo.name}/${route.number}${query ? `?${query}` : ''}`;
     }
@@ -86,12 +98,14 @@ export function parseAppHash(hash: string): AppRoute {
   if (match && match[1] && match[2] && match[3]) {
     const section = params.get('section');
     const comment = params.get('comment');
+    const file = params.get('file');
     return {
       page: 'pr',
       repo: { owner: match[1], name: match[2] },
       number: Number(match[3]),
       section: section === 'files' || section === 'commits' || section === 'checks' ? section : 'conversation',
       ...(comment !== null && COMMENT_ANCHOR.test(comment) && { comment }),
+      ...(file !== null && FILE_ANCHOR.test(file) && { file }),
     };
   }
   return { page: 'none' };
@@ -111,8 +125,17 @@ export function toGitHubUrl(route: AppRoute): string {
   }
 }
 
+/** GitHub's anchor for a changed file in a PR's files view: `diff-` and the SHA-256 of its path, in hex. */
+export async function fileAnchor(path: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(path));
+  return `diff-${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+}
+
 /**
  * The anchors of GitHub's links to a PR's comments: the description (`issue-<id>`), a conversation comment
  * (`issuecomment-<id>`), a review (`pullrequestreview-<id>`) and a diff comment (`discussion_r<id>`).
  */
 const COMMENT_ANCHOR = /^(?:issue-|issuecomment-|pullrequestreview-|discussion_r)\d+$/;
+
+/** The anchor of GitHub's link to a file in a PR's files view (`fileAnchor`). */
+const FILE_ANCHOR = /^diff-[0-9a-f]{64}$/;

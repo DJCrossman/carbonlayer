@@ -221,6 +221,17 @@ diff comment's file and thread, scrolls the comment into view and marks it (`is-
 comment. A comment the page does not show (hidden, or gone) leaves the page as it is, as does the reader scrolling,
 typing or clicking first.
 
+File links: each file's header copies as Graphite's does (`FileCard` in `src/pr/Files.tsx`), each copy confirmed in a
+toast. A click on its path copies the path: `@pierre/diffs` draws the path in the diff's shadow root, so the card hears
+the click and finds the path in the click's composed path, and the library's `unsafeCSS` marks it on hover. The ⋯ at the
+header's end offers Copy file name, the same, and Copy link, the link GitHub's files view gives the file,
+`…/pull/<n>/files#diff-<the SHA-256 of its path, in hex>` (`fileAnchor` in `src/app/routes.ts`). Opening such a link,
+on `/files` or `/changes`, opens the page at the file: the content script carries the anchor in the app's route
+(`?section=files&file=diff-<hash>`, `file` in `src/app/routes.ts`), and once the file list has the file whose path
+hashes to it (`useLinkedFile` in `src/pr/PrPage.tsx`) the page keeps that file's card at the top while it grows, as it
+keeps the files there for a link to them. An anchor no file has leaves the page at the files, and the reader scrolling,
+typing or clicking before the file is found leaves it where they are.
+
 Stacks: GitHub-native `stack` from the PR page's embedded data first; otherwise Graphite's stack
 comment in the timeline, enriched through a `/pulls/search` query on the author's open PRs. The stack card
 (`src/pr/StackCard.tsx`) shows each entry as Graphite does: its dot on the rail, its author's avatar, number and title,

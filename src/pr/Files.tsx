@@ -5,12 +5,14 @@
 // Until the file list arrives the section shows the header's file count over skeleton cards; then each file
 // shows a skeleton until its diff arrives.
 import { FileDiff, type FileDiffOptions, type SelectedLineRange } from '@pierre/diffs/react';
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent } from 'react';
 import type { ReviewThreadDraft } from '../app/data-source';
+import { fileAnchor } from '../app/routes';
 import type { ChangedFile, PrDetail, PrStages } from '../lib/model';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
 import { Skeleton } from '../ui/Skeleton';
+import { showToast } from '../ui/Toast';
 import { composerAnchorFor, currentLinesOf, fileNotes, filesInTreeOrder, fileTree, renderableDiff, type ComposerAnchor, type DiffNote, type FileTreeNode } from './diff';
 import type { StageState } from './page-data';
 import { StageError } from './primitives';
@@ -387,8 +389,9 @@ function FileCard({
       },
       // The "+" selects only while this is set; its selection ends above like any other.
       onGutterUtilityClick: () => undefined,
-      // Sticky file headers stop under the Files toolbar instead of at the very top.
-      unsafeCSS: `[data-sticky] { top: ${STICKY_TOP}px; }`,
+      // Sticky file headers stop under the Files toolbar instead of at the very top. The path copies itself when clicked
+      // (onClick below), so it shows it on hover, as Graphite's does, without moving.
+      unsafeCSS: `[data-sticky] { top: ${STICKY_TOP}px; } [data-title] { margin: -2px -4px; padding: 2px 4px; border-radius: 4px; cursor: pointer; } [data-title]:hover { background: var(--gg-bg-hover); }`,
     }),
     [diffStyle, themeType, collapsed, file.path, fileDiff],
   );
@@ -400,14 +403,21 @@ function FileCard({
     </label>
   );
 
+  // The path, the library's in a diff's header (in its shadow root) or a stub's own, copies itself when clicked, as
+  // Graphite's does.
+  const onClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.nativeEvent.composedPath().some((target) => target instanceof Element && target.matches('[data-title], .file-stub-name'))) copyFileName(file.path);
+  };
+
   if (missingDiff) {
     return (
-      <div className={`file-card is-stub ${current ? 'is-current' : ''}`} id={`gg-file:${file.path}`} aria-busy={missingDiff === 'loading'}>
+      <div className={`file-card is-stub ${current ? 'is-current' : ''}`} id={`gg-file:${file.path}`} aria-busy={missingDiff === 'loading'} onClick={onClick}>
         <div className="file-stub-header">
           <span className={`file-status is-${file.status}`}>{STATUS_LETTERS[file.status]}</span>
           <span className="file-stub-name">{file.path}</span>
           <span className="files-toolbar-spacer" />
           {viewedToggle}
+          <FileMenu path={file.path} prUrl={pr.url} />
         </div>
         {/* A collapsed file (one already viewed) shows its header alone, as it will once its diff is in. */}
         {collapsed ? null : missingDiff === 'failed' ? (
@@ -425,12 +435,13 @@ function FileCard({
 
   if (!fileDiff) {
     return (
-      <div className={`file-card is-stub ${current ? 'is-current' : ''}`} id={`gg-file:${file.path}`}>
+      <div className={`file-card is-stub ${current ? 'is-current' : ''}`} id={`gg-file:${file.path}`} onClick={onClick}>
         <div className="file-stub-header">
           <span className={`file-status is-${file.status}`}>{STATUS_LETTERS[file.status]}</span>
           <span className="file-stub-name">{file.path}</span>
           <span className="files-toolbar-spacer" />
           {viewedToggle}
+          <FileMenu path={file.path} prUrl={pr.url} />
         </div>
         <div className="file-stub-body">
           Binary or too large to display ·{' '}
@@ -443,7 +454,7 @@ function FileCard({
   }
 
   return (
-    <div className={`file-card ${current ? 'is-current' : ''}`} id={`gg-file:${file.path}`}>
+    <div className={`file-card ${current ? 'is-current' : ''}`} id={`gg-file:${file.path}`} onClick={onClick}>
       <FileDiff<DiffNote>
         fileDiff={fileDiff}
         options={options}
@@ -477,9 +488,84 @@ function FileCard({
               </span>
             )}
             {viewedToggle}
+            <FileMenu path={file.path} prUrl={pr.url} />
           </div>
         )}
       />
+    </div>
+  );
+}
+
+/** Puts a file's path on the clipboard, as a click on Graphite's path or its "Copy file name" does, and says so. */
+function copyFileName(path: string) {
+  void navigator.clipboard.writeText(path).then(
+    () => showToast('Copied file name'),
+    (reason: unknown) => showToast(`Could not copy file name: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger'),
+  );
+}
+
+/**
+ * The ⋯ at the end of a file's header, with the items of Graphite's that copy: the file's path, and the link to it in
+ * the PR's files on GitHub, the one GitHub's own files view gives it (`fileAnchor`), which opens this page at the file.
+ */
+function FileMenu({ path, prUrl }: { path: string; prUrl: string }) {
+  const [open, setOpen] = useState(false);
+  const menu = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Node) || !menu.current?.contains(event.target)) setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => event.key === 'Escape' && setOpen(false);
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div className="pr-menu" ref={menu}>
+      <Button
+        variant="ghost"
+        size="sm"
+        icon="kebab-horizontal"
+        aria-label="More file actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      />
+      {open && (
+        <div className="pr-menu-list" role="menu">
+          <button
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              copyFileName(path);
+            }}
+          >
+            <Icon name="file-diff" size={14} />
+            Copy file name
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              void fileAnchor(path)
+                .then((anchor) => navigator.clipboard.writeText(`${prUrl}/files#${anchor}`))
+                .then(
+                  () => showToast('Copied link to file'),
+                  (reason: unknown) => showToast(`Could not copy link to file: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger'),
+                );
+            }}
+          >
+            <Icon name="link" size={14} />
+            Copy link
+          </button>
+        </div>
+      )}
     </div>
   );
 }

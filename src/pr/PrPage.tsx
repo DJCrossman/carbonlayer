@@ -7,10 +7,10 @@ import { createPortal } from 'react-dom';
 import { postToParent } from '../app/bridge';
 import { copyPullRequest } from '../app/copy-pull-request';
 import type { DataSource, ReviewThreadDraft } from '../app/data-source';
-import type { AppRoute } from '../app/routes';
+import { fileAnchor, type AppRoute } from '../app/routes';
 import { useSettings } from '../app/use-settings';
 import { SIGNED_OUT } from '../lib/github-web/session';
-import type { PrDetail, PrStage, PrStages, ReactionContent } from '../lib/model';
+import type { ChangedFile, PrDetail, PrStage, PrStages, ReactionContent } from '../lib/model';
 import { STAGES_A_WRITE_CHANGES, type MergeMethod } from '../lib/rpc';
 import type { Settings } from '../lib/settings';
 import { Avatar } from '../ui/Avatar';
@@ -69,7 +69,7 @@ function PrStagesView({ source, route, settings }: { source: DataSource; route: 
   if (!settings) return null;
   return (
     <MarkdownPreview value={previewMarkdown}>
-      <PrView header={header.value} data={data} reload={reload} settings={settings} source={source} section={route.section} comment={route.comment} />
+      <PrView header={header.value} data={data} reload={reload} settings={settings} source={source} section={route.section} comment={route.comment} file={route.file} />
     </MarkdownPreview>
   );
 }
@@ -82,6 +82,7 @@ function PrView({
   source,
   section,
   comment,
+  file,
 }: {
   header: PrStages['header'];
   data: PrPageData;
@@ -90,6 +91,7 @@ function PrView({
   source: DataSource;
   section: Extract<AppRoute, { page: 'pr' }>['section'];
   comment: Extract<AppRoute, { page: 'pr' }>['comment'];
+  file: Extract<AppRoute, { page: 'pr' }>['file'];
 }) {
   const [edits, setEdits] = useState((): PendingEdits => ({ viewed: {}, resolved: {}, isDraft: null, autoMerge: null, reactions: {} }));
   const pr = useMemo(() => optimisticPr(prDetailFrom(header, data), edits), [header, data, edits]);
@@ -124,14 +126,17 @@ function PrView({
   });
   const mergeMethod: MergeMethod = pr.allowedMergeMethods.includes(settings.mergeMethod) ? settings.mergeMethod : pr.defaultMergeMethod;
   useLinkedComment(comment, pr, data, files.revealThread);
+  const linkedFile = useLinkedFile(file, pr.files);
 
   useEffect(() => {
     const files = document.getElementById('pr-files');
     // A link to a comment opens the page at that comment instead.
     if (section !== 'files' || comment || !files) return;
+    // A link to a file opens the page at the file, once the file list has it.
+    const target = (linkedFile && document.getElementById(`gg-file:${linkedFile}`)) || files;
     // The page may be too short to bring the files to the top until the diffs have rendered, so keep them
     // pinned there while the page grows, until the reader takes over or it has settled.
-    const pin = () => files.scrollIntoView({ block: 'start' });
+    const pin = () => target.scrollIntoView({ block: 'start' });
     const observer = new ResizeObserver(pin);
     const stop = () => observer.disconnect();
     pin();
@@ -144,7 +149,7 @@ function PrView({
       clearTimeout(timer);
       for (const type of events) window.removeEventListener(type, stop);
     };
-  }, [section, comment]);
+  }, [section, comment, linkedFile]);
 
   useEffect(() => {
     try {
@@ -803,4 +808,41 @@ function useLinkedComment(anchor: string | undefined, pr: PrDetail, data: PrPage
       marked?.classList.remove('is-linked');
     };
   }, [linked]);
+}
+
+/**
+ * The changed file a GitHub link to the PR's files names (`route.file`, `fileAnchor`), once the file list has it: its
+ * path; null before that, for a file the PR does not change, and when the reader scrolled, typed or clicked before it was
+ * found.
+ */
+function useLinkedFile(anchor: string | undefined, files: ChangedFile[]): string | null {
+  const [linked, setLinked] = useState<{ anchor: string; path: string } | null>(null);
+  // As a browser does with a link's anchor, the link gives up once the reader has scrolled, typed or clicked.
+  const readerMoved = useRef(false);
+
+  useEffect(() => {
+    if (!anchor) return;
+    readerMoved.current = false;
+    const moved = () => (readerMoved.current = true);
+    const events = ['wheel', 'keydown', 'pointerdown'] as const;
+    for (const type of events) window.addEventListener(type, moved, { passive: true });
+    return () => {
+      for (const type of events) window.removeEventListener(type, moved);
+    };
+  }, [anchor]);
+
+  useEffect(() => {
+    if (!anchor) return;
+    let current = true;
+    // The anchor is a hash of the path, so each file's is worked out to find the one it names.
+    void Promise.all(files.map(async (file) => ((await fileAnchor(file.path)) === anchor ? file.path : null))).then((paths) => {
+      const path = paths.find((candidate) => candidate !== null);
+      if (current && path && !readerMoved.current) setLinked({ anchor, path });
+    });
+    return () => {
+      current = false;
+    };
+  }, [anchor, files]);
+
+  return linked && linked.anchor === anchor ? linked.path : null;
 }

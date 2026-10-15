@@ -166,6 +166,8 @@
   --diffs-line-height: 20px;
 }
 .file-card.is-current { border-color: var(--gg-accent); box-shadow: 0 0 0 1px var(--gg-accent); }
+/* A file's open ⋯ menu (Files.tsx) shows above the files after it, whose sticky headers stack over the ones before. */
+.file-card:has(.pr-menu-list) { position: relative; z-index: 3; }
 .file-card diffs-container { display: block; border-radius: var(--gg-radius); }
 
 .file-collapse {
@@ -223,7 +225,9 @@
   background: var(--gg-bg-subtle);
   border-radius: var(--gg-radius) var(--gg-radius) 0 0;
 }
-.file-stub-name { font: 600 12.5px var(--gg-font); }
+/* The path copies itself when clicked (Files.tsx), as in a diff's header: shown on hover, without moving. */
+.file-stub-name { margin: -2px -4px; padding: 2px 4px; border-radius: 4px; font: 600 12.5px var(--gg-font); cursor: pointer; }
+.file-stub-name:hover { background: var(--gg-bg-hover); }
 .file-stub-body {
   padding: 18px 12px;
   color: var(--gg-fg-muted);
