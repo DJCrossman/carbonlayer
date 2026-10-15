@@ -79,7 +79,8 @@ way to the page. The bridge's messages are two discriminated unions (`parentToAp
 content script, which hears only the frame (origin and source checked), throws on a message of another shape. The
 background's runtime messages, the popup's `gg:choose` (the content script ignores runtime messages of other shapes) and
 what the inbox and the stack card read back from the page's cache (a section's rows, a row's details) are read the same
-way.
+way. The schemas are `zod/mini`'s, which loads no error messages of its own: every entrypoint that parses imports
+`src/lib/zod-messages.ts` first (vitest through `setupFiles`), or a failure reads only "Invalid input".
 
 Graphite judges CI from every check run on the head commit, runs of the workflows GitHub triggers itself (event `dynamic`,
 such as Copilot's code review) included, while `status_checks`, the commit's status rollup and the PR's Checks tab all
