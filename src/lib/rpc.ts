@@ -29,6 +29,8 @@ import {
 
 export type MergeMethod = z.infer<typeof mergeMethodSchema>;
 
+export type MergeCommit = z.infer<typeof mergeCommit>;
+
 /** What enriching an inbox row, or a stack entry, goes by (`inbox.enrich`); a stack entry may not know its author. */
 export type InboxRowToEnrich = z.infer<typeof inboxRowToEnrichSchema>;
 
@@ -156,6 +158,9 @@ const lineComment = {
 /** A reviewer requested or withdrawn, by GitHub's numeric user or team id. */
 const reviewerChange = z.object({ id: z.string(), isTeam: z.boolean() });
 
+/** A merge commit's title and message, by the names GitHub's merge requests give them. */
+const mergeCommit = z.object({ commitTitle: z.string(), commitMessage: z.string() });
+
 /** Each method's args and result: what the content script reads a request by, and the app its answer. */
 const RPC_SCHEMAS = {
   'inbox.fetch': { args: z.object({ views: z.array(viewSchema) }), result: z.array(viewResultSchema) },
@@ -214,7 +219,8 @@ const RPC_SCHEMAS = {
     result: z.undefined(),
   },
   'pr.comment': { args: z.object({ prId: z.string(), body: z.string() }), result: z.undefined() },
-  'pr.merge': { args: z.object({ prId: z.string(), method: mergeMethodSchema, expectedHeadOid: z.string() }), result: z.undefined() },
+  /** `commit` is the merge commit the viewer wrote; without it the PR merges with GitHub's proposal (`pr.proposedMergeCommit`). */
+  'pr.merge': { args: z.object({ prId: z.string(), method: mergeMethodSchema, expectedHeadOid: z.string(), commit: z.optional(mergeCommit) }), result: z.undefined() },
   /** `startLine` on `startSide` to `line` on `side` for a comment on several lines. */
   'pr.addThread': { args: z.object({ prId: z.string(), ...lineComment }), result: z.undefined() },
   'pr.replyThread': { args: z.object({ threadId: z.string(), body: z.string() }), result: z.undefined() },
@@ -224,6 +230,8 @@ const RPC_SCHEMAS = {
   /** Reverts a merged PR the way GitHub's Revert button does: a branch undoing it, and where GitHub opens its pull request. */
   'pr.revert': { args: z.object({ prId: z.string() }), result: z.object({ url: z.string() }) },
   'pr.setAutoMerge': { args: z.object({ prId: z.string(), enabled: z.boolean(), method: mergeMethodSchema }), result: z.undefined() },
+  /** The merge commit GitHub's merge box proposes for merging the PR this way: what its own commit message editor starts with. */
+  'pr.proposedMergeCommit': { args: z.object({ prId: z.string(), method: mergeMethodSchema }), result: mergeCommit },
   /** Whom the viewer can ask for a review: GitHub's suggestions, then everyone else matching `query`. */
   'pr.reviewerCandidates': {
     args: z.object({ prId: z.string(), query: z.string() }),

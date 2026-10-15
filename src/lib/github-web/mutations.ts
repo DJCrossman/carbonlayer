@@ -4,11 +4,11 @@
 
 import { z } from 'zod/mini';
 import type { PrDetail } from '../model';
-import type { MergeMethod, RpcMethods } from '../rpc';
+import type { MergeCommit, MergeMethod, RpcMethods } from '../rpc';
 import { rerunWorkflowJobs } from './actions';
 import { SIGNED_OUT, getJson, readAnswer, send, submitForm } from './session';
 
-export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox.fetchMore' | 'inbox.enrich' | 'inbox.branches' | 'repos.search' | 'repos.top' | 'orgs.list' | 'orgs.people' | `pr.fetch${string}` | 'pr.reviewerCandidates' | 'markdown.preview' | 'markdown.emojis'>]: (args: RpcMethods[M]['args']) => Promise<RpcMethods[M]['result']> } = {
+export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox.fetchMore' | 'inbox.enrich' | 'inbox.branches' | 'repos.search' | 'repos.top' | 'orgs.list' | 'orgs.people' | `pr.fetch${string}` | 'pr.reviewerCandidates' | 'pr.proposedMergeCommit' | 'markdown.preview' | 'markdown.emojis'>]: (args: RpcMethods[M]['args']) => Promise<RpcMethods[M]['result']> } = {
   'pr.review': async ({ prId, event, body, threads }) => {
     const pull = pullRequestFor(prId);
     // Batched inline comments join the viewer's pending review; submitting the review publishes them.
@@ -39,7 +39,7 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
   'pr.resolveThread': async ({ threadId, resolved }) => {
     await send(`${threadFor(threadId).pullPath}/page_data/${resolved ? 'resolve_thread' : 'unresolve_thread'}`, 'POST', { threadId });
   },
-  'pr.merge': async ({ prId, method, expectedHeadOid }) => {
+  'pr.merge': async ({ prId, method, expectedHeadOid, commit: written }) => {
     // The app gives up on an answer after 60 s; stop waiting for a stack merge well before that.
     const giveUpAt = Date.now() + 45_000;
     const pull = pullRequestFor(prId);
@@ -49,7 +49,7 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
     if (headOid && expectedHeadOid && headOid !== expectedHeadOid) {
       throw new Error('New commits were pushed since this page loaded. Reload and review them before merging.');
     }
-    const commit = await proposedMergeCommit(pull, method);
+    const commit = written ?? (await proposedMergeCommit(pull, method));
     if (!pull.isNativeStack) {
       await send(`${pull.path}/page_data/merge`, 'POST', { mergeMethod: method, ...commit, bypassBranchProtections: false });
       return;
@@ -224,7 +224,7 @@ function threadFor(threadId: string): KnownThread {
 }
 
 /** The merge commit title and message GitHub's merge box proposes for this method. */
-async function proposedMergeCommit(pull: KnownPullRequest, method: MergeMethod): Promise<{ commitTitle: string; commitMessage: string }> {
+export async function proposedMergeCommit(pull: KnownPullRequest, method: MergeMethod): Promise<MergeCommit> {
   const box = await getJson(
     `${pull.path}/page_data/merge_box?merge_method=${method}&bypass_requirements=false`,
     z.object({ mergeRequirements: z.nullish(z.object({ commitMessageHeadline: z.nullish(z.string()), commitMessageBody: z.nullish(z.string()) })) }),

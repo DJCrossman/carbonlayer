@@ -1,7 +1,7 @@
 // The right sidebar: status (with Merge when ready), the one next step, checks, reviewers (Reviewers.tsx), labels and
 // assignees. Each card shows a skeleton until the stage it comes from arrives; cards with nothing to show are left out,
 // except an open PR's checks, which says why it has none.
-import { Fragment, useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { MergeMethod } from '../lib/rpc';
 import { mergeMethodSchema, type PrDetail, type PrStage, type StackEntry } from '../lib/model';
 import { Avatar } from '../ui/Avatar';
@@ -27,6 +27,7 @@ export function Sidebar({
   onRevert,
   onMarkReady,
   onMerge,
+  onMergeStack,
   onViewThreads,
   checkReruns,
   reviewersCard,
@@ -43,6 +44,8 @@ export function Sidebar({
   onRevert: () => Promise<boolean>;
   onMarkReady: () => Promise<boolean>;
   onMerge: (method: MergeMethod) => Promise<boolean>;
+  /** Opens the dialog that merges the stack (MergeStackDialog.tsx), with the method picked here. */
+  onMergeStack: (method: MergeMethod) => void;
   onViewThreads: () => void;
   checkReruns: CheckReruns;
   /** The Reviewers card (Reviewers.tsx), wired to the page's data source. */
@@ -53,7 +56,7 @@ export function Sidebar({
   return (
     <aside className="pr-sidebar" aria-label="Status">
       <StatusCard pr={pr} mergeMethod={mergeMethod} onAutoMerge={onAutoMerge} onRevert={onRevert} />
-      <ActionCard pr={pr} data={data} onRetry={onRetry} mergeMethod={mergeMethod} onMarkReady={onMarkReady} onMerge={onMerge} onViewThreads={onViewThreads} />
+      <ActionCard pr={pr} data={data} onRetry={onRetry} mergeMethod={mergeMethod} onMarkReady={onMarkReady} onMerge={onMerge} onMergeStack={onMergeStack} onViewThreads={onViewThreads} />
       <Staged state={data.checks} what="the checks" onRetry={() => onRetry(['checks'])} skeleton={<SideCardSkeleton title="Checks" rows={3} />}>
         {({ emptyReason }) =>
           pr.ci.checks.length > 0 ? (
@@ -234,6 +237,7 @@ function ActionCard({
   mergeMethod,
   onMarkReady,
   onMerge,
+  onMergeStack,
   onViewThreads,
 }: {
   pr: PrDetail;
@@ -242,6 +246,7 @@ function ActionCard({
   mergeMethod: MergeMethod;
   onMarkReady: () => Promise<boolean>;
   onMerge: (method: MergeMethod) => Promise<boolean>;
+  onMergeStack: (method: MergeMethod) => void;
   onViewThreads: () => void;
 }) {
   // The stages the next step depends on that have not arrived, loading or failed; what the inbox showed does not decide it.
@@ -324,8 +329,8 @@ function ActionCard({
           View check
         </a>
       )}
-      {action.kind === 'ready' && <MergeControls pr={pr} mergeMethod={mergeMethod} onMerge={onMerge} />}
-      {action.kind === 'ready-as-stack' && <MergeControls pr={pr} stack={action.prs} mergeMethod={mergeMethod} onMerge={onMerge} />}
+      {action.kind === 'ready' && <MergeControls pr={pr} mergeMethod={mergeMethod} onMerge={onMerge} onMergeStack={onMergeStack} />}
+      {action.kind === 'ready-as-stack' && <MergeControls pr={pr} stack={action.prs} mergeMethod={mergeMethod} onMerge={onMerge} onMergeStack={onMergeStack} />}
     </Card>
   );
 }
@@ -335,31 +340,24 @@ function MergeControls({
   stack,
   mergeMethod,
   onMerge,
+  onMergeStack,
 }: {
   pr: PrDetail;
   /** The open PRs a merge as a stack merges, bottom first and this one last; absent when this PR merges alone. */
   stack?: StackEntry[];
   mergeMethod: MergeMethod;
   onMerge: (method: MergeMethod) => Promise<boolean>;
+  onMergeStack: (method: MergeMethod) => void;
 }) {
   const [method, setMethod] = useState(mergeMethod);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
-  // A merge as a stack, sent from this PR, merges the PRs below it with it, into trunk.
-  const merging = stack ?? [pr];
 
   if (confirming) {
     return (
       <div className="merge-confirm">
         <div>
-          {MERGE_LABELS[method].verb}{' '}
-          {merging.map((entry, index) => (
-            <Fragment key={entry.number}>
-              {index > 0 && (index === merging.length - 1 ? ' and ' : ', ')}
-              <strong>#{entry.number}</strong>
-            </Fragment>
-          ))}{' '}
-          into <span className="pr-mono">{stack ? pr.stack.trunk : pr.baseRefName}</span>?
+          {MERGE_LABELS[method].verb} <strong>#{pr.number}</strong> into <span className="pr-mono">{pr.baseRefName}</span>?
         </div>
         <div className="merge-row">
           <Button onClick={() => setConfirming(false)} disabled={busy}>
@@ -398,7 +396,8 @@ function MergeControls({
         className="pr-merge-button"
         disabled={!pr.viewerCanMerge}
         title={pr.viewerCanMerge ? undefined : 'You do not have permission to merge this pull request'}
-        onClick={() => setConfirming(true)}
+        // A stack is merged from its dialog, which names every PR it merges; this PR alone confirms here.
+        onClick={() => (stack ? onMergeStack(method) : setConfirming(true))}
       >
         <Icon name="git-merge" size={14} />
         {stack ? `Merge ${stack.length} PRs` : 'Merge'}
@@ -547,7 +546,7 @@ function SideCardSkeleton({ title, rows }: { title: string; rows: number }) {
   );
 }
 
-const MERGE_LABELS = {
+export const MERGE_LABELS = {
   SQUASH: { short: 'Squash', verb: 'Squash and merge' },
   MERGE: { short: 'Merge commit', verb: 'Merge' },
   REBASE: { short: 'Rebase', verb: 'Rebase and merge' },

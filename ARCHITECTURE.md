@@ -254,9 +254,18 @@ from the viewed PR, as its own "Squash and merge stack" does (`pr.merge` sends i
 open entry from the bottom up to the viewed PR carries GitHub's verdict from its own `stack_mergeability`
 (`StackEntry.readyToMergeAsStack`: READY only, a status GitHub adds later is not). When every one is READY, the sidebar's next step
 is Graphite's "Ready to merge as stack" in place of "Waiting on downstack", once nothing of the viewed PR's own stands in
-the way (`stackToMerge` and `nextActionFor` in `src/pr/next-action.ts`); its button reads "Merge N PRs" and its confirm
-names them and trunk; the stack card's row for the viewed PR reads "Ready to merge as stack" and those below it "Ready to
-merge". A stack only Graphite's comment lists still merges a PR at a time. The merge reloads the stack too.
+the way (`stackToMerge` and `nextActionFor` in `src/pr/next-action.ts`); the stack card's row for the viewed PR reads
+"Ready to merge as stack" and those below it "Ready to merge". Its "Merge N PRs", a green button in the top bar beside
+Finish review too while the viewer may merge, and `m` open Graphite's dialog (`MergeStackDialog` in
+`src/pr/MergeStackDialog.tsx`): "Merge stack of N PRs into <trunk>", a sentence true of GitHub's merge (one request, from
+the PR closest to trunk up to this one), the merge strategy (the sidebar's pick, else the remembered method; its ⓘ says
+what GitHub's merge box says that way does to a stack), the PRs this one first, and "<method> N PRs" (⌘↵), which shows
+"Merging…" and closes once merged. Esc and ✕ close it, the focus goes round inside it and back to its opener. GitHub's
+own stack merge edits a commit only for a merge commit, this PR's, so only then does this PR's row offer "Commit
+details": GitHub's proposal (`pr.proposedMergeCommit`, its merge box for that method), which `pr.merge` sends as written.
+Graphite's "Ignore optional CI status checks" and "Always rebase branches" are its own engine's; GitHub's stack merge has
+neither, so the dialog leaves them out. A stack only Graphite's comment lists still merges a PR at a time, with the
+sidebar's inline confirm. The merge reloads the stack too.
 
 ## Keyboard
 

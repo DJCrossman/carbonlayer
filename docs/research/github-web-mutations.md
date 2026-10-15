@@ -44,7 +44,17 @@ No Relay / persisted-query ids and, reactions aside, no `authenticity_token` are
    `merged` | `enqueued` | `failed`. GitHub's "Squash and merge stack [N]" sends `DIRECT_MERGE` from the PR viewed (its
    own page data URL), which merges it and every open PR below it: N counts them, this one included (the stack's entries
    neither above it nor merged or queued), and its stack section says "Merging this pull request will also merge N − 1
-   pull requests below it" (read from the bundle, 2026-10-15).
+   pull requests below it" (read from the bundle, 2026-10-15). Its confirm (`ConfirmMerge`, chunk `cqs-5eeaa26044996c16.js`,
+   2026-10-15) shows the "Commit message" / "Extended description" editor (⌘↵ in the description merges) only when
+   `mergeMethod !== REBASE && !(mergeMethod === SQUASH && merging more than one)`: for a stack, a merge commit only,
+   prefilled with the viewed PR's `merge_box` `commitMessageHeadline` / `commitMessageBody`; a squashed stack reads "This
+   will squash your changes and merge them into <base>." It sends `commitTitle` / `commitMessage` either way (untouched
+   when not shown) and `authorEmail` only beside the editor. The method menu says, for N > 1 branches: merge "All commits
+   from these N branches will be added to the base branch via merge commits.", squash "The commits from these N branches
+   will be combined into one commit per branch in the base branch.", rebase "All commits from these N branches will be
+   rebased and added to the base branch." `bypassRules: "true"` is sent only with the admin's "Merge without waiting for
+   requirements to be met (bypass rules)" box; there is no field for optional checks or for rebasing first (rebasing a
+   stack is its own `stack_rebase`).
 5. **Viewed**: `POST /{owner}/{repo}/pull/{n}/file_review` `{ path, viewed: "viewed" }`; unviewed: `DELETE`
    same URL `{ path, _method: "delete" }`. Current state: `base_comparison_info` → `diffSummaries[].markedAsViewed`.
 6. **Draft**: `POST P/convert_to_draft` (no body); ready: `POST P/mark_ready_for_review` (optional body).

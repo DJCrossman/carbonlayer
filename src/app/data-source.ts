@@ -2,7 +2,7 @@
 // from the content script's RPC in the extension and from fixtures in the dev harness (`?fixtures=1`).
 
 import type { ChangedFileDiff, Emoji, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, StackEntry, TopRepository, View, ViewResult } from '../lib/model';
-import { rpc, type InboxRowToEnrich, type MergeMethod } from '../lib/rpc';
+import { rpc, type InboxRowToEnrich, type MergeCommit, type MergeMethod } from '../lib/rpc';
 import { getSettings, setSettings, watchSettings, type Settings, type SettingsStorage } from '../lib/settings';
 import { resolveViewQuery } from '../lib/views';
 
@@ -45,7 +45,10 @@ export interface DataSource {
   fetchPrFileDiffs(repo: RepoRef, number: number, paths: string[]): Promise<Record<string, ChangedFileDiff>>;
   review(prId: string, event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT', body: string, threads?: ReviewThreadDraft[]): Promise<void>;
   comment(prId: string, body: string): Promise<void>;
-  merge(prId: string, method: MergeMethod, expectedHeadOid: string): Promise<void>;
+  /** Merges with the merge commit the viewer wrote, else with the one GitHub proposes. */
+  merge(prId: string, method: MergeMethod, expectedHeadOid: string, commit?: MergeCommit): Promise<void>;
+  /** The merge commit GitHub's merge box proposes for merging the PR this way. */
+  proposedMergeCommit(prId: string, method: MergeMethod): Promise<MergeCommit>;
   addThread(prId: string, thread: ReviewThreadDraft): Promise<void>;
   replyThread(threadId: string, body: string): Promise<void>;
   resolveThread(threadId: string, resolved: boolean): Promise<void>;
@@ -85,7 +88,8 @@ export function createRpcDataSource(): DataSource {
     fetchPrFileDiffs: (repo, number, paths) => rpc('pr.fetchFileDiffs', { repo, number, paths }),
     review: (prId, event, body, threads) => rpc('pr.review', { prId, event, body, threads }),
     comment: (prId, body) => rpc('pr.comment', { prId, body }),
-    merge: (prId, method, expectedHeadOid) => rpc('pr.merge', { prId, method, expectedHeadOid }),
+    merge: (prId, method, expectedHeadOid, commit) => rpc('pr.merge', { prId, method, expectedHeadOid, commit }),
+    proposedMergeCommit: (prId, method) => rpc('pr.proposedMergeCommit', { prId, method }),
     addThread: (prId, thread) => rpc('pr.addThread', { prId, ...thread }),
     replyThread: (threadId, body) => rpc('pr.replyThread', { threadId, body }),
     resolveThread: (threadId, resolved) => rpc('pr.resolveThread', { threadId, resolved }),
@@ -270,6 +274,16 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     review: (...args) => log('review', ...args),
     comment: (...args) => log('comment', ...args),
     merge: (...args) => log('merge', ...args),
+    // What GitHub's merge box proposes, a moment later: a merge commit names the PR and its branch, its title below; a
+    // squash is the title and number.
+    proposedMergeCommit: async (prId, method) => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const pr = fixtures.prs.find((candidate) => candidate.id === prId);
+      if (!pr) throw new Error(`No fixture for ${prId}`);
+      return method === 'MERGE'
+        ? { commitTitle: `Merge pull request #${pr.number} from ${pr.repo.owner}/${pr.headRefName}`, commitMessage: pr.title }
+        : { commitTitle: `${pr.title} (#${pr.number})`, commitMessage: '' };
+    },
     addThread: (...args) => log('addThread', ...args),
     replyThread: (...args) => log('replyThread', ...args),
     resolveThread: (...args) => log('resolveThread', ...args),

@@ -11,7 +11,7 @@ import { fileAnchor, type AppRoute } from '../app/routes';
 import { useSettings } from '../app/use-settings';
 import { SIGNED_OUT } from '../lib/github-web/session';
 import type { ChangedFile, PrDetail, PrStage, PrStages, ReactionContent } from '../lib/model';
-import { STAGES_A_WRITE_CHANGES, type MergeMethod } from '../lib/rpc';
+import { STAGES_A_WRITE_CHANGES, type MergeCommit, type MergeMethod } from '../lib/rpc';
 import type { Settings } from '../lib/settings';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
@@ -25,7 +25,8 @@ import { CopyLink, Markdown } from './Comment';
 import { CommentsDrawer } from './CommentsDrawer';
 import { FilesSection, useFileReview } from './Files';
 import { usePrKeybindings } from './keybindings';
-import { stackToMerge } from './next-action';
+import { MergeStackDialog } from './MergeStackDialog';
+import { nextActionFor, stackToMerge } from './next-action';
 import { followLink, goToPr, openOnGitHub } from './navigation';
 import { prDetailFrom, usePrPageData, type PrPageData } from './page-data';
 import { MarkdownPreview, StageError, Staged, StatePill } from './primitives';
@@ -114,6 +115,8 @@ function PrView({
   // More actions' menu, open beside whichever of the two shows, as the review popover is.
   const [menuOpen, setMenuOpen] = useState(false);
   const [quickApprove, setQuickApprove] = useState(false);
+  // The method the stack's merge dialog opened with; null while it is closed.
+  const [mergingStack, setMergingStack] = useState<MergeMethod | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [reviewerPickerOpen, setReviewerPickerOpen] = useState(false);
   const [stackCollapsed, setStackCollapsed] = useState(false);
@@ -126,6 +129,10 @@ function PrView({
     }
   });
   const mergeMethod: MergeMethod = pr.allowedMergeMethods.includes(settings.mergeMethod) ? settings.mergeMethod : pr.defaultMergeMethod;
+  // The sidebar's next step, as its action card finds it: while it is to merge the stack and the viewer may, the top bar's
+  // "Merge N PRs" and m open the dialog that does.
+  const nextAction = nextActionFor(pr, (['mergeBox', 'stack', 'threads', 'checks'] as const).filter((stage) => data[stage].value === null || data[stage].status === 'placeholder'));
+  const stackMerge = nextAction.kind === 'ready-as-stack' && pr.viewerCanMerge ? nextAction.prs : null;
   useLinkedComment(comment, pr, data, files.revealThread);
   const linkedFile = useLinkedFile(file, pr.files);
 
@@ -205,6 +212,14 @@ function PrView({
     });
   }
 
+  function merge(method: MergeMethod, commit?: MergeCommit) {
+    // A merge as a stack merges the open PRs below this one with it.
+    const merging = stackToMerge(pr.stack);
+    return mutate(STAGES_A_WRITE_CHANGES['pr.merge'], () => source.merge(pr.id, method, pr.headOid, commit), 'Could not merge', {
+      success: merging ? `Merged ${merging.length} PRs` : `Merged #${pr.number}`,
+    });
+  }
+
   function react(subjectId: string, content: ReactionContent, add: boolean) {
     const mark = (given: boolean) =>
       setEdits((current) => ({ ...current, reactions: { ...current.reactions, [subjectId]: { ...current.reactions[subjectId], [content]: given } } }));
@@ -275,6 +290,8 @@ function PrView({
         return setReviewerPickerOpen(true);
       case 'rerun-failed-checks':
         return void checkReruns.rerun('failed');
+      case 'merge':
+        return stackMerge && setMergingStack((open) => open ?? mergeMethod);
       case 'toggle-viewed':
         return currentFile && toggleViewed(currentFile.path);
       case 'toggle-file':
@@ -292,6 +309,7 @@ function PrView({
       case 'help':
         return setHelpOpen((open) => !open);
       case 'close':
+        if (mergingStack) return setMergingStack(null);
         if (quickApprove) return setQuickApprove(false);
         if (helpOpen) return setHelpOpen(false);
         if (review.open) return closeReview();
@@ -341,7 +359,14 @@ function PrView({
         <div className="pr-conversation">
           <PrHeader
             pr={pr}
-            actions={<PrActions {...actions} reviewPopover={headerActionsInView ? reviewPopover : null} menuOpen={menuOpen && headerActionsInView} />}
+            actions={
+              <PrActions
+                {...actions}
+                reviewPopover={headerActionsInView ? reviewPopover : null}
+                menuOpen={menuOpen && headerActionsInView}
+                mergeStack={stackMerge && { count: stackMerge.length, onOpen: () => setMergingStack(mergeMethod) }}
+              />
+            }
           />
           {/* No stack card, not even its skeleton, when the page shows no stack. */}
           {(header.stackSource !== 'none' || pr.stack.source !== 'none') && (
@@ -418,13 +443,8 @@ function PrView({
             }
           }}
           onMarkReady={() => setDraft(false)}
-          onMerge={(method) => {
-            // A merge as a stack merges the open PRs below this one with it.
-            const merging = stackToMerge(pr.stack);
-            return mutate(STAGES_A_WRITE_CHANGES['pr.merge'], () => source.merge(pr.id, method, pr.headOid), 'Could not merge', {
-              success: merging ? `Merged ${merging.length} PRs` : `Merged #${pr.number}`,
-            });
-          }}
+          onMerge={merge}
+          onMergeStack={setMergingStack}
           onViewThreads={() => files.stepThread(1)}
           checkReruns={checkReruns}
           reviewersCard={
@@ -475,6 +495,16 @@ function PrView({
         )}
         {legendHidden ? null : <ShortcutLegend onHide={() => setLegendHidden(true)} onShowAll={() => setHelpOpen(true)} />}
         {helpOpen && <ShortcutHelp legendHidden={legendHidden} onShowLegend={() => setLegendHidden(false)} onClose={() => setHelpOpen(false)} />}
+        {mergingStack && stackMerge && (
+          <MergeStackDialog
+            pr={pr}
+            prs={stackMerge}
+            method={mergingStack}
+            proposeCommit={(method) => source.proposedMergeCommit(pr.id, method)}
+            onMerge={merge}
+            onClose={() => setMergingStack(null)}
+          />
+        )}
         {quickApprove && (
           <QuickApproveDialog
             pr={pr}
@@ -603,8 +633,9 @@ function optimisticPr(pr: PrDetail, edits: PendingEdits): PrDetail {
 }
 
 /**
- * The PR's actions: the comments drawer's button, Finish review and More actions. In the header, and again under the
- * reviewers while the header's are scrolled out of sight; the review popover and the menu open beside the ones in view.
+ * The PR's actions: the comments drawer's button, Finish review, the header's "Merge N PRs" while the stack can merge, and
+ * More actions. In the header, and again under the reviewers while the header's are scrolled out of sight, where the
+ * sidebar's own next step offers the merge; the review popover and the menu open beside the ones in view.
  */
 function PrActions({
   pr,
@@ -618,6 +649,7 @@ function PrActions({
   onSetDraft,
   onCopied,
   inSidebar = false,
+  mergeStack = null,
 }: {
   pr: PrDetail;
   batchCount: number;
@@ -631,6 +663,8 @@ function PrActions({
   onSetDraft: (draft: boolean) => Promise<boolean>;
   onCopied: () => void;
   inSidebar?: boolean;
+  /** The header's "Merge N PRs", while the sidebar's next step is to merge the stack and the viewer may; it opens its dialog. */
+  mergeStack?: { count: number; onOpen: () => void } | null;
 }) {
   const menu = useRef<HTMLDivElement | null>(null);
 
@@ -662,6 +696,11 @@ function PrActions({
         {pr.conversations ? pr.unresolvedThreadCount : null}
       </Button>
       <FinishReview batchCount={batchCount} onToggle={onFinishReview} popover={reviewPopover} floating={inSidebar} />
+      {mergeStack && (
+        <Button variant="primary" className="pr-merge-button" title="Merge the stack (m)" onClick={mergeStack.onOpen}>
+          Merge {mergeStack.count} PRs
+        </Button>
+      )}
       <div className="pr-menu" ref={menu}>
         <Button onClick={() => onMenuOpenChange(!menuOpen)} aria-haspopup="menu" aria-expanded={menuOpen} aria-label="More actions">
           <Icon name="kebab-horizontal" size={14} />

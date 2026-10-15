@@ -56,6 +56,8 @@ export const PR_KEYBINDINGS: ReadonlyArray<{ chord: string; action: PrAction; la
   // Graphite's old "e r" would shadow e (expand / collapse file): a single key that starts a chord waits for the next one.
   { chord: 'r e', action: 'edit-reviewers', label: 'Edit reviewers' },
   { chord: 'c r', action: 'rerun-failed-checks', label: 'Re-run failed checks' },
+  // Graphite's m; it opens the merge of a stack GitHub can merge, as the top bar's "Merge N PRs" does.
+  { chord: 'm', action: 'merge', label: 'Merge' },
   { chord: 'g d', action: 'go-description', label: 'Go to description' },
   { chord: 'g f', action: 'go-files', label: 'Go to files' },
   { chord: 'g h', action: 'open-github', label: 'Open on GitHub' },
@@ -140,6 +142,7 @@ type PrAction =
   | 'quick-approve'
   | 'edit-reviewers'
   | 'rerun-failed-checks'
+  | 'merge'
   | 'toggle-viewed'
   | 'toggle-file'
   | 'open-github'

@@ -124,6 +124,18 @@ describe('mutations', () => {
     ]);
   });
 
+  it('merges with the merge commit the viewer wrote, without asking GitHub to propose one', async () => {
+    reads = { '/o/r/pull/2/page_data/header': { pullRequest: { headSha: 'head' } } };
+    await mutations['pr.merge']({ prId: 'PR_2', method: 'MERGE', expectedHeadOid: 'head', commit: { commitTitle: 'Merge the PARCS stack', commitMessage: 'Zones too' } });
+    expect(sent).toEqual([
+      {
+        method: 'POST',
+        path: '/o/r/pull/2/page_data/enqueue_stack',
+        body: { mergeAction: 'DIRECT_MERGE', mergeMethod: 'MERGE', commitTitle: 'Merge the PARCS stack', commitMessage: 'Zones too', bypassRules: 'false' },
+      },
+    ]);
+  });
+
   it('toggles viewed files, draft state and auto-merge', async () => {
     reads = { [`${P}/merge_box`]: { mergeRequirements: { commitMessageHeadline: 'T', commitMessageBody: 'B' } } };
     await mutations['pr.markFileViewed']({ prId: 'PR_1', path: 'a.ts', viewed: true });

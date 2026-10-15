@@ -1,0 +1,135 @@
+/* The stack merge dialog (MergeStackDialog.tsx), as Graphite's: a wider .pr-dialog whose sections are ruled off, a PR to
+   a row, the merge button at its foot. */
+
+.pr-dialog.merge-stack {
+  width: 560px;
+  padding: 0;
+}
+.merge-stack:focus { outline: none; }
+
+.merge-stack-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 10px 8px 16px;
+}
+.merge-stack-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.merge-stack-title .pr-mono { font-size: 13px; }
+.merge-stack .merge-stack-intro {
+  margin: 0;
+  padding: 0 16px 14px;
+  border-bottom: 1px solid var(--gg-border-muted);
+}
+
+.merge-stack-section {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--gg-border-muted);
+}
+.merge-stack-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.merge-stack-label .gg-icon { color: var(--gg-fg-muted); cursor: help; }
+.merge-stack-strategy { position: relative; }
+.merge-stack-strategy > .gg-icon {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  color: var(--gg-fg-muted);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.merge-stack-strategy .pr-select {
+  width: 100%;
+  padding-left: 30px;
+  font-size: 13px;
+}
+
+.merge-stack-prs {
+  margin: 0;
+  padding: 0 16px;
+  list-style: none;
+}
+.merge-stack-pr {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--gg-border-muted);
+}
+.merge-stack-pr-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.merge-stack-pr-title {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.merge-stack-details {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--gg-radius);
+  background: none;
+  color: var(--gg-fg);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.merge-stack-details:hover { background: var(--gg-bg-hover); }
+.merge-stack-details:focus-visible { outline: 2px solid var(--gg-accent); outline-offset: -1px; }
+.merge-stack-details .gg-icon { color: var(--gg-fg-muted); }
+.merge-stack-details[aria-expanded='true'] .gg-icon { transform: rotate(180deg); }
+
+/* This PR's commit message, as GitHub's merge box edits it. */
+.merge-stack-commit {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 10px 0 2px 24px;
+}
+.merge-stack-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.merge-stack-field input,
+.merge-stack-field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--gg-border);
+  border-radius: var(--gg-radius);
+  background: var(--gg-bg);
+  color: var(--gg-fg);
+  font: 13px/1.45 var(--gg-font);
+}
+.merge-stack-field textarea { min-height: 72px; resize: vertical; }
+.merge-stack-field input:focus,
+.merge-stack-field textarea:focus {
+  border-color: var(--gg-accent);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gg-accent) 25%, transparent);
+}
+.merge-stack-field textarea::placeholder { color: var(--gg-fg-subtle); }
+.merge-stack .merge-stack-note { margin: 0; color: var(--gg-danger); font-size: 12px; }
+
+.merge-stack-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 16px;
+}

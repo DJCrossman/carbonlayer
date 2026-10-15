@@ -9,7 +9,7 @@ import type { PrDetail } from '../model';
 import type { RpcMethod, RpcMethods, RpcRequest, RpcResponse } from '../rpc';
 import { getSettings } from '../settings';
 import { branchesHeaderAnswer, branchesIn, enrichPull, fetchInbox, fetchViewPage } from './inbox';
-import { mutations, pullRequestFor, rememberPullRequest } from './mutations';
+import { mutations, proposedMergeCommit, pullRequestFor, rememberPullRequest } from './mutations';
 import { fetchFileDiffs, fetchPrStage, forgetPrAnswers } from './pr-stages';
 import { fetchPullRequestPage } from './pull-request';
 import { listOrganizations } from './organizations';
@@ -88,6 +88,7 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
     ]);
     return reviewerCandidatesFrom(available, suggested, q);
   },
+  'pr.proposedMergeCommit': ({ prId, method }) => proposedMergeCommit(pullRequestFor(prId), method),
   'markdown.preview': async ({ text, prId }) => {
     // The fields GitHub's own comment box sends for a comment on a pull request (docs/research/github-web-mutations.md).
     const pull = pullRequestFor(prId);
