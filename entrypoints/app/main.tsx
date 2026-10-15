@@ -74,8 +74,12 @@ function App({ source }: { source: DataSource }) {
   }, [cacheOwner]);
 
   // Another page, or another PR, opens at its top: a move inside the app (gg:route) keeps this document and its scroll.
+  // A block, not an expression: Chrome 154's scrollTo returns a Promise, which React would call as the effect's cleanup
+  // on the next move, and that throws above the page's error box, leaving the frame blank.
   const shownPage = route.page === 'pr' ? `${route.repo.owner}/${route.repo.name}#${route.number}` : route.page;
-  useLayoutEffect(() => window.scrollTo(0, 0), [shownPage]);
+  useLayoutEffect(() => {
+    window.scrollTo(0, 0);
+  }, [shownPage]);
 
   useEffect(() => {
     void source.getSettings().then((settings) => setThemeSetting(settings.theme), () => {});
