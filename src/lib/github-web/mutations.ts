@@ -64,11 +64,16 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
   },
   'pr.setAutoMerge': async ({ prId, enabled, method }) => {
     const pull = pullRequestFor(prId);
+    // GitHub's merge box turns auto-merge off with the same request in a stack or out of one.
     if (!enabled) {
       await send(`${pull.path}/page_data/disable_auto_merge`, 'POST');
       return;
     }
-    await send(`${pull.path}/page_data/enable_auto_merge`, 'POST', { mergeMethod: method, ...(await proposedMergeCommit(pull, method)) });
+    const commit = await proposedMergeCommit(pull, method);
+    // In a GitHub-native stack it goes through the stack queue, for this PR and the open ones below it. GitHub's merge box
+    // reads nothing of that answer but its error and waits for nothing, as auto-merge is armed once GitHub accepts it.
+    if (pull.isNativeStack) await send(`${pull.path}/page_data/enqueue_stack`, 'POST', { mergeAction: 'AUTO_MERGE', mergeMethod: method, ...commit });
+    else await send(`${pull.path}/page_data/enable_auto_merge`, 'POST', { mergeMethod: method, ...commit });
   },
   'pr.markFileViewed': async ({ prId, path, viewed }) => {
     const pull = pullRequestFor(prId);

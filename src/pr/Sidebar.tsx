@@ -142,6 +142,8 @@ function StatusCard({
   const ending = pr.state === 'OPEN' ? undefined : pr.timeline.findLast((item) => item.kind === (pr.state === 'MERGED' ? 'merged' : 'closed'));
   const endedBy = ending && 'actor' in ending ? ending.actor : null;
   const endedAt = pr.mergedAt ?? (ending && 'createdAt' in ending ? ending.createdAt : null);
+  // In a GitHub-native stack, auto-merge also merges the open PRs below this one that are not queued already.
+  const mergingWithIt = pr.stack.source === 'native' ? pr.stack.entries.slice(0, pr.stack.currentIndex).filter((entry) => entry.state === 'OPEN' && !entry.isInMergeQueue).length : 0;
   return (
     <Card className="side-card side-status">
       <div className="side-status-line">
@@ -225,6 +227,11 @@ function StatusCard({
             ))}
           </select>
         </div>
+      )}
+      {pr.state === 'OPEN' && pr.autoMerge !== null && mergingWithIt > 0 && (
+        <p className="pr-muted side-checks-empty">
+          This pull request and {mergingWithIt} {mergingWithIt === 1 ? 'other' : 'others'} in the stack will automatically merge when they all meet the merge requirements.
+        </p>
       )}
     </Card>
   );

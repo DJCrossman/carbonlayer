@@ -265,7 +265,10 @@ own stack merge edits a commit only for a merge commit, this PR's, so only then 
 details": GitHub's proposal (`pr.proposedMergeCommit`, its merge box for that method), which `pr.merge` sends as written.
 Graphite's "Ignore optional CI status checks" and "Always rebase branches" are its own engine's; GitHub's stack merge has
 neither, so the dialog leaves them out. A stack only Graphite's comment lists still merges a PR at a time, with the
-sidebar's inline confirm. The merge reloads the stack too.
+sidebar's inline confirm. The merge reloads the stack too. "Merge when ready" on a PR of a native stack turns auto-merge
+on the way GitHub's stack does, `enqueue_stack` with `AUTO_MERGE` (`pr.setAutoMerge`), for it and the open PRs below it
+that are not queued, and while it is on the status card says so in GitHub's words; it goes off with `disable_auto_merge`,
+as for a PR alone.
 
 ## Keyboard
 

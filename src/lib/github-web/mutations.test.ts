@@ -154,6 +154,16 @@ describe('mutations', () => {
     ]);
   });
 
+  it('turns auto-merge on for a GitHub-native stack through the stack queue, and off as for a PR alone', async () => {
+    reads = { '/o/r/pull/2/page_data/merge_box': { mergeRequirements: { commitMessageHeadline: 'Add zones (#2)', commitMessageBody: '* zones' } } };
+    await mutations['pr.setAutoMerge']({ prId: 'PR_2', enabled: true, method: 'SQUASH' });
+    await mutations['pr.setAutoMerge']({ prId: 'PR_2', enabled: false, method: 'SQUASH' });
+    expect(sent).toEqual([
+      { method: 'POST', path: '/o/r/pull/2/page_data/enqueue_stack', body: { mergeAction: 'AUTO_MERGE', mergeMethod: 'SQUASH', commitTitle: 'Add zones (#2)', commitMessage: '* zones' } },
+      { method: 'POST', path: '/o/r/pull/2/page_data/disable_auto_merge', body: undefined },
+    ]);
+  });
+
   it("reverts the way GitHub's Revert button does, and says where GitHub went next", async () => {
     const landed = 'https://github.com/o/r/compare/main...revert-1-feature?expand=1';
     const fetch = vi.fn(async () => Object.defineProperty(new Response('<html></html>'), 'url', { value: landed }));

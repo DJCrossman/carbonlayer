@@ -37,7 +37,20 @@ No Relay / persisted-query ids and, reactions aside, no `authenticity_token` are
    P/update_pull_request_branch` `{ updateMethod, expectedHeadOid }`. Stack rebase: `POST P/stack_rebase`
    `{ expectedHeadOids: { "<number>": "<headOid>" } }`. Auto-merge on: `POST P/enable_auto_merge`
    `{ mergeMethod, commitTitle, commitMessage, authorEmail? }` (merge-queue repos: `{ mergeMethod: "SOLO"|"GROUP" }`);
-   off: `POST P/disable_auto_merge`. Leave queue: `POST P/dequeue_pull_request`. Native stacks: `POST
+   off: `POST P/disable_auto_merge`. In a native stack (read from the bundle, chunk `cqs-5eeaa26044996c16.js`,
+   2026-10-15) GitHub's confirm (`ConfirmMerge`) turns it on with `POST P/enqueue_stack` instead, body exactly
+   `{ authorEmail, commitMessage, commitTitle, mergeAction: "AUTO_MERGE", mergeMethod }` (no `bypassRules`; `authorEmail`
+   only beside the commit editor, as for a direct merge; title and message the merge box's proposal unless edited). Its
+   handler reads nothing of the answer but `{ error }` on a non-2xx, polls nothing (`merge_request_status` is only for
+   `DIRECT_MERGE`) and then reloads the merge box. Only `enable_auto_merge` remains for a PR alone. Off is
+   `disable_auto_merge`, no body, in a stack too (the stack's section sends it, analytics
+   `stacks_direct_merge_section.disable_auto_merge`). Before confirming, a stack's confirm says "Auto-merge will be
+   enabled for the following pull requests. This will replace any existing auto-merge selections in the stack." over the
+   stack's entries up to this one that are neither merged nor queued; once on, the merge box says "This pull request and N
+   other(s) in the stack will automatically merge when they all meet the merge requirements." (N: the other entries
+   `isInAutoMergeRange`), as each such entry's "Auto-merge enabled" popover in the stack list does. Routes (module `UTz`):
+   `enqueueStack: "enqueue_stack"`, `enableAutoMerge: "enable_auto_merge"`, `disableAutoMerge: "disable_auto_merge"`.
+   Leave queue: `POST P/dequeue_pull_request`. Native stacks: `POST
    P/enqueue_stack` with `{ mergeAction: "DIRECT_MERGE", mergeMethod, commitTitle, commitMessage, authorEmail?,
    bypassRules: "true"|"false" }` | `{ mergeAction: "MERGE_QUEUE" }` | `{ mergeAction: "AUTO_MERGE", … }` →
    `{ status, uuid }`; poll `GET P/merge_request_status/{uuid}` (1 s backoff ×1.5, 10 min cap) until
@@ -100,7 +113,8 @@ Need a session (404 signed out): `status_checks`, `merge_box`, `stack_mergeabili
   `viewerMergeActions` now lists only `DIRECT_MERGE` and `MERGE_QUEUE`, each with `allowableStatus` `ALLOWED` or
   `BLOCKED` (verified on a BLOCKED pull request whose merge box offered "Enable auto-merge (squash)", 2026-10-13).
   GitHub's merge box enables it with `POST page_data/enable_auto_merge` and body `{ mergeMethod, commitTitle,
-  commitMessage, authorEmail? }`, the same fields as a direct merge without `bypassBranchProtections`.
+  commitMessage, authorEmail? }`, the same fields as a direct merge without `bypassBranchProtections`; for a PR in a
+  native stack, with `enqueue_stack` `AUTO_MERGE` (Mutations, 4).
 - `diff_entries`: `paths` = each path `encodeURIComponent`-ed, joined with commas (single-encoded also works);
   `ctx` = context-line ranges per path `start-end,…` joined with `:`; `w` = 0|1; `range` = head OID when the
   range starts at the PR base, else `startOid..endOid` within the PR's commits; **without `range` you get the
