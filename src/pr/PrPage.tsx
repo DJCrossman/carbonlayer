@@ -25,6 +25,7 @@ import { CopyLink, Markdown } from './Comment';
 import { CommentsDrawer } from './CommentsDrawer';
 import { FilesSection, useFileReview } from './Files';
 import { usePrKeybindings } from './keybindings';
+import { stackToMerge } from './next-action';
 import { followLink, goToPr, openOnGitHub } from './navigation';
 import { prDetailFrom, usePrPageData, type PrPageData } from './page-data';
 import { MarkdownPreview, StageError, Staged, StatePill } from './primitives';
@@ -417,7 +418,13 @@ function PrView({
             }
           }}
           onMarkReady={() => setDraft(false)}
-          onMerge={(method) => mutate(STAGES_A_WRITE_CHANGES['pr.merge'], () => source.merge(pr.id, method, pr.headOid), 'Could not merge', { success: `Merged #${pr.number}` })}
+          onMerge={(method) => {
+            // A merge as a stack merges the open PRs below this one with it.
+            const merging = stackToMerge(pr.stack);
+            return mutate(STAGES_A_WRITE_CHANGES['pr.merge'], () => source.merge(pr.id, method, pr.headOid), 'Could not merge', {
+              success: merging ? `Merged ${merging.length} PRs` : `Merged #${pr.number}`,
+            });
+          }}
           onViewThreads={() => files.stepThread(1)}
           checkReruns={checkReruns}
           reviewersCard={
