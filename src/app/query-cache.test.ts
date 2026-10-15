@@ -3,7 +3,10 @@ import { persistQueryClientRestore, persistQueryClientSave, type AsyncStorage } 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { keptOnDevice } from './query-cache';
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
 
 describe('keptOnDevice', () => {
   it("keeps what a PR page loaded, except its diffs, file list, threads and timeline, anything that failed, and the settings", async () => {
@@ -24,7 +27,7 @@ describe('keptOnDevice', () => {
     ]);
   });
 
-  it('restores nothing for another viewer or another version of the extension, and nothing older than 24 hours', async () => {
+  it('restores nothing for another viewer, another version or another build of the extension, and nothing older than 24 hours', async () => {
     const save = async (storage: AsyncStorage<string>) => {
       const page = new QueryClient();
       page.setQueryData(['pr', 'o', 'r', 1, 'header'], { title: 'Fix the widget' });
@@ -33,6 +36,10 @@ describe('keptOnDevice', () => {
     };
     expect(await restored({ version: '1.0.0', login: 'bo' }, await save(memoryStorage()))).toEqual([]);
     expect(await restored({ version: '1.0.1', login: 'ana' }, await save(memoryStorage()))).toEqual([]);
+    vi.stubEnv('BUILD_ID', '2026-10-15T09:00:00.000Z');
+    const keptByTheLastBuild = await save(memoryStorage());
+    vi.stubEnv('BUILD_ID', '2026-10-15T10:00:00.000Z');
+    expect(await restored(ana, keptByTheLastBuild)).toEqual([]);
 
     const storage = await save(memoryStorage());
     vi.useFakeTimers({ now: Date.now() + 24 * 60 * 60_000 + 1 });

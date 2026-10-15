@@ -72,14 +72,24 @@ files, threads and diffs for 30 minutes once no page shows them, `IN_MEMORY_FOR_
 last at once, then asks GitHub and updates in place. It lives in the extension's own IndexedDB (database `carbonlayer`,
 one entry for the whole cache, shared by every tab, written at most once a second), restored before the page's queries
 run. It is kept for whoever is signed in: the content script answers the app's `gg:ready` with the login (`gg:viewer`), and
-the cache is kept under `<extension version>:<login>`, so another account or version finds nothing (and the old entry
-goes); signed out, the page has an in-memory cache only. Only what loaded is kept, for 24 hours, and never a diff or a
+the cache is kept under `<extension version>:<login>:<build>`, so another account, version or build finds nothing (and
+the old entry goes): every build has an id of its own, the time it was made (`import.meta.env.BUILD_ID`, defined in
+`wxt.config.ts`), since one build's cache may not be what the next one reads, and the manifest's version stays the same
+from build to build. Signed out, the page has an in-memory cache only. The page never waits on either for long: a frame
+`gg:viewer` has not reached within two seconds renders with an in-memory cache, and IndexedDB is given a second for each
+read or write (an open can wait for good behind another tab's upgrade), after which the page restores nothing and asks
+GitHub, or stops waiting for the save. What it reads there must be the string a save wrote (zod), else the entry is
+discarded. Only what loaded is kept, for 24 hours, and never a diff or a
 comment: the PR page's file list (GitHub sends some diffs with it), diffs, review threads and timeline stay in memory and
 are asked of GitHub on every page load (`keptOnDevice`). The settings are a query of the cache too (`useSettings` in
 `src/app/use-settings.ts`, kept current by `watchSettings`), in memory only, since chrome.storage keeps them: the inbox and
 the PR page read them from it, so a move between them waits for nothing. The page renders once the cache is back, so its
-first frame shows what it holds rather than skeletons. Failures are not retried; each shows where it happened. The
-options page has a cache of its own, in memory only.
+first frame shows what it holds rather than skeletons. Failures are not retried; each shows where it happened. A page
+that throws while rendering never leaves the frame blank: `PageErrorBoundary` (`entrypoints/app/main.tsx`, one around the
+page shown, so another page starts without its error) logs the error with `console.error`, shows "This page could not be
+shown" with the error's message and a Reload (the frame's own `location.reload()`), and, since what the device kept is the
+likeliest cause, forgets it (`forgetKeptCache`: the IndexedDB entry cleared, and nothing more saved from that page), so
+the reload asks GitHub for everything. The options page has a cache of its own, in memory only.
 
 Coming back to the page (the tab shown, the window focused, this frame's own or github.com's forwarded as `gg:focus`)
 asks GitHub again for every query on the page older than its `staleTime` (TanStack's `focusManager`, given those three
@@ -392,7 +402,7 @@ them carrying them as its own `repos`. Relative times
   view link encode/decode, Graphite section import, routes, keyboard chords, next-step derivation.
 - Harness: `pnpm build`, then serve `.output/chrome-mv3` statically and open `app.html?fixtures=1#/inbox` or
   `app.html?fixtures=1#/pr/acme/widgets/42` for visual checks (no session, no `chrome.*`). Its cache stays in memory, so
-  every run starts clean; `&keep=<label>` keeps it on the device as the fixtures' viewer under that label instead, for
-  checking what a second load restores (another label restores nothing). Moves between pages are checked with the real
-  content script on stand-in github.com pages whose frame is pointed at `app.html?fixtures=1`.
+  every run starts clean; `&keep=<label>` keeps it on the device as the fixtures' viewer under that label (and this
+  build) instead, for checking what a second load restores (another label or build restores nothing). Moves between pages
+  are checked with the real content script on stand-in github.com pages whose frame is pointed at `app.html?fixtures=1`.
 - Real-site check: load `.output/chrome-mv3` unpacked while signed in to github.com, open github.com.

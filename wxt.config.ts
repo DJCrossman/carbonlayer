@@ -14,6 +14,10 @@ export default defineConfig({
     // The content script embeds app.html in an iframe on github.com.
     web_accessible_resources: [{ resources: ['app.html'], matches: ['https://github.com/*'] }],
   },
-  // ES-module workers, in case the diff library's worker pool is used.
-  vite: () => ({ worker: { format: 'es' } }),
+  // ES-module workers, in case the diff library's worker pool is used. Every build has an id of its own, under which the
+  // app keeps its cache on the device (src/app/query-cache.tsx): no build restores what another one kept.
+  vite: () => ({ worker: { format: 'es' }, define: { 'import.meta.env.BUILD_ID': JSON.stringify(BUILD_ID) } }),
 });
+
+/** This build: the time it was made. */
+const BUILD_ID = new Date().toISOString();

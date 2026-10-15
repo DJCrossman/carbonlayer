@@ -23,7 +23,8 @@
     "@tanstack/react-query-persist-client": "5.104.2",
     "github-markdown-css": "^5.9.0",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@types/react": "^19.2.14",

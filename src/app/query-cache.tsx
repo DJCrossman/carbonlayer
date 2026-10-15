@@ -1,20 +1,21 @@
 // The app page's TanStack Query cache. A tab's moves between the inbox and PR pages keep the app, and the cache with it;
 // every page load (a new tab, a reload) starts the app afresh, so the cache is also kept on the device, in the extension's
 // own IndexedDB, shared by every tab: a page shows what the viewer saw last at once, then asks GitHub and updates in place.
-// It is kept per viewer and extension version, and for 24 hours; diffs and comments are never kept, and signed out nothing
-// is.
+// It is kept per viewer, extension version and build, and for 24 hours; diffs and comments are never kept, and signed out
+// nothing is. A page never waits more than a second for the device.
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
 import { focusManager, QueryClient, QueryClientProvider, useIsRestoring } from '@tanstack/react-query';
 import { PersistQueryClientProvider, persistQueryClientSave, type AsyncStorage, type PersistQueryClientProviderProps } from '@tanstack/react-query-persist-client';
 import { createContext, useEffect, useState, type ReactNode } from 'react';
+import { z } from 'zod';
 import type { PrStage } from '../lib/model';
 import { GITHUB_ORIGIN, isBridgeMessage, type ParentToAppMessage } from './bridge';
 
 /**
  * The page's queries, kept on the device for `owner` (who is signed in, with which version of the extension), or only in
- * memory when nobody is (signed out, the harness, the options page). The page renders once what was kept is back, so its
- * first frame shows it, and saves what it has as it goes (SaveCacheNow). Coming back to the page asks GitHub again for
- * what has gone stale.
+ * memory when nobody is (signed out, the harness, the options page). The page renders once what was kept is back (or a
+ * second has gone by without IndexedDB answering), so its first frame shows it, and saves what it has as it goes
+ * (SaveCacheNow). Coming back to the page asks GitHub again for what has gone stale.
  */
 export function PageQueries({ owner, children }: { owner: CacheOwner | null; children: ReactNode }) {
   const [client] = useState(
@@ -67,14 +68,14 @@ export interface CacheOwner {
 
 /**
  * How `owner`'s cache is kept in `storage`, saved at most once every `throttleTime` ms: only what loaded, never a diff or a
- * comment, and nothing older than 24 hours. Another viewer or version finds nothing: restoring a cache kept for someone
- * else discards it.
+ * comment, and nothing older than 24 hours. Another viewer, version or build finds nothing (restoring a cache kept for
+ * someone else discards it): what one build kept may not be what the next one reads.
  */
 export function keptOnDevice(owner: CacheOwner, storage: AsyncStorage<string> = indexedDbStorage, throttleTime = 1000): PersistQueryClientProviderProps['persistOptions'] {
   return {
     persister: createAsyncStoragePersister({ storage, key: 'queries', throttleTime }),
     maxAge: KEPT_FOR_MS,
-    buster: `${owner.version}:${owner.login}`,
+    buster: `${owner.version}:${owner.login}:${import.meta.env.BUILD_ID}`,
     dehydrateOptions: {
       shouldDehydrateQuery: ({ queryKey, state }) =>
         state.status === 'success' &&
@@ -83,9 +84,18 @@ export function keptOnDevice(owner: CacheOwner, storage: AsyncStorage<string> = 
         // asked of GitHub on every page load. chrome.storage keeps the settings.
         queryKey[0] !== 'pr-diff' &&
         queryKey[0] !== 'settings' &&
-        (queryKey[0] !== 'pr' || KEPT_STAGES.includes(queryKey[4] as PrStage)),
+        (queryKey[0] !== 'pr' || KEPT_STAGES.some((stage) => stage === queryKey[4])),
     },
   };
+}
+
+/**
+ * Forgets what the device keeps and saves nothing more from this page, which could not show what it restored: the next
+ * page load asks GitHub for everything.
+ */
+export function forgetKeptCache(): Promise<void> {
+  forgotten = true;
+  return inQueryStore('readwrite', (store) => store.clear()).then(() => {});
 }
 
 /** How long the device keeps what a page showed. */
@@ -117,21 +127,29 @@ function listenForReturns(onReturn: () => void): () => void {
   };
 }
 
-/** One object store in the extension's IndexedDB, opened when first used. */
+/**
+ * One object store in the extension's IndexedDB, opened when first used. What it holds is read as the string a save put
+ * there, else the read fails and the cache is discarded. Once the page has forgotten what it kept (forgetKeptCache), it
+ * saves nothing more.
+ */
 const indexedDbStorage: AsyncStorage<string> = {
-  getItem: (key) => inQueryStore('readonly', (store) => store.get(key) as IDBRequest<string | undefined>),
-  setItem: (key, value) => inQueryStore('readwrite', (store) => store.put(value, key)).then(() => {}),
+  getItem: (key) => inQueryStore('readonly', (store) => store.get(key)).then((kept: unknown) => z.string().optional().parse(kept)),
+  setItem: (key, value) => (forgotten ? undefined : inQueryStore('readwrite', (store) => store.put(value, key)).then(() => {})),
   removeItem: (key) => inQueryStore('readwrite', (store) => store.delete(key)),
 };
 
-function inQueryStore<T>(mode: IDBTransactionMode, request: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+/**
+ * Asks the cache's object store, for a second at most: IndexedDB may never answer (an open waiting behind another tab's
+ * upgrade), and the page goes on without it, restoring nothing (undefined) and no longer waiting for a save.
+ */
+function inQueryStore<T>(mode: IDBTransactionMode, request: (store: IDBObjectStore) => IDBRequest<T>): Promise<T | undefined> {
   database ??= new Promise((resolve, reject) => {
     const opening = indexedDB.open('carbonlayer', 1);
     opening.onupgradeneeded = () => opening.result.createObjectStore('cache');
     opening.onsuccess = () => resolve(opening.result);
     opening.onerror = () => reject(opening.error);
   });
-  return database.then(
+  const answered = database.then(
     (db) =>
       new Promise<T>((resolve, reject) => {
         const asked = request(db.transaction('cache', mode).objectStore('cache'));
@@ -139,6 +157,22 @@ function inQueryStore<T>(mode: IDBTransactionMode, request: (store: IDBObjectSto
         asked.onerror = () => reject(asked.error);
       }),
   );
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const unanswered = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => {
+      console.warn('[gg]', `IndexedDB did not answer within a second (${mode}); the page goes on without it`);
+      resolve(undefined);
+    }, 1000);
+  });
+  return Promise.race([answered, unanswered]).finally(() => clearTimeout(timer));
 }
 
 let database: Promise<IDBDatabase> | undefined;
+let forgotten = false;
+
+declare global {
+  interface ImportMetaEnv {
+    /** This build of the extension, the time it was made (wxt.config.ts). */
+    readonly BUILD_ID: string;
+  }
+}
