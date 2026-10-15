@@ -5,6 +5,7 @@
 import { z } from 'zod/mini';
 import type { PrDetail } from '../model';
 import type { MergeCommit, MergeMethod, RpcMethods } from '../rpc';
+import { getSettings } from '../settings';
 import { rerunWorkflowJobs } from './actions';
 import { SIGNED_OUT, getJson, readAnswer, send, submitForm } from './session';
 
@@ -74,6 +75,31 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
     // reads nothing of that answer but its error and waits for nothing, as auto-merge is armed once GitHub accepts it.
     if (pull.isNativeStack) await send(`${pull.path}/page_data/enqueue_stack`, 'POST', { mergeAction: 'AUTO_MERGE', mergeMethod: method, ...commit });
     else await send(`${pull.path}/page_data/enable_auto_merge`, 'POST', { mergeMethod: method, ...commit });
+  },
+  'pr.rebaseStack': async ({ prId }) => {
+    // The app gives up on an answer after 60 s; stop following the rebase well before that.
+    const giveUpAt = Date.now() + 45_000;
+    const pull = pullRequestFor(prId);
+    // GitHub's "Rebase stack" names the head it expects of each branch of the stack not merged yet, by PR number, as its
+    // merge box lists them (the STACK condition's entries).
+    const { mergeMethod } = await getSettings();
+    const box = await getJson(
+      `${pull.path}/page_data/merge_box?merge_method=${mergeMethod}&bypass_requirements=false`,
+      z.object({
+        mergeRequirements: z.nullish(
+          z.object({
+            conditions: z.nullish(
+              z.array(z.object({ type: z.string(), entries: z.nullish(z.array(z.object({ pull: z.object({ number: z.number(), headOid: z.string(), state: z.string() }) }))) })),
+            ),
+          }),
+        ),
+      }),
+    );
+    const entries = box.mergeRequirements?.conditions?.find((condition) => condition.type === 'STACK')?.entries ?? [];
+    if (entries.length === 0) throw new Error('GitHub no longer lists a stack for this pull request');
+    const expectedHeadOids = Object.fromEntries(entries.filter((entry) => entry.pull.state !== 'MERGED').map((entry) => [String(entry.pull.number), entry.pull.headOid]));
+    await send(`${pull.path}/page_data/stack_rebase`, 'POST', { expectedHeadOids });
+    return stackRebaseSettled(pull, giveUpAt);
   },
   'pr.markFileViewed': async ({ prId, path, viewed }) => {
     const pull = pullRequestFor(prId);
@@ -254,6 +280,34 @@ async function stackMergeSettled(pull: KnownPullRequest, uuid: string, initialSt
     );
     status = progress.status?.toLowerCase();
     if (status === 'failed') throw new Error(progress.error || progress.message || 'GitHub could not merge the stack');
+  }
+}
+
+/**
+ * Follows a stack rebase as GitHub's page does: `stack_rebase_status` at once, then after 1 s, backing off ×1.5, until
+ * its job is DONE, or until `giveUpAt` (GitHub carries on, and the reload that follows shows where it got to). A branch
+ * whose rebase stopped on conflicts or failed throws in GitHub's words.
+ */
+async function stackRebaseSettled(pull: KnownPullRequest, giveUpAt: number): Promise<{ complete: boolean }> {
+  let delay = 1000;
+  for (;;) {
+    const progress = await getJson(
+      `${pull.path}/page_data/stack_rebase_status`,
+      z.object({ jobState: z.nullish(z.string()), pullRequestStates: z.nullish(z.array(z.object({ number: z.number(), state: z.string() }))) }),
+    );
+    if (progress.jobState === 'DONE') {
+      const states = progress.pullRequestStates ?? [];
+      const conflicted = states.find(({ state }) => state === 'CONFLICTED');
+      if (conflicted) {
+        throw new Error(`Rebasing was stopped due to merge conflicts. Resolve the merge conflicts in pull request #${conflicted.number}, then try to rebase this stack again.`);
+      }
+      const failed = states.find(({ state }) => state === 'FAILED');
+      if (failed) throw new Error(`Rebasing was stopped due to an error. Check pull request #${failed.number} for any issues, then try to rebase this stack again.`);
+      return { complete: true };
+    }
+    if (Date.now() + delay > giveUpAt) return { complete: false };
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    delay *= 1.5;
   }
 }
 

@@ -68,6 +68,25 @@ No Relay / persisted-query ids and, reactions aside, no `authenticity_token` are
    rebased and added to the base branch." `bypassRules: "true"` is sent only with the admin's "Merge without waiting for
    requirements to be met (bypass rules)" box; there is no field for optional checks or for rebasing first (rebasing a
    stack is its own `stack_rebase`).
+   **Rebase stack** (read from the bundle, chunk `cqs-5eeaa26044996c16.js`, module `p0l`, 2026-10-15; not yet sent):
+   `POST P/stack_rebase` `{ expectedHeadOids }`, built from the merge box's STACK condition entries (below) as
+   `{ [String(entry.pull.number)]: entry.pull.headOid }` for every entry whose `pull.state` is not `MERGED` (drafts and
+   the PRs above included). Its answer is read only for `{ error }` on a non-2xx. GitHub then asks `GET
+   P/stack_rebase_status` at once and again after 1 s, ×1.5 each time (10 min cap, "Stack rebase polling timed out")
+   until `jobState === "DONE"`; the answer is `{ jobState, pullRequestStates: [{ number, state, message }] }`, `state`
+   `PENDING` (Rebasing), `SUCCEEDED` (Rebased), `CONFLICTED` (Merge conflicts) or `FAILED` (Rebase failed), and it
+   reloads the merge box a second later. What it says once done: the first CONFLICTED PR, "Rebasing was stopped due to
+   merge conflicts" / "Resolve the merge conflicts in pull request #N, then try to rebase this stack again."; else the
+   first FAILED, "Rebasing was stopped due to an error" / "Check pull request #N for any issues, then try to rebase this
+   stack again."; else "Rebasing complete" / "This stack is up to date and has a linear commit history." While going,
+   "Rebasing stack…" / "N of M branches rebased"; a request that failed, "Rebasing was stopped due to a network error" /
+   "Try to rebase this stack again. If the problem persists, refresh the page." The button, "Rebase stack", opens a
+   confirm of the same name: "Each branch is rebased onto the tip of the one below it, starting from the first unmerged
+   branch.", "Once a branch is rebased, it is force-pushed.", "The process stops at the first merge conflict or failed
+   rebase." It shows only when `canRebase`: the PULL_REQUEST_USER_STATE condition PASSED (`canUserPushToBase`), the
+   first FAILED PULL_REQUEST_RULES condition without a FAILED `ruleRollups` entry of `ruleType` AUTHORIZATION
+   (`isUserBlockedFromPushing`), and the PR open and not in the merge queue. Routes (module `UTz`): `stackRebase:
+   "stack_rebase"`, `stackRebaseStatus: "stack_rebase_status"`.
 5. **Viewed**: `POST /{owner}/{repo}/pull/{n}/file_review` `{ path, viewed: "viewed" }`; unviewed: `DELETE`
    same URL `{ path, _method: "delete" }`. Current state: `base_comparison_info` → `diffSummaries[].markedAsViewed`.
 6. **Draft**: `POST P/convert_to_draft` (no body); ready: `POST P/mark_ready_for_review` (optional body).
@@ -115,6 +134,21 @@ Need a session (404 signed out): `status_checks`, `merge_box`, `stack_mergeabili
   GitHub's merge box enables it with `POST page_data/enable_auto_merge` and body `{ mergeMethod, commitTitle,
   commitMessage, authorEmail? }`, the same fields as a direct merge without `bypassBranchProtections`; for a PR in a
   native stack, with `enqueue_stack` `AUTO_MERGE` (Mutations, 4).
+  In a native stack (seen on offstreetparking/core#8986 and #8985 signed in, 2026-10-15): `pullRequest.anyStackBranchOutdated`
+  and `pullRequest.stackedBaseRefName` (the stack's base), and a STACK condition `{ type: "STACK", displayName,
+  description, message, result, stack, isStacked, entries }`, each entry `{ position: "BEFORE"|"CURRENT"|"AFTER",
+  status, … }` (`NEEDS_MERGE_STATE`, `IRRELEVANT_DRAFT`, `IRRELEVANT_MERGED`, `IRRELEVANT_AFTER`, `IRRELEVANT_QUEUED`,
+  `MERGE_CONFLICTS`, `NEEDS_REBASE`, `BLOCKED_STACK`). GitHub's bundle reads each entry's PR as `entry.pull` (`number`,
+  `headOid`, `state`, `url`, `isInAutoMergeRange`); that key is not yet confirmed on a live answer. GitHub's merge box
+  (module `MDN`) shows one section about the stack's branches, the first that applies: the CURRENT entry
+  `MERGE_CONFLICTS`, "This branch has conflicts that must be resolved"; any entry but AFTER ones `MERGE_CONFLICTS`, "This
+  stack has conflicts that must be resolved" (both "Use the command line to resolve conflicts within the stack before
+  continuing.", with "Resolve conflicts"); any entry but AFTER ones `NEEDS_REBASE`, "Some branches in this stack have
+  diverged and must be rebased" / "Rebase this stack to restore a linear commit history across its branches.";
+  `anyStackBranchOutdated`, "This stack is out-of-date with its base branch" / "Rebase this stack onto the latest
+  version of <stackedBaseRefName>." The last two carry "Rebase stack". An entry up to this PR in conflicts or needing a
+  rebase also makes the merge and auto-merge buttons inactive, "Merging is blocked due to failing stack merge
+  requirements" (`isMergeCurrentlyBlocked`, which other not-ready entries set too); an out-of-date stack does not.
 - `diff_entries`: `paths` = each path `encodeURIComponent`-ed, joined with commas (single-encoded also works);
   `ctx` = context-line ranges per path `start-end,…` joined with `:`; `w` = 0|1; `range` = head OID when the
   range starts at the PR base, else `startOid..endOid` within the PR's commits; **without `range` you get the
@@ -193,6 +227,7 @@ Where the current reactions are:
 | `0m-0ae59ad9dc9eab60.js` | `case"issue_comment":return"pull_request_comment"` (the PR comment box's subject) |
 | `app-runtime-e674540d54849b57.js` | `"Can not make cross-origin requests from verifiedFetch"` (`DI`, module `Qh`) |
 | `hj-ece3bec966e8a2b6.js` | `"header-3":{prefix:"### "}` (markdown-toolbar-element's styles) |
+| `cqs-5eeaa26044996c16.js` | `mergeAction:"AUTO_MERGE"` (a stack's auto-merge); `StackRebaseOptional` (the stack's sections, module `MDN`); `expectedHeadOids:n` and `"DONE"===t.jobState` (Rebase stack, module `p0l`) |
 
 Limits: no POST/PUT/DELETE was sent; bodies come from the code; the signed-out page loads 248 of 1,537
 chunks, but every action above is in those.

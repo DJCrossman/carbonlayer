@@ -445,6 +445,19 @@ function PrView({
           onMarkReady={() => setDraft(false)}
           onMerge={merge}
           onMergeStack={setMergingStack}
+          onRebaseStack={async () => {
+            let complete = false;
+            const rebased = await mutate(
+              STAGES_A_WRITE_CHANGES['pr.rebaseStack'],
+              async () => {
+                ({ complete } = await source.rebaseStack(pr.id));
+              },
+              'Could not rebase the stack',
+            );
+            // GitHub's own words for the rebase, done or still going (it carries on after the answer is due).
+            if (rebased) showToast(complete ? 'Rebasing complete' : 'Rebasing stack…');
+            return rebased;
+          }}
           onViewThreads={() => files.stepThread(1)}
           checkReruns={checkReruns}
           reviewersCard={

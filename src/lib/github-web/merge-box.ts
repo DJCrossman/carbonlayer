@@ -4,12 +4,12 @@
 // 2026-10-12, docs/research/github-web-mutations.md; not every field in them has been seen, so each is optional).
 
 import { z } from 'zod/mini';
-import type { MergeStatus } from '../model';
+import type { MergeStatus, PrDetail } from '../model';
 import type { MergeMethod } from '../rpc';
 import { opinionatedReviewSchema, pendingReviewRequestSchema } from './reviews';
 import { findInPayload } from './session';
 
-/** Mergeability, the viewer's merge options and auto-merge / merge-queue state. */
+/** Mergeability, the viewer's merge options, auto-merge / merge-queue state and what it says about the PR's native stack. */
 export function mergeState(box: MergeBoxAnswer | null, pr: { isDraft: boolean; isOpen: boolean }): MergeState {
   const pullRequest: NonNullable<MergeBoxAnswer['pullRequest']> = box?.pullRequest ?? {};
   const conditions = box?.mergeRequirements?.conditions ?? [];
@@ -40,6 +40,27 @@ export function mergeState(box: MergeBoxAnswer | null, pr: { isDraft: boolean; i
   const autoMergeMethod = pullRequest.autoMergeRequest?.mergeMethod?.toUpperCase();
   const defaultMethod = directMerge?.mergeMethods?.find((method) => method.isDefault)?.name;
 
+  // GitHub's merge box shows one section about a native stack's branches, the first that applies (module MDN in its
+  // bundle): this PR's conflicts, conflicts in the stack up to it, a branch up to it that needs rebasing, then a stack
+  // behind its base. "Up to it" is every entry but those above it (AFTER).
+  const stack = conditions.find((condition) => condition.type === 'STACK' && condition.entries);
+  const upToIt = (stack?.entries ?? []).filter((entry) => entry.position !== 'AFTER');
+  const stackSectionKind = !pr.isOpen || !stack?.isStacked
+    ? null
+    : stack.entries?.find((entry) => entry.position === 'CURRENT')?.status === 'MERGE_CONFLICTS'
+      ? 'current-conflicts'
+      : upToIt.some((entry) => entry.status === 'MERGE_CONFLICTS')
+        ? 'conflicts'
+        : upToIt.some((entry) => entry.status === 'NEEDS_REBASE')
+          ? 'rebase-required'
+          : pullRequest.anyStackBranchOutdated
+            ? 'rebase-optional'
+            : null;
+  // GitHub offers "Rebase stack" to a viewer who may push to the base branch, unless the first rule that fails is one
+  // of authorization, on an open PR outside the merge queue.
+  const failedRules = conditions.find((condition) => condition.type === 'PULL_REQUEST_RULES' && condition.result === 'FAILED');
+  const blockedFromPushing = failedRules?.ruleRollups?.find((rollup) => rollup.ruleType === 'AUTHORIZATION')?.result === 'FAILED';
+
   return {
     mergeStatus,
     // Without the actions list, assume every method; the merge box would say otherwise.
@@ -53,6 +74,11 @@ export function mergeState(box: MergeBoxAnswer | null, pr: { isDraft: boolean; i
       ? { method: autoMergeMethod === 'SQUASH' || autoMergeMethod === 'REBASE' ? autoMergeMethod : 'MERGE' }
       : null,
     isInMergeQueue: pullRequest.isInMergeQueue === true,
+    stackSection: stackSectionKind && {
+      kind: stackSectionKind,
+      baseRefName: pullRequest.stackedBaseRefName ?? '',
+      viewerCanRebase: userCanMerge && !blockedFromPushing && pullRequest.isInMergeQueue !== true,
+    },
     latestOpinionatedReviews: pullRequest.latestOpinionatedReviews ?? null,
     numReviewsRequired: box?.numReviewsRequired ?? 0,
   };
@@ -66,6 +92,7 @@ interface MergeState {
   viewerCanEnableAutoMerge: boolean;
   autoMerge: { method: MergeMethod } | null;
   isInMergeQueue: boolean;
+  stackSection: PrDetail['stackSection'];
   /** The merge box's `latestOpinionatedReviews`, when it carries them (see reviews.ts). */
   latestOpinionatedReviews: Array<z.infer<typeof opinionatedReviewSchema>> | null;
   numReviewsRequired: number;
@@ -105,13 +132,30 @@ export const mergeBoxAnswer = z.pipe(
         headRefName: z.nullish(z.string()),
         headRefOid: z.nullish(z.string()),
         baseRefName: z.nullish(z.string()),
+        // In a native stack: whether any of its branches is behind the stack's base branch, and that branch.
+        anyStackBranchOutdated: z.nullish(z.boolean()),
+        stackedBaseRefName: z.nullish(z.string()),
       }),
     ),
     mergeRequirements: z.nullish(
       z.object({
         state: z.nullish(z.string()),
         conditions: z.nullish(
-          z.array(z.object({ type: z.string(), result: z.string(), message: z.nullish(z.string()), description: z.nullish(z.string()), displayName: z.nullish(z.string()) })),
+          z.array(
+            z.object({
+              type: z.string(),
+              result: z.string(),
+              message: z.nullish(z.string()),
+              description: z.nullish(z.string()),
+              displayName: z.nullish(z.string()),
+              // The STACK condition's: whether the PR is in a native stack, and each entry's place (BEFORE, CURRENT,
+              // AFTER) and status (NEEDS_MERGE_STATE, MERGE_CONFLICTS, NEEDS_REBASE, IRRELEVANT_DRAFT, …).
+              isStacked: z.nullish(z.boolean()),
+              entries: z.nullish(z.array(z.object({ position: z.nullish(z.string()), status: z.nullish(z.string()) }))),
+              // PULL_REQUEST_RULES': which kind of rule failed.
+              ruleRollups: z.nullish(z.array(z.object({ ruleType: z.nullish(z.string()), result: z.nullish(z.string()) }))),
+            }),
+          ),
         ),
       }),
     ),

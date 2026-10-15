@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_SETTINGS } from '../settings';
 import { mutations, rememberPullRequest } from './mutations';
+
+vi.mock(import('../settings'), async (original) => ({ ...(await original()), getSettings: vi.fn(async () => DEFAULT_SETTINGS) }));
 
 // Every request the mutations send, as `METHOD path body`; GETs are answered from `reads`.
 let sent: Array<{ method: string; path: string; body: unknown }> = [];
@@ -24,7 +27,10 @@ beforeEach(() => {
   rememberPullRequest(pullRequest({ id: 'PR_2', number: 2, stackSource: 'native' }));
 });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
 
 const P = '/o/r/pull/1/page_data';
 
@@ -162,6 +168,52 @@ describe('mutations', () => {
       { method: 'POST', path: '/o/r/pull/2/page_data/enqueue_stack', body: { mergeAction: 'AUTO_MERGE', mergeMethod: 'SQUASH', commitTitle: 'Add zones (#2)', commitMessage: '* zones' } },
       { method: 'POST', path: '/o/r/pull/2/page_data/disable_auto_merge', body: undefined },
     ]);
+  });
+
+  it("rebases a native stack the way GitHub's Rebase stack does: the head of every branch not merged yet, by number, then its status until done", async () => {
+    // The merge box's STACK condition as GitHub's bundle reads it, its entries' PRs under `pull`: #9 merged, #2 viewed, #3 a draft above.
+    const entry = (position: string, status: string, number: number, state: string) => ({ position, status, pull: { number, headOid: `oid-${number}`, state } });
+    reads = {
+      '/o/r/pull/2/page_data/merge_box': {
+        mergeRequirements: {
+          conditions: [
+            { type: 'PULL_REQUEST_USER_STATE', result: 'PASSED' },
+            { type: 'STACK', result: 'PASSED', isStacked: true, entries: [entry('AFTER', 'IRRELEVANT_DRAFT', 3, 'DRAFT'), entry('CURRENT', 'NEEDS_MERGE_STATE', 2, 'OPEN'), entry('BEFORE', 'IRRELEVANT_MERGED', 9, 'MERGED')] },
+          ],
+        },
+      },
+      '/o/r/pull/2/page_data/stack_rebase_status': { jobState: 'DONE', pullRequestStates: [{ number: 2, state: 'SUCCEEDED', message: null }, { number: 3, state: 'SUCCEEDED', message: null }] },
+    };
+    await expect(mutations['pr.rebaseStack']({ prId: 'PR_2' })).resolves.toEqual({ complete: true });
+    expect(sent).toEqual([{ method: 'POST', path: '/o/r/pull/2/page_data/stack_rebase', body: { expectedHeadOids: { '3': 'oid-3', '2': 'oid-2' } } }]);
+  });
+
+  it('asks how a stack rebase is going until GitHub says it is done, a second later and backing off', async () => {
+    vi.useFakeTimers();
+    reads = { '/o/r/pull/2/page_data/merge_box': { mergeRequirements: { conditions: [{ type: 'STACK', result: 'PASSED', isStacked: true, entries: [{ position: 'CURRENT', status: 'NEEDS_MERGE_STATE', pull: { number: 2, headOid: 'oid-2', state: 'OPEN' } }] }] } } };
+    let asked = 0;
+    Object.defineProperty(reads, '/o/r/pull/2/page_data/stack_rebase_status', {
+      enumerable: true,
+      get: () => (++asked < 3 ? { jobState: 'RUNNING', pullRequestStates: [{ number: 2, state: 'PENDING' }] } : { jobState: 'DONE', pullRequestStates: [{ number: 2, state: 'SUCCEEDED' }] }),
+    });
+    const rebasing = mutations['pr.rebaseStack']({ prId: 'PR_2' });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(asked).toBe(2);
+    await vi.advanceTimersByTimeAsync(1500);
+    await expect(rebasing).resolves.toEqual({ complete: true });
+    expect(asked).toBe(3);
+  });
+
+  it("says in GitHub's words where a stack rebase stopped", async () => {
+    reads = {
+      '/o/r/pull/2/page_data/merge_box': { mergeRequirements: { conditions: [{ type: 'STACK', result: 'PASSED', isStacked: true, entries: [{ position: 'CURRENT', status: 'NEEDS_REBASE', pull: { number: 2, headOid: 'oid-2', state: 'OPEN' } }] }] } },
+      '/o/r/pull/2/page_data/stack_rebase_status': { jobState: 'DONE', pullRequestStates: [{ number: 1, state: 'FAILED' }, { number: 2, state: 'CONFLICTED' }] },
+    };
+    await expect(mutations['pr.rebaseStack']({ prId: 'PR_2' })).rejects.toThrow(
+      'Rebasing was stopped due to merge conflicts. Resolve the merge conflicts in pull request #2, then try to rebase this stack again.',
+    );
+    reads['/o/r/pull/2/page_data/stack_rebase_status'] = { jobState: 'DONE', pullRequestStates: [{ number: 1, state: 'FAILED' }] };
+    await expect(mutations['pr.rebaseStack']({ prId: 'PR_2' })).rejects.toThrow('Rebasing was stopped due to an error. Check pull request #1 for any issues, then try to rebase this stack again.');
   });
 
   it("reverts the way GitHub's Revert button does, and says where GitHub went next", async () => {

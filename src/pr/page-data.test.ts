@@ -8,7 +8,7 @@ import { prDetailFrom, stagesStandingIn, type PrPageData } from './page-data';
 const pr42 = prFixtures.find((pr) => pr.number === 42);
 assert.isDefined(pr42);
 const { timeline, threads, unresolvedThreadCount, files, baseOid, stack, labels, assignees, ci, requiredCheckNames, unread, ...rest } = pr42;
-const { mergeStatus, reviewers, reviewDecision, viewerCanMerge, viewerCanEnableAutoMerge, allowedMergeMethods, defaultMergeMethod, autoMerge, isInMergeQueue, ...headerFields } = rest;
+const { mergeStatus, reviewers, reviewDecision, viewerCanMerge, viewerCanEnableAutoMerge, allowedMergeMethods, defaultMergeMethod, autoMerge, isInMergeQueue, stackSection, ...headerFields } = rest;
 const header: PrStages['header'] = { ...headerFields, viewerLogin: 'octocat', stackSource: 'graphite-comment' };
 const nothingYet: PrPageData = {
   header: { status: 'ready', value: header },

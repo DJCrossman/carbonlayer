@@ -57,6 +57,8 @@ export interface DataSource {
   /** Reverts a merged PR; resolves with GitHub's page for the revert pull request. */
   revert(prId: string): Promise<{ url: string }>;
   setAutoMerge(prId: string, enabled: boolean, method: MergeMethod): Promise<void>;
+  /** Rebases the PR's native stack onto its base branch; `complete` is false when GitHub was still at it as the answer was due. */
+  rebaseStack(prId: string): Promise<{ complete: boolean }>;
   reviewerCandidates(prId: string, query: string): Promise<{ suggested: ReviewerCandidate[]; reviewers: ReviewerCandidate[] }>;
   modifyReviewers(prId: string, add: ReviewerChange[], remove: ReviewerChange[]): Promise<void>;
   reRequestReview(prId: string, reviewerId: string): Promise<void>;
@@ -97,6 +99,7 @@ export function createRpcDataSource(): DataSource {
     setDraft: (prId, draft) => rpc('pr.setDraft', { prId, draft }),
     revert: (prId) => rpc('pr.revert', { prId }),
     setAutoMerge: (prId, enabled, method) => rpc('pr.setAutoMerge', { prId, enabled, method }),
+    rebaseStack: (prId) => rpc('pr.rebaseStack', { prId }),
     reviewerCandidates: (prId, query) => rpc('pr.reviewerCandidates', { prId, query }),
     modifyReviewers: (prId, add, remove) => rpc('pr.modifyReviewers', { prId, add, remove }),
     reRequestReview: (prId, reviewerId) => rpc('pr.reRequestReview', { prId, reviewerId }),
@@ -238,7 +241,7 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
       const pr = fixturePr(repo, number);
       await new Promise((resolve) => setTimeout(resolve, FIXTURE_STAGE_DELAYS[stage]));
       const { timeline, threads, unresolvedThreadCount, files, baseOid, stack, labels, assignees, ci, requiredCheckNames, unread, conversations, ...rest } = pr;
-      const { mergeStatus, reviewers, reviewDecision, viewerCanMerge, viewerCanEnableAutoMerge, allowedMergeMethods, defaultMergeMethod, autoMerge, isInMergeQueue, ...header } = rest;
+      const { mergeStatus, reviewers, reviewDecision, viewerCanMerge, viewerCanEnableAutoMerge, allowedMergeMethods, defaultMergeMethod, autoMerge, isInMergeQueue, stackSection, ...header } = rest;
       const stages: PrStages = {
         header: { ...header, viewerLogin: 'octocat', stackSource: stack.source },
         activity: { timeline },
@@ -248,7 +251,7 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
           diffs: Object.fromEntries(files.slice(0, 1).map((file) => [file.path, { patch: file.patch, previousPath: file.previousPath }])),
         },
         threads: { threads, unresolvedThreadCount },
-        mergeBox: { mergeStatus, reviewers, reviewDecision, viewerCanMerge, viewerCanEnableAutoMerge, allowedMergeMethods, defaultMergeMethod, autoMerge, isInMergeQueue },
+        mergeBox: { mergeStatus, reviewers, reviewDecision, viewerCanMerge, viewerCanEnableAutoMerge, allowedMergeMethods, defaultMergeMethod, autoMerge, isInMergeQueue, stackSection },
         checks: { ci, requiredCheckNames, emptyReason: null },
         // The other entries the way GitHub's stack listing names them, without a verdict, checks or mergeability: those
         // come with each entry's row details (enrichInbox).
@@ -294,6 +297,10 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
       return { url: 'https://github.com/acme/widgets/compare/main...revert-41-parcs-client?expand=1' };
     },
     setAutoMerge: (...args) => log('setAutoMerge', ...args),
+    rebaseStack: async (...args) => {
+      await log('rebaseStack', ...args);
+      return { complete: true };
+    },
     reviewerCandidates: async (_prId, query) => {
       const needle = query.trim().toLowerCase();
       const matching = FIXTURE_REVIEWER_CANDIDATES.filter((candidate) => candidate.login.includes(needle) || !!candidate.name?.toLowerCase().includes(needle));

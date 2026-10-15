@@ -28,6 +28,7 @@ export function Sidebar({
   onMarkReady,
   onMerge,
   onMergeStack,
+  onRebaseStack,
   onViewThreads,
   checkReruns,
   reviewersCard,
@@ -46,6 +47,8 @@ export function Sidebar({
   onMerge: (method: MergeMethod) => Promise<boolean>;
   /** Opens the dialog that merges the stack (MergeStackDialog.tsx), with the method picked here. */
   onMergeStack: (method: MergeMethod) => void;
+  /** Rebases the PR's native stack onto its base branch, as GitHub's "Rebase stack" does; resolves false when it did not. */
+  onRebaseStack: () => Promise<boolean>;
   onViewThreads: () => void;
   checkReruns: CheckReruns;
   /** The Reviewers card (Reviewers.tsx), wired to the page's data source. */
@@ -56,7 +59,28 @@ export function Sidebar({
   return (
     <aside className="pr-sidebar" aria-label="Status">
       <StatusCard pr={pr} mergeMethod={mergeMethod} onAutoMerge={onAutoMerge} onRevert={onRevert} />
-      <ActionCard pr={pr} data={data} onRetry={onRetry} mergeMethod={mergeMethod} onMarkReady={onMarkReady} onMerge={onMerge} onMergeStack={onMergeStack} onViewThreads={onViewThreads} />
+      {/* GitHub's merge box says so of a stack behind its base branch, which merges all the same. */}
+      {pr.stackSection?.kind === 'rebase-optional' && (
+        <Card className="side-card side-action is-attention">
+          <div className="side-action-title">
+            <Icon name="alert" size={16} />
+            <span>This stack is out-of-date with its base branch</span>
+          </div>
+          <div className="side-action-detail">Rebase this stack onto the latest version of {pr.stackSection.baseRefName}.</div>
+          {pr.stackSection.viewerCanRebase && <RebaseStack onRebaseStack={onRebaseStack} />}
+        </Card>
+      )}
+      <ActionCard
+        pr={pr}
+        data={data}
+        onRetry={onRetry}
+        mergeMethod={mergeMethod}
+        onMarkReady={onMarkReady}
+        onMerge={onMerge}
+        onMergeStack={onMergeStack}
+        onRebaseStack={onRebaseStack}
+        onViewThreads={onViewThreads}
+      />
       <Staged state={data.checks} what="the checks" onRetry={() => onRetry(['checks'])} skeleton={<SideCardSkeleton title="Checks" rows={3} />}>
         {({ emptyReason }) =>
           pr.ci.checks.length > 0 ? (
@@ -142,6 +166,8 @@ function StatusCard({
   const ending = pr.state === 'OPEN' ? undefined : pr.timeline.findLast((item) => item.kind === (pr.state === 'MERGED' ? 'merged' : 'closed'));
   const endedBy = ending && 'actor' in ending ? ending.actor : null;
   const endedAt = pr.mergedAt ?? (ending && 'createdAt' in ending ? ending.createdAt : null);
+  // GitHub's merge box will not turn auto-merge on while the stack's branches keep it from merging; the next step says why.
+  const stackBlocks = pr.stackSection !== null && pr.stackSection.kind !== 'rebase-optional';
   // In a GitHub-native stack, auto-merge also merges the open PRs below this one that are not queued already.
   const mergingWithIt = pr.stack.source === 'native' ? pr.stack.entries.slice(0, pr.stack.currentIndex).filter((entry) => entry.state === 'OPEN' && !entry.isInMergeQueue).length : 0;
   return (
@@ -190,12 +216,12 @@ function StatusCard({
       )}
       {pr.state === 'OPEN' && (pr.viewerCanEnableAutoMerge || pr.autoMerge !== null) && (
         <div className="side-switch-row">
-          <label className="side-switch">
+          <label className="side-switch" title={stackBlocks && pr.autoMerge === null ? 'Merging is blocked due to failing stack merge requirements' : undefined}>
             <input
               type="checkbox"
               role="switch"
               checked={pr.autoMerge !== null}
-              disabled={busy}
+              disabled={busy || (stackBlocks && pr.autoMerge === null)}
               onChange={async (event) => {
                 setBusy(true);
                 await onAutoMerge(event.target.checked, method);
@@ -245,6 +271,7 @@ function ActionCard({
   onMarkReady,
   onMerge,
   onMergeStack,
+  onRebaseStack,
   onViewThreads,
 }: {
   pr: PrDetail;
@@ -254,6 +281,7 @@ function ActionCard({
   onMarkReady: () => Promise<boolean>;
   onMerge: (method: MergeMethod) => Promise<boolean>;
   onMergeStack: (method: MergeMethod) => void;
+  onRebaseStack: () => Promise<boolean>;
   onViewThreads: () => void;
 }) {
   // The stages the next step depends on that have not arrived, loading or failed; what the inbox showed does not decide it.
@@ -317,6 +345,7 @@ function ActionCard({
           Go to #{action.pr.number}
         </Button>
       )}
+      {action.kind === 'stack-rebase' && pr.stackSection?.viewerCanRebase && <RebaseStack onRebaseStack={onRebaseStack} />}
       {action.kind === 'unresolved' && (
         <Button className="side-action-button" onClick={onViewThreads} title="Next unresolved thread (n)">
           View comments
@@ -409,6 +438,43 @@ function MergeControls({
         <Icon name="git-merge" size={14} />
         {stack ? `Merge ${stack.length} PRs` : 'Merge'}
       </Button>
+    </div>
+  );
+}
+
+/**
+ * GitHub's "Rebase stack". It asks first, as GitHub's does, in the words of GitHub's dialog: every branch of the stack is
+ * rebased and force-pushed.
+ */
+function RebaseStack({ onRebaseStack }: { onRebaseStack: () => Promise<boolean> }) {
+  const [state, setState] = useState<'idle' | 'confirming' | 'rebasing'>('idle');
+  if (state === 'idle') {
+    return (
+      <Button className="side-action-button" onClick={() => setState('confirming')}>
+        Rebase stack
+      </Button>
+    );
+  }
+  return (
+    <div className="revert-confirm">
+      <div>Each branch is rebased onto the tip of the one below it, starting from the first unmerged branch. Once a branch is rebased, it is force-pushed.</div>
+      <div className="merge-row">
+        <Button onClick={() => setState('idle')} disabled={state === 'rebasing'}>
+          Cancel
+        </Button>
+        <Button
+          variant="primary"
+          autoFocus
+          disabled={state === 'rebasing'}
+          onClick={async () => {
+            setState('rebasing');
+            // Once rebased, the page reloads and GitHub says whether the stack still needs it; on failure the reason is in a toast.
+            setState((await onRebaseStack()) ? 'idle' : 'confirming');
+          }}
+        >
+          {state === 'rebasing' ? 'Rebasing stack…' : 'Rebase stack'}
+        </Button>
+      </div>
     </div>
   );
 }

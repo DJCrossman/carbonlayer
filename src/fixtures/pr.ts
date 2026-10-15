@@ -556,6 +556,7 @@ const detail42: PrDetail = {
   allowedMergeMethods: ['SQUASH', 'MERGE'],
   viewerCanMerge: true,
   viewerCanEnableAutoMerge: true,
+  stackSection: null,
   requiredCheckNames: ['build', 'unit', 'e2e / portal'],
   unresolvedThreadCount: 2,
 };
@@ -655,6 +656,7 @@ const detail41: PrDetail = {
   allowedMergeMethods: ['SQUASH', 'MERGE', 'REBASE'],
   viewerCanMerge: true,
   viewerCanEnableAutoMerge: false,
+  stackSection: null,
   requiredCheckNames: ['build', 'unit'],
   unresolvedThreadCount: 0,
 };

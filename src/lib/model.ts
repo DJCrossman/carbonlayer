@@ -306,6 +306,15 @@ export const prDetailSchema = z.extend(prSummarySchema, {
   allowedMergeMethods: z.array(mergeMethodSchema),
   viewerCanMerge: z.boolean(),
   viewerCanEnableAutoMerge: z.boolean(),
+  /**
+   * What GitHub's merge box says about the branches of the PR's native stack, the first that applies in its order: this
+   * PR's conflicts, conflicts in the stack up to it, a branch up to it that diverged and must be rebased, or a stack
+   * behind its base branch (`baseRefName`), which a rebase brings up to date. Null when none applies. `viewerCanRebase`
+   * is whether GitHub offers the viewer its "Rebase stack".
+   */
+  stackSection: z.nullable(
+    z.object({ kind: z.enum(['current-conflicts', 'conflicts', 'rebase-required', 'rebase-optional']), baseRefName: z.string(), viewerCanRebase: z.boolean() }),
+  ),
   /** Required checks only, derived from `isRequired`; empty when the repo has no required checks. */
   requiredCheckNames: z.array(z.string()),
   unresolvedThreadCount: z.number(),
@@ -376,6 +385,7 @@ export const prStagesSchema = z.object({
     defaultMergeMethod: true,
     autoMerge: true,
     isInMergeQueue: true,
+    stackSection: true,
   }),
   checks: z.extend(z.pick(prDetailSchema, { ci: true, requiredCheckNames: true }), {
     /** Why the checks list is empty when it is (GitHub answered 404, or sent no rows): the card shows it, so an empty card is never a mystery. */

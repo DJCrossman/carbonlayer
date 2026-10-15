@@ -188,6 +188,7 @@ export function prDetailFrom(header: PrStages['header'], data: PrPageData): PrDe
     defaultMergeMethod: 'MERGE',
     autoMerge: null,
     isInMergeQueue: false,
+    stackSection: null,
   };
   const checks: PrStages['checks'] = data.checks.value ?? { ci: { state: 'NONE', checks: [], counts: { success: 0, failure: 0, pending: 0, other: 0 } }, requiredCheckNames: [], emptyReason: null };
   const meta: PrStages['meta'] = data.meta.value ?? { labels: [], assignees: [] };
@@ -310,6 +311,7 @@ export function stagesStandingIn(queryClient: QueryClient, repo: RepoRef, number
         defaultMergeMethod: 'MERGE',
         autoMerge: pr.autoMerge,
         isInMergeQueue: pr.isInMergeQueue,
+        stackSection: null,
       },
     }),
     ...(details?.ci && { checks: { ci: details.ci, requiredCheckNames: details.requiredCheckNames ?? [], emptyReason: null } }),

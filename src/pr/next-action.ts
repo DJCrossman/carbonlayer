@@ -3,11 +3,11 @@
 import type { PrDetail, PrStage, Stack, StackEntry } from '../lib/model';
 
 /**
- * What stands between this PR and being merged, most fundamental first: its state, then conflicts,
- * the stack below it, open conversations, required checks, reviews, and finally branch protection. When nothing
- * does, it is ready to merge, and in a GitHub-native stack that GitHub can merge from the bottom up to it, ready to merge
- * as a stack: GitHub's verdict then stands for the open PRs below it. While a stage that a step depends on has not
- * arrived (`unknown`), the answer stops at that step: "Checking mergeability…".
+ * What stands between this PR and being merged, most fundamental first: its state, then conflicts, what GitHub says of
+ * its native stack's branches, the stack below it, open conversations, required checks, reviews, and finally branch
+ * protection. When nothing does, it is ready to merge, and in a GitHub-native stack that GitHub can merge from the
+ * bottom up to it, ready to merge as a stack: GitHub's verdict then stands for the open PRs below it. While a stage that
+ * a step depends on has not arrived (`unknown`), the answer stops at that step: "Checking mergeability…".
  */
 export function nextActionFor(pr: PrDetail, unknown: readonly PrStage[] = []): NextAction {
   if (pr.state === 'MERGED') return { kind: 'merged', tone: 'done', title: 'Merged', detail: null };
@@ -19,6 +19,25 @@ export function nextActionFor(pr: PrDetail, unknown: readonly PrStage[] = []): N
   if (unknown.includes('mergeBox')) return checking;
   if (pr.mergeStatus === 'DIRTY') {
     return { kind: 'conflicts', tone: 'danger', title: `Conflicts with ${pr.baseRefName}`, detail: 'Resolve them before this PR can merge.' };
+  }
+  // GitHub's merge box sections about the stack's branches that keep it from merging, or turning on auto-merge, in its
+  // words; a stack behind its base merges all the same.
+  const stackSection = pr.stackSection?.kind;
+  if (stackSection === 'current-conflicts' || stackSection === 'conflicts') {
+    return {
+      kind: 'stack-conflicts',
+      tone: 'danger',
+      title: stackSection === 'current-conflicts' ? 'This branch has conflicts that must be resolved' : 'This stack has conflicts that must be resolved',
+      detail: 'Use the command line to resolve conflicts within the stack before continuing.',
+    };
+  }
+  if (stackSection === 'rebase-required') {
+    return {
+      kind: 'stack-rebase',
+      tone: 'attention',
+      title: 'Some branches in this stack have diverged and must be rebased',
+      detail: 'Rebase this stack to restore a linear commit history across its branches.',
+    };
   }
   if (unknown.includes('stack')) return checking;
   // The PR closest to trunk that is still open has to merge first, unless GitHub can merge it and this one as a stack.
@@ -84,6 +103,8 @@ type NextAction = {
         | 'draft'
         | 'checking'
         | 'conflicts'
+        | 'stack-conflicts'
+        | 'stack-rebase'
         | 'unresolved'
         | 'checks-failed'
         | 'changes-requested'

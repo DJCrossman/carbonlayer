@@ -270,6 +270,19 @@ on the way GitHub's stack does, `enqueue_stack` with `AUTO_MERGE` (`pr.setAutoMe
 that are not queued, and while it is on the status card says so in GitHub's words; it goes off with `disable_auto_merge`,
 as for a PR alone.
 
+A native stack's branches: GitHub's merge box shows one section about them, the first that applies (module `MDN` in its
+bundle), which the merge box stage reads (`stackSection` in `mergeState`, `src/lib/github-web/merge-box.ts`, from the
+STACK condition's entries and `pullRequest.anyStackBranchOutdated`): this PR's conflicts, conflicts in the stack up to it,
+a branch up to it that must be rebased, or a stack behind its base branch. The first three keep it from merging, so they
+are the sidebar's next step, in GitHub's words, before "Waiting on downstack" (`nextActionFor`), and "Merge when ready"
+cannot be turned on meanwhile ("Merging is blocked due to failing stack merge requirements", as GitHub's button says); an
+out-of-date stack merges all the same, so it is a card of its own above the next step, "This stack is out-of-date with
+its base branch". Where GitHub offers "Rebase stack" (a rebase needed or the stack out of date, to a viewer who may push
+to the base branch), so does the card: it asks first in the words of GitHub's dialog, then `pr.rebaseStack` sends
+GitHub's `stack_rebase` with the head of each branch not merged yet as the merge box lists them, asks
+`stack_rebase_status` until GitHub says it is done (45 s at most; GitHub carries on), says a stop on conflicts or an
+error in GitHub's words, and the page reloads what a force-push changes.
+
 ## Keyboard
 
 The PR page's bindings are one table (`PR_KEYBINDINGS` in `src/pr/keybindings.ts`) that its `?` help and the legend at

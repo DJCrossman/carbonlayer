@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergeState } from './merge-box';
+import { mergeBoxAnswer, mergeState } from './merge-box';
 
 describe('mergeState', () => {
   const open = { isDraft: false, isOpen: true };
@@ -62,6 +62,52 @@ describe('mergeState', () => {
     expect(mergeState(draftBox([{ type: 'PULL_REQUEST_STATE', result: 'FAILED' }, { type: 'PULL_REQUEST_RULES', result: 'FAILED' }]), draft).mergeStatus).toBe('BLOCKED');
     expect(mergeState(draftBox([{ type: 'PULL_REQUEST_STATE', result: 'FAILED' }, { type: 'PULL_REQUEST_MERGE_CONFLICT_STATE', result: 'PASSED' }]), draft).mergeStatus).toBe('CLEAN');
     expect(mergeState({ pullRequest: { mergeStateStatus: 'DRAFT' } }, draft).mergeStatus).toBe('UNKNOWN');
+  });
+
+  describe("GitHub's section about a native stack's branches", () => {
+    // The merge box of offstreetparking/core#8986 (signed in, 2026-10-15): three drafts above it, #8985 below, the
+    // stack behind main. `entries` and `conditions` replace its own.
+    const entry = (position: string, status: string, number: number) => ({ position, status, pull: { number } });
+    const pr8986 = ({
+      entries = [entry('AFTER', 'IRRELEVANT_DRAFT', 9147), entry('AFTER', 'IRRELEVANT_DRAFT', 9146), entry('AFTER', 'IRRELEVANT_DRAFT', 9145), entry('CURRENT', 'NEEDS_MERGE_STATE', 8986), entry('BEFORE', 'NEEDS_MERGE_STATE', 8985)],
+      conditions = [{ type: 'PULL_REQUEST_USER_STATE', result: 'PASSED' }],
+      isInMergeQueue = false,
+    }: { entries?: Array<ReturnType<typeof entry>>; conditions?: Array<{ type: string; result: string; ruleRollups?: Array<{ ruleType: string; result: string }> }>; isInMergeQueue?: boolean } = {}) => ({
+      pullRequest: { mergeStateStatus: 'BLOCKED', isInMergeQueue, anyStackBranchOutdated: true, stackedBaseRefName: 'main' },
+      mergeRequirements: {
+        state: 'UNMERGEABLE',
+        conditions: [...conditions, { type: 'STACK', displayName: 'Stack', description: null, message: null, result: 'PASSED', stack: { id: 1, number: 12 }, isStacked: true, entries }],
+      },
+    });
+
+    it('says a stack behind its base branch is out of date, which a viewer who may push can rebase', () => {
+      expect(mergeState(mergeBoxAnswer.parse(pr8986()), open).stackSection).toEqual({ kind: 'rebase-optional', baseRefName: 'main', viewerCanRebase: true });
+    });
+
+    it('puts conflicts first, this branch before the stack, then a branch that must be rebased, and leaves out the PRs above it', () => {
+      const kind = (entries: Array<ReturnType<typeof entry>>) => mergeState(pr8986({ entries }), open).stackSection?.kind;
+      expect(kind([entry('CURRENT', 'MERGE_CONFLICTS', 8986), entry('BEFORE', 'MERGE_CONFLICTS', 8985)])).toBe('current-conflicts');
+      expect(kind([entry('CURRENT', 'NEEDS_REBASE', 8986), entry('BEFORE', 'MERGE_CONFLICTS', 8985)])).toBe('conflicts');
+      expect(kind([entry('CURRENT', 'NEEDS_MERGE_STATE', 8986), entry('BEFORE', 'NEEDS_REBASE', 8985)])).toBe('rebase-required');
+      expect(kind([entry('AFTER', 'MERGE_CONFLICTS', 9145), entry('AFTER', 'NEEDS_REBASE', 9146), entry('CURRENT', 'NEEDS_MERGE_STATE', 8986)])).toBe('rebase-optional');
+    });
+
+    it('says nothing outside a stack, of a stack up to date, or of a closed PR', () => {
+      const alone = { pullRequest: { anyStackBranchOutdated: true }, mergeRequirements: { conditions: [{ type: 'STACK', result: 'PASSED', isStacked: false, entries: [] }] } };
+      expect(mergeState(alone, open).stackSection).toBeNull();
+      expect(mergeState({ ...pr8986(), pullRequest: { anyStackBranchOutdated: false } }, open).stackSection).toBeNull();
+      expect(mergeState(pr8986(), { isDraft: false, isOpen: false }).stackSection).toBeNull();
+      expect(mergeState({}, open).stackSection).toBeNull();
+    });
+
+    it("offers GitHub's Rebase stack only to a viewer who may push, whom no authorization rule stops, outside the merge queue", () => {
+      const canRebase = (box: ReturnType<typeof pr8986>) => mergeState(box, open).stackSection?.viewerCanRebase;
+      const userState = { type: 'PULL_REQUEST_USER_STATE', result: 'PASSED' };
+      expect(canRebase(pr8986({ conditions: [{ type: 'PULL_REQUEST_USER_STATE', result: 'FAILED' }] }))).toBe(false);
+      expect(canRebase(pr8986({ conditions: [userState, { type: 'PULL_REQUEST_RULES', result: 'FAILED', ruleRollups: [{ ruleType: 'AUTHORIZATION', result: 'FAILED' }] }] }))).toBe(false);
+      expect(canRebase(pr8986({ conditions: [userState, { type: 'PULL_REQUEST_RULES', result: 'FAILED', ruleRollups: [{ ruleType: 'PULL_REQUEST', result: 'FAILED' }] }] }))).toBe(true);
+      expect(canRebase(pr8986({ isInMergeQueue: true }))).toBe(false);
+    });
   });
 
   it('assumes every merge method and asks the user-state condition when the actions are missing', () => {

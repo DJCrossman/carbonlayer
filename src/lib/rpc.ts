@@ -54,6 +54,8 @@ export const STAGES_A_WRITE_CHANGES = {
   // The page moves on to GitHub's page for the revert pull request; nothing shown here changes.
   'pr.revert': [],
   'pr.setAutoMerge': ['mergeBox'],
+  // Rebasing force-pushes every branch of the stack, this PR's too.
+  'pr.rebaseStack': ['header', 'activity', 'mergeBox', 'checks', 'stack'],
   'pr.modifyReviewers': ['mergeBox'],
   'pr.reRequestReview': ['mergeBox'],
   'pr.rerunFailedJobs': ['checks'],
@@ -230,6 +232,11 @@ const RPC_SCHEMAS = {
   /** Reverts a merged PR the way GitHub's Revert button does: a branch undoing it, and where GitHub opens its pull request. */
   'pr.revert': { args: z.object({ prId: z.string() }), result: z.object({ url: z.string() }) },
   'pr.setAutoMerge': { args: z.object({ prId: z.string(), enabled: z.boolean(), method: mergeMethodSchema }), result: z.undefined() },
+  /**
+   * Rebases the PR's native stack onto its base branch, as GitHub's "Rebase stack" does; `complete` is false when GitHub
+   * was still rebasing as the answer was due (it carries on).
+   */
+  'pr.rebaseStack': { args: z.object({ prId: z.string() }), result: z.object({ complete: z.boolean() }) },
   /** The merge commit GitHub's merge box proposes for merging the PR this way: what its own commit message editor starts with. */
   'pr.proposedMergeCommit': { args: z.object({ prId: z.string(), method: mergeMethodSchema }), result: mergeCommit },
   /** Whom the viewer can ask for a review: GitHub's suggestions, then everyone else matching `query`. */

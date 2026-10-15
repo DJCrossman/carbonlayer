@@ -38,6 +38,22 @@ describe('nextActionFor', () => {
     expect(nextActionFor({ ...ready, ...overrides })).toMatchObject({ kind, title });
   });
 
+  it("says in GitHub's words what in its stack keeps it from merging, before waiting on the PRs below it; a stack behind its base merges all the same", () => {
+    const section = (kind: NonNullable<PrDetail['stackSection']>['kind']) => ({ stackSection: { kind, baseRefName: 'main', viewerCanRebase: true } });
+    expect(nextActionFor({ ...pr42, ...section('rebase-required') })).toMatchObject({
+      kind: 'stack-rebase',
+      title: 'Some branches in this stack have diverged and must be rebased',
+      detail: 'Rebase this stack to restore a linear commit history across its branches.',
+    });
+    expect(nextActionFor({ ...pr42, ...section('conflicts') })).toMatchObject({ kind: 'stack-conflicts', title: 'This stack has conflicts that must be resolved' });
+    expect(nextActionFor({ ...pr42, ...section('current-conflicts') })).toMatchObject({
+      kind: 'stack-conflicts',
+      title: 'This branch has conflicts that must be resolved',
+      detail: 'Use the command line to resolve conflicts within the stack before continuing.',
+    });
+    expect(nextActionFor({ ...ready, ...section('rebase-optional') })).toMatchObject({ kind: 'ready' });
+  });
+
   it('counts finished checks while they run', () => {
     // #42's checks without the failure: 6 finished, 2 still running.
     const checks = pr42.ci.checks.filter((check) => check !== failingCheck);

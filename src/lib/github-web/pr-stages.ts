@@ -132,6 +132,7 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
       defaultMergeMethod: merge.defaultMergeMethod ?? layout.mergeStatusButtonData?.defaultMergeMethod ?? 'MERGE',
       autoMerge: merge.autoMerge,
       isInMergeQueue: merge.isInMergeQueue,
+      stackSection: merge.stackSection,
     };
   },
 
