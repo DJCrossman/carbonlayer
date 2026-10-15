@@ -55,7 +55,7 @@ describe('reviewThreads', () => {
   });
 
   it('identifies comments by database id (replies need it), with the node id reactions name, and links threads to their review', () => {
-    expect(threads[0]!.comments[0]).toEqual({
+    expect(threads[0]?.comments[0]).toEqual({
       id: '501',
       author: { login: 'ana', avatarUrl: 'https://a/ana', url: 'https://github.com/ana' },
       bodyHtml: '<p>nit</p>',
@@ -67,7 +67,7 @@ describe('reviewThreads', () => {
         { content: 'EYES', count: 1, viewerHasReacted: false },
       ],
     });
-    expect(threads[1]!.comments[0]!.url).toBe('https://github.com/o/r/pull/1/files#r502');
+    expect(threads[1]?.comments[0]?.url).toBe('https://github.com/o/r/pull/1/files#r502');
     expect(threadIdsByReview.get('77')).toEqual(['1', '2']);
   });
 });

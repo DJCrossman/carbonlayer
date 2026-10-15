@@ -106,7 +106,7 @@ describe('fetchInbox', () => {
       vi.fn(async (url: string) => {
         if (url.startsWith('/pulls/inbox/queries')) return new Response('', { status: 500 });
         // GitHub's answer to a search it cannot parse: a 200 with no rows and why.
-        if (url.startsWith('/pulls/search') && new URL(url, 'https://github.com').searchParams.get('q')!.includes('(')) {
+        if (url.startsWith('/pulls/search') && new URL(url, 'https://github.com').searchParams.get('q')?.includes('(')) {
           return Response.json({ payload: { pullsDashboardSurfaceContentRoute: { results: [], pageInfo: { totalCount: 0 }, error: invalid } } });
         }
         if (url.startsWith('/pulls/search')) return Response.json({ payload: { pullsDashboardSurfaceContentRoute: { results: [pull(9)], pageInfo: { totalCount: 1 }, error: null } } });

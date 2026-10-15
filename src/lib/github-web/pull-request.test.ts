@@ -3,7 +3,7 @@ import { DEFAULT_SETTINGS } from '../settings';
 import { fetchPullRequestPage } from './pull-request';
 import { SIGNED_OUT } from './session';
 
-vi.mock('../settings', async (original) => ({ ...(await original<typeof import('../settings')>()), getSettings: vi.fn(async () => DEFAULT_SETTINGS) }));
+vi.mock(import('../settings'), async (original) => ({ ...(await original()), getSettings: vi.fn(async () => DEFAULT_SETTINGS) }));
 
 afterEach(() => {
   vi.restoreAllMocks();

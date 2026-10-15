@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { importGraphiteSections, inboxSnapshotOf, type GraphiteInboxSnapshot } from './graphite';
+import { graphiteInboxSnapshot, importGraphiteSections, inboxSnapshotOf, type GraphiteInboxSnapshot } from './graphite';
 // The user's nine Graphite sections as their inbox page holds them (2026-10-09); the repositories are placeholders.
 import userInbox from './graphite-inbox.fixture.json';
 
@@ -7,7 +7,7 @@ import userInbox from './graphite-inbox.fixture.json';
 const EXAMPLE_LINK =
   'https://app.graphite.com/?new-section=JTdCJTIyZ3JvdXBzJTIyJTNBJTVCJTdCJTIycnVsZXMlMjIlM0ElNUIlN0IlMjJpc05lZ2F0ZWQlMjIlM0FmYWxzZSUyQyUyMmNvbmRpdGlvbnMlMjIlM0ElNUIlN0IlMjJraW5kJTIyJTNBJTIyQ09OU09MSURBVEVEX1BSX1NUQVRVU19JUyUyMiUyQyUyMnN0YXR1cyUyMiUzQSUyMk9QRU4lMjIlN0QlNUQlN0QlMkMlN0IlMjJpc05lZ2F0ZWQlMjIlM0F0cnVlJTJDJTIyY29uZGl0aW9ucyUyMiUzQSU1QiU3QiUyMmtpbmQlMjIlM0ElMjJBVVRIT1JfSVMlMjIlMkMlMjJ1c2VybmFtZSUyMiUzQSUyMmRlcGVuZGFib3QlMjIlN0QlMkMlN0IlMjJraW5kJTIyJTNBJTIyQVVUSE9SX0lTJTIyJTJDJTIydXNlcm5hbWUlMjIlM0ElMjJESkNyb3NzbWFuJTIyJTdEJTVEJTdEJTJDJTdCJTIyaXNOZWdhdGVkJTIyJTNBZmFsc2UlMkMlMjJjb25kaXRpb25zJTIyJTNBJTVCJTdCJTIya2luZCUyMiUzQSUyMlJFVklFV19TVEFUVVNfSVMlMjIlMkMlMjJzdGF0ZSUyMiUzQSUyMlJFVklFV19SRVFVSVJFRF9HSVRIVUIlMjIlN0QlNUQlN0QlNUQlN0QlNUQlN0Q%3D';
 const EXAMPLE_QUERY = 'is:pr is:open -author:dependabot -author:app/dependabot -author:DJCrossman review:none draft:false sort:updated-desc';
-// The same filter as Graphite's signed-in inbox page holds it (section "Needs anyone's review").
+// The same filter the way Graphite's signed-in inbox page holds it (section "Needs anyone's review").
 const EXAMPLE_TREE = {
   kind: 'OR',
   exprs: [
@@ -332,7 +332,7 @@ describe('importGraphiteSections', () => {
 });
 
 describe("the user's Graphite inbox", () => {
-  const { views, notes, inboxRepos } = importGraphiteSections(userInbox as GraphiteInboxSnapshot);
+  const { views, notes, inboxRepos } = importGraphiteSections(graphiteInboxSnapshot.parse(userInbox));
 
   // Each verified against GitHub's dashboard search, signed in (docs/research/graphite-sections.md, "Verified mapping").
   it.each([

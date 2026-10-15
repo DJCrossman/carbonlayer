@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, assert, describe, expect, it, vi } from 'vitest';
 import { changedFileList, fileDiffs, patchOf, type DiffEntry } from './files';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -46,14 +46,14 @@ describe('changedFileList', () => {
 });
 
 describe('fileDiffs', () => {
-  it('asks for the paths in one request, as GitHub’s UI does, and names a renamed file’s old path', async () => {
+  it('asks for the paths in one request, like GitHub’s UI, and names a renamed file’s old path', async () => {
     const requested: URL[] = [];
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => {
         const parsed = new URL(url, 'https://github.com');
         requested.push(parsed);
-        const asked = parsed.searchParams.get('paths')!.split(',').map(decodeURIComponent);
+        const asked = parsed.searchParams.get('paths')?.split(',').map(decodeURIComponent) ?? [];
         return Response.json(asked.map((path) => ({ path, oldTreeEntry: { path: path === 'new.ts' ? 'old.ts' : path }, diffLines: [{ type: 'HUNK', text: '@@ -1 +1 @@' }] })));
       }),
     );
@@ -61,10 +61,12 @@ describe('fileDiffs', () => {
     const diffs = await fileDiffs('/o/r/pull/1', ['src/a b.ts', 'new.ts'], headOid);
 
     expect(requested).toHaveLength(1);
-    expect(requested[0]!.pathname).toBe('/o/r/pull/1/page_data/diff_entries');
-    expect(requested[0]!.searchParams.get('paths')!.split(',')).toEqual(['src%2Fa%20b.ts', 'new.ts']);
-    expect(requested[0]!.searchParams.get('ctx')).toBe(':');
-    expect(requested[0]!.searchParams.has('range')).toBe(false);
+    const [request] = requested;
+    assert.isDefined(request);
+    expect(request.pathname).toBe('/o/r/pull/1/page_data/diff_entries');
+    expect(request.searchParams.get('paths')?.split(',')).toEqual(['src%2Fa%20b.ts', 'new.ts']);
+    expect(request.searchParams.get('ctx')).toBe(':');
+    expect(request.searchParams.has('range')).toBe(false);
     expect(diffs).toEqual({ 'src/a b.ts': { patch: '@@ -1 +1 @@', previousPath: null }, 'new.ts': { patch: '@@ -1 +1 @@', previousPath: 'old.ts' } });
     expect(headOid).not.toHaveBeenCalled();
   });

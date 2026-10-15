@@ -79,7 +79,7 @@ describe('routeInApp', () => {
     expect(routeInApp(new URL(url), both)).toBeNull();
   });
 
-  it("loads a page this tab shows as GitHub's, and the homepage signed out", () => {
+  it('loads a page this tab leaves to GitHub, and the homepage signed out', () => {
     const pullRequestsOnly = { showsOurs: (route: AppRoute) => route.page === 'pr', signedIn: true };
     expect(routeInApp(new URL('https://github.com/'), pullRequestsOnly)).toBeNull();
     expect(routeInApp(new URL('https://github.com/acme/widgets/pull/41'), pullRequestsOnly)).toMatchObject({ page: 'pr', number: 41 });

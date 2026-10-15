@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, assert, describe, expect, it, vi } from 'vitest';
 import type { PrDetail } from '../model';
-import type { RpcRequest } from '../rpc';
+import { readRpcRequest, type RpcResponse } from '../rpc';
 import { DEFAULT_SETTINGS } from '../settings';
 import { handleRpc } from './index';
 import { enrichPull, fetchInbox, fetchViewPage } from './inbox';
@@ -8,16 +8,19 @@ import { rememberPullRequest } from './mutations';
 import { fetchPullRequestPage } from './pull-request';
 import { topRepositories } from './repositories';
 
-vi.mock('../settings', async (original) => ({ ...(await original<typeof import('../settings')>()), getSettings: vi.fn(async () => DEFAULT_SETTINGS) }));
+vi.mock(import('../settings'), async (original) => ({ ...(await original()), getSettings: vi.fn(async () => DEFAULT_SETTINGS) }));
 vi.mock('./inbox', () => ({ fetchInbox: vi.fn(async () => [{ prs: [], totalCount: 0, fetchedAt: 'now' }]), enrichPull: vi.fn(), fetchViewPage: vi.fn() }));
-vi.mock('./repositories', async (original) => ({ ...(await original<typeof import('./repositories')>()), topRepositories: vi.fn(async () => ({ repos: [], nextCursor: 7 })) }));
-vi.mock('./pull-request', () => ({
-  fetchPullRequestPage: vi.fn(async () => ({ id: 'PR_1', repo: { owner: 'o', name: 'r' }, number: 1, headOid: 'h', baseOid: 'b', stack: { source: 'none' }, threads: [] }) as unknown as PrDetail),
-}));
+vi.mock(import('./repositories'), async (original) => ({ ...(await original()), topRepositories: vi.fn(async () => ({ repos: [], nextCursor: 7 })) }));
+vi.mock('./pull-request', async () => {
+  // A fixture PR, as o/r#1.
+  const [fixture] = (await import('../../fixtures/pr')).prFixtures;
+  if (!fixture) throw new Error('No fixture PR');
+  return {
+    fetchPullRequestPage: vi.fn(async (): Promise<PrDetail> => ({ ...fixture, id: 'PR_1', repo: { owner: 'o', name: 'r' }, number: 1, headOid: 'h', baseOid: 'b', nativeStack: null, threads: [] })),
+  };
+});
 
 afterEach(() => vi.unstubAllGlobals());
-
-const call = (method: RpcRequest['method'], args: unknown) => handleRpc({ kind: 'gg-rpc', id: 'req-1', method, args } as RpcRequest);
 
 describe('handleRpc', () => {
   it("answers with the request id, asking GitHub every time: the page's cache decides when", async () => {
@@ -41,7 +44,7 @@ describe('handleRpc', () => {
     expect(fetchPullRequestPage).toHaveBeenCalledTimes(3);
 
     expect(await call('pr.comment', { prId: 'PR_unknown', body: 'hi' })).toEqual({ kind: 'gg-rpc-result', id: 'req-1', ok: false, error: 'Open the pull request first' });
-    expect(await call('nope' as RpcRequest['method'], {})).toMatchObject({ ok: false, error: 'Unknown request: nope' });
+    expect(await call('nope', {})).toMatchObject({ ok: false, error: 'Unknown request: nope' });
   });
 
   it('fetches a later page of a view in the inbox scope', async () => {
@@ -89,11 +92,23 @@ describe('handleRpc', () => {
     vi.stubGlobal('fetch', fetch);
 
     expect(await call('markdown.preview', { text: '**Hi**', prId: 'PR_9' })).toMatchObject({ ok: true, result: { html: '<p><strong>Hi</strong></p>' } });
-    const [path, init] = fetch.mock.calls[0]!;
+    const [first] = fetch.mock.calls;
+    assert.isDefined(first);
+    const [path, init] = first;
     expect([path, init.method]).toEqual(['/preview', 'POST']);
-    expect(Object.fromEntries(init.body as FormData)).toEqual({ text: '**Hi**', issue: '900', repository: '77', project: '900', subject: '9', subject_type: 'PullRequest' });
+    assert.instanceOf(init.body, FormData);
+    expect(Object.fromEntries(init.body)).toEqual({ text: '**Hi**', issue: '900', repository: '77', project: '900', subject: '9', subject_type: 'PullRequest' });
     expect(init.headers).toEqual({ 'GitHub-Verified-Fetch': 'true', 'X-Requested-With': 'XMLHttpRequest', 'X-Fetch-Nonce': 'v2:n1', 'X-GitHub-Client-Version': 'r1' });
     await call('pr.fetch', { repo: { owner: 'o', name: 'r' }, number: 9 });
     expect(fetchPullRequestPage).toHaveBeenCalledTimes(1);
   });
 });
+
+/** A request answered the way the content script answers the app's: read by its method's schemas, then handled. */
+function call(method: string, args: unknown): Promise<RpcResponse> {
+  try {
+    return handleRpc(readRpcRequest({ kind: 'gg-rpc', id: 'req-1', method, args }));
+  } catch (error) {
+    return Promise.resolve({ kind: 'gg-rpc-result', id: 'req-1', ok: false, error: error instanceof Error ? error.message : String(error) });
+  }
+}

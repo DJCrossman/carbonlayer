@@ -39,7 +39,7 @@ describe('toggleBold', () => {
     expect(marked(toggleBold(draft('hello wo|rld')))).toBe('hello **wo|rld**');
   });
 
-  it('gives a caret at the very end of the text an empty pair to type into, as GitHub does', () => {
+  it('gives a caret at the very end of the text an empty pair to type into, like GitHub', () => {
     expect(marked(toggleBold(draft('|')))).toBe('**|**');
     expect(marked(toggleBold(draft('hello|')))).toBe('hello**|**');
   });

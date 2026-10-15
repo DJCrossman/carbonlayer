@@ -1,26 +1,29 @@
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 import { prFixtures } from '../fixtures/pr';
 import type { PrDetail } from '../lib/model';
 import { nextActionFor } from './next-action';
 
-const pr41 = prFixtures.find((pr) => pr.number === 41)!;
-const pr42 = prFixtures.find((pr) => pr.number === 42)!;
+const pr41 = prFixtures.find((pr) => pr.number === 41);
+const pr42 = prFixtures.find((pr) => pr.number === 42);
+assert.isDefined(pr41);
+assert.isDefined(pr42);
 
 // #41 is the bottom of its stack, approved, green and clean: nothing stands in its way.
 const ready: PrDetail = pr41;
-const failingCheck = pr42.ci.checks.find((check) => check.state === 'FAILURE')!;
+const failingCheck = pr42.ci.checks.find((check) => check.state === 'FAILURE');
+assert.isDefined(failingCheck);
 
 describe('nextActionFor', () => {
   it('is ready to merge when nothing blocks the PR', () => {
     expect(nextActionFor(ready)).toMatchObject({ kind: 'ready', tone: 'success', title: 'Ready to merge', detail: null });
   });
 
-  it('merges over a failing optional check, as GitHub and Graphite do, and says so', () => {
+  it('merges over a failing optional check, like GitHub and Graphite, and says so', () => {
     const optional = { ...ready, ci: { ...pr42.ci }, requiredCheckNames: ready.requiredCheckNames.filter((name) => name !== failingCheck.name), mergeStatus: 'UNSTABLE' as const };
     expect(nextActionFor(optional)).toMatchObject({ kind: 'ready', detail: `An optional check is failing: ${failingCheck.name}` });
   });
 
-  it.each([
+  it.each<[string, Partial<PrDetail>, string]>([
     ['merged', { state: 'MERGED' }, 'Merged'],
     ['closed', { state: 'CLOSED' }, 'Closed'],
     ['draft', { isDraft: true }, 'Draft'],
@@ -31,8 +34,8 @@ describe('nextActionFor', () => {
     ['review-required', { reviewDecision: 'REVIEW_REQUIRED', reviewers: pr42.reviewers }, 'Waiting for review'],
     ['behind', { mergeStatus: 'BEHIND' }, 'Behind main'],
     ['blocked', { mergeStatus: 'BLOCKED' }, 'Blocked by branch protection'],
-  ] as const)('names %s', (kind, overrides, title) => {
-    expect(nextActionFor({ ...ready, ...overrides } as PrDetail)).toMatchObject({ kind, title });
+  ])('names %s', (kind, overrides, title) => {
+    expect(nextActionFor({ ...ready, ...overrides })).toMatchObject({ kind, title });
   });
 
   it('counts finished checks while they run', () => {

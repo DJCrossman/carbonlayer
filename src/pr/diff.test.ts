@@ -1,10 +1,15 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, assert, describe, expect, it, vi } from 'vitest';
 import { prFixtures } from '../fixtures/pr';
 import type { ChangedFile, ReviewThread } from '../lib/model';
 import { commentedRows, composerAnchorFor, currentLinesOf, fileNotes, filesInTreeOrder, fileTree, renderableDiff } from './diff';
 
-const pr42 = prFixtures.find((pr) => pr.number === 42)!;
-const fileAt = (path: string) => pr42.files.find((file) => file.path === path)!;
+const pr42 = prFixtures.find((pr) => pr.number === 42);
+assert.isDefined(pr42);
+const fileAt = (path: string): ChangedFile => {
+  const file = pr42.files.find((candidate) => candidate.path === path);
+  assert.isDefined(file, path);
+  return file;
+};
 
 describe('renderableDiff', () => {
   afterEach(() => vi.restoreAllMocks());
@@ -16,8 +21,9 @@ describe('renderableDiff', () => {
         if (file.patch === null) continue;
         const diff = renderableDiff(file);
         expect(diff?.hunks).toHaveLength(file.patch.split('\n').filter((line) => line.startsWith('@@ ')).length);
-        const added = diff!.hunks.reduce((sum, hunk) => sum + hunk.additionLines, 0);
-        const removed = diff!.hunks.reduce((sum, hunk) => sum + hunk.deletionLines, 0);
+        assert.exists(diff, file.path);
+        const added = diff.hunks.reduce((sum, hunk) => sum + hunk.additionLines, 0);
+        const removed = diff.hunks.reduce((sum, hunk) => sum + hunk.deletionLines, 0);
         expect({ path: file.path, added, removed }).toEqual({ path: file.path, added: file.additions, removed: file.deletions });
       }
     }
@@ -95,7 +101,8 @@ describe('fileNotes', () => {
 
 describe('composerAnchorFor', () => {
   // The second hunk, -38,11 +39,20: five unchanged lines, L43–L44 deleted, R44–R54 added, then unchanged lines from L45/R55.
-  const adapter = renderableDiff(fileAt('src/parcs/adapter.ts'))!;
+  const adapter = renderableDiff(fileAt('src/parcs/adapter.ts'));
+  assert.exists(adapter);
 
   it('opens under the last line of a selection, with its first line in the unified diff as the start', () => {
     // Dragged upwards over added lines.

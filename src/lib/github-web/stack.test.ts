@@ -105,7 +105,7 @@ describe('native stacks', () => {
 });
 
 describe("a stack entry's author", () => {
-  it('is who its page header says opened the PR, a bot as GitHub names it, and nobody for a header without the PR', () => {
+  it('is who its page header says opened the PR, a bot the way GitHub names it, and nobody for a header without the PR', () => {
     expect(authorIn(authorHeaderAnswer.parse({ pullRequest: { author: { isAgent: false, slug: 'riley', login: 'riley', displayName: 'Riley', avatarUrl: 'https://avatars.githubusercontent.com/u/7?v=4' } } }))).toEqual({
       login: 'riley',
       avatarUrl: 'https://avatars.githubusercontent.com/u/7?v=4',

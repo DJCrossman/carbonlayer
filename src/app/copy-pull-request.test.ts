@@ -4,7 +4,7 @@ import { pullRequestCopy } from './copy-pull-request';
 const pr = { number: 9003, title: 'Fix the parcs adapter', url: 'https://github.com/acme/widgets/pull/9003' };
 
 describe('pullRequestCopy', () => {
-  it('copies the number as GitHub links it within the repository', () => {
+  it('copies the number the way GitHub links it within the repository', () => {
     expect(pullRequestCopy(pr, 'copy-number')).toEqual({ data: { 'text/plain': '#9003' }, subject: '#9003' });
   });
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { descriptionPermalink, timelineFrom } from './timeline';
 
-// A conversation as GitHub renders it, cut down to the elements the parser reads (shapes from cli/cli#14320).
+// A conversation the way GitHub renders it, cut down to the elements the parser reads (shapes from cli/cli#14320).
 const conversation = `
 <div class="TimelineItem">
   <div id="pullrequest-42" class="timeline-comment"><a class="author">ana</a> commented

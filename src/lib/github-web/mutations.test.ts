@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PrDetail } from '../model';
 import { mutations, rememberPullRequest } from './mutations';
 
 // Every request the mutations send, as `METHOD path body`; GETs are answered from `reads`.
@@ -71,7 +70,7 @@ describe('mutations', () => {
     ]);
   });
 
-  it("sends a comment on several lines as GitHub's multi-line comment, posted now or batched into a review", async () => {
+  it("sends a comment on several lines in the form of GitHub's multi-line comment, posted now or batched into a review", async () => {
     const range = { path: 'a.ts', line: 18, side: 'RIGHT', startLine: 12, startSide: 'LEFT', body: 'Extract this' } as const;
     await mutations['pr.addThread']({ prId: 'PR_1', ...range });
     await mutations['pr.review']({ prId: 'PR_1', event: 'COMMENT', body: '', threads: [range] });
@@ -143,7 +142,7 @@ describe('mutations', () => {
     ]);
   });
 
-  it("reverts as GitHub's Revert button does, and says where GitHub went next", async () => {
+  it("reverts the way GitHub's Revert button does, and says where GitHub went next", async () => {
     const landed = 'https://github.com/o/r/compare/main...revert-1-feature?expand=1';
     const fetch = vi.fn(async () => Object.defineProperty(new Response('<html></html>'), 'url', { value: landed }));
     vi.stubGlobal('fetch', fetch);
@@ -195,7 +194,7 @@ describe('mutations', () => {
   });
 });
 
-function pullRequest({ id, number = 1, stackSource }: { id: string; number?: number; stackSource: 'native' | 'none' }): PrDetail {
+function pullRequest({ id, number = 1, stackSource }: { id: string; number?: number; stackSource: 'native' | 'none' }): Parameters<typeof rememberPullRequest>[0] {
   return {
     id,
     repo: { owner: 'o', name: 'r' },
@@ -203,6 +202,18 @@ function pullRequest({ id, number = 1, stackSource }: { id: string; number?: num
     headOid: 'head',
     baseOid: 'base',
     nativeStack: stackSource === 'native' ? { position: 2, size: 2 } : null,
-    threads: [{ id: `${number}00`, path: 'src/a.ts', comments: [{ id: '9001' }, { id: '9002' }] }],
-  } as unknown as PrDetail;
+    threads: [
+      {
+        id: `${number}00`,
+        path: 'src/a.ts',
+        line: 1,
+        startLine: null,
+        side: 'RIGHT',
+        isResolved: false,
+        isOutdated: false,
+        diffHunk: '',
+        comments: ['9001', '9002'].map((commentId) => ({ id: commentId, author: { login: 'ana', avatarUrl: '', url: '' }, bodyHtml: '', createdAt: '', url: '', subjectId: null, reactions: [] })),
+      },
+    ],
+  };
 }

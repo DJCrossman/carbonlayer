@@ -1,11 +1,12 @@
 import { QueryClient } from '@tanstack/react-query';
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 import { prFixtures } from '../fixtures/pr';
 import type { PrEnrichment, PrStages, ViewResult } from '../lib/model';
 import { nextActionFor } from './next-action';
 import { prDetailFrom, stagesStandingIn, type PrPageData } from './page-data';
 
-const pr42 = prFixtures.find((pr) => pr.number === 42)!;
+const pr42 = prFixtures.find((pr) => pr.number === 42);
+assert.isDefined(pr42);
 const { timeline, threads, unresolvedThreadCount, files, baseOid, stack, labels, assignees, ci, requiredCheckNames, unread, ...rest } = pr42;
 const { mergeStatus, reviewers, reviewDecision, viewerCanMerge, viewerCanEnableAutoMerge, allowedMergeMethods, defaultMergeMethod, autoMerge, isInMergeQueue, ...headerFields } = rest;
 const header: PrStages['header'] = { ...headerFields, viewerLogin: 'octocat', stackSource: 'graphite-comment' };
@@ -53,11 +54,13 @@ describe('prDetailFrom', () => {
 
   it("joins each file's diff to it as the diffs arrive; a file still waiting has no patch", () => {
     const [first, second] = files;
+    assert.isDefined(first);
+    assert.isDefined(second);
     const pr = prDetailFrom(header, {
       ...nothingYet,
       files: {
         status: 'loading',
-        value: { baseOid, files: [first!, second!].map(({ patch, previousPath, ...summary }) => summary), diffs: { [first!.path]: { patch: first!.patch, previousPath: null } } },
+        value: { baseOid, files: [first, second].map(({ patch, previousPath, ...summary }) => summary), diffs: { [first.path]: { patch: first.patch, previousPath: null } } },
       },
     });
     expect(pr.files).toEqual([{ ...first, previousPath: null }, { ...second, patch: null, previousPath: null }]);
@@ -88,7 +91,9 @@ describe('stagesStandingIn', () => {
 
   it("prefers the inbox's row, with its labels, and still centres the stack the page showed on the PR", () => {
     const client = showedStack();
-    const row = { ...stack.entries[2]!, author: { login: 'jlord', avatarUrl: '', url: '' }, title: 'Show the zone switcher (as the inbox listed it)', labels: [{ name: 'ui', color: '000000' }] };
+    const [, , entry] = stack.entries;
+    assert.isDefined(entry);
+    const row = { ...entry, author: { login: 'jlord', avatarUrl: '', url: '' }, title: 'Show the zone switcher (as the inbox listed it)', labels: [{ name: 'ui', color: '000000' }] };
     const section: Pick<ViewResult, 'prs'> = { prs: [row] };
     client.setQueryData(['inbox', 'acme', 'org:acme', 'mine', 'is:pr', 50], section);
     expect(stagesStandingIn(client, widgets, 43)).toMatchObject({

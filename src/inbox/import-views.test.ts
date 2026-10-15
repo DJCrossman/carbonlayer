@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 import type { View } from '../lib/model';
 import { importViews, placeGraphiteImport } from './import-views';
 
@@ -38,7 +38,9 @@ describe('importViews', () => {
   });
 
   it.each(['append', 'replace'] as const)('keeps ids unique when the link itself repeats one (%s)', (mode) => {
-    const repeated = [incoming[1]!, { ...incoming[1]!, name: 'Hotfixes again' }];
+    const [, hotfixes] = incoming;
+    assert.isDefined(hotfixes);
+    const repeated = [hotfixes, { ...hotfixes, name: 'Hotfixes again' }];
     const result = importViews([], repeated, mode);
     expect(result[0]?.id).toBe('hotfixes');
     expect(result[1]?.id).not.toBe('hotfixes');

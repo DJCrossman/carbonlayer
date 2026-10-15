@@ -97,7 +97,7 @@ describe('drawerContents', () => {
 
   it("carries each conversation's lines and the code they sit on, none where the patch does not reach them or has not arrived", () => {
     const shown = drawerContents(threads, batch, files, filters({ status: 'all' }), 'octocat').shown;
-    const at = (id: string) => shown.find((entry) => ids([entry])[0] === id)!;
+    const at = (id: string) => shown.find((entry) => ids([entry])[0] === id);
     expect(at('a-early')).toMatchObject({
       lines: { first: { side: 'RIGHT', line: 1 }, last: { side: 'RIGHT', line: 2 } },
       code: [

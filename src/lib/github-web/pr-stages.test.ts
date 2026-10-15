@@ -1,11 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PrStage, PrStages } from '../model';
-import type { RpcMethod, RpcRequest } from '../rpc';
+import { afterEach, assert, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { z } from 'zod';
+import { prStagesSchema, type PrStage, type PrStages } from '../model';
+import { readRpcRequest } from '../rpc';
 import { DEFAULT_SETTINGS } from '../settings';
 import { handleRpc } from './index';
 import { SIGNED_OUT } from './session';
 
-vi.mock('../settings', async (original) => ({ ...(await original<typeof import('../settings')>()), getSettings: vi.fn(async () => DEFAULT_SETTINGS) }));
+vi.mock(import('../settings'), async (original) => ({ ...(await original()), getSettings: vi.fn(async () => DEFAULT_SETTINGS) }));
 
 let requests: string[];
 beforeEach(() => {
@@ -79,7 +80,8 @@ describe('the PR page in stages', () => {
 
   it('asks GitHub again after a write rather than sharing a request made before it', async () => {
     await loadStage('header');
-    const served = vi.mocked(fetch).getMockImplementation()!;
+    const served = vi.mocked(fetch).getMockImplementation();
+    assert.isDefined(served);
     let release = () => {};
     const held = new Promise<void>((resolve) => (release = resolve));
     vi.mocked(fetch).mockImplementation(async (url, init) => {
@@ -156,15 +158,18 @@ describe('the PR page in stages', () => {
 const repo = { owner: 'o', name: 'r' };
 const STAGES: PrStage[] = ['header', 'activity', 'files', 'threads', 'mergeBox', 'checks', 'stack', 'meta'];
 
-async function call(method: RpcMethod, args: unknown) {
-  const response = await handleRpc({ kind: 'gg-rpc', id: 'req', method, args } as RpcRequest);
+/** A request's result, answered the way the content script answers the app: read by its method's schemas, then handled. */
+async function call(method: string, args: unknown): Promise<unknown> {
+  const response = await handleRpc(readRpcRequest({ kind: 'gg-rpc', id: 'req', method, args }));
   if (!response.ok) throw new Error(response.error);
   return response.result;
 }
 
-async function loadStage<S extends PrStage>(stage: S) {
-  const method = `pr.fetch${stage[0]!.toUpperCase()}${stage.slice(1)}` as RpcMethod;
-  return (await call(method, { repo, number: 1 })) as PrStages[S];
+/** A stage of o/r#1 by its method (`pr.fetchHeader`, …), its result read by the stage's schema the way the app reads it. */
+async function loadStage<S extends PrStage>(stage: S): Promise<PrStages[S]> {
+  // Each stage's schema, typed as reading that stage, so the answer comes out as `S`'s.
+  const schemas: { [K in PrStage]: z.ZodType<PrStages[K]> } = prStagesSchema.shape;
+  return schemas[stage].parse(await call(`pr.fetch${stage.charAt(0).toUpperCase()}${stage.slice(1)}`, { repo, number: 1 }));
 }
 
 /**

@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest';
-import { importGraphiteSections, searchForFilter, type GraphiteInboxSnapshot } from './graphite';
+import { assert, describe, expect, it } from 'vitest';
+import { graphiteInboxSnapshot, importGraphiteSections, searchForFilter } from './graphite';
 import userInbox from './graphite-inbox.fixture.json';
 import { DEFAULT_VIEWS, decodeViewsShareHash, encodeViewsShareLink, inboxFilterOf, organizationScope, resolveViewQuery, sectionCount } from './views';
 
 describe('the default views', () => {
-  const imported = importGraphiteSections(userInbox as GraphiteInboxSnapshot).views.map(({ view }) => view);
+  const imported = importGraphiteSections(graphiteInboxSnapshot.parse(userInbox)).views.map(({ view }) => view);
 
   it("are Graphite's sections in its order, without the user's own", () => {
     expect(DEFAULT_VIEWS.map((view) => view.name)).toEqual([
@@ -22,7 +22,8 @@ describe('the default views', () => {
 
   it.each(DEFAULT_VIEWS.map((view) => [view.name, view] as const))('%s carries the filter the Graphite import makes and the query it compiles to', (name, view) => {
     expect(view.filter).toEqual(imported.find((candidate) => candidate.name === name)?.filter);
-    expect(view.query).toBe(searchForFilter(view.filter!, []).query);
+    assert.isDefined(view.filter);
+    expect(view.query).toBe(searchForFilter(view.filter, []).query);
     expect(view.repos).toBeUndefined();
   });
 });
@@ -47,7 +48,10 @@ describe('share links', () => {
       },
     ];
     expect(decodeViewsShareHash(new URL(encodeViewsShareLink(views)).hash)).toEqual(views);
-    expect(decodeViewsShareHash(new URL(encodeViewsShareLink([{ ...views[0]!, filter: { groups: 'all' } as never }])).hash)).toBeNull();
+    // The same link written by hand, then with a filter of another shape.
+    const [mine] = views;
+    expect(decodeViewsShareHash(`#views=${btoa(JSON.stringify([mine]))}`)).toEqual(views);
+    expect(decodeViewsShareHash(`#views=${btoa(JSON.stringify([{ ...mine, filter: { groups: 'all' } }]))}`)).toBeNull();
   });
 
   it('rejects hashes without views or with malformed payloads', () => {

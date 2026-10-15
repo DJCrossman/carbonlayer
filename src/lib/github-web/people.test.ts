@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { assert, describe, expect, it, vi } from 'vitest';
 import { organizationPeople, peopleIn } from './people';
 
 describe("an organization's people", () => {
@@ -30,7 +30,11 @@ describe("an organization's people", () => {
       '/orgs/acme/people': page(member(1, 'amanda', 'Amanda Liu'), '/orgs/acme/people?page=2'),
       '/orgs/acme/people?page=2': page(member(2, 'dana', 'Dana Reyes') + member(1, 'amanda', 'Amanda Liu'), '/orgs/acme/people/export?page=3'),
     };
-    const load = vi.fn(async (path: string) => pages[path]!);
+    const load = vi.fn(async (path: string) => {
+      const loaded = pages[path];
+      assert.isDefined(loaded, path);
+      return loaded;
+    });
     expect((await organizationPeople({ login: 'acme', isViewer: false }, load)).map((person) => person.login)).toEqual(['amanda', 'dana']);
     expect(load).toHaveBeenCalledTimes(2);
 

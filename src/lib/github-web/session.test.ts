@@ -69,7 +69,7 @@ describe('reading with the session', () => {
   });
 
   it('recognises a signed-out session by the login redirect or GitHub saying it cannot authenticate', async () => {
-    const redirected = { ok: true, status: 200, redirected: true, url: 'https://github.com/login?return_to=x', headers: new Headers() } as Response;
+    const redirected = Object.defineProperties(new Response(''), { redirected: { value: true }, url: { value: 'https://github.com/login?return_to=x' } });
     vi.stubGlobal('fetch', vi.fn(async () => redirected));
     await expect(request('/pulls/inbox', 'text/html')).rejects.toThrow(SIGNED_OUT);
 

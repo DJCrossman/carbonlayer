@@ -4,7 +4,7 @@ import { getSettings, setSettings } from './settings';
 import { DEFAULT_VIEWS } from './views';
 
 // Chrome's synced storage, with its 8 KB a item limit.
-const sync = vi.hoisted(() => ({ items: {} as Record<string, unknown>, writes: [] as string[][] }));
+const sync = vi.hoisted((): { items: Record<string, unknown>; writes: string[][] } => ({ items: {}, writes: [] }));
 vi.mock('wxt/browser', () => ({
   browser: {
     storage: {
