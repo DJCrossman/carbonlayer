@@ -102,6 +102,12 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
       }),
     };
   },
+  'markdown.emojis': async () => {
+    // GitHub's emoji by name, in its order: Unicode's as [image, character], GitHub's own as [image] alone
+    // (docs/research/github-web-endpoints.md).
+    const emojis = await getJson('/autocomplete/emojis_for_editor', z.record(z.string(), z.union([z.tuple([z.string(), z.string()]), z.tuple([z.string()])])));
+    return Object.entries(emojis).map(([name, [imageUrl, character]]) => (character === undefined ? { name, imageUrl } : { name, character }));
+  },
   ...mutations,
 };
 

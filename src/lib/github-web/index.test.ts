@@ -102,6 +102,32 @@ describe('handleRpc', () => {
     await call('pr.fetch', { repo: { owner: 'o', name: 'r' }, number: 9 });
     expect(fetchPullRequestPage).toHaveBeenCalledTimes(1);
   });
+
+  it("lists the emoji GitHub's comment box suggests, in its order, and refuses a list of another shape", async () => {
+    const fetch = vi.fn(async (_path: string, _init: RequestInit) =>
+      Response.json({
+        '100': ['https://github.githubassets.com/images/icons/emoji/unicode/1f4af.png?v8', '💯'],
+        '+1': ['https://github.githubassets.com/images/icons/emoji/unicode/1f44d.png?v8', '👍'],
+        shipit: ['https://github.githubassets.com/images/icons/emoji/shipit.png?v8'],
+      }),
+    );
+    vi.stubGlobal('fetch', fetch);
+    expect(await call('markdown.emojis', {})).toMatchObject({
+      ok: true,
+      result: [
+        { name: '100', character: '💯' },
+        { name: '+1', character: '👍' },
+        { name: 'shipit', imageUrl: 'https://github.githubassets.com/images/icons/emoji/shipit.png?v8' },
+      ],
+    });
+    const [first] = fetch.mock.calls;
+    assert.isDefined(first);
+    expect(first[0]).toBe('/autocomplete/emojis_for_editor');
+    expect(first[1].headers).toMatchObject({ Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'GitHub-Is-React': 'true' });
+
+    fetch.mockImplementation(async () => Response.json({ '+1': { image: 'https://github.githubassets.com/images/icons/emoji/unicode/1f44d.png?v8' } }));
+    expect(await call('markdown.emojis', {})).toMatchObject({ ok: false, error: expect.stringMatching(/^\/autocomplete\/emojis_for_editor did not match: /) });
+  });
 });
 
 /** A request answered the way the content script answers the app's: read by its method's schemas, then handled. */

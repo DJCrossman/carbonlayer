@@ -1,7 +1,7 @@
 // Everything the UI needs from the outside world, behind one interface so the same pages render
 // from the content script's RPC in the extension and from fixtures in the dev harness (`?fixtures=1`).
 
-import type { ChangedFileDiff, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, StackEntry, TopRepository, View, ViewResult } from '../lib/model';
+import type { ChangedFileDiff, Emoji, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, StackEntry, TopRepository, View, ViewResult } from '../lib/model';
 import { rpc, type InboxRowToEnrich, type MergeMethod } from '../lib/rpc';
 import { getSettings, setSettings, watchSettings, type Settings, type SettingsStorage } from '../lib/settings';
 import { resolveViewQuery } from '../lib/views';
@@ -64,6 +64,8 @@ export interface DataSource {
   react(prId: string, subjectId: string, content: ReactionContent, add: boolean): Promise<void>;
   /** A comment's Markdown the way GitHub renders it on the PR, in HTML: what a comment box's Preview tab shows. */
   previewMarkdown(text: string, prId: string): Promise<string>;
+  /** The emoji a comment box suggests after a `:`, in GitHub's order. */
+  listEmojis(): Promise<Emoji[]>;
   getSettings(): Promise<Settings>;
   setSettings(patch: Partial<Settings>): Promise<Settings>;
   watchSettings(onChange: (settings: Settings) => void): () => void;
@@ -98,6 +100,7 @@ export function createRpcDataSource(): DataSource {
     rerunAllJobs: (prId, runId) => rpc('pr.rerunAllJobs', { prId, runId }),
     react: (prId, subjectId, content, add) => rpc('pr.react', { prId, subjectId, content, add }),
     previewMarkdown: async (text, prId) => (await rpc('markdown.preview', { text, prId })).html,
+    listEmojis: () => rpc('markdown.emojis', {}),
     getSettings,
     setSettings,
     watchSettings,
@@ -302,6 +305,11 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
         .map((paragraph) => `<p>${paragraph.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('\n', '<br>')}</p>`)
         .join('\n');
     },
+    // Some of GitHub's emoji, in its order, a moment later.
+    listEmojis: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      return FIXTURE_EMOJIS;
+    },
     getSettings: () => getSettings(memory),
     setSettings: async (patch) => {
       const saved = await setSettings(patch, memory);
@@ -396,3 +404,42 @@ const prStageRequests: { [S in PrStage]: (args: { repo: RepoRef; number: number 
 
 /** How long the harness takes over each stage of the PR page: the header first, the way GitHub's page comes. */
 const FIXTURE_STAGE_DELAYS: Record<PrStage, number> = { header: 200, stack: 450, meta: 500, activity: 600, files: 700, checks: 900, mergeBox: 1100, threads: 1300 };
+
+/**
+ * Some of the emoji GitHub's comment box suggests, in GitHub's order (its first ones, and each of the harness's checks'),
+ * a few of them GitHub's own, with its images.
+ */
+const FIXTURE_EMOJIS: Emoji[] = [
+  { name: '100', character: '💯' },
+  { name: '1234', character: '🔢' },
+  { name: '+1', character: '👍' },
+  { name: '-1', character: '👎' },
+  { name: '1st_place_medal', character: '🥇' },
+  { name: '2nd_place_medal', character: '🥈' },
+  { name: '3rd_place_medal', character: '🥉' },
+  { name: '8ball', character: '🎱' },
+  { name: 'atom', imageUrl: 'https://github.githubassets.com/images/icons/emoji/atom.png?v8' },
+  { name: 'bowtie', imageUrl: 'https://github.githubassets.com/images/icons/emoji/bowtie.png?v8' },
+  { name: 'confused', character: '😕' },
+  { name: 'copilot', imageUrl: 'https://github.githubassets.com/images/icons/emoji/copilot.png?v8' },
+  { name: 'eyes', character: '👀' },
+  { name: 'heart', character: '❤️' },
+  { name: 'laughing', character: '😆' },
+  { name: 'octocat', imageUrl: 'https://github.githubassets.com/images/icons/emoji/octocat.png?v8' },
+  { name: 'rocket', character: '🚀' },
+  { name: 'shipit', imageUrl: 'https://github.githubassets.com/images/icons/emoji/shipit.png?v8' },
+  { name: 'slightly_smiling_face', character: '🙂' },
+  { name: 'smile', character: '😄' },
+  { name: 'smile_cat', character: '😸' },
+  { name: 'smiley', character: '😃' },
+  { name: 'smiley_cat', character: '😺' },
+  { name: 'smiling_face_with_three_hearts', character: '🥰' },
+  { name: 'smiling_imp', character: '😈' },
+  { name: 'smirk', character: '😏' },
+  { name: 'sweat_smile', character: '😅' },
+  { name: 'tada', character: '🎉' },
+  { name: 'thinking', character: '🤔' },
+  { name: 'thumbsdown', character: '👎' },
+  { name: 'thumbsup', character: '👍' },
+  { name: 'white_check_mark', character: '✅' },
+];

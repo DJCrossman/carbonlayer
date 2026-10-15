@@ -194,6 +194,23 @@ ADDITION with `+`, DELETION with `-`, CONTEXT with a space).
 - Not this: `GET /autocomplete/users?q=` answers `text/fragment+html` `li.autocomplete-item[data-autocomplete-value=<login>]`
   from all of GitHub, not the organization's people.
 
+## The emoji a comment box suggests (`/autocomplete/emojis_for_editor`) — JSON (VERIFIED signed in 2026-10-15)
+- `GET /autocomplete/emojis_for_editor` with `Accept: application/json` and the React headers `getJson` sends → 200, one
+  JSON object of 1936 entries: every emoji GitHub's React markdown editor suggests after a `:`, by name. One of Unicode's
+  is `name → [imageUrl, character]` (`"+1": ["https://github.githubassets.com/images/icons/emoji/unicode/1f44d.png?v8",
+  "👍"]`, `"smile": [".../unicode/1f604.png?v8", "😄"]`), one of GitHub's own `name → [imageUrl]` (`shipit`, `octocat`,
+  `atom`, `basecamp`, `bowtie`, `copilot`, `dependabot`, `electron`, `feelsgood`, `finnadie`, `fishsticks`, `goberserk`,
+  `godmode`, `hurtrealbad`, `neckbeard`, `rage1` … `rage4`, …). Its first keys, in order: `100`, `1234`, `+1`, `-1`,
+  `1st_place_medal`, `2nd_place_medal`. A plain navigation to it gets 406.
+- GitHub's editor (its bundles, read 2026-10-15) suggests them as Primer's `InlineAutocomplete` with
+  `{ triggerChar: ':', keepTriggerCharOnCommit: false }`: a `:` at the start of the text or after whitespace opens the
+  list for what follows it up to the caret. Each emoji scores 5 when its name has the query, case aside, and 5 more when
+  it begins with it; none scoring nothing. The highest five, `+1`, `thumbsup` and `-1` ahead of their equals, else in
+  the list's order, then those three ahead of the rest of the five; a bare `:` lists the first five. Enter or Tab puts the
+  one selected in place of the `:` and the query, with a space after it: the character, or `:name:` for one of GitHub's
+  own. A typed `:+1:` stays as it is; GitHub renders it. `markdown.emojis` reads the list (`src/lib/github-web/index.ts`),
+  and `emojiQueryAt`, `emojiSuggestionsFor` and `insertEmoji` in `src/pr/markdown-editing.ts` do the rest.
+
 ## Writes
 Review submit, comment, inline comment, resolve, merge, auto-merge, viewed and draft: see
 `github-web-mutations.md` (read from GitHub's bundles; none sent yet).

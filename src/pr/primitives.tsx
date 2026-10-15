@@ -1,13 +1,18 @@
 // PR-page pieces the shared primitives in src/ui/ do not cover: the Open / Draft / Merged / Closed state
 // pill, the comment box, and a part of the page fed by one stage of its data.
-import { createContext, Fragment, useContext, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
-import type { PrSummary } from '../lib/model';
+import { skipToken, useQuery } from '@tanstack/react-query';
+import { createContext, Fragment, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
+import type { Emoji, PrSummary } from '../lib/model';
 import { Button } from '../ui/Button';
 import { Icon, type IconName } from '../ui/Icon';
 import { StatusPill } from '../ui/StatusPill';
 import { Markdown } from './Comment';
 import {
   continueList,
+  emojiQueryAt,
+  emojiSuggestionsFor,
+  insertEmoji,
   insertHeading,
   insertLink,
   insertSuggestion,
@@ -34,8 +39,10 @@ export function StatePill({ pr }: { pr: Pick<PrSummary, 'state' | 'isDraft'> }) 
 
 /**
  * The comment box every composer on the page uses, like GitHub's: Write and Preview tabs, GitHub's formatting toolbar and
- * the shortcuts GitHub documents for comments, lists that carry on with Enter, and a URL pasted over text linking it
- * (markdown-editing.ts says what each does to the text). ⌘↵ / Ctrl+↵ submits, Esc cancels, and it grows with its content.
+ * the shortcuts GitHub documents for comments, lists that carry on with Enter, a URL pasted over text linking it, and
+ * GitHub's emoji suggested after a `:` (markdown-editing.ts says what each does to the text). ⌘↵ / Ctrl+↵ submits, Esc
+ * cancels, and it grows with its content. While the emoji list shows, ↑ / ↓ move through it, Enter or Tab (or a click)
+ * puts the one reached in, and Esc closes only the list.
  */
 export function CommentInput({
   value,
@@ -68,6 +75,16 @@ export function CommentInput({
   const pasteAsIs = useRef(false);
   // Where a command's selection goes once React shows its text, when the browser could not type the text in itself.
   const selectionAfter = useRef<Draft | null>(null);
+  // What a `:` before the caret asks for (emojiQueryAt), read from the text it was typed in, and which suggestion ↑ / ↓
+  // reached; null once Esc closed the list or the text lost focus. GitHub's emoji are asked for the first time a box
+  // asks for one, then kept by the page's cache: they rarely change.
+  const [emojiAsk, setEmojiAsk] = useState<{ value: string; at: number; query: string; active: number } | null>(null);
+  const asked = emojiAsk && emojiAsk.value === value && !previewing && !disabled ? emojiAsk : null;
+  const loadEmojis = useContext(EmojiList);
+  const emojis = useQuery({ queryKey: ['emojis'], queryFn: asked && loadEmojis ? loadEmojis : skipToken, staleTime: Infinity });
+  const suggestions = asked && emojis.data ? emojiSuggestionsFor(asked.query, emojis.data) : [];
+  const emojiListShown = suggestions.length > 0 || (asked !== null && emojis.isLoading);
+  const emojiListId = useId();
   const isMac = navigator.userAgent.includes('Mac');
   const tools: Array<[Tool, ...Tool[]]> = suggestion
     ? [[{ label: 'Add a suggestion', icon: 'file-diff', keys: 'G', stroke: 'g', command: (draft) => insertSuggestion(draft, suggestion()) }], ...TOOLBAR]
@@ -140,6 +157,28 @@ export function CommentInput({
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     pasteAsIs.current = false;
+    // While the emoji list shows, it has its keys first: Esc, and ↑ / ↓, Enter and Tab pressed alone (with Shift, ⌘, Ctrl
+    // or ⌥ held, as in GitHub's list, they do what they always do).
+    if (asked && emojiListShown && event.target === ref.current && !event.nativeEvent.isComposing) {
+      const plain = !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey;
+      const reached = suggestions[asked.active];
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        setEmojiAsk(null);
+        return;
+      }
+      if (plain && (event.key === 'ArrowDown' || event.key === 'ArrowUp') && suggestions.length > 0) {
+        event.preventDefault();
+        setEmojiAsk({ ...asked, active: (asked.active + (event.key === 'ArrowDown' ? 1 : -1) + suggestions.length) % suggestions.length });
+        return;
+      }
+      if (plain && (event.key === 'Enter' || event.key === 'Tab') && reached) {
+        event.preventDefault();
+        carryOut((draft) => insertEmoji(draft, reached));
+        return;
+      }
+    }
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       if (value.trim() && !disabled) onSubmit();
@@ -228,16 +267,43 @@ export function CommentInput({
         placeholder={placeholder}
         rows={Math.max(minRows, Math.min(12, value.split('\n').length))}
         disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
+        aria-autocomplete="list"
+        aria-controls={suggestions.length > 0 ? emojiListId : undefined}
+        aria-activedescendant={asked && suggestions.length > 0 ? `${emojiListId}-${asked.active}` : undefined}
+        onChange={(event) => {
+          onChange(event.target.value);
+          const query = emojiQueryAt(event.target);
+          setEmojiAsk(query && { ...query, value: event.target.value, active: 0 });
+        }}
+        // A move of the caret asks again: the list follows what is typed before it.
+        onSelect={(event) => {
+          const query = emojiQueryAt(event.currentTarget);
+          setEmojiAsk(query && { ...query, value: event.currentTarget.value, active: 0 });
+        }}
+        onBlur={() => setEmojiAsk(null)}
         onPaste={onPaste}
       />
       {previewing && <CommentPreview text={value} render={preview} minHeight={previewing.height} />}
+      {asked && emojiListShown && (
+        <EmojiSuggestions
+          textarea={ref}
+          at={asked.at}
+          id={emojiListId}
+          suggestions={emojis.data ? suggestions : null}
+          active={asked.active}
+          onReach={(index) => setEmojiAsk({ ...asked, active: index })}
+          onChoose={(emoji) => carryOut((draft) => insertEmoji(draft, emoji))}
+        />
+      )}
     </div>
   );
 }
 
 /** Renders a comment's Markdown the way GitHub will show it, for the Preview tab of every comment box inside it. */
 export const MarkdownPreview = createContext<((text: string) => Promise<string>) | null>(null);
+
+/** Loads GitHub's emoji, which every comment box inside it suggests after a `:`; none are suggested without it. */
+export const EmojiList = createContext<(() => Promise<Emoji[]>) | null>(null);
 
 /**
  * A part of the page fed by one stage of its data: its skeleton until the stage first arrives, then what `children`
@@ -352,3 +418,118 @@ const TOOLBAR: Array<[Tool, ...Tool[]]> = [
     { label: 'Task list', icon: 'tasklist', command: toggleTaskList, keys: 'Shift+L', stroke: 'shift+l' },
   ],
 ];
+
+/**
+ * The emoji a comment box suggests for what was typed after a `:`, as GitHub's list: under the text typed (above it when
+ * there is no room below), in the page's body, so no part of the page that scrolls (a diff, the drawer) clips it. A click
+ * leaves the focus in the text, and never reaches the page beneath, whose popovers would take it for one outside them.
+ */
+function EmojiSuggestions({
+  textarea,
+  at,
+  id,
+  suggestions,
+  active,
+  onReach,
+  onChoose,
+}: {
+  textarea: RefObject<HTMLTextAreaElement | null>;
+  /** Where the `:` is in the text: the list starts under what was typed after it. */
+  at: number;
+  id: string;
+  /** Null while GitHub's emoji are on their way. */
+  suggestions: Emoji[] | null;
+  active: number;
+  onReach: (index: number) => void;
+  onChoose: (emoji: Emoji) => void;
+}) {
+  const box = useRef<HTMLDivElement | null>(null);
+  const [place, setPlace] = useState<{ top: number; left: number } | null>(null);
+  useLayoutEffect(() => {
+    const placeList = () => {
+      const field = textarea.current;
+      if (!field || !box.current) return;
+      const typed = characterOnScreen(field, at + 1);
+      const { offsetHeight: height, offsetWidth: width } = box.current;
+      const above = window.innerHeight - typed.bottom < height + 8 && typed.top > window.innerHeight - typed.bottom;
+      setPlace({ top: above ? typed.top - height - 4 : typed.bottom + 4, left: Math.max(4, Math.min(typed.left, window.innerWidth - width - 4)) });
+    };
+    placeList();
+    window.addEventListener('resize', placeList);
+    document.addEventListener('scroll', placeList, true);
+    return () => {
+      window.removeEventListener('resize', placeList);
+      document.removeEventListener('scroll', placeList, true);
+    };
+  }, [textarea, at, suggestions]);
+
+  return createPortal(
+    <div
+      ref={box}
+      className="pr-emoji-suggestions"
+      // Measured where it is first drawn, unseen, then placed before the frame is painted.
+      style={place ?? { visibility: 'hidden' }}
+      onMouseDown={(event) => event.preventDefault()}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      {suggestions ? (
+        <ul id={id} role="listbox" aria-label="Emoji" className="pr-emoji-suggestions-list">
+          {suggestions.map((emoji, index) => (
+            <li
+              key={emoji.name}
+              id={`${id}-${index}`}
+              role="option"
+              aria-selected={index === active}
+              className="pr-emoji-suggestion"
+              onMouseMove={() => onReach(index)}
+              onClick={() => onChoose(emoji)}
+            >
+              {'character' in emoji ? (
+                <span className="pr-emoji-suggestion-emoji">{emoji.character}</span>
+              ) : (
+                <img className="pr-emoji-suggestion-emoji" src={emoji.imageUrl} width={16} height={16} alt={`${emoji.name} emoji`} />
+              )}
+              {emoji.name}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div role="status" className="pr-emoji-suggestions-loading">
+          Loading emoji…
+        </div>
+      )}
+    </div>,
+    document.body,
+  );
+}
+
+/**
+ * Where the character at `index` of the textarea's text shows on screen (its line's top and bottom, its left edge), found
+ * the way Primer's InlineAutocomplete places its list: the text laid out again, off screen, in a box styled as the
+ * textarea, with the part from `index` on in a marker whose place is read.
+ */
+function characterOnScreen(textarea: HTMLTextAreaElement, index: number): { top: number; bottom: number; left: number } {
+  const style = getComputedStyle(textarea);
+  const copy = document.createElement('div');
+  for (const property of [
+    'box-sizing', 'width', 'height', 'overflow-y', 'border-style', 'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width',
+    'padding-top', 'padding-right', 'padding-bottom', 'padding-left', 'font-family', 'font-size', 'font-style', 'font-variant', 'font-weight',
+    'font-stretch', 'line-height', 'letter-spacing', 'word-spacing', 'tab-size', 'text-indent', 'text-transform', 'text-align', 'direction',
+    'white-space', 'overflow-wrap', 'word-break',
+  ]) {
+    copy.style.setProperty(property, style.getPropertyValue(property));
+  }
+  copy.style.setProperty('position', 'absolute');
+  copy.style.setProperty('top', '0');
+  copy.style.setProperty('left', '-9999px');
+  copy.style.setProperty('visibility', 'hidden');
+  copy.textContent = textarea.value.slice(0, index);
+  const marker = copy.appendChild(document.createElement('span'));
+  marker.textContent = textarea.value.slice(index) || '.';
+  document.body.append(copy);
+  const field = textarea.getBoundingClientRect();
+  const top = field.top + parseFloat(style.borderTopWidth) + marker.offsetTop - textarea.scrollTop;
+  const left = field.left + parseFloat(style.borderLeftWidth) + marker.offsetLeft - textarea.scrollLeft;
+  copy.remove();
+  return { top, bottom: top + (parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.2), left };
+}

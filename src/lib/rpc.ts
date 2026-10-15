@@ -8,6 +8,7 @@ import { z } from 'zod/mini';
 import {
   changedFileDiffSchema,
   ciSummarySchema,
+  emojiSchema,
   mergeMethodSchema,
   organizationSchema,
   orgMemberSchema,
@@ -199,6 +200,8 @@ const RPC_SCHEMAS = {
   'pr.fetchMeta': { args: prPageRequest, result: prStagesSchema.shape.meta },
   /** A comment's Markdown the way GitHub renders it on this PR, for a comment box's Preview tab; it changes nothing. */
   'markdown.preview': { args: z.object({ text: z.string(), prId: z.string() }), result: z.object({ html: z.string() }) },
+  /** The emoji a comment box suggests after a `:`, in GitHub's order: the list GitHub's own comment box loads. */
+  'markdown.emojis': { args: z.object({}), result: z.array(emojiSchema) },
   'pr.review': {
     args: z.object({
       prId: z.string(),

@@ -8,7 +8,7 @@ import type { MergeMethod, RpcMethods } from '../rpc';
 import { rerunWorkflowJobs } from './actions';
 import { SIGNED_OUT, getJson, readAnswer, send, submitForm } from './session';
 
-export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox.fetchMore' | 'inbox.enrich' | 'inbox.branches' | 'repos.search' | 'repos.top' | 'orgs.list' | 'orgs.people' | `pr.fetch${string}` | 'pr.reviewerCandidates' | 'markdown.preview'>]: (args: RpcMethods[M]['args']) => Promise<RpcMethods[M]['result']> } = {
+export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox.fetchMore' | 'inbox.enrich' | 'inbox.branches' | 'repos.search' | 'repos.top' | 'orgs.list' | 'orgs.people' | `pr.fetch${string}` | 'pr.reviewerCandidates' | 'markdown.preview' | 'markdown.emojis'>]: (args: RpcMethods[M]['args']) => Promise<RpcMethods[M]['result']> } = {
   'pr.review': async ({ prId, event, body, threads }) => {
     const pull = pullRequestFor(prId);
     // Batched inline comments join the viewer's pending review; submitting the review publishes them.

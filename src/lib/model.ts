@@ -416,3 +416,11 @@ export const viewResultSchema = z.object({
 });
 
 export type ViewResult = z.infer<typeof viewResultSchema>;
+
+/**
+ * An emoji a comment box suggests after a `:`, as GitHub's list has it: one of Unicode's, typed as its character, or one
+ * of GitHub's own (`shipit`, `octocat`), typed as `:name:` and shown as its image.
+ */
+export const emojiSchema = z.union([z.object({ name: z.string(), character: z.string() }), z.object({ name: z.string(), imageUrl: z.string() })]);
+
+export type Emoji = z.infer<typeof emojiSchema>;

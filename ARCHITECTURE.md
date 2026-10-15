@@ -45,7 +45,11 @@ conversation renders under each comment to `/{o}/{r}/reactions`, with the token 
 while the page shows the reaction at once (`src/pr/Reactions.tsx`). A comment box's Preview tab is GitHub's own rendering: the multipart POST to
 `/preview` GitHub's comment box sends for a comment on the PR (`markdown.preview`), which changes nothing. The comment
 boxes themselves (`CommentInput` in `src/pr/primitives.tsx`) work like GitHub's: its toolbar, shortcuts, lists that
-continue and links on paste, each a pure command in `src/pr/markdown-editing.ts`. See
+continue and links on paste, each a pure command in `src/pr/markdown-editing.ts`, and the emoji GitHub's box suggests
+after a `:` that starts the text or follows whitespace, ranked and put in as GitHub does (`emojiSuggestionsFor`,
+`insertEmoji`: a Unicode emoji's character, `:name:` for one of GitHub's own) from the list GitHub's box loads
+(`markdown.emojis`: `GET /autocomplete/emojis_for_editor`), asked the first time a box asks for one and then kept by the
+page's cache (`['emojis']`, on the device too, for its 24 hours). A typed `:+1:` stays text, which GitHub renders. See
 `docs/research/github-web-endpoints.md`, `github-web-mutations.md` and `github-web-reviewers.md`. No api.github.com, no token. The background service worker only brokers the one-click copy from Graphite (below).
 
 Signed-in state comes from the fetched PR page's `meta[name="user-login"]`: empty means the PR page

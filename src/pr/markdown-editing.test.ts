@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import type { Emoji } from '../lib/model';
 import {
   continueList,
+  emojiQueryAt,
+  emojiSuggestionsFor,
+  insertEmoji,
   insertHeading,
   insertLink,
   insertSuggestion,
@@ -189,5 +193,81 @@ describe('linkPastedUrl', () => {
     expect(linkPastedUrl(draft('read |this|'), 'not a url')).toBeNull();
     expect(linkPastedUrl(draft('read |https://old.example.com|'), 'https://example.com')).toBeNull();
     expect(linkPastedUrl(draft('[docs](|old|)'), 'https://example.com')).toBeNull();
+  });
+});
+
+describe('emojiQueryAt', () => {
+  it('reads what was typed after a `:` that starts the text or follows whitespace, up to the caret', () => {
+    expect(emojiQueryAt(draft(':+1|'))).toEqual({ at: 0, query: '+1' });
+    expect(emojiQueryAt(draft('Nice :smi|le'))).toEqual({ at: 5, query: 'smi' });
+    expect(emojiQueryAt(draft('Done\n:ta|'))).toEqual({ at: 5, query: 'ta' });
+    expect(emojiQueryAt(draft('Nice :|'))).toEqual({ at: 5, query: '' });
+  });
+
+  it('asks for nothing after a `:` inside a word, once a space is typed, or over a selection', () => {
+    expect(emojiQueryAt(draft('a:b|'))).toBeNull();
+    expect(emojiQueryAt(draft('see https://|'))).toBeNull();
+    expect(emojiQueryAt(draft(':+1: |'))).toBeNull();
+    expect(emojiQueryAt(draft('|:smile|'))).toBeNull();
+  });
+});
+
+describe('emojiSuggestionsFor', () => {
+  // As GitHub's list has them: its first entries, then by name.
+  const emojis: Emoji[] = [
+    { name: '100', character: '💯' },
+    { name: '1234', character: '🔢' },
+    { name: '+1', character: '👍' },
+    { name: '-1', character: '👎' },
+    { name: '1st_place_medal', character: '🥇' },
+    { name: '2nd_place_medal', character: '🥈' },
+    { name: 'blue_heart', character: '💙' },
+    { name: 'cupid', character: '💘' },
+    { name: 'hugs', character: '🤗' },
+    { name: 'muscle', character: '💪' },
+    { name: 'shipit', imageUrl: 'https://github.githubassets.com/images/icons/emoji/shipit.png?v8' },
+    { name: 'smile', character: '😄' },
+    { name: 'smile_cat', character: '😸' },
+    { name: 'smiley', character: '😃' },
+    { name: 'sunny', character: '☀️' },
+    { name: 'sweat_smile', character: '😅' },
+    { name: 'thumbsdown', character: '👎' },
+    { name: 'thumbsup', character: '👍' },
+  ];
+  const names = (query: string) => emojiSuggestionsFor(query, emojis).map((emoji) => emoji.name);
+
+  it("offers the list's first five for a bare `:`", () => {
+    expect(names('')).toEqual(['100', '1234', '+1', '-1', '1st_place_medal']);
+  });
+
+  it('puts names that begin with the query before those that only have it, case aside, five at most', () => {
+    expect(names('SMI')).toEqual(['smile', 'smile_cat', 'smiley', 'sweat_smile']);
+    expect(names('s')).toEqual(['shipit', 'smile', 'smile_cat', 'smiley', 'sunny']);
+    expect(names('+1')).toEqual(['+1']);
+  });
+
+  it('keeps +1, thumbsup and -1 ahead of their equals before the five are taken, and ahead of all five after', () => {
+    expect(names('u')).toEqual(['thumbsup', 'blue_heart', 'cupid', 'hugs', 'muscle']);
+    expect(names('thumbs')).toEqual(['thumbsup', 'thumbsdown']);
+    expect(names('1')).toEqual(['+1', '-1', '100', '1234', '1st_place_medal']);
+  });
+
+  it('suggests nothing for a name typed out to its closing `:`, which stays as it is', () => {
+    expect(names('+1:')).toEqual([]);
+  });
+});
+
+describe('insertEmoji', () => {
+  it("puts a Unicode emoji's character and a space in place of the `:` and what follows it, the caret after the space", () => {
+    expect(marked(insertEmoji(draft(':+1|'), { name: '+1', character: '👍' }))).toBe('👍 |');
+    expect(marked(insertEmoji(draft('Nice :smi|\nmore'), { name: 'smile', character: '😄' }))).toBe('Nice 😄 |\nmore');
+  });
+
+  it("puts one of GitHub's own emoji in as `:name:`", () => {
+    expect(marked(insertEmoji(draft('Ship it :ship|'), { name: 'shipit', imageUrl: 'https://github.githubassets.com/images/icons/emoji/shipit.png?v8' }))).toBe('Ship it :shipit: |');
+  });
+
+  it('does nothing where the text asks for no emoji', () => {
+    expect(insertEmoji(draft('a:b|'), { name: '+1', character: '👍' })).toBeNull();
   });
 });

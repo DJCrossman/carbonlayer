@@ -1,7 +1,10 @@
 // What each command of the comment box does to its text and selection, the way GitHub's comment box does it. The
 // toolbar's styles are GitHub's markdown-toolbar-element (MIT, github.com/github/markdown-toolbar-element, the copy
-// GitHub's PR page loads), a URL pasted over text is GitHub's paste-markdown, and a suggestion is what its "Add a
-// suggestion" button inserts. Pure: a draft in, the draft after the command out.
+// GitHub's PR page loads), a URL pasted over text is GitHub's paste-markdown, a suggestion is what its "Add a
+// suggestion" button inserts, and an emoji after a `:` is what its emoji suggestions offer and insert. Pure: a draft in,
+// the draft after the command out.
+
+import type { Emoji } from '../lib/model';
 
 /** A comment box's text and its selection (start === end: only the caret), as a textarea has them. */
 export interface Draft {
@@ -94,6 +97,52 @@ export function linkPastedUrl(draft: Draft, pasted: string): Draft | null {
   if (value.slice(Math.max(0, selectionStart - 2), selectionStart) === '](') return null;
   const link = `[${selected}](${pasted.trim()})`;
   return { value: value.slice(0, selectionStart) + link + value.slice(selectionEnd), selectionStart: selectionStart + link.length, selectionEnd: selectionStart + link.length };
+}
+
+/**
+ * The emoji the text asks for at the caret, as GitHub's comment box reads it (Primer's InlineAutocomplete, with `:` as
+ * its trigger): a `:` at the start of the text or after whitespace, then what was typed after it up to the caret, with
+ * no whitespace in it (`query`, empty right after the `:`); `at` is where the `:` is. Null with text selected, and where
+ * no such `:` comes before the caret: one inside a word (`a:b`), or a space typed since.
+ */
+export function emojiQueryAt({ value, selectionStart, selectionEnd }: Draft): { at: number; query: string } | null {
+  if (selectionStart !== selectionEnd) return null;
+  const query = /(?:^|\s):(\S*)$/.exec(value.slice(0, selectionStart))?.[1];
+  return query === undefined ? null : { at: selectionStart - query.length - 1, query };
+}
+
+/**
+ * The five emoji GitHub's comment box suggests for `query`, the way it ranks them: those whose name has it, case aside,
+ * the ones whose name begins with it first, and among equals `+1`, `thumbsup` and `-1` before the rest, else in the
+ * list's order; of those five, `+1`, `thumbsup` and `-1` first. With nothing typed after the `:`, the list's first five.
+ */
+export function emojiSuggestionsFor(query: string, emojis: Emoji[]): Emoji[] {
+  if (query === '') return emojis.slice(0, 5);
+  const typed = query.toLowerCase();
+  const preferred = (emoji: Emoji) => (['+1', 'thumbsup', '-1'].includes(emoji.name) ? 0 : 1);
+  return emojis
+    .map((emoji) => {
+      const name = emoji.name.toLowerCase();
+      return { emoji, score: (name.includes(typed) ? 5 : 0) + (name.startsWith(typed) ? 5 : 0) };
+    })
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score || preferred(a.emoji) - preferred(b.emoji))
+    .slice(0, 5)
+    .map(({ emoji }) => emoji)
+    .sort((a, b) => preferred(a) - preferred(b));
+}
+
+/**
+ * The `:` and what was typed after it (emojiQueryAt) replaced by the emoji chosen for it and a space, the caret after the
+ * space, as GitHub's comment box commits a suggestion: one of Unicode's as its character, one of GitHub's own as
+ * `:name:`, which GitHub shows as its image. Null where the text asks for no emoji at the caret.
+ */
+export function insertEmoji(draft: Draft, emoji: Emoji): Draft | null {
+  const asked = emojiQueryAt(draft);
+  if (!asked) return null;
+  const typed = `${'character' in emoji ? emoji.character : `:${emoji.name}:`} `;
+  const caret = asked.at + typed.length;
+  return { value: draft.value.slice(0, asked.at) + typed + draft.value.slice(draft.selectionEnd), selectionStart: caret, selectionEnd: caret };
 }
 
 /** One of markdown-toolbar-element's styles. */

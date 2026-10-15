@@ -12,6 +12,7 @@ import { parseAppHash } from '../../src/app/routes';
 import { InboxPage } from '../../src/inbox/InboxPage';
 import type { Settings } from '../../src/lib/settings';
 import { PrPage } from '../../src/pr/PrPage';
+import { EmojiList } from '../../src/pr/primitives';
 import { Button } from '../../src/ui/Button';
 import '../../src/ui/tokens.css';
 
@@ -98,16 +99,19 @@ function App({ source }: { source: DataSource }) {
   if (cacheOwner === undefined) return null;
   return (
     <PageQueries owner={cacheOwner}>
-      {/* Another page starts without the last one's error. */}
-      <PageErrorBoundary key={shownPage}>
-        {route.page === 'inbox' ? (
-          <InboxPage source={source} route={route} />
-        ) : route.page === 'pr' ? (
-          <PrPage source={source} route={route} />
-        ) : (
-          <p style={{ padding: 16 }}>Open github.com or a pull request.</p>
-        )}
-      </PageErrorBoundary>
+      {/* Every comment box suggests GitHub's emoji after a `:`. */}
+      <EmojiList value={source.listEmojis}>
+        {/* Another page starts without the last one's error. */}
+        <PageErrorBoundary key={shownPage}>
+          {route.page === 'inbox' ? (
+            <InboxPage source={source} route={route} />
+          ) : route.page === 'pr' ? (
+            <PrPage source={source} route={route} />
+          ) : (
+            <p style={{ padding: 16 }}>Open github.com or a pull request.</p>
+          )}
+        </PageErrorBoundary>
+      </EmojiList>
     </PageQueries>
   );
 }
