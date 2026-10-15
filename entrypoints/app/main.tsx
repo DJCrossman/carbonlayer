@@ -113,8 +113,8 @@ function App({ source }: { source: DataSource }) {
  * likeliest cause (written by another build, or not as this one reads it), so it is forgotten and the reload asks GitHub
  * for everything.
  */
-class PageErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
-  override state: { error: Error | null } = { error: null };
+class PageErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null; componentStack: string; copied: 'idle' | 'copied' | 'failed' }> {
+  override state: { error: Error | null; componentStack: string; copied: 'idle' | 'copied' | 'failed' } = { error: null, componentStack: '', copied: 'idle' };
 
   static getDerivedStateFromError(error: unknown): { error: Error } {
     return { error: error instanceof Error ? error : new Error(String(error)) };
@@ -122,19 +122,44 @@ class PageErrorBoundary extends Component<{ children: ReactNode }, { error: Erro
 
   override componentDidCatch(error: unknown, info: ErrorInfo): void {
     console.error('[gg]', 'The page could not be shown; forgetting what the device kept.', error, info.componentStack);
+    this.setState({ componentStack: info.componentStack ?? '' });
     void forgetKeptCache();
   }
 
   override render(): ReactNode {
-    const { error } = this.state;
+    const { error, componentStack, copied } = this.state;
     if (!error) return this.props.children;
     return (
       <div role="alert" style={{ maxWidth: 640, margin: '48px auto', padding: 16, border: '1px solid var(--gg-danger)', borderRadius: 'var(--gg-radius)', background: 'var(--gg-danger-bg)' }}>
         <strong>This page could not be shown</strong>
         <p style={{ margin: '4px 0 12px', color: 'var(--gg-fg-muted)', overflowWrap: 'anywhere' }}>{error.message}</p>
-        <Button variant="primary" onClick={() => location.reload()}>
-          Reload
-        </Button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Button variant="primary" onClick={() => location.reload()}>
+            Reload
+          </Button>
+          {/* Everything a bug report needs, in one paste: which build, which page, the error and where it was thrown. The
+              page's own toasts went with the page, so the button says how it went. */}
+          <Button
+            onClick={() => {
+              const details = [
+                `CarbonLayer ${browser.runtime.getManifest().version}, build ${import.meta.env.BUILD_ID}`,
+                `Page: ${location.hash}`,
+                error.stack ?? `${error.name}: ${error.message}`,
+                componentStack && `Component stack:${componentStack}`,
+              ]
+                .filter(Boolean)
+                .join('\n');
+              navigator.clipboard.writeText(details).then(
+                () => this.setState({ copied: 'copied' }),
+                () => this.setState({ copied: 'failed' }),
+              );
+            }}
+          >
+            {copied === 'copied' ? 'Copied' : copied === 'failed' ? 'Could not copy' : 'Copy details'}
+          </Button>
+          {/* GitHub's own page for this URL, for this visit, as the header's switch would show it. */}
+          {window.parent !== window && <Button onClick={() => postToParent({ type: 'gg:open-native' })}>Switch to GitHub</Button>}
+        </div>
       </div>
     );
   }
