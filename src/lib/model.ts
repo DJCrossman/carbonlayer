@@ -1,147 +1,155 @@
 // Normalised domain model shared by the content script (producer, src/lib/github-web/) and the UIs (consumers).
-// Nothing here is GitHub-shaped; github-web maps GitHub's page data and page_data routes into these.
+// Nothing here is GitHub-shaped; github-web maps GitHub's page data and page_data routes into these. Each type is its
+// zod schema's, which reads what the app gets back from the content script (src/lib/rpc.ts) and from the page's cache.
 
-import type { GraphiteFilter } from './graphite';
+import { z } from 'zod';
+import { graphiteFilterSchema } from './graphite';
 
-export interface RepoRef {
-  owner: string;
-  name: string;
-}
+export const repoRefSchema = z.object({ owner: z.string(), name: z.string() });
 
-/** A repository the viewer can pick, as GitHub's repository picker lists it. */
-export interface RepoCandidate extends RepoRef {
-  isPrivate: boolean;
-}
+export type RepoRef = z.infer<typeof repoRefSchema>;
+
+/** A repository the viewer can pick, the way GitHub's repository picker lists it. */
+export const repoCandidateSchema = repoRefSchema.extend({ isPrivate: z.boolean() });
+
+export type RepoCandidate = z.infer<typeof repoCandidateSchema>;
 
 /** A repository GitHub's homepage lists under "Top repositories", with its owner's avatar when GitHub showed one. */
-export interface TopRepository {
-  owner: string;
-  name: string;
-  url: string;
-  avatarUrl: string | null;
-}
+export const topRepositorySchema = z.object({ owner: z.string(), name: z.string(), url: z.string(), avatarUrl: z.string().nullable() });
+
+export type TopRepository = z.infer<typeof topRepositorySchema>;
 
 /** An account whose pull requests an inbox shows: an organization the viewer belongs to, or the viewer's own account. */
-export interface Organization {
-  login: string;
-  avatarUrl: string;
+export const organizationSchema = z.object({
+  login: z.string(),
+  avatarUrl: z.string(),
   /** The viewer's own account, searched as `user:` rather than `org:`. */
-  isViewer: boolean;
-}
+  isViewer: z.boolean(),
+});
 
-/** Someone in an organization, as its People page lists them. */
-export interface OrgMember {
-  login: string;
+export type Organization = z.infer<typeof organizationSchema>;
+
+/** Someone in an organization, the way its People page lists them. */
+export const orgMemberSchema = z.object({
+  login: z.string(),
   /** Their name, when they gave GitHub one. */
-  name: string | null;
-  avatarUrl: string;
-}
+  name: z.string().nullable(),
+  avatarUrl: z.string(),
+});
 
-export interface UserRef {
-  login: string;
-  avatarUrl: string;
-  url: string;
-}
+export type OrgMember = z.infer<typeof orgMemberSchema>;
 
-type PrState = 'OPEN' | 'MERGED' | 'CLOSED';
+export const userRefSchema = z.object({ login: z.string(), avatarUrl: z.string(), url: z.string() });
+
+export type UserRef = z.infer<typeof userRefSchema>;
 
 /** GitHub's reviewDecision, with NONE when no review is required and none given. */
-export type ReviewDecision = 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | 'NONE';
+export const reviewDecisionSchema = z.enum(['APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED', 'NONE']);
 
-export type CheckState = 'SUCCESS' | 'FAILURE' | 'PENDING' | 'SKIPPED' | 'NEUTRAL' | 'CANCELLED' | 'NONE';
+export type ReviewDecision = z.infer<typeof reviewDecisionSchema>;
 
-export interface CheckRunSummary {
-  name: string;
-  state: CheckState;
-  url: string | null;
-  description: string | null;
+export const checkStateSchema = z.enum(['SUCCESS', 'FAILURE', 'PENDING', 'SKIPPED', 'NEUTRAL', 'CANCELLED', 'NONE']);
+
+export type CheckState = z.infer<typeof checkStateSchema>;
+
+export const checkRunSummarySchema = z.object({
+  name: z.string(),
+  state: checkStateSchema,
+  url: z.string().nullable(),
+  description: z.string().nullable(),
   /** Workflow / app name when known (e.g. "GitHub Actions"), used for grouping. */
-  group: string | null;
-  startedAt: string | null;
-  completedAt: string | null;
+  group: z.string().nullable(),
+  startedAt: z.string().nullable(),
+  completedAt: z.string().nullable(),
   /** The GitHub Actions workflow run this check is a job of; null for other apps' checks. Re-runs go by run. */
-  runId: string | null;
-}
+  runId: z.string().nullable(),
+});
 
-export interface CiSummary {
-  state: CheckState;
-  checks: CheckRunSummary[];
-  counts: { success: number; failure: number; pending: number; other: number };
-}
+export type CheckRunSummary = z.infer<typeof checkRunSummarySchema>;
+
+export const ciSummarySchema = z.object({
+  state: checkStateSchema,
+  checks: z.array(checkRunSummarySchema),
+  counts: z.object({ success: z.number(), failure: z.number(), pending: z.number(), other: z.number() }),
+});
+
+export type CiSummary = z.infer<typeof ciSummarySchema>;
 
 /** GitHub's mergeStateStatus plus DRAFT so the UI has one field to switch on. */
-export type MergeStatus =
-  | 'CLEAN'
-  | 'HAS_HOOKS'
-  | 'UNSTABLE'
-  | 'BLOCKED'
-  | 'BEHIND'
-  | 'DIRTY'
-  | 'DRAFT'
-  | 'UNKNOWN';
+export const mergeStatusSchema = z.enum(['CLEAN', 'HAS_HOOKS', 'UNSTABLE', 'BLOCKED', 'BEHIND', 'DIRTY', 'DRAFT', 'UNKNOWN']);
 
-export interface ReviewerSummary {
+export type MergeStatus = z.infer<typeof mergeStatusSchema>;
+
+/** How a pull request merges: a merge commit, squashed or rebased. */
+export const mergeMethodSchema = z.enum(['MERGE', 'SQUASH', 'REBASE']);
+
+export const reviewerSummarySchema = z.object({
   /** A user, bot, or a team (`login` holds the team's `org/slug`). */
-  kind: 'user' | 'team';
-  user: UserRef;
+  kind: z.enum(['user', 'team']),
+  user: userRefSchema,
   /** Latest opinionated review state from this reviewer, or PENDING when only requested. */
-  state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'PENDING' | 'DISMISSED';
+  state: z.enum(['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED', 'PENDING', 'DISMISSED']),
   /** GitHub's numeric user or team id, which requesting and removing reviewers name; absent where GitHub does not give it (the inbox). */
-  id?: string;
+  id: z.string().optional(),
   /** Whether the viewer may ask this reviewer to review again (a completed review GitHub offers to re-request). */
-  canReRequest?: boolean;
-}
+  canReRequest: z.boolean().optional(),
+});
 
-/** Someone the viewer can ask for a review, as GitHub's reviewer picker lists them. */
-export interface ReviewerCandidate {
+export type ReviewerSummary = z.infer<typeof reviewerSummarySchema>;
+
+/** Someone the viewer can ask for a review, the way GitHub's reviewer picker lists them. */
+export const reviewerCandidateSchema = z.object({
   /** GitHub's numeric user or team id. */
-  id: string;
+  id: z.string(),
   /** A user's login, or a team's `org/slug`. */
-  login: string;
-  name: string | null;
-  avatarUrl: string;
-  kind: 'user' | 'team';
-}
+  login: z.string(),
+  name: z.string().nullable(),
+  avatarUrl: z.string(),
+  kind: z.enum(['user', 'team']),
+});
 
-export interface LabelSummary {
-  name: string;
-  color: string;
-}
+export type ReviewerCandidate = z.infer<typeof reviewerCandidateSchema>;
+
+export const labelSummarySchema = z.object({ name: z.string(), color: z.string() });
+
+export type LabelSummary = z.infer<typeof labelSummarySchema>;
 
 /** One row in the inbox and one entry in a stack. */
-export interface PrSummary {
-  id: string;
-  repo: RepoRef;
-  number: number;
-  title: string;
-  url: string;
-  author: UserRef;
-  state: PrState;
-  isDraft: boolean;
-  createdAt: string;
-  updatedAt: string;
-  mergedAt: string | null;
-  headRefName: string;
-  baseRefName: string;
-  reviewDecision: ReviewDecision;
-  reviewers: ReviewerSummary[];
-  ci: CiSummary;
-  mergeStatus: MergeStatus;
-  additions: number;
-  deletions: number;
-  changedFiles: number;
-  labels: LabelSummary[];
+export const prSummarySchema = z.object({
+  id: z.string(),
+  repo: repoRefSchema,
+  number: z.number(),
+  title: z.string(),
+  url: z.string(),
+  author: userRefSchema,
+  state: z.enum(['OPEN', 'MERGED', 'CLOSED']),
+  isDraft: z.boolean(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  mergedAt: z.string().nullable(),
+  headRefName: z.string(),
+  baseRefName: z.string(),
+  reviewDecision: reviewDecisionSchema,
+  reviewers: z.array(reviewerSummarySchema),
+  ci: ciSummarySchema,
+  mergeStatus: mergeStatusSchema,
+  additions: z.number(),
+  deletions: z.number(),
+  changedFiles: z.number(),
+  labels: z.array(labelSummarySchema),
   /** Comment + review-comment count, for the inbox row. */
-  commentCount: number;
+  commentCount: z.number(),
   /** GitHub's isReadByViewer, inverted; null when GitHub does not report it. */
-  unread: boolean | null;
-  isInMergeQueue: boolean;
-  autoMerge: { method: 'MERGE' | 'SQUASH' | 'REBASE' } | null;
+  unread: z.boolean().nullable(),
+  isInMergeQueue: z.boolean(),
+  autoMerge: z.object({ method: mergeMethodSchema }).nullable(),
   /** GitHub-native stacked PR position (1 = closest to trunk); null for Graphite stacks and plain PRs. */
-  nativeStack: { position: number; size: number } | null;
-  /** Its review conversations (threads), how many resolved of how many, as Graphite counts them; null while unknown. */
-  conversations: { resolved: number; total: number } | null;
-}
+  nativeStack: z.object({ position: z.number(), size: z.number() }).nullable(),
+  /** Its review conversations (threads), how many resolved of how many, the way Graphite counts them; null while unknown. */
+  conversations: z.object({ resolved: z.number(), total: z.number() }).nullable(),
+});
+
+export type PrSummary = z.infer<typeof prSummarySchema>;
 
 /**
  * What the inbox learns about a row after GitHub's dashboard listed it, from the PR's own page data: its mergeability,
@@ -149,41 +157,47 @@ export interface PrSummary {
  * which checks fail and which are required, and for an open PR its branches, by which the inbox finds its stack. The PR
  * page's stack card shows the same for each other entry. A field is absent where GitHub did not say.
  */
-export type PrEnrichment = Partial<
-  Pick<PrSummary, 'mergeStatus' | 'reviewers' | 'reviewDecision' | 'additions' | 'deletions' | 'ci' | 'headRefName' | 'baseRefName' | 'conversations'>
-> & {
-  /** The signed-in viewer's own state among the reviewers; null when they are not one. */
-  viewerReview?: ReviewerSummary['state'] | null;
-  /** The names of the required checks, once GitHub has listed the checks and said which are required. */
-  requiredCheckNames?: string[];
-  /** Why the merge box says the PR cannot merge, in its words. */
-  mergeBlockedReason?: string;
-};
+export const prEnrichmentSchema = prSummarySchema
+  .pick({ mergeStatus: true, reviewers: true, reviewDecision: true, additions: true, deletions: true, ci: true, headRefName: true, baseRefName: true, conversations: true })
+  .partial()
+  .extend({
+    /** The signed-in viewer's own state among the reviewers; null when they are not one. */
+    viewerReview: reviewerSummarySchema.shape.state.nullable().optional(),
+    /** The names of the required checks, once GitHub has listed the checks and said which are required. */
+    requiredCheckNames: z.array(z.string()).optional(),
+    /** Why the merge box says the PR cannot merge, in its words. */
+    mergeBlockedReason: z.string().optional(),
+  });
+
+export type PrEnrichment = z.infer<typeof prEnrichmentSchema>;
 
 /**
- * A PR's branches as its page header names them, by which "Group by stack" chains the inbox's rows before they are
+ * A PR's branches the way its page header names them, by which "Group by stack" chains the inbox's rows before they are
  * enriched. `headRefName` is null for a PR from a fork: its head branch says nothing about this repository's stacks.
  */
-export interface StackBranches {
-  baseRefName: string;
-  headRefName: string | null;
-}
+export const stackBranchesSchema = z.object({ baseRefName: z.string(), headRefName: z.string().nullable() });
 
-export interface Stack {
-  /** Ordered from the PR closest to trunk (index 0) to the top of the stack. */
-  entries: StackEntry[];
-  /** Index of the PR being viewed in `entries`. */
-  currentIndex: number;
-  trunk: string;
-  /** Where the ordering came from; 'none' means a single, unstacked PR. */
-  source: 'native' | 'graphite-comment' | 'none';
-}
+export type StackBranches = z.infer<typeof stackBranchesSchema>;
 
 /**
  * One PR in a stack. Its author is null where GitHub did not say who opened it: an entry the stack's own listing names
  * (which names nobody) whose page header GitHub did not answer.
  */
-export type StackEntry = Omit<PrSummary, 'author'> & { author: UserRef | null };
+export const stackEntrySchema = prSummarySchema.extend({ author: userRefSchema.nullable() });
+
+export type StackEntry = z.infer<typeof stackEntrySchema>;
+
+export const stackSchema = z.object({
+  /** Ordered from the PR closest to trunk (index 0) to the top of the stack. */
+  entries: z.array(stackEntrySchema),
+  /** Index of the PR being viewed in `entries`. */
+  currentIndex: z.number(),
+  trunk: z.string(),
+  /** Where the ordering came from; 'none' means a single, unstacked PR. */
+  source: z.enum(['native', 'graphite-comment', 'none']),
+});
+
+export type Stack = z.infer<typeof stackSchema>;
 
 /** GitHub's eight reactions, in the order its reaction picker offers them. */
 export const REACTION_CONTENTS = ['THUMBS_UP', 'THUMBS_DOWN', 'LAUGH', 'HOORAY', 'CONFUSED', 'HEART', 'ROCKET', 'EYES'] as const;
@@ -191,181 +205,211 @@ export const REACTION_CONTENTS = ['THUMBS_UP', 'THUMBS_DOWN', 'LAUGH', 'HOORAY',
 export type ReactionContent = (typeof REACTION_CONTENTS)[number];
 
 /** One of the reactions a comment has: how many gave it, and whether the viewer is one of them. */
-export interface Reaction {
-  content: ReactionContent;
-  count: number;
-  viewerHasReacted: boolean;
-}
+export const reactionSchema = z.object({ content: z.enum(REACTION_CONTENTS), count: z.number(), viewerHasReacted: z.boolean() });
 
-/** A comment the viewer can react to. */
-interface Reactable {
+export type Reaction = z.infer<typeof reactionSchema>;
+
+/** What a comment the viewer can react to has. */
+const reactable = {
   /** GitHub's node id for it (`IC_…`, `PRR_…`, `PRRC_…`), which a reaction names; null where GitHub's page offers no way to react. */
-  subjectId: string | null;
+  subjectId: z.string().nullable(),
   /** Only the reactions someone gave, in GitHub's order. */
-  reactions: Reaction[];
-}
+  reactions: z.array(reactionSchema),
+};
 
-interface ReviewThreadComment extends Reactable {
-  id: string;
-  author: UserRef;
-  bodyHtml: string;
-  createdAt: string;
-  url: string;
-}
-
-export interface ReviewThread {
-  id: string;
-  path: string;
+export const reviewThreadSchema = z.object({
+  id: z.string(),
+  path: z.string(),
   /** Line in the new file (RIGHT) or old file (LEFT); null when outdated beyond the current diff. */
-  line: number | null;
-  startLine: number | null;
-  side: 'LEFT' | 'RIGHT';
-  isResolved: boolean;
-  isOutdated: boolean;
-  diffHunk: string;
-  comments: ReviewThreadComment[];
-}
+  line: z.number().nullable(),
+  startLine: z.number().nullable(),
+  side: z.enum(['LEFT', 'RIGHT']),
+  isResolved: z.boolean(),
+  isOutdated: z.boolean(),
+  diffHunk: z.string(),
+  comments: z.array(z.object({ id: z.string(), author: userRefSchema, bodyHtml: z.string(), createdAt: z.string(), url: z.string(), ...reactable })),
+});
 
-export type TimelineItem =
-  | ({ kind: 'comment'; id: string; author: UserRef; bodyHtml: string; createdAt: string; url: string } & Reactable)
-  | ({
-      kind: 'review';
-      id: string;
-      author: UserRef;
-      state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'DISMISSED' | 'PENDING';
-      bodyHtml: string;
-      createdAt: string;
-      url: string;
-      /** Thread ids opened by this review, so the UI can link review → threads. */
-      threadIds: string[];
-    } & Reactable)
-  | { kind: 'commit'; id: string; oid: string; abbreviatedOid: string; messageHeadline: string; author: UserRef | null; committedAt: string; url: string }
-  | { kind: 'force-push'; id: string; actor: UserRef | null; createdAt: string; beforeOid: string; afterOid: string }
-  | { kind: 'review-requested'; id: string; actor: UserRef | null; requested: string; createdAt: string }
-  | { kind: 'ready-for-review' | 'converted-to-draft' | 'merged' | 'closed' | 'reopened'; id: string; actor: UserRef | null; createdAt: string };
+export type ReviewThread = z.infer<typeof reviewThreadSchema>;
 
-export interface ChangedFile {
-  path: string;
-  previousPath: string | null;
-  status: 'added' | 'removed' | 'modified' | 'renamed' | 'copied' | 'changed';
-  additions: number;
-  deletions: number;
+export const timelineItemSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('comment'), id: z.string(), author: userRefSchema, bodyHtml: z.string(), createdAt: z.string(), url: z.string(), ...reactable }),
+  z.object({
+    kind: z.literal('review'),
+    id: z.string(),
+    author: userRefSchema,
+    state: z.enum(['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED', 'DISMISSED', 'PENDING']),
+    bodyHtml: z.string(),
+    createdAt: z.string(),
+    url: z.string(),
+    /** Thread ids opened by this review, so the UI can link review → threads. */
+    threadIds: z.array(z.string()),
+    ...reactable,
+  }),
+  z.object({
+    kind: z.literal('commit'),
+    id: z.string(),
+    oid: z.string(),
+    abbreviatedOid: z.string(),
+    messageHeadline: z.string(),
+    author: userRefSchema.nullable(),
+    committedAt: z.string(),
+    url: z.string(),
+  }),
+  z.object({ kind: z.literal('force-push'), id: z.string(), actor: userRefSchema.nullable(), createdAt: z.string(), beforeOid: z.string(), afterOid: z.string() }),
+  z.object({ kind: z.literal('review-requested'), id: z.string(), actor: userRefSchema.nullable(), requested: z.string(), createdAt: z.string() }),
+  z.object({ kind: z.enum(['ready-for-review', 'converted-to-draft', 'merged', 'closed', 'reopened']), id: z.string(), actor: userRefSchema.nullable(), createdAt: z.string() }),
+]);
+
+export type TimelineItem = z.infer<typeof timelineItemSchema>;
+
+export const changedFileSchema = z.object({
+  path: z.string(),
+  previousPath: z.string().nullable(),
+  status: z.enum(['added', 'removed', 'modified', 'renamed', 'copied', 'changed']),
+  additions: z.number(),
+  deletions: z.number(),
   /** Unified diff hunks for this file, rebuilt from GitHub's diff lines; null for binary / too large. */
-  patch: string | null;
-  viewerViewedState: 'VIEWED' | 'UNVIEWED' | 'DISMISSED';
-  blobUrl: string;
-}
+  patch: z.string().nullable(),
+  viewerViewedState: z.enum(['VIEWED', 'UNVIEWED', 'DISMISSED']),
+  blobUrl: z.string(),
+});
 
-export interface PrDetail extends PrSummary {
-  bodyHtml: string;
+export type ChangedFile = z.infer<typeof changedFileSchema>;
+
+export const prDetailSchema = prSummarySchema.extend({
+  bodyHtml: z.string(),
   /** The description's reactions; a reaction names the description by the PR's own id. */
-  descriptionReactions: Reaction[];
+  descriptionReactions: z.array(reactionSchema),
   /** GitHub's permalink to the description (`…/pull/<n>#issue-<id>`); null when the conversation names none. */
-  descriptionUrl: string | null;
-  headOid: string;
-  baseOid: string;
-  assignees: UserRef[];
-  viewerCanUpdate: boolean;
-  viewerDidAuthor: boolean;
-  timeline: TimelineItem[];
-  threads: ReviewThread[];
-  files: ChangedFile[];
-  stack: Stack;
-  defaultMergeMethod: 'MERGE' | 'SQUASH' | 'REBASE';
-  allowedMergeMethods: Array<'MERGE' | 'SQUASH' | 'REBASE'>;
-  viewerCanMerge: boolean;
-  viewerCanEnableAutoMerge: boolean;
+  descriptionUrl: z.string().nullable(),
+  headOid: z.string(),
+  baseOid: z.string(),
+  assignees: z.array(userRefSchema),
+  viewerCanUpdate: z.boolean(),
+  viewerDidAuthor: z.boolean(),
+  timeline: z.array(timelineItemSchema),
+  threads: z.array(reviewThreadSchema),
+  files: z.array(changedFileSchema),
+  stack: stackSchema,
+  defaultMergeMethod: mergeMethodSchema,
+  allowedMergeMethods: z.array(mergeMethodSchema),
+  viewerCanMerge: z.boolean(),
+  viewerCanEnableAutoMerge: z.boolean(),
   /** Required checks only, derived from `isRequired`; empty when the repo has no required checks. */
-  requiredCheckNames: string[];
-  unresolvedThreadCount: number;
-}
+  requiredCheckNames: z.array(z.string()),
+  unresolvedThreadCount: z.number(),
+});
 
-/** A changed file as GitHub lists it, before its diff arrives. */
-export type ChangedFileSummary = Omit<ChangedFile, 'patch' | 'previousPath'>;
+export type PrDetail = z.infer<typeof prDetailSchema>;
+
+/** A changed file the way GitHub lists it, before its diff arrives. */
+export const changedFileSummarySchema = changedFileSchema.omit({ patch: true, previousPath: true });
+
+export type ChangedFileSummary = z.infer<typeof changedFileSummarySchema>;
 
 /** What a changed file's diff adds to its summary: the patch, and the path it had before a rename or copy. */
-export type ChangedFileDiff = Pick<ChangedFile, 'patch' | 'previousPath'>;
+export const changedFileDiffSchema = changedFileSchema.pick({ patch: true, previousPath: true });
+
+export type ChangedFileDiff = z.infer<typeof changedFileDiffSchema>;
 
 /**
  * The PR page, stage by stage: each is loaded on its own (`pr.fetch<Stage>`, src/lib/github-web/pr-stages.ts) and
  * rendered as soon as it arrives. Together they make a PrDetail.
  */
-export interface PrStages {
+export const prStagesSchema = z.object({
   /** The PR page's HTML with its file and line counts: everything the header and the description need. */
-  header: Pick<
-    PrDetail,
-    | 'id'
-    | 'repo'
-    | 'number'
-    | 'title'
-    | 'url'
-    | 'author'
-    | 'state'
-    | 'isDraft'
-    | 'createdAt'
-    | 'updatedAt'
-    | 'mergedAt'
-    | 'headRefName'
-    | 'baseRefName'
-    | 'additions'
-    | 'deletions'
-    | 'changedFiles'
-    | 'commentCount'
-    | 'nativeStack'
-    | 'bodyHtml'
-    | 'descriptionReactions'
-    | 'descriptionUrl'
-    | 'headOid'
-    | 'viewerCanUpdate'
-    | 'viewerDidAuthor'
-  > & {
-    viewerLogin: string;
-    /** Where the page shows a stack coming from (GitHub's own, or Graphite's comment); the `stack` stage has the final word. */
-    stackSource: Stack['source'];
-  };
-  activity: Pick<PrDetail, 'timeline'>;
+  header: prDetailSchema
+    .pick({
+      id: true,
+      repo: true,
+      number: true,
+      title: true,
+      url: true,
+      author: true,
+      state: true,
+      isDraft: true,
+      createdAt: true,
+      updatedAt: true,
+      mergedAt: true,
+      headRefName: true,
+      baseRefName: true,
+      additions: true,
+      deletions: true,
+      changedFiles: true,
+      commentCount: true,
+      nativeStack: true,
+      bodyHtml: true,
+      descriptionReactions: true,
+      descriptionUrl: true,
+      headOid: true,
+      viewerCanUpdate: true,
+      viewerDidAuthor: true,
+    })
+    .extend({
+      viewerLogin: z.string(),
+      /** Where the page shows a stack coming from (GitHub's own, or Graphite's comment); the `stack` stage has the final word. */
+      stackSource: stackSchema.shape.source,
+    }),
+  activity: prDetailSchema.pick({ timeline: true }),
   /** Every changed file, and the diffs GitHub sent along with the list; the others come a batch at a time (`pr.fetchFileDiffs`). */
-  files: { baseOid: string; files: ChangedFileSummary[]; diffs: Record<string, ChangedFileDiff> };
-  threads: Pick<PrDetail, 'threads' | 'unresolvedThreadCount'>;
-  mergeBox: Pick<
-    PrDetail,
-    'mergeStatus' | 'reviewers' | 'reviewDecision' | 'viewerCanMerge' | 'viewerCanEnableAutoMerge' | 'allowedMergeMethods' | 'defaultMergeMethod' | 'autoMerge' | 'isInMergeQueue'
-  >;
-  checks: Pick<PrDetail, 'ci' | 'requiredCheckNames'> & {
+  files: z.object({ baseOid: z.string(), files: z.array(changedFileSummarySchema), diffs: z.record(z.string(), changedFileDiffSchema) }),
+  threads: prDetailSchema.pick({ threads: true, unresolvedThreadCount: true }),
+  mergeBox: prDetailSchema.pick({
+    mergeStatus: true,
+    reviewers: true,
+    reviewDecision: true,
+    viewerCanMerge: true,
+    viewerCanEnableAutoMerge: true,
+    allowedMergeMethods: true,
+    defaultMergeMethod: true,
+    autoMerge: true,
+    isInMergeQueue: true,
+  }),
+  checks: prDetailSchema.pick({ ci: true, requiredCheckNames: true }).extend({
     /** Why the checks list is empty when it is (GitHub answered 404, or sent no rows): the card shows it, so an empty card is never a mystery. */
-    emptyReason: string | null;
-  };
-  stack: Pick<PrDetail, 'stack'>;
-  meta: Pick<PrDetail, 'labels' | 'assignees'>;
-}
+    emptyReason: z.string().nullable(),
+  }),
+  stack: prDetailSchema.pick({ stack: true }),
+  meta: prDetailSchema.pick({ labels: true, assignees: true }),
+});
+
+export type PrStages = z.infer<typeof prStagesSchema>;
 
 export type PrStage = keyof PrStages;
 
-export interface View {
-  id: string;
-  name: string;
+export const viewSchema = z.object({
+  id: z.string(),
+  name: z.string(),
   /**
    * GitHub search query, e.g. "is:open is:pr review-requested:@me". `@me` is allowed. With a `filter`, compiled from it
    * and `repos` whenever the view is saved.
    */
-  query: string;
-  /** Graphite's form of the section's filter, edited row by row; absent for a hand-written query. */
-  filter?: GraphiteFilter;
+  query: z.string(),
+  /**
+   * Graphite's form of the section's filter, edited row by row; absent for a hand-written query. Read when used: graphite.ts
+   * reaches this module (through views.ts) before it has defined the filter's schema.
+   */
+  filter: z.lazy(() => graphiteFilterSchema).optional(),
   /** The repositories the view searches instead of the inbox's (absent or empty: the inbox's). */
-  repos?: RepoRef[];
-  limit?: number;
-  collapsed?: boolean;
-}
+  repos: z.array(repoRefSchema).optional(),
+  limit: z.number().optional(),
+  collapsed: z.boolean().optional(),
+});
 
-export interface ViewResult {
-  view: View;
-  prs: PrSummary[];
-  totalCount: number;
-  fetchedAt: string;
+export type View = z.infer<typeof viewSchema>;
+
+export const viewResultSchema = z.object({
+  view: viewSchema,
+  prs: z.array(prSummarySchema),
+  totalCount: z.number(),
+  fetchedAt: z.string(),
   /**
    * Why the section has no rows: GitHub would not run its search (in GitHub's words, such as "The search query contains
    * invalid syntax.") or the request failed. `query` is what GitHub was asked: the search, scope and all, or
    * `inbox:<filter>` for one of GitHub's own sections.
    */
-  error?: { message: string; query: string };
-}
+  error: z.object({ message: z.string(), query: z.string() }).optional(),
+});
+
+export type ViewResult = z.infer<typeof viewResultSchema>;

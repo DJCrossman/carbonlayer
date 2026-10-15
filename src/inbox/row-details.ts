@@ -4,9 +4,10 @@
 // once (src/app/query-cache.tsx keeps it on the device).
 import { hashKey, useQueries, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { z } from 'zod';
 import { askedTogether } from '../app/asked-together';
 import type { DataSource } from '../app/data-source';
-import type { PrEnrichment, PrSummary, RepoRef, StackEntry, ViewResult } from '../lib/model';
+import { prEnrichmentSchema, prSummarySchema, repoRefSchema, type PrEnrichment, type PrSummary, type RepoRef, type StackEntry } from '../lib/model';
 import type { MergeMethod } from '../lib/rpc';
 
 /**
@@ -64,27 +65,31 @@ export function useRowEnrichment(source: DataSource, rows: StackEntry[], mergeMe
 
 /**
  * The row the inbox last showed for a PR, in a section or a "Load more" page, the latest first; undefined when the inbox
- * has not shown it.
+ * has not shown it. The cache holds what each section's query answered (a ViewResult), read here as that.
  */
 export function inboxRowFor(queryClient: QueryClient, repo: RepoRef, number: number): PrSummary | undefined {
-  return ['inbox', 'inbox-page']
+  const row = ['inbox', 'inbox-page']
     .flatMap((queryKey) =>
       queryClient
         .getQueryCache()
         .findAll({ queryKey: [queryKey], predicate: ({ state }) => state.data !== undefined })
         .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt),
     )
-    .flatMap((query) => (query.state.data as ViewResult).prs)
+    .flatMap((query) => cachedSectionRows.parse(query.state.data).prs)
     .find((pr) => pr.number === number && pr.repo.owner.toLowerCase() === repo.owner.toLowerCase() && pr.repo.name.toLowerCase() === repo.name.toLowerCase());
+  return row && prSummarySchema.parse(row);
 }
 
-/** The latest enrichment found for each row, by PR id, whatever the row looked like then. */
+/**
+ * The latest enrichment found for each row, by PR id, whatever the row looked like then. The cache holds what each row's
+ * query answered under its key (`['inbox-row', id, …]`), read here as that.
+ */
 export function enrichmentFoundBefore(queryClient: QueryClient): Map<string, PrEnrichment> {
   const queries = queryClient.getQueryCache().findAll({ queryKey: ['inbox-row'] });
   const latest = new Map<string, { at: number; enrichment: PrEnrichment }>();
   for (const { queryKey, state } of queries) {
-    const id = queryKey[1] as string;
-    if (state.data !== undefined && state.dataUpdatedAt > (latest.get(id)?.at ?? -1)) latest.set(id, { at: state.dataUpdatedAt, enrichment: state.data as PrEnrichment });
+    const id = z.string().parse(queryKey[1]);
+    if (state.data !== undefined && state.dataUpdatedAt > (latest.get(id)?.at ?? -1)) latest.set(id, { at: state.dataUpdatedAt, enrichment: prEnrichmentSchema.parse(state.data) });
   }
   return new Map([...latest].map(([id, { enrichment }]) => [id, enrichment]));
 }
@@ -93,3 +98,6 @@ export function enrichmentFoundBefore(queryClient: QueryClient): Map<string, PrE
 function rowVersion(pr: StackEntry) {
   return [pr.id, pr.updatedAt, pr.state, pr.isDraft, pr.ci.state];
 }
+
+/** A section's rows in the cache, each only as far as which PR it is: the one looked for is read whole. */
+const cachedSectionRows = z.object({ prs: z.array(z.looseObject({ number: z.number(), repo: repoRefSchema })) });

@@ -5,19 +5,16 @@
 // while Graphite loads, and a browser restart should forget it.
 import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
+import { z } from 'zod';
+import { graphiteInboxSnapshot } from '../src/lib/graphite';
 
 export default defineBackground(() => {
   browser.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-    const { kind, sections, defaultRepos, viewerLogin, error } = (message ?? {}) as {
-      kind?: unknown;
-      sections?: unknown;
-      defaultRepos?: unknown;
-      viewerLogin?: unknown;
-      error?: unknown;
-    };
+    // Every runtime message is the extension's own: the import dialog's and the Graphite tab's.
+    const asked = backgroundMessage.parse(message);
     // The inbox's iframe and the options page are frames of a tab too.
     const tabId = sender.tab?.id;
-    switch (kind) {
+    switch (asked.kind) {
       case 'carbonlayer-open-graphite-import':
         void browser.tabs
           .create({ url: 'https://app.graphite.com/', openerTabId: tabId, windowId: sender.tab?.windowId })
@@ -29,9 +26,10 @@ export default defineBackground(() => {
         return true;
       case 'carbonlayer-graphite-sections':
         void copyingTab().then(async (copying) => {
-          if (tabId === undefined || copying?.tabId !== tabId || !Array.isArray(sections) || !Array.isArray(defaultRepos)) return;
+          if (tabId === undefined || copying?.tabId !== tabId) return;
+          const { sections, defaultRepos, viewerLogin } = asked;
           await browser.storage.local.set({
-            graphiteImport: { at: new Date().toISOString(), sections, defaultRepos, ...(typeof viewerLogin === 'string' && { viewerLogin }) },
+            graphiteImport: { at: new Date().toISOString(), sections, defaultRepos, ...(viewerLogin !== undefined && { viewerLogin }) },
           });
           await browser.storage.session.remove('graphiteImportTab');
           // The tab that asked may have been closed meanwhile.
@@ -43,8 +41,8 @@ export default defineBackground(() => {
         // The tab stays open and stays the one copying: once the user signs in there, Graphite loads again and so does
         // the copy.
         void copyingTab().then(async (copying) => {
-          if (tabId === undefined || copying?.tabId !== tabId || typeof error !== 'string') return;
-          await browser.storage.local.set({ graphiteImport: { at: new Date().toISOString(), error } });
+          if (tabId === undefined || copying?.tabId !== tabId) return;
+          await browser.storage.local.set({ graphiteImport: { at: new Date().toISOString(), error: asked.error } });
         });
         return;
     }
@@ -54,5 +52,13 @@ export default defineBackground(() => {
 /** The Graphite tab copying sections for an import, and the tab that asked for them; none when no copy is under way. */
 async function copyingTab(): Promise<{ tabId: number; openerTabId?: number } | undefined> {
   const { graphiteImportTab } = await browser.storage.session.get('graphiteImportTab');
-  return graphiteImportTab as { tabId: number; openerTabId?: number } | undefined;
+  return z.object({ tabId: z.number(), openerTabId: z.number().optional() }).optional().parse(graphiteImportTab);
 }
+
+/** What the import dialog (src/inbox/GraphiteImport.tsx) and the Graphite tab (graphite.content.ts) send here. */
+const backgroundMessage = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('carbonlayer-open-graphite-import') }),
+  z.object({ kind: z.literal('carbonlayer-graphite-import-wanted') }),
+  graphiteInboxSnapshot.extend({ kind: z.literal('carbonlayer-graphite-sections') }),
+  z.object({ kind: z.literal('carbonlayer-graphite-sections-error'), error: z.string() }),
+]);

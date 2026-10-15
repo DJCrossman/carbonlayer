@@ -2,8 +2,11 @@
 // sees only the DOM). When entrypoints/graphite.content.ts asks, in the tab opened to copy the sections, it waits up to
 // 30 s for the inbox to render (the app is slow), copies the sections out of React's state (inboxSnapshotOf in
 // src/lib/graphite.ts) and posts them back; on every other Graphite page it only listens.
+// First: zod is told not to compile parsers before graphite.ts makes its schemas (src/lib/zod-in-page.ts says why).
+import '../src/lib/zod-in-page';
 import { defineContentScript } from 'wxt/utils/define-content-script';
-import { inboxSnapshotOf } from '../src/lib/graphite';
+import { z } from 'zod';
+import { inboxSnapshotOf, type GraphiteInboxSnapshot } from '../src/lib/graphite';
 
 export default defineContentScript({
   matches: ['https://app.graphite.com/*'],
@@ -11,14 +14,21 @@ export default defineContentScript({
   world: 'MAIN',
   main() {
     window.addEventListener('message', (event) => {
-      const { source, kind } = (event.data ?? {}) as { source?: unknown; kind?: unknown };
-      if (event.source !== window || source !== 'carbonlayer' || kind !== 'graphite-sections-request') return;
+      // Graphite's own messages, and this script's own answers, are posted here too.
+      if (event.source !== window || !sectionsRequest.safeParse(event.data).success) return;
       const giveUpAt = Date.now() + 30_000;
       let emptyInbox = false;
       const look = () => {
         // Every element of the inbox leads up to its state; its sidebar's sections are list items.
         for (const item of document.querySelectorAll('li')) {
-          const snapshot = inboxSnapshotOf(item);
+          let snapshot: GraphiteInboxSnapshot | null;
+          try {
+            snapshot = inboxSnapshotOf(item);
+          } catch (error) {
+            // The inbox holds its sections in a shape the copy cannot read: the tab and the import say so.
+            window.postMessage({ source: 'carbonlayer', kind: 'graphite-sections-error', error: error instanceof Error ? error.message : String(error) }, location.origin);
+            return;
+          }
           if (!snapshot) continue;
           if (snapshot.sections.length > 0) {
             window.postMessage({ source: 'carbonlayer', kind: 'graphite-sections', ...snapshot }, location.origin);
@@ -40,3 +50,6 @@ export default defineContentScript({
     });
   },
 });
+
+/** What entrypoints/graphite.content.ts posts to ask for the sections. */
+const sectionsRequest = z.object({ source: z.literal('carbonlayer'), kind: z.literal('graphite-sections-request') });

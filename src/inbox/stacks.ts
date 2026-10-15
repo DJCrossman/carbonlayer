@@ -28,11 +28,11 @@ export function rowsByStack(prs: PrSummary[], places: ReadonlyMap<string, StackP
 export interface StackPlace {
   /** The stack's bottom-most known PR, the same for each of its rows. */
   bottomId: string;
-  /** Counted from the bottom, as GitHub counts: the bottom-most known PR is 1. */
+  /** Counted from the bottom, the way GitHub counts: the bottom-most known PR is 1. */
   position: number;
   /**
-   * How many known PRs the row's own line of the stack has, as Graphite counts: those below it down to the bottom, the
-   * row, and the tallest line above it. A fork's other branches are not counted.
+   * How many known PRs the row's own line of the stack has, the way Graphite counts: those below it down to the bottom,
+   * the row, and the tallest line above it. A fork's other branches are not counted.
    */
   size: number;
   /** GitHub doesn't track the row's stack (the row has no native stack): its place is worked out from branch names alone. */

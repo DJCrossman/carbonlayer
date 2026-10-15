@@ -1,45 +1,50 @@
 // postMessage protocol between the github.com content script (parent) and the app iframe (child).
 // Both sides check `origin`: the parent only accepts messages from the extension origin, the child
-// only from https://github.com.
+// only from https://github.com. Each reads what it got by the other side's schema: GitHub's own page posts to the
+// frame too, so a message of no shape here is someone else's and is left alone.
 
-export type ParentToAppMessage =
-  | { type: 'gg:route'; hash: string }
-  | { type: 'gg:theme'; theme: 'light' | 'dark' }
+import { z } from 'zod';
+
+/** What the github.com page tells the app. */
+export const parentToAppMessage = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('gg:route'), hash: z.string() }),
+  z.object({ type: z.literal('gg:theme'), theme: z.enum(['light', 'dark']) }),
   /** A keydown that happened in the top document while the iframe did not have focus. */
-  | { type: 'gg:keydown'; key: string; code: string; altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }
+  z.object({
+    type: z.literal('gg:keydown'),
+    key: z.string(),
+    code: z.string(),
+    altKey: z.boolean(),
+    ctrlKey: z.boolean(),
+    metaKey: z.boolean(),
+    shiftKey: z.boolean(),
+  }),
   /** The top window was focused: the iframe's own window hears of a window focus only when it lands inside the frame. */
-  | { type: 'gg:focus' }
+  z.object({ type: z.literal('gg:focus') }),
   /** Who is signed in to github.com (`<meta name="user-login">`), null for no one: whose cache the app restores. */
-  | { type: 'gg:viewer'; login: string | null };
+  z.object({ type: z.literal('gg:viewer'), login: z.string().nullable() }),
+]);
 
-export type AppToParentMessage =
-  | { type: 'gg:ready' }
+export type ParentToAppMessage = z.infer<typeof parentToAppMessage>;
+
+/** What the app asks of the github.com page. */
+export const appToParentMessage = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('gg:ready') }),
   /** Navigate the top window (same tab unless `newTab`). */
-  | { type: 'gg:navigate'; url: string; newTab?: boolean }
+  z.object({ type: z.literal('gg:navigate'), url: z.string(), newTab: z.boolean().optional() }),
   /** Replace the top window's URL without reloading (stack navigation that the app handled itself). */
-  | { type: 'gg:replace-url'; url: string }
-  | { type: 'gg:title'; title: string }
+  z.object({ type: z.literal('gg:replace-url'), url: z.string() }),
+  z.object({ type: z.literal('gg:title'), title: z.string() }),
   /** Hand this visit back to GitHub (`?gh=1`, the PR page's `g h`); the header's "GitHub" switch remembers the choice. */
-  | { type: 'gg:open-native' };
+  z.object({ type: z.literal('gg:open-native') }),
+]);
+
+export type AppToParentMessage = z.infer<typeof appToParentMessage>;
 
 export const GITHUB_ORIGIN = 'https://github.com';
-
-/** Whether a postMessage payload is one of this protocol's messages; the receiver has already checked who sent it. */
-export function isBridgeMessage<M extends ParentToAppMessage | AppToParentMessage>(data: unknown): data is M {
-  return typeof data === 'object' && data !== null && typeof (data as { type?: unknown }).type === 'string' && (data as { type: string }).type.startsWith('gg:');
-}
 
 /** Sends a message to the embedding github.com page; a no-op when the app is opened directly (harness). */
 export function postToParent(message: AppToParentMessage): void {
   if (window.parent === window) return;
   window.parent.postMessage(message, GITHUB_ORIGIN);
-}
-
-/**
- * The theme the github.com page opened the app's frame in (`app.html?theme=`): the one the app will show, the options'
- * theme or else GitHub's, known before the app has loaded or heard from the page. Null when opened directly (harness).
- */
-export function themeOpenedIn(): 'light' | 'dark' | null {
-  const theme = new URLSearchParams(location.search).get('theme');
-  return theme === 'light' || theme === 'dark' ? theme : null;
 }

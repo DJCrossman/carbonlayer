@@ -1,8 +1,9 @@
 // The two surfaces the extension takes over, parsed from either a github.com URL (content script)
 // or the app's own location hash (iframe). Both sides agree on one `AppRoute` shape.
 
-import type { RepoRef, View } from '../lib/model';
-import { decodeViewsShareHash, isView } from '../lib/views';
+import { z } from 'zod';
+import { viewSchema, type RepoRef, type View } from '../lib/model';
+import { decodeViewsShareHash } from '../lib/views';
 
 export type AppRoute =
   | { page: 'inbox'; importViews: View[] | null }
@@ -74,7 +75,7 @@ export function parseAppHash(hash: string): AppRoute {
     if (raw) {
       try {
         const parsed: unknown = JSON.parse(raw);
-        importViews = Array.isArray(parsed) && parsed.length > 0 && parsed.every(isView) ? parsed : null;
+        importViews = z.array(viewSchema).min(1).safeParse(parsed).data ?? null;
       } catch {
         importViews = null;
       }

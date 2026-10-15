@@ -2,10 +2,11 @@
 import { Component, StrictMode, useEffect, useLayoutEffect, useState, type ErrorInfo, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { browser } from 'wxt/browser';
-import { GITHUB_ORIGIN, isBridgeMessage, postToParent, themeOpenedIn, type ParentToAppMessage } from '../../src/app/bridge';
+import { GITHUB_ORIGIN, parentToAppMessage, postToParent } from '../../src/app/bridge';
 import { createFixtureDataSource, createRpcDataSource, type DataSource } from '../../src/app/data-source';
+import { themeOpenedIn } from '../../src/app/frame-theme';
 import { forgetKeptCache, PageQueries, type CacheOwner } from '../../src/app/query-cache';
-import { parseAppHash, type AppRoute } from '../../src/app/routes';
+import { parseAppHash } from '../../src/app/routes';
 import { InboxPage } from '../../src/inbox/InboxPage';
 import type { Settings } from '../../src/lib/settings';
 import { PrPage } from '../../src/pr/PrPage';
@@ -13,7 +14,7 @@ import { Button } from '../../src/ui/Button';
 import '../../src/ui/tokens.css';
 
 function App({ source }: { source: DataSource }) {
-  const [route, setRoute] = useState<AppRoute>(() => parseAppHash(location.hash));
+  const [route, setRoute] = useState(() => parseAppHash(location.hash));
   // GitHub's own theme, sent by the parent page; null standalone (harness). Until the parent has said, and until the
   // options' theme is read, both are the theme the parent opened this frame in, which app-theme.ts has shown since the
   // first paint, so the first render keeps it rather than flashing the system's.
@@ -31,8 +32,11 @@ function App({ source }: { source: DataSource }) {
   useEffect(() => {
     const onHashChange = () => setRoute(parseAppHash(location.hash));
     const onMessage = (event: MessageEvent) => {
-      if (event.origin !== GITHUB_ORIGIN || event.source !== window.parent || !isBridgeMessage<ParentToAppMessage>(event.data)) return;
-      const message = event.data;
+      if (event.origin !== GITHUB_ORIGIN || event.source !== window.parent) return;
+      // GitHub's own page posts to this frame too, and so do the content script's data answers (src/lib/rpc.ts).
+      const parsed = parentToAppMessage.safeParse(event.data);
+      if (!parsed.success) return;
+      const message = parsed.data;
       if (message.type === 'gg:route') {
         history.replaceState(null, '', message.hash);
         setRoute(parseAppHash(message.hash));
@@ -137,7 +141,9 @@ class PageErrorBoundary extends Component<{ children: ReactNode }, { error: Erro
 async function start() {
   const useFixtures = new URLSearchParams(location.search).get('fixtures') === '1';
   const source = useFixtures ? createFixtureDataSource((await import('../../src/fixtures')).fixtures) : createRpcDataSource();
-  createRoot(document.getElementById('root')!).render(
+  const root = document.getElementById('root');
+  if (!root) throw new Error('app.html has no #root to render into');
+  createRoot(root).render(
     <StrictMode>
       <App source={source} />
     </StrictMode>,

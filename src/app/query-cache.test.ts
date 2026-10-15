@@ -45,6 +45,13 @@ describe('keptOnDevice', () => {
     vi.useFakeTimers({ now: Date.now() + 24 * 60 * 60_000 + 1 });
     expect(await restored(ana, storage)).toEqual([]);
   });
+
+  it('discards a kept cache of another shape than this build saves', async () => {
+    const storage = memoryStorage();
+    await storage.setItem('queries', JSON.stringify({ timestamp: Date.now(), buster: 'anything', clientState: { queries: [{ queryKey: ['pr'] }], mutations: [] } }));
+    await expect(restored(ana, storage)).rejects.toThrow();
+    expect(await storage.getItem('queries')).toBeUndefined();
+  });
 });
 
 const ana = { version: '1.0.0', login: 'ana' };

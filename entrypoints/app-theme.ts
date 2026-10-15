@@ -3,7 +3,7 @@
 // GitHub's dark theme) while the app's code loads. The app keeps that theme from there (main.tsx). A file of its own:
 // the extension's CSP blocks inline scripts.
 import { defineUnlistedScript } from 'wxt/utils/define-unlisted-script';
-import { themeOpenedIn } from '../src/app/bridge';
+import { themeOpenedIn } from '../src/app/frame-theme';
 
 export default defineUnlistedScript(() => {
   const theme = themeOpenedIn();

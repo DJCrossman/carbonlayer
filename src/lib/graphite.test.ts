@@ -275,6 +275,11 @@ describe('importGraphiteSections', () => {
     expect([notes, sectionCount]).toEqual([[expect.stringMatching(/^Odd: .*left out/)], 2]);
   });
 
+  it('rejects a copied section whose repositories are not owner and name, saying what it expected', () => {
+    const snapshot: GraphiteInboxSnapshot = { sections: [{ name: 'Mine', filter: EXAMPLE_TREE, repos: [{ owner: 'acme' }], usesDefaultRepos: false }], defaultRepos: [] };
+    expect(() => importGraphiteSections(snapshot)).toThrow(/does not hold a Graphite section/);
+  });
+
   it('leaves out a group that needs what GitHub cannot search for, but only the rule when it is negated', () => {
     const section = {
       name: 'Hard',
@@ -398,5 +403,11 @@ describe('inboxSnapshotOf', () => {
 
   it('finds nothing behind an element React did not render', () => {
     expect(inboxSnapshotOf(document.createElement('li'))).toBeNull();
+  });
+
+  it('says what differs when the inbox holds a section without a name', () => {
+    const item = document.createElement('li');
+    Object.assign(item, { '__reactFiber$k3j9x2': { memoizedProps: { snapshot: { sections: [{ filter: EXAMPLE_TREE, repos: [] }], syncedRepos: [] } }, return: null } });
+    expect(() => inboxSnapshotOf(item)).toThrow(/Graphite's inbox did not match: .*\n.*sections\[0\]\.name/);
   });
 });

@@ -9,7 +9,7 @@ import { PersistQueryClientProvider, persistQueryClientSave, type AsyncStorage, 
 import { createContext, useEffect, useState, type ReactNode } from 'react';
 import { z } from 'zod';
 import type { PrStage } from '../lib/model';
-import { GITHUB_ORIGIN, isBridgeMessage, type ParentToAppMessage } from './bridge';
+import { GITHUB_ORIGIN, parentToAppMessage } from './bridge';
 
 /**
  * The page's queries, kept on the device for `owner` (who is signed in, with which version of the extension), or only in
@@ -69,11 +69,12 @@ export interface CacheOwner {
 /**
  * How `owner`'s cache is kept in `storage`, saved at most once every `throttleTime` ms: only what loaded, never a diff or a
  * comment, and nothing older than 24 hours. Another viewer, version or build finds nothing (restoring a cache kept for
- * someone else discards it): what one build kept may not be what the next one reads.
+ * someone else discards it): what one build kept may not be what the next one reads. What is restored is read as a cache
+ * this build saves (keptCacheSchema), else it is discarded and the page asks GitHub.
  */
 export function keptOnDevice(owner: CacheOwner, storage: AsyncStorage<string> = indexedDbStorage, throttleTime = 1000): PersistQueryClientProviderProps['persistOptions'] {
   return {
-    persister: createAsyncStoragePersister({ storage, key: 'queries', throttleTime }),
+    persister: createAsyncStoragePersister({ storage, key: 'queries', throttleTime, deserialize: (kept) => keptCacheSchema.parse(JSON.parse(kept)) }),
     maxAge: KEPT_FOR_MS,
     buster: `${owner.version}:${owner.login}:${import.meta.env.BUILD_ID}`,
     dehydrateOptions: {
@@ -101,6 +102,43 @@ export function forgetKeptCache(): Promise<void> {
 /** How long the device keeps what a page showed. */
 const KEPT_FOR_MS = 24 * 60 * 60_000;
 
+/**
+ * The page's cache the way TanStack saves it (`persistQueryClientSave`): when, for whom (the buster) and each query that
+ * had loaded, its data as the query answered it, which the page's readers read in turn. The page runs no mutations
+ * through TanStack, so none is kept.
+ */
+const keptCacheSchema = z.object({
+  timestamp: z.number(),
+  buster: z.string(),
+  clientState: z.object({
+    mutations: z.array(z.never()),
+    queries: z.array(
+      z.object({
+        queryHash: z.string(),
+        queryKey: z.array(z.unknown()),
+        dehydratedAt: z.number(),
+        // Only queries that loaded are kept, so they hold no error.
+        state: z.object({
+          data: z.unknown(),
+          dataUpdateCount: z.number(),
+          dataUpdatedAt: z.number(),
+          error: z.null(),
+          errorUpdateCount: z.number(),
+          errorUpdatedAt: z.number(),
+          fetchFailureCount: z.number(),
+          fetchFailureReason: z.null(),
+          fetchMeta: z.object({ fetchMore: z.object({ direction: z.enum(['forward', 'backward']) }).optional() }).nullable(),
+          isInvalidated: z.boolean(),
+          status: z.enum(['pending', 'error', 'success']),
+          fetchStatus: z.enum(['fetching', 'paused', 'idle']),
+        }),
+        meta: z.record(z.string(), z.unknown()).optional(),
+        queryType: z.literal('infinite').optional(),
+      }),
+    ),
+  }),
+});
+
 /** Nothing until the cache kept on the device is back (a few milliseconds), rather than skeletons for what it holds. */
 function Restored({ children }: { children: ReactNode }) {
   return useIsRestoring() ? null : children;
@@ -114,8 +152,9 @@ function Restored({ children }: { children: ReactNode }) {
 function listenForReturns(onReturn: () => void): () => void {
   const listener = () => onReturn();
   const onMessage = (event: MessageEvent) => {
-    if (event.origin !== GITHUB_ORIGIN || event.source !== window.parent || !isBridgeMessage<ParentToAppMessage>(event.data)) return;
-    if (event.data.type === 'gg:focus') onReturn();
+    if (event.origin !== GITHUB_ORIGIN || event.source !== window.parent) return;
+    // GitHub's own page posts to this frame too.
+    if (parentToAppMessage.safeParse(event.data).data?.type === 'gg:focus') onReturn();
   };
   window.addEventListener('focus', listener);
   document.addEventListener('visibilitychange', listener);
@@ -142,7 +181,7 @@ const indexedDbStorage: AsyncStorage<string> = {
  * Asks the cache's object store, for a second at most: IndexedDB may never answer (an open waiting behind another tab's
  * upgrade), and the page goes on without it, restoring nothing (undefined) and no longer waiting for a save.
  */
-function inQueryStore<T>(mode: IDBTransactionMode, request: (store: IDBObjectStore) => IDBRequest<T>): Promise<T | undefined> {
+function inQueryStore<T,>(mode: IDBTransactionMode, request: (store: IDBObjectStore) => IDBRequest<T>): Promise<T | undefined> {
   database ??= new Promise((resolve, reject) => {
     const opening = indexedDB.open('carbonlayer', 1);
     opening.onupgradeneeded = () => opening.result.createObjectStore('cache');
@@ -150,8 +189,8 @@ function inQueryStore<T>(mode: IDBTransactionMode, request: (store: IDBObjectSto
     opening.onerror = () => reject(opening.error);
   });
   const answered = database.then(
-    (db) =>
-      new Promise<T>((resolve, reject) => {
+    (db): Promise<T> =>
+      new Promise((resolve, reject) => {
         const asked = request(db.transaction('cache', mode).objectStore('cache'));
         asked.onsuccess = () => resolve(asked.result);
         asked.onerror = () => reject(asked.error);

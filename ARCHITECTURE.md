@@ -24,10 +24,10 @@ CSP. The content script is a thin bridge.
 | file | role |
 | --- | --- |
 | `github.content.ts` | Content script on `github.com/*`, run at `document_start`. Recognises the inbox (the homepage `/`, only when `<meta name="user-login">` names a signed-in user: signed out, `/` is GitHub's marketing page and stays untouched, so at `document_start` the script waits for that tag, or for `<body>`, before hiding anything) and PR (`/:owner/:repo/pull/:n`, plus `/files`, `/changes`, `/commits`, `/checks`) routes (`src/app/routes.ts`). On a handled route it reads the settings, then hides GitHub's `main` with a `<style>` on `<html>` before the page paints, and mounts the iframe (`app.html?theme=<theme>#<route>`) on `<html>` too, below GitHub's header, so Turbo's `<body>` swaps leave both in place and a soft navigation moves the loaded app with `gg:route` instead of reloading it. The frame opens in the theme the app will show (the options' theme, else GitHub's), which `app-theme.ts` puts on before the first paint: the app's light default would otherwise show while its code loads, a white flash on GitHub's dark theme. It forwards theme, keydown, the window's focus and who is signed in (`gg:viewer`, answering the app's `gg:ready` with `<meta name="user-login">` once the parser has reached it) to the iframe, performs top-level navigations the iframe asks for (`src/app/bridge.ts`), answers the iframe's RPC requests with `handleRpc` from `src/lib/github-web/` (session fetches), and re-routes on every same-document navigation (the Navigation API's `navigate` event; `wxt:locationchange` where there is none). A page the app asks for that it shows in this tab moves the tab inside the app instead of loading (below, "Moving between pages"). `?gh=1` leaves GitHub untouched for one visit. The `inboxEnabled` / `prEnabled` settings leave it untouched until switched back. On every handled route the script adds a "GitHub \| CarbonLayer" switch (`role="group"`, two `aria-pressed` buttons, plain DOM, GitHub's colour variables) to GitHub's header, just before the + / notifications cluster (`[data-testid="top-bar-actions"]` in the signed-in global nav, `.AppHeader-actions` on older headers; signed out, the marketing header's search-and-sign-in cluster; failing those, the header's end). A click switches this tab at once (GitHub's view loads the URL afresh when the app moved the tab since the page loaded, as GitHub's page below it is another URL's) and keeps that choice in the tab's `sessionStorage` for as long as the tab lives, and saves it as the default for tabs opened later; other open tabs keep their page until they load again. The popup's switches do the same for the tab in view: they save the default and send that tab's content script a `gg:choose` runtime message. GitHub's headers are server-rendered React partials, and a node inserted among their children before hydration makes React render the header again without it, so the switch lives in an open shadow root on that cluster beside a `<slot>` for GitHub's own children; it is placed once the header is parsed and again after a Turbo `<body>` swap or a React re-render. |
-| `app-theme.ts` | `app.html`'s first script, a blocking one in its `<head>`: sets `<html data-theme>` from `?theme=` before the page is parsed or painted, and `app/main.tsx` keeps that theme until it has GitHub's (`gg:theme`) and the options' own. A file of its own (WXT unlisted script), since the extension's CSP blocks inline scripts. |
+| `app-theme.ts` | `app.html`'s first script, a blocking one in its `<head>`: sets `<html data-theme>` from `?theme=` (`themeOpenedIn` in `src/app/frame-theme.ts`, which imports nothing, so the script stays a few hundred bytes) before the page is parsed or painted, and `app/main.tsx` keeps that theme until it has GitHub's (`gg:theme`) and the options' own. A file of its own (WXT unlisted script), since the extension's CSP blocks inline scripts. |
 | `app/` | The React app (`entrypoints/app/main.tsx`): hash router → `InboxPage` (`src/inbox/`) or `PrPage` (`src/pr/`), inside the page's TanStack Query cache (`PageQueries`, below), which a move to another page (`gg:route`) keeps; another page or PR opens at its top. Data comes through a `DataSource` (`src/app/data-source.ts`): the RPC-backed one in the extension, a fixture-backed one when opened with `?fixtures=1` (the dev harness). Listed in `web_accessible_resources` for `https://github.com/*`. |
 | `background.ts` | Brokers the one-click copy from Graphite: opens `app.graphite.com` next to the inbox's tab, remembers both tabs in `storage.session`, stores the copied sections under `graphiteImport` in `storage.local`, then closes the Graphite tab and re-activates the inbox. Nothing else. |
-| `graphite.content.ts` / `graphite-sections.content.ts` | On `app.graphite.com`, only in the tab the background opened: the isolated script asks the page-world script (`world: 'MAIN'`) for the inbox's sections; that one waits for the inbox to render, walks React's internal state above a sidebar item to the inbox `snapshot` (`inboxSnapshotOf` in `src/lib/graphite.ts`) and posts the sections, the inbox's repositories and the signed-in login back. A banner in the tab reports the result. |
+| `graphite.content.ts` / `graphite-sections.content.ts` | On `app.graphite.com`, only in the tab the background opened: the isolated script asks the page-world script (`world: 'MAIN'`) for the inbox's sections; that one waits for the inbox to render, walks React's internal state above a sidebar item to the inbox `snapshot` (`inboxSnapshotOf` in `src/lib/graphite.ts`, which reads each fiber's props by zod schemas) and posts the sections, the inbox's repositories and the signed-in login back, the copy read as `graphiteInboxSnapshot` (every section named, the rest as Graphite holds it) at each hop: the page world, the isolated script and the background. A snapshot of another shape is reported, saying what differs, rather than copied. A banner in the tab reports the result. |
 | `options/` | Options page: the inbox's organization, its repositories and views editor, merge method, diff layout, theme, on/off switches. |
 | `popup/` | Toolbar popup: on/off toggles, links to inbox and options. |
 
@@ -68,6 +68,19 @@ entry's conversations and author, "Group by stack"'s branches, the organizations
 section's deferred rows, the stack's mergeability list, how many approvals the rules require, the repository picker's
 envelope), it is looked for by name wherever GitHub nests it (`findInPayload`) and what is found is read by the schema.
 
+What crosses between the extension's own parts is read the same way, by zod schemas, and the types are the schemas'
+(`z.infer`): the domain model (`src/lib/model.ts`) is schemas, which the app reads the content script's answers by; each
+RPC method has a schema for its args and one for its result (`RPC_SCHEMAS` in `src/lib/rpc.ts`, from which `RpcMethods`
+is derived). The content script reads a request's args by its method's (`readRpcRequest`) and answers one of another
+shape, or an unknown method, as that request's failure; the app reads an answer's result by its method's (`rpc`) and
+rejects one of another shape with `The answer to <method> did not match: <zod's issues>`, which takes the query's own
+way to the page. The bridge's messages are two discriminated unions (`parentToAppMessage`, `appToParentMessage` in
+`src/app/bridge.ts`): the frame leaves alone what does not parse, since GitHub's own page posts to it too, while the
+content script, which hears only the frame (origin and source checked), throws on a message of another shape. The
+background's runtime messages, the popup's `gg:choose` (the content script ignores runtime messages of other shapes) and
+what the inbox and the stack card read back from the page's cache (a section's rows, a row's details) are read the same
+way.
+
 Graphite judges CI from every check run on the head commit, runs of the workflows GitHub triggers itself (event `dynamic`,
 such as Copilot's code review) included, while `status_checks`, the commit's status rollup and the PR's Checks tab all
 leave those out. So the PR page's checks and the inbox's open rows also read the branch's Actions list
@@ -90,8 +103,9 @@ the old entry goes): every build has an id of its own, the time it was made (`im
 from build to build. Signed out, the page has an in-memory cache only. The page never waits on either for long: a frame
 `gg:viewer` has not reached within two seconds renders with an in-memory cache, and IndexedDB is given a second for each
 read or write (an open can wait for good behind another tab's upgrade), after which the page restores nothing and asks
-GitHub, or stops waiting for the save. What it reads there must be the string a save wrote (zod), else the entry is
-discarded. Only what loaded is kept, for 24 hours, and never a diff or a
+GitHub, or stops waiting for the save. What it reads there must be the string a save wrote, holding a cache of the shape
+this build saves (`keptCacheSchema`: the buster, and each query that loaded with its key and state), else the entry is
+discarded and the page asks GitHub. Only what loaded is kept, for 24 hours, and never a diff or a
 comment: the PR page's file list (GitHub sends some diffs with it), diffs, review threads and timeline stay in memory and
 are asked of GitHub on every page load (`keptOnDevice`). The settings are a query of the cache too (`useSettings` in
 `src/app/use-settings.ts`, kept current by `watchSettings`), in memory only, since chrome.storage keeps them: the inbox and
@@ -274,13 +288,19 @@ organization owns.
 type View = { id: string; name: string; query: string; filter?: GraphiteFilter; repos?: RepoRef[]; limit?: number; collapsed?: boolean }
 ```
 
+(`viewSchema` in `src/lib/model.ts`; the filter is `graphiteFilterSchema` in `src/lib/graphite.ts`.)
+
 Stored in `chrome.storage.sync`, which holds at most 8 KB an item and 100 KB in all: each view is an item of its own,
 `view:<org>/<id>`, and the `settings` item holds the rest: `currentOrg`, each organization's views' order
 (`viewsByOrg: { [login]: { viewOrder } }`) and repositories (`reposByOrg`); a save writes only the views that changed,
 and a write Chrome refuses reaches the UI as an error (`src/lib/settings.ts`). Views saved before views belonged to an
 organization (`view:<id>` items in `viewOrder`, with `inboxRepos` / `inboxScope`) stay until the first organization is
 chosen: the chooser offers "Keep my current views for this organization" (on by default), which moves them, and their
-repositories that organization owns, to it; otherwise it starts from the defaults. Either way the old items go. The
+repositories that organization owns, to it; otherwise it starts from the defaults. Either way the old items go. What is
+stored is read by schemas: a view item of another shape is left out (the others keep their order), and every field of the
+`settings` item may be missing, as an earlier version or nobody wrote it; one this version cannot read counts as unset
+(a preference as its default, the chosen organization as none), and keys it does not know stay in the item when it is
+written back, as another device's version may have written them (`storedSettingsSchema`). The
 default views are Graphite's default sections as the Graphite import translates
 them (`DEFAULT_VIEWS` in `src/lib/views.ts`: each with its Graphite `filter`, the viewer as `@me`, and the query compiled
 from it); settings whose views are all an earlier version's defaults (GitHub's own inbox sections) get them once, in
@@ -392,6 +412,9 @@ replaces that one in place under its id).
 Importing from Graphite (`src/lib/graphite.ts`, UI in `src/inbox/GraphiteImport.tsx` on the inbox's "Import from
 Graphite…" dialog and the options page): "Copy my sections from Graphite" reads every section straight out of the
 signed-in Graphite inbox (flow above), and pasted `?new-section=` / `?shared-sections=` links or their JSON work too.
+What they hold is read by schemas: a filter in the share links' form (`graphiteFilterSchema`: every rule with conditions,
+all of one kind, each with the value its kind needs) or the inbox page's OR / AND / NOT tree converted to it, a list of
+named sections, or the inbox page's copy; anything else is refused with what was expected.
 Each section becomes one view, mapped as the "Verified mapping" in `docs/research/graphite-sections.md` says (checked
 section by section against the user's live Graphite inbox): rules are ANDed, a rule's conditions ORed (`(author:a OR
 author:b)`, a comma-separated `label:`), `isNegated` negates a rule, a rule only several alternatives express (Review
@@ -411,10 +434,14 @@ them carrying them as its own `repos`. Relative times
 
 - `pnpm typecheck` (tsc) and `pnpm build` must pass.
 - `pnpm test` (vitest) covers pure logic: the github-web mappers and session handling, stack inference,
-  view link encode/decode, Graphite section import, routes, keyboard chords, next-step derivation.
+  view link encode/decode, Graphite section import, routes, keyboard chords, next-step derivation, and what the
+  extension's parts read of each other (RPC requests and answers, bridge messages, stored settings, the kept cache).
 - Harness: `pnpm build`, then serve `.output/chrome-mv3` statically and open `app.html?fixtures=1#/inbox` or
   `app.html?fixtures=1#/pr/acme/widgets/42` for visual checks (no session, no `chrome.*`). Its cache stays in memory, so
   every run starts clean; `&keep=<label>` keeps it on the device as the fixtures' viewer under that label (and this
   build) instead, for checking what a second load restores (another label or build restores nothing). Moves between pages
   are checked with the real content script on stand-in github.com pages whose frame is pointed at `app.html?fixtures=1`.
+  Such runs block Chromium's DNS (`--host-resolver-rules=MAP * ~NOTFOUND`) as well as routing every request to a
+  stand-in or an abort: a tab the browser opens from a link (⌘-click) or the background opens (the Graphite copy) loads
+  before Playwright's routing reaches it, and would otherwise go to the real site.
 - Real-site check: load `.output/chrome-mv3` unpacked while signed in to github.com, open github.com.

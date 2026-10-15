@@ -6,7 +6,9 @@ import { Icon } from '../../src/ui/Icon';
 import '../../src/ui/tokens.css';
 import './popup.css';
 
-createRoot(document.getElementById('root')!).render(
+const root = document.getElementById('root');
+if (!root) throw new Error('popup.html has no #root to render into');
+createRoot(root).render(
   <StrictMode>
     <Popup />
   </StrictMode>,

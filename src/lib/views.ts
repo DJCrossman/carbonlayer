@@ -2,15 +2,16 @@
 // inbox sections (`inbox:<filter>`, served by /pulls/inbox/queries), plus the share-link format
 // (`https://github.com/#views=<base64url json>`).
 
-import { isGraphiteFilter } from './graphite';
-import type { Organization, RepoRef, View, ViewResult } from './model';
+import { z } from 'zod';
+import { viewSchema, type Organization, type RepoRef, type View, type ViewResult } from './model';
 
 /**
- * Graphite's default inbox sections, as its import translates them (the filters of the user's own Graphite inbox,
- * src/lib/graphite-inbox.fixture.json, with the viewer as @me and the inbox's repositories left to the inbox scope), so
- * the section editor shows their rows. Each `query` is what `searchForFilter` compiles from its `filter`, written out
- * because graphite.ts and this module import each other; views.test.ts holds them equal, and each was checked against
- * the user's live inbox (docs/research/graphite-sections.md, "Verified mapping").
+ * Graphite's default inbox sections, the way its import translates them (the filters of the user's own Graphite
+ * inbox, src/lib/graphite-inbox.fixture.json, with the viewer as @me and the inbox's repositories left to the inbox
+ * scope), so the section editor shows their rows. Each `query` is what `searchForFilter` compiles from its `filter`,
+ * written out because graphite.ts and this module import each other (this one through model.ts); views.test.ts holds
+ * them equal, and each was checked against the user's live inbox (docs/research/graphite-sections.md, "Verified
+ * mapping").
  */
 export const DEFAULT_VIEWS: View[] = [
   {
@@ -229,13 +230,12 @@ export type GitHubInboxFilter = (typeof GITHUB_INBOX_FILTERS)[number];
 
 export function inboxFilterOf(view: View): GitHubInboxFilter | null {
   const match = /^inbox:([a-z-]+)$/.exec(view.query.trim());
-  const filter = match?.[1] as GitHubInboxFilter | undefined;
-  return filter && GITHUB_INBOX_FILTERS.includes(filter) ? filter : null;
+  return GITHUB_INBOX_FILTERS.find((filter) => filter === match?.[1]) ?? null;
 }
 
 /**
- * The count a section shows for its pull requests, as Graphite writes it: the total, `99+` above 99, or `<limit>+` when
- * the view lists fewer than it found.
+ * The count a section shows for its pull requests, the way Graphite writes it: the total, `99+` above 99, or `<limit>+`
+ * when the view lists fewer than it found.
  */
 export function sectionCount({ view, totalCount }: Pick<ViewResult, 'view' | 'totalCount'>): string {
   if (view.limit !== undefined && view.limit <= 99 && totalCount > view.limit) return `${view.limit}+`;
@@ -250,7 +250,7 @@ export function encodeViewsShareLink(views: View[]): string {
   return `https://github.com/#views=${btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`;
 }
 
-/** Views encoded in a location hash, or null when the hash carries none / is malformed. */
+/** Views encoded in a location hash, or null when the hash carries none / is malformed (a link from anyone). */
 export function decodeViewsShareHash(hash: string): View[] | null {
   const params = new URLSearchParams(hash.replace(/^#/, ''));
   const encoded = params.get('views');
@@ -258,9 +258,7 @@ export function decodeViewsShareHash(hash: string): View[] | null {
   try {
     const binary = atob(encoded.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(encoded.length / 4) * 4, '='));
     const parsed: unknown = JSON.parse(new TextDecoder().decode(Uint8Array.from(binary, (c) => c.charCodeAt(0))));
-    if (!Array.isArray(parsed)) return null;
-    const views = parsed.filter(isView);
-    return views.length === parsed.length && views.length > 0 ? views : null;
+    return z.array(viewSchema).min(1).safeParse(parsed).data ?? null;
   } catch {
     return null;
   }
@@ -314,17 +312,3 @@ export function repositoryScope(repos: Array<{ owner: string; name: string }>): 
   return terms.length > 1 ? `(${terms.join(' OR ')})` : (terms[0] ?? '');
 }
 
-export function isView(value: unknown): value is View {
-  if (typeof value !== 'object' || value === null) return false;
-  const v = value as Record<string, unknown>;
-  return (
-    typeof v.id === 'string' &&
-    typeof v.name === 'string' &&
-    typeof v.query === 'string' &&
-    (v.filter === undefined || isGraphiteFilter(v.filter)) &&
-    (v.repos === undefined ||
-      (Array.isArray(v.repos) && v.repos.every((repo: unknown) => typeof (repo as { owner?: unknown })?.owner === 'string' && typeof (repo as { name?: unknown })?.name === 'string'))) &&
-    (v.limit === undefined || typeof v.limit === 'number') &&
-    (v.collapsed === undefined || typeof v.collapsed === 'boolean')
-  );
-}

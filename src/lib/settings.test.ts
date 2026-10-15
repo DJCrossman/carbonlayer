@@ -146,6 +146,21 @@ describe('organizations', () => {
   });
 });
 
+describe('settings this version cannot read', () => {
+  it('reads a preference of another shape as its default, and keeps the keys it does not know when it saves', async () => {
+    sync.items = { settings: { theme: 'sepia', diffLayout: 'split', fromAnotherVersion: { kept: true } } };
+    expect(await getSettings()).toMatchObject({ theme: 'auto', diffLayout: 'split' });
+    await setSettings({ prEnabled: false });
+    expect(sync.items.settings).toMatchObject({ diffLayout: 'split', prEnabled: false, fromAnotherVersion: { kept: true } });
+  });
+
+  it('leaves out a saved view of another shape and keeps the others in order', async () => {
+    const mine: View = { id: 'mine', name: 'Mine', query: 'is:pr author:@me' };
+    sync.items = { settings: { viewOrder: ['broken', 'mine'] }, 'view:broken': { id: 'broken', name: 'Broken' }, 'view:mine': mine };
+    expect((await getSettings()).views).toEqual([mine]);
+  });
+});
+
 describe('views saved by earlier versions', () => {
   it("swap the earlier defaults for Graphite's, once", async () => {
     sync.items = {

@@ -8,10 +8,11 @@ import { browser } from 'wxt/browser';
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { createIframeUi } from 'wxt/utils/content-script-ui/iframe';
 import { defineContentScript } from 'wxt/utils/define-content-script';
-import { isBridgeMessage, type AppToParentMessage, type ParentToAppMessage } from '../src/app/bridge';
+import { z } from 'zod';
+import { appToParentMessage, type ParentToAppMessage } from '../src/app/bridge';
 import { parseGitHubLocation, routeInApp, toAppHash, type AppRoute } from '../src/app/routes';
 import { handleRpc } from '../src/lib/github-web';
-import { isRpcRequest, type RpcResponse } from '../src/lib/rpc';
+import { readRpcRequest, rpcRequestSchema, type RpcResponse } from '../src/lib/rpc';
 import { getSettings, setSettings, watchSettings, type Settings } from '../src/lib/settings';
 
 export default defineContentScript({
@@ -123,8 +124,7 @@ export default defineContentScript({
     // should it come back from the back/forward cache.
     if (window.navigation) {
       ctx.addEventListener(window.navigation, 'navigate', (event) => {
-        const { destination } = event as NavigateEvent;
-        if (destination.sameDocument) sync(new URL(destination.url));
+        if (event instanceof NavigateEvent && event.destination.sameDocument) sync(new URL(event.destination.url));
       });
     } else {
       ctx.addEventListener(window, 'wxt:locationchange', (event) => sync(event.newUrl));
@@ -135,11 +135,10 @@ export default defineContentScript({
       settings = { ...next, inboxEnabled: settings.inboxEnabled, prEnabled: settings.prEnabled };
       sync(new URL(location.href));
     });
+    // The popup's switches; this tab may hear other runtime messages.
     const onChoose = (message: unknown) => {
-      const choice = message as { type?: unknown; surface?: unknown; showOurs?: unknown } | null;
-      if (choice?.type === 'gg:choose' && (choice.surface === 'inboxEnabled' || choice.surface === 'prEnabled') && typeof choice.showOurs === 'boolean') {
-        choosePage(choice.surface, choice.showOurs);
-      }
+      const choice = chooseMessage.safeParse(message);
+      if (choice.success) choosePage(choice.data.surface, choice.data.showOurs);
     };
     browser.runtime.onMessage.addListener(onChoose);
     ctx.onInvalidated(() => {
@@ -212,17 +211,19 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute, themeSe
     if (!ui.iframe.isConnected) ui.wrapper.shadowRoot?.append(ui.iframe);
   });
   frameGuard.observe(html, { childList: true });
-  frameGuard.observe(ui.wrapper.shadowRoot!, { childList: true });
+  const frameRoot = ui.wrapper.shadowRoot;
+  if (!frameRoot) throw new Error("The app's frame has no shadow root to guard");
+  frameGuard.observe(frameRoot, { childList: true });
 
   // GitHub's header is parsed after this runs at document_start, and replaced with <body> on Turbo visits.
-  let header: HTMLElement | null = null;
+  let header: Element | null = null;
   const placeBelowHeader = () => {
     ui.wrapper.style.top = `${Math.max(0, header?.getBoundingClientRect().bottom ?? 0)}px`;
     ui.wrapper.style.visibility = 'visible';
   };
   const headerResizes = new ResizeObserver(placeBelowHeader);
   const findHeader = () => {
-    const found = document.querySelector<HTMLElement>(GITHUB_HEADER);
+    const found = document.querySelector(GITHUB_HEADER);
     if (found !== header) {
       if (header) headerResizes.unobserve(header);
       header = found;
@@ -279,21 +280,27 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute, themeSe
     'message',
     (event) => {
       if (event.origin !== appOrigin || event.source !== ui.iframe.contentWindow) return;
-      if (isRpcRequest(event.data)) {
+      // Only the app's frame gets here: what it posts is a data request or one of the bridge's messages.
+      const data: unknown = event.data;
+      const asked = rpcRequestSchema.safeParse(data);
+      if (asked.success) {
         // Data requests run here, not in the app: only a github.com document can fetch with the user's session.
-        // handleRpc answers every request, failures included; an answer that cannot be cloned is answered with why, so the
-        // app does not wait 60 s for it.
-        void handleRpc(event.data).then((answer) => {
-          try {
-            post(answer);
-          } catch (error) {
-            post({ kind: 'gg-rpc-result', id: answer.id, ok: false, error: `The answer could not be posted: ${error instanceof Error ? error.message : String(error)}` });
-          }
-        });
+        // handleRpc answers every request, failures included; a request of another shape is answered with what differs,
+        // and an answer that cannot be cloned with why, so the app does not wait 60 s for it.
+        const { id } = asked.data;
+        void Promise.resolve()
+          .then(() => handleRpc(readRpcRequest(asked.data)))
+          .catch((error: unknown): RpcResponse => ({ kind: 'gg-rpc-result', id, ok: false, error: error instanceof Error ? error.message : String(error) }))
+          .then((answer) => {
+            try {
+              post(answer);
+            } catch (error) {
+              post({ kind: 'gg-rpc-result', id, ok: false, error: `The answer could not be posted: ${error instanceof Error ? error.message : String(error)}` });
+            }
+          });
         return;
       }
-      if (!isBridgeMessage<AppToParentMessage>(event.data)) return;
-      const message = event.data;
+      const message = appToParentMessage.parse(data);
       switch (message.type) {
         case 'gg:ready':
           ready = true;
@@ -376,9 +383,9 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute, themeSe
     { capture: true, signal },
   );
 
-  const takeover = {
+  const takeover: { leavingFor: string | null; show: (route: AppRoute) => void; release: () => void } = {
     /** Where a same-tab navigation the app asked for is heading while this document unloads; not worth tearing down for. */
-    leavingFor: null as string | null,
+    leavingFor: null,
     /** Moves the already-loaded app to another handled route, without reloading it. */
     show(route: AppRoute) {
       const hash = toAppHash(route);
@@ -398,6 +405,9 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute, themeSe
   };
   return takeover;
 }
+
+/** The popup's switch for the tab in view (`gg:choose`): which page a surface shows here. */
+const chooseMessage = z.object({ type: z.literal('gg:choose'), surface: z.enum(['inboxEnabled', 'prEnabled']), showOurs: z.boolean() });
 
 /**
  * GitHub's global header: signed in, a React partial whose <header> carries the GlobalNav class; signed out, the
@@ -559,8 +569,11 @@ declare global {
     /** The parts of the Navigation API used here, which TypeScript's DOM library does not declare yet; Chrome has had them since 102. */
     readonly navigation?: EventTarget & { readonly currentEntry: NavigationHistoryEntry | null };
   }
-}
 
-interface NavigateEvent extends Event {
-  readonly destination: { readonly url: string; readonly sameDocument: boolean };
+  /** The Navigation API's `navigate` event, the parts used here (Chrome since 102, wherever `window.navigation` is). */
+  interface NavigateEvent extends Event {
+    readonly destination: { readonly url: string; readonly sameDocument: boolean };
+  }
+
+  var NavigateEvent: { prototype: NavigateEvent; new (type: string): NavigateEvent };
 }

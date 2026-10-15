@@ -6,6 +6,7 @@
 // becomes one view: GitHub's search ORs parenthesised groups, `is:pr ((a b) OR (c))`, up to five operators a query.
 // See docs/research/graphite-sections.md.
 
+import { z } from 'zod';
 import type { RepoRef, View } from './model';
 import { repositoryScope } from './views';
 
@@ -56,19 +57,20 @@ export function importGraphiteSections(
       continue;
     }
     const split = `Graphite matches any of its ${search.groupsKept.length} filter groups, more than one GitHub search can OR; each group is a view of its own.`;
-    search.groupsKept.forEach((groupIndex, index) => {
-      const groupFilter = { groups: [filter.groups[groupIndex]!] };
+    for (const [index, kept] of search.groupsKept.flatMap((groupIndex) => filter.groups[groupIndex] ?? []).entries()) {
+      const groupFilter = { groups: [kept] };
       const group = searchForFilter(groupFilter, repos);
+      // The whole filter's search kept the group, so it searches on its own.
+      if (group.query === null) continue;
       views.push({
-        view: { id: crypto.randomUUID(), name: `${name} (${index + 1})`, query: group.query!, filter: groupFilter, ...(repos.length > 0 && { repos }) },
+        view: { id: crypto.randomUUID(), name: `${name} (${index + 1})`, query: group.query, filter: groupFilter, ...(repos.length > 0 && { repos }) },
         notes: [...new Set([...section.notes, split, ...group.notes])],
       });
-    });
+    }
   }
-  const inboxRepos =
-    typeof input !== 'string' && sections.some((section) => section.usesInboxRepos) && input.defaultRepos.length > 0
-      ? input.defaultRepos.map((repo) => ({ owner: repo.owner, name: repo.name }))
-      : null;
+  // Only a copy of the inbox page names the inbox's repositories, which sectionsIn has read by now.
+  const defaultRepos = typeof input !== 'string' && sections.some((section) => section.usesInboxRepos) ? graphiteRepos.parse(input.defaultRepos) : [];
+  const inboxRepos = defaultRepos.length > 0 ? defaultRepos.map((repo) => ({ owner: repo.owner, name: repo.name })) : null;
   return { views, notes, sectionCount: sections.length, inboxRepos };
 }
 
@@ -100,8 +102,9 @@ export function searchForFilter(
         (other, otherIndex) => otherIndex !== index && other.terms.every((term) => terms.includes(term)) && (other.terms.length < terms.length || otherIndex < index),
       ),
   );
-  if (kept.length === 0) return { query: null, notes: [...new Set(notes)], operators: 0, groupsKept: [] };
-  const common = kept[0]!.terms.filter((term) => kept.every(({ terms }) => terms.includes(term)));
+  const [first] = kept;
+  if (!first) return { query: null, notes: [...new Set(notes)], operators: 0, groupsKept: [] };
+  const common = first.terms.filter((term) => kept.every(({ terms }) => terms.includes(term)));
   const ored = kept.map(({ terms }) => `(${terms.filter((term) => !common.includes(term)).join(' ')})`);
   const query = [
     ...new Set(['is:pr', ...(repos.length > 0 ? [repositoryScope(repos)] : []), ...common, ...(kept.length > 1 ? [`(${ored.join(' OR ')})`] : []), 'sort:updated-desc']),
@@ -120,28 +123,30 @@ export function searchForFilter(
  */
 export function inboxSnapshotOf(element: object): GraphiteInboxSnapshot | null {
   // React keeps each element's fiber under a key with a per-page random suffix.
-  const key = Object.keys(element).find((name) => name.startsWith('__reactFiber$'));
-  let fiber = key ? (element as Record<string, Fiber | null | undefined>)[key] : null;
-  let snapshot: { sections: Array<Record<string, unknown> | null>; syncedRepos?: unknown } | null = null;
+  let fiber: unknown = Object.entries(element).find(([name]) => name.startsWith('__reactFiber$'))?.[1];
+  let inbox: InboxState | null = null;
   let viewerLogin: string | undefined;
-  for (let depth = 0; fiber; depth += 1, fiber = fiber.return) {
-    const props = fiber.memoizedProps;
-    const sections = props?.snapshot?.sections;
-    if (!snapshot && Array.isArray(sections)) snapshot = { sections, syncedRepos: props?.snapshot?.syncedRepos };
+  for (let depth = 0; ; depth += 1) {
+    const step = fiberSchema.safeParse(fiber);
+    if (!step.success) break;
+    const props = step.data.memoizedProps;
+    inbox ??= inboxStateProps.safeParse(props).data?.snapshot ?? null;
     // Not an element of the inbox.
-    if (!snapshot && depth >= 100) return null;
+    if (!inbox && depth >= 100) return null;
     // Further up, Graphite's signed-in-user context provides { user: { githubLogin, github: { login } } }.
-    const login = props?.value?.user?.githubLogin ?? props?.value?.user?.github?.login;
-    if (snapshot && typeof login === 'string' && login) {
+    const user = signedInUserProps.safeParse(props).data?.value.user;
+    const login = user?.githubLogin ?? user?.github?.login;
+    if (inbox && login) {
       viewerLogin = login;
       break;
     }
+    fiber = step.data.return;
   }
-  if (!snapshot) return null;
-  const syncedRepos: Array<Record<string, unknown> | null> = Array.isArray(snapshot.syncedRepos) ? snapshot.syncedRepos : [];
-  return JSON.parse(
+  if (!inbox) return null;
+  // Plain data, which postMessage can carry whatever library holds the state.
+  const copied: unknown = JSON.parse(
     JSON.stringify({
-      sections: snapshot.sections.map((section) => ({
+      sections: inbox.sections.map((section) => ({
         name: section?.name,
         filter: section?.filter,
         repos: section?.repos,
@@ -149,21 +154,38 @@ export function inboxSnapshotOf(element: object): GraphiteInboxSnapshot | null {
         includeInTotalCount: section?.includeInTotalCount,
       })),
       // The inbox's "N repos selected", without the ones Graphite can no longer reach.
-      defaultRepos: syncedRepos.filter((repo) => repo && !repo.isInvalid).map((repo) => ({ owner: repo?.owner, name: repo?.name })),
+      defaultRepos: inbox.syncedRepos.filter((repo) => repo && !repo.isInvalid).map((repo) => ({ owner: repo?.owner, name: repo?.name })),
       viewerLogin,
     }),
-  ) as GraphiteInboxSnapshot;
+  );
+  const read = graphiteInboxSnapshot.safeParse(copied);
+  if (!read.success) throw new Error(`Graphite's inbox did not match: ${z.prettifyError(read.error)}`);
+  return read.data;
 }
 
-/** What Graphite's inbox page holds, as `inboxSnapshotOf` copies it out of the page. */
-export interface GraphiteInboxSnapshot {
+/**
+ * What Graphite's inbox page holds, the way `inboxSnapshotOf` copies it out of the page and the copy travels to the
+ * import (entrypoints/graphite.content.ts, background.ts): every section named, the rest the way Graphite holds it,
+ * which the import reads (sectionsIn).
+ */
+export const graphiteInboxSnapshot = z.object({
   /** `filter` is the OR / AND / NOT tree; `usesDefaultRepos` sections search `defaultRepos` instead of `repos`. */
-  sections: Array<{ name: string; filter: unknown; repos: Array<{ owner: string; name: string }>; usesDefaultRepos: boolean; includeInTotalCount: boolean }>;
+  sections: z.array(
+    z.object({
+      name: z.string(),
+      filter: z.unknown().optional(),
+      repos: z.unknown().optional(),
+      usesDefaultRepos: z.unknown().optional(),
+      includeInTotalCount: z.unknown().optional(),
+    }),
+  ),
   /** The repositories the inbox covers (its "N repos selected"). */
-  defaultRepos: Array<{ owner: string; name: string }>;
+  defaultRepos: z.array(z.unknown()),
   /** Who is signed in to Graphite, when the page said. */
-  viewerLogin?: string;
-}
+  viewerLogin: z.string().optional(),
+});
+
+export type GraphiteInboxSnapshot = z.infer<typeof graphiteInboxSnapshot>;
 
 /** A section as read; only `shared-sections` links and the inbox page carry a name and repositories. */
 interface GraphiteSection {
@@ -177,16 +199,30 @@ interface GraphiteSection {
   notes: string[];
 }
 
-/** A section's filter as Graphite's share links write it (its inbox page's tree converts to it); views keep it as is. */
-export interface GraphiteFilter {
-  groups: Array<{ rules: GraphiteRule[] }>;
-}
+/**
+ * One rule of a section's filter: never without conditions, every condition of one kind and with the value that kind
+ * needs (RULE_KINDS' `field`: a number of hours, else a string).
+ */
+const graphiteRuleSchema = z
+  .object({ isNegated: z.boolean(), conditions: z.array(z.looseObject({ kind: z.string() })).min(1) })
+  .refine(
+    ({ conditions }) =>
+      conditions.every((condition) => {
+        const field = Object.hasOwn(RULE_KINDS, condition.kind) ? RULE_KINDS[condition.kind]?.field : undefined;
+        return condition.kind === conditions[0]?.kind && (!field || typeof condition[field] === (field === 'hours' ? 'number' : 'string'));
+      }),
+    'Every condition of a rule is of one kind, with the value that kind needs',
+  );
 
-export interface GraphiteRule {
-  isNegated: boolean;
-  /** Never empty, and every condition has the same kind. */
-  conditions: Array<{ kind: string } & Record<string, unknown>>;
-}
+export type GraphiteRule = z.infer<typeof graphiteRuleSchema>;
+
+/**
+ * A section's filter the way Graphite's share links write it (its inbox page's tree converts to it); views keep it as
+ * is.
+ */
+export const graphiteFilterSchema = z.object({ groups: z.array(z.object({ rules: z.array(graphiteRuleSchema) })) });
+
+export type GraphiteFilter = z.infer<typeof graphiteFilterSchema>;
 
 /** The sections pasted: one or more Graphite links, whitespace-separated, or the JSON one of them carries. */
 function readSections(input: string): GraphiteSection[] {
@@ -235,7 +271,7 @@ function translateGroup(rules: GraphiteRule[], viewer: string | null): { alterna
   let states = 0b1111;
   const statusRules: string[] = [];
   for (const { isNegated, conditions } of rules) {
-    if (conditions[0]!.kind !== 'CONSOLIDATED_PR_STATUS_IS') continue;
+    if (conditions[0]?.kind !== 'CONSOLIDATED_PR_STATUS_IS') continue;
     const statuses = conditions.map((condition) => String(condition.status));
     const quoted = `“PR status ${isNegated ? 'is not' : 'is'} ${statuses.join(' or ')}”`;
     // Merging (Graphite's merge queue) has no search qualifier: only Open, which holds it, selects it, and excluding it
@@ -264,7 +300,7 @@ function translateGroup(rules: GraphiteRule[], viewer: string | null): { alterna
   let statusSearched = false;
   for (const rule of rules) {
     let ruleAlternatives: string[][];
-    if (rule.conditions[0]!.kind === 'CONSOLIDATED_PR_STATUS_IS') {
+    if (rule.conditions[0]?.kind === 'CONSOLIDATED_PR_STATUS_IS') {
       if (statusSearched) continue;
       statusSearched = true;
       ruleAlternatives = [stateTerms ?? []];
@@ -289,14 +325,16 @@ function translateGroup(rules: GraphiteRule[], viewer: string | null): { alterna
  * the rule's group selects merged pull requests only, whose latest activity is their merge.
  */
 function translateRule({ isNegated, conditions }: GraphiteRule, viewer: string | null, mergedOnly: boolean): { alternatives: string[][] | null; notes: string[] } {
-  const kind = conditions[0]!.kind;
-  const { label, field, verbs = ['is', 'is not'] } = Object.hasOwn(RULE_KINDS, kind) ? RULE_KINDS[kind]! : { label: kind };
+  const [first] = conditions;
+  if (!first) throw new Error('A Graphite rule needs a condition');
+  const kind = first.kind;
+  const { label, field, verbs = ['is', 'is not'] } = (Object.hasOwn(RULE_KINDS, kind) ? RULE_KINDS[kind] : undefined) ?? { label: kind };
   // A link shared "for the recipient" carries <REPLACE_USERNAME> where the sharer's login was, and Graphite's own copy
   // holds the viewer's login; both are searched as @me.
   const values = field
     ? conditions.map((condition) => String(condition[field])).map((value) => (value === '<REPLACE_USERNAME>' || (field === 'username' && value.toLowerCase() === viewer) ? '@me' : value))
     : [];
-  // The rule as Graphite's filter editor words it.
+  // The rule the way Graphite's filter editor words it.
   const quoted = values.length > 0 ? `“${label} ${verbs[isNegated ? 1 : 0]} ${values.join(' or ')}${kind === 'LAST_UPDATED' ? ' hours ago' : ''}”` : `“${label}”`;
 
   if (kind === 'LAST_UPDATED') {
@@ -328,14 +366,14 @@ function translateRule({ isNegated, conditions }: GraphiteRule, viewer: string |
   if (!field || perCondition.some((alternatives) => alternatives === null)) {
     return { alternatives: null, notes: [`${quoted} has no GitHub search equivalent; that filter group was left out.`] };
   }
-  const alternatives = perCondition.flatMap((selected) => selected!);
+  const alternatives = perCondition.flatMap((selected) => selected ?? []);
   // Several labels, any one of which will do: GitHub's comma list.
   if (kind === 'HAS_LABEL' && values.length > 1) return { alternatives: [[`label:${values.map((value) => `"${value}"`).join(',')}`]], notes };
   // GitHub's review: qualifier holds one decision per pull request, so review alternatives spread over the group, where a
   // rule excluding one of them leaves the others. Other values, any one of which will do, are one (a OR b) term.
   if (kind !== 'REVIEW_STATUS_IS' && alternatives.every((terms) => terms.length === 1)) {
     const any = [...new Set(alternatives.flat())];
-    return { alternatives: [[any.length === 1 ? any[0]! : `(${any.join(' OR ')})`]], notes };
+    return { alternatives: [[any.length === 1 ? any.join('') : `(${any.join(' OR ')})`]], notes };
   }
   return { alternatives, notes };
 }
@@ -436,7 +474,7 @@ export const RULE_KINDS: Record<string, { label: string; field?: string; verbs?:
 };
 
 /**
- * Graphite's PR statuses as GitHub's states: 1 open and ready, 2 open draft, 4 merged, 8 closed unmerged. Open holds
+ * Graphite's PR statuses in GitHub's states: 1 open and ready, 2 open draft, 4 merged, 8 closed unmerged. Open holds
  * drafts (Graphite's Drafts section is "Open and Draft"); Merging, Graphite's merge queue, has no state of its own.
  */
 const PR_STATES: Record<string, number> = { OPEN: 0b0011, DRAFT: 0b0010, MERGED: 0b0100, CLOSED: 0b1000 };
@@ -464,33 +502,25 @@ function sectionsIn(payload: unknown, source: string): GraphiteSection[] {
   const filter = groupsOf(payload);
   if (filter) return [{ name: null, filter, repos: [], usesInboxRepos: false, notes: [] }];
 
-  if (Array.isArray(payload) && payload.length > 0) {
-    const sections = payload.map((entry: unknown): GraphiteSection | null => {
-      const { name, filter, repos = [] } = (entry ?? {}) as { name?: unknown; filter?: unknown; repos?: unknown };
+  const shared = graphiteSharedSections.safeParse(payload);
+  if (shared.success) {
+    const sections = shared.data.map(({ name, filter, repos = [] }): GraphiteSection | null => {
       const groups = groupsOf(filter);
-      return typeof name === 'string' && groups && isRepoList(repos) ? { name, filter: groups, repos, usesInboxRepos: false, notes: [] } : null;
+      return groups && { name, filter: groups, repos, usesInboxRepos: false, notes: [] };
     });
     if (sections.every((section) => section !== null)) return sections;
   }
 
-  const { sections, defaultRepos } = (payload ?? {}) as { sections?: unknown; defaultRepos?: unknown };
-  if (
-    Array.isArray(sections) &&
-    sections.length > 0 &&
-    isRepoList(defaultRepos) &&
-    sections.every((section: unknown) => {
-      const { name, repos, usesDefaultRepos } = (section ?? {}) as { name?: unknown; repos?: unknown; usesDefaultRepos?: unknown };
-      return typeof name === 'string' && (usesDefaultRepos === true || isRepoList(repos));
-    })
-  ) {
-    return (sections as GraphiteInboxSnapshot['sections']).map((section) => {
+  const inbox = graphiteInboxSections.safeParse(payload);
+  if (inbox.success) {
+    return inbox.data.sections.map((section) => {
       const groups = groupsOf(section.filter);
       // Sections on the inbox's repositories leave them to the inbox's scope rather than repeat them in every view.
       return {
         name: section.name,
         filter: groups,
-        repos: section.usesDefaultRepos ? [] : section.repos,
-        usesInboxRepos: section.usesDefaultRepos === true,
+        repos: 'repos' in section ? section.repos : [],
+        usesInboxRepos: !('repos' in section),
         notes: groups ? [] : ['Graphite holds its filter in a form this import cannot read; that section was left out.'],
       };
     });
@@ -507,62 +537,77 @@ function sectionsIn(payload: unknown, source: string): GraphiteSection[] {
  * connective counts as a list of one.
  */
 function groupsOf(filter: unknown): GraphiteFilter | null {
-  if (isGraphiteFilter(filter)) return filter;
-  if (typeof (filter as { kind?: unknown } | null)?.kind !== 'string') return null;
+  const written = graphiteFilterSchema.safeParse(filter);
+  if (written.success) return written.data;
+  if (!graphiteTreeNode.safeParse(filter).success) return null;
   // The operands of a `connective` node; any other node is the only one.
   const operands = (node: unknown, connective: string): unknown[] => {
-    const { kind, exprs } = (node ?? {}) as { kind?: unknown; exprs?: unknown };
-    return kind === connective && Array.isArray(exprs) ? exprs : [node];
+    const tree = graphiteTreeNode.safeParse(node);
+    return tree.success && tree.data.kind === connective && tree.data.exprs ? tree.data.exprs : [node];
   };
   const converted = {
     groups: operands(filter, 'OR').map((group) => ({
       rules: operands(group, 'AND').map((rule) => {
-        const { kind, expr } = (rule ?? {}) as { kind?: unknown; expr?: unknown };
-        return kind === 'NOT' ? { isNegated: true, conditions: operands(expr, 'OR') } : { isNegated: false, conditions: operands(rule, 'OR') };
+        const tree = graphiteTreeNode.safeParse(rule);
+        return tree.success && tree.data.kind === 'NOT' ? { isNegated: true, conditions: operands(tree.data.expr, 'OR') } : { isNegated: false, conditions: operands(rule, 'OR') };
       }),
     })),
   };
-  return isGraphiteFilter(converted) ? converted : null;
+  return graphiteFilterSchema.safeParse(converted).data ?? null;
 }
 
-/** Whether a decoded payload is a section filter as Graphite writes it, with the value every known condition kind needs. */
-export function isGraphiteFilter(value: unknown): value is GraphiteFilter {
-  const groups = (value as { groups?: unknown } | null)?.groups;
-  return (
-    Array.isArray(groups) &&
-    groups.every((group: unknown) => {
-      const rules = (group as { rules?: unknown } | null)?.rules;
-      return (
-        Array.isArray(rules) &&
-        rules.every((rule: unknown) => {
-          const { isNegated, conditions } = (rule ?? {}) as { isNegated?: unknown; conditions?: unknown };
-          if (typeof isNegated !== 'boolean' || !Array.isArray(conditions) || conditions.length === 0) return false;
-          const kind = (conditions[0] as { kind?: unknown } | null)?.kind;
-          if (typeof kind !== 'string') return false;
-          const field = Object.hasOwn(RULE_KINDS, kind) ? RULE_KINDS[kind]!.field : undefined;
-          return conditions.every((condition: unknown) => {
-            const fields = condition as Record<string, unknown> | null;
-            return fields?.kind === kind && (!field || typeof fields[field] === (field === 'hours' ? 'number' : 'string'));
-          });
+/** A list of repositories the way Graphite writes them, `{ owner, name, forge? }`. */
+const graphiteRepos = z.array(z.object({ owner: z.string(), name: z.string() }));
+
+/** A React fiber the way `inboxSnapshotOf` walks it: page objects, so nothing about them is certain. */
+const fiberSchema = z.object({ memoizedProps: z.unknown().optional(), return: z.unknown().optional() });
+
+/** The props of the component holding Graphite's inbox: its `snapshot` of the sections and the synced repositories. */
+const inboxStateProps = z.object({
+  snapshot: z.object({
+    sections: z.array(
+      z
+        .object({
+          name: z.unknown().optional(),
+          filter: z.unknown().optional(),
+          repos: z.unknown().optional(),
+          usesDefaultRepos: z.unknown().optional(),
+          includeInTotalCount: z.unknown().optional(),
         })
-      );
-    })
-  );
-}
+        .nullable()
+        .catch(null),
+    ),
+    syncedRepos: z.array(z.object({ owner: z.unknown().optional(), name: z.unknown().optional(), isInvalid: z.unknown().optional() }).nullable().catch(null)).catch([]),
+  }),
+});
 
-/** Whether a value is a list of repositories as Graphite writes them, `{ owner, name, forge? }`. */
-function isRepoList(value: unknown): value is Array<{ owner: string; name: string }> {
-  return (
-    Array.isArray(value) &&
-    value.every((repo: unknown) => typeof (repo as { owner?: unknown } | null)?.owner === 'string' && typeof (repo as { name?: unknown } | null)?.name === 'string')
-  );
-}
+type InboxState = z.infer<typeof inboxStateProps>['snapshot'];
 
-/** A React fiber as `inboxSnapshotOf` walks it: page objects, so nothing about them is certain. */
-interface Fiber {
-  memoizedProps?: {
-    snapshot?: { sections?: unknown; syncedRepos?: unknown } | null;
-    value?: { user?: { githubLogin?: unknown; github?: { login?: unknown } | null } | null } | null;
-  } | null;
-  return?: Fiber | null;
-}
+/** The props of Graphite's signed-in-user context: `{ user: { githubLogin, github: { login } } }`. */
+const signedInUserProps = z.object({
+  value: z.object({
+    user: z.object({
+      githubLogin: z.string().nullish().catch(null),
+      github: z.object({ login: z.string().nullish().catch(null) }).nullish().catch(null),
+    }),
+  }),
+});
+
+/** A `?shared-sections=` link's sections: each named, with a filter in either form and, maybe, its repositories. */
+const graphiteSharedSections = z.array(z.object({ name: z.string(), filter: z.unknown(), repos: graphiteRepos.optional() })).min(1);
+
+/** What Graphite's inbox page holds, read: each section on the inbox's repositories (`usesDefaultRepos`) or its own. */
+const graphiteInboxSections = z.object({
+  sections: z
+    .array(
+      z.union([
+        z.object({ name: z.string(), filter: z.unknown().optional(), usesDefaultRepos: z.literal(true) }),
+        z.object({ name: z.string(), filter: z.unknown().optional(), repos: graphiteRepos }),
+      ]),
+    )
+    .min(1),
+  defaultRepos: graphiteRepos,
+});
+
+/** A node of the inbox page's filter tree: a connective over `exprs`, NOT over `expr`, or a condition. */
+const graphiteTreeNode = z.object({ kind: z.string(), exprs: z.array(z.unknown()).optional().catch(undefined), expr: z.unknown().optional() });

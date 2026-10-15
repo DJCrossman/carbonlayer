@@ -4,7 +4,7 @@
 /**
  * A query function for one thing at a time that asks `ask` about several at once: what is asked for within `gatherMs` of
  * each other goes together, `perRequest` things a request and `atOnce` requests at a time, in the order asked for. `ask`
- * answers in the same order; when it fails, so does every query it was asking for.
+ * answers in the same order; when it fails, so does every query it was asking for, and a query it gave no answer fails.
  */
 export function askedTogether<K, V>(
   ask: (keys: K[]) => Promise<V[]>,
@@ -20,7 +20,8 @@ export function askedTogether<K, V>(
       const batch = queue.splice(0, perRequest);
       try {
         const answers = await ask(batch.map((entry) => entry.key));
-        batch.forEach((entry, index) => entry.resolve(answers[index] as V));
+        answers.forEach((answer, index) => batch[index]?.resolve(answer));
+        for (const entry of batch.slice(answers.length)) entry.reject(new Error(`Asked about ${batch.length} at once, answered ${answers.length}`));
       } catch (reason) {
         for (const entry of batch) entry.reject(reason);
       }
@@ -28,8 +29,8 @@ export function askedTogether<K, V>(
     asking -= 1;
   };
 
-  return (key) =>
-    new Promise<V>((resolve, reject) => {
+  return (key): Promise<V> =>
+    new Promise((resolve, reject) => {
       queue.push({ key, resolve, reject });
       if (gathering) return;
       gathering = true;

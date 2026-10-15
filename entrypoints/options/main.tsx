@@ -2,13 +2,14 @@
 // switches. Every change is saved as it is made (text fields 400 ms after the last keystroke).
 import { StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { z } from 'zod';
 import { PageQueries } from '../../src/app/query-cache';
 import { OrgPicker, useOrganizations } from '../../src/inbox/OrgPicker';
 import { RepoPicker } from '../../src/inbox/RepoPicker';
 import { listOrganizations } from '../../src/lib/github-web/organizations';
 import { organizationPeople } from '../../src/lib/github-web/people';
 import { pickableRepositories } from '../../src/lib/github-web/repositories';
-import type { Organization } from '../../src/lib/model';
+import { mergeMethodSchema, type Organization } from '../../src/lib/model';
 import { getSettings, setSettings, type Settings } from '../../src/lib/settings';
 import { organizationScope } from '../../src/lib/views';
 import { Icon } from '../../src/ui/Icon';
@@ -16,7 +17,9 @@ import '../../src/ui/tokens.css';
 import './options.css';
 import { ViewsEditor } from './ViewsEditor';
 
-createRoot(document.getElementById('root')!).render(
+const root = document.getElementById('root');
+if (!root) throw new Error('options.html has no #root to render into');
+createRoot(root).render(
   <StrictMode>
     <PageQueries owner={null}>
       <OptionsPage />
@@ -141,14 +144,14 @@ function OptionsPage() {
         <h2>Pull request page</h2>
         <label className="field">
           <span>Diff layout</span>
-          <select value={settings.diffLayout} onChange={(event) => update({ diffLayout: event.target.value as Settings['diffLayout'] })}>
+          <select value={settings.diffLayout} onChange={(event) => update({ diffLayout: z.enum(['unified', 'split']).parse(event.target.value) })}>
             <option value="unified">Unified</option>
             <option value="split">Split</option>
           </select>
         </label>
         <label className="field">
           <span>Merge method</span>
-          <select value={settings.mergeMethod} onChange={(event) => update({ mergeMethod: event.target.value as Settings['mergeMethod'] })}>
+          <select value={settings.mergeMethod} onChange={(event) => update({ mergeMethod: mergeMethodSchema.parse(event.target.value) })}>
             <option value="MERGE">Create a merge commit</option>
             <option value="SQUASH">Squash and merge</option>
             <option value="REBASE">Rebase and merge</option>
@@ -156,7 +159,7 @@ function OptionsPage() {
         </label>
         <label className="field">
           <span>Theme</span>
-          <select value={settings.theme} onChange={(event) => update({ theme: event.target.value as Settings['theme'] })}>
+          <select value={settings.theme} onChange={(event) => update({ theme: z.enum(['auto', 'light', 'dark']).parse(event.target.value) })}>
             <option value="auto">Match GitHub</option>
             <option value="light">Light</option>
             <option value="dark">Dark</option>

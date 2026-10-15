@@ -57,6 +57,12 @@ describe('share links', () => {
     expect(decodeViewsShareHash('#views=' + btoa('[{"id":1}]'))).toBeNull();
   });
 
+  it('rejects a link with any view of another shape, a filter rule mixing condition kinds included', () => {
+    const mine = { id: 'mine', name: 'Mine', query: 'is:pr author:@me' };
+    const mixed = { groups: [{ rules: [{ isNegated: false, conditions: [{ kind: 'AUTHOR_IS', username: 'a' }, { kind: 'MENTIONS', username: 'a' }] }] }] };
+    expect(decodeViewsShareHash(new URL(encodeViewsShareLink([mine, { ...mine, id: 'theirs', filter: mixed }])).hash)).toBeNull();
+  });
+
   it('survives unicode view names', () => {
     const views = [{ id: 'x', name: 'Révisions à faire ✓', query: 'is:pr' }];
     expect(decodeViewsShareHash(new URL(encodeViewsShareLink(views)).hash)).toEqual(views);

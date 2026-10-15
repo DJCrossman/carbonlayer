@@ -9,8 +9,9 @@
 // or not.
 
 import { browser } from 'wxt/browser';
-import type { Organization, RepoRef, View } from './model';
-import { DEFAULT_VIEWS, isView, organizationScope, repositoryScope } from './views';
+import { z } from 'zod';
+import { mergeMethodSchema, organizationSchema, repoRefSchema, viewSchema, type Organization, type RepoRef, type View } from './model';
+import { DEFAULT_VIEWS, organizationScope, repositoryScope } from './views';
 
 export interface Settings {
   /** The account whose pull requests the inbox shows; null until one is chosen. */
@@ -65,14 +66,12 @@ export interface SettingsStorage {
 
 export async function getSettings(storage: SettingsStorage = browser.storage.sync): Promise<Settings> {
   const sync = await storage.get(null);
-  const { views: unsplitViews, viewOrder, viewsByOrg, reposByOrg, inboxRepos: reposBeforeOrgs, inboxScope: scopeBeforeOrgs, currentOrg, ...preferences } = (sync.settings ??
-    {}) as StoredSettings;
+  const { views: unsplitViews, viewOrder, viewsByOrg, reposByOrg, inboxRepos: reposBeforeOrgs, inboxScope: scopeBeforeOrgs, currentOrg, ...preferences } = storedSettingsSchema.parse(
+    sync.settings ?? {},
+  );
   if (currentOrg) {
-    const order = viewsByOrg?.[currentOrg.login]?.viewOrder;
-    const views = order?.flatMap((id) => {
-      const view: unknown = sync[`view:${currentOrg.login}/${id}`];
-      return isView(view) ? [view] : [];
-    });
+    // A view this version cannot read is left out.
+    const views = viewsByOrg?.[currentOrg.login]?.viewOrder.flatMap((id) => viewSchema.safeParse(sync[`view:${currentOrg.login}/${id}`]).data ?? []);
     const inboxRepos = reposByOrg?.[currentOrg.login] ?? [];
     return { ...DEFAULT_SETTINGS, ...preferences, currentOrg, views: views ?? DEFAULT_VIEWS, viewsUnassigned: false, inboxRepos, inboxScope: organizationScope(currentOrg, inboxRepos) };
   }
@@ -82,19 +81,14 @@ export async function getSettings(storage: SettingsStorage = browser.storage.syn
   // nothing but repositories is those repositories chosen.
   const named = [...(scopeBeforeOrgs ?? '').matchAll(/(?:^|[\s(])repo:([^\s/()]+)\/([^\s()]+)/g)];
   const onlyRepositories = (scopeBeforeOrgs ?? '').replace(/(?:^|[\s(])repo:[^\s()]+/g, ' ').replace(/[()\s]|\bOR\b/g, '') === '';
-  const inboxRepos = reposBeforeOrgs ?? (onlyRepositories ? named.map(([, owner, name]) => ({ owner: owner!, name: name! })) : []);
-  const savedViews =
-    unsplitViews ??
-    viewOrder?.flatMap((id) => {
-      const view: unknown = sync[`view:${id}`];
-      return isView(view) ? [view] : [];
-    });
+  const inboxRepos = reposBeforeOrgs ?? (onlyRepositories ? named.flatMap(([, owner, name]) => (owner && name ? [{ owner, name }] : [])) : []);
+  const savedViews = (unsplitViews ?? viewOrder?.map((id) => sync[`view:${id}`]))?.flatMap((view) => viewSchema.safeParse(view).data ?? []);
   // Views that are all earlier versions' defaults (mostly GitHub's own inbox sections, none with a Graphite filter)
   // become Graphite's defaults.
   const views = savedViews?.length && savedViews.every((view) => EARLIER_DEFAULT_IDS.includes(view.id) && !view.filter) ? DEFAULT_VIEWS : savedViews;
   // Views kept inside `settings` by an earlier version, or swapped just now, are saved as items of their own, once.
   if (views && (unsplitViews || views !== savedViews)) {
-    const { views: _unsplit, ...item } = (sync.settings ?? {}) as StoredSettings;
+    const { views: _unsplit, ...item } = storedSettingsSchema.parse(sync.settings ?? {});
     await save(storage, sync, { ...item, viewOrder: views.map((view) => view.id) }, { prefix: 'view:', views });
   }
   return {
@@ -119,7 +113,7 @@ export async function setSettings(patch: Partial<Settings>, storage: SettingsSto
   const current = await getSettings(storage);
   const sync = await storage.get(null);
   const { currentOrg = current.currentOrg, views, inboxRepos, viewsUnassigned: _unassigned, inboxScope: _scope, ...preferences } = patch;
-  const stored = (sync.settings ?? {}) as StoredSettings;
+  const stored = storedSettingsSchema.parse(sync.settings ?? {});
   if (!currentOrg) {
     const item: StoredSettings = { ...stored, ...preferences, currentOrg: null, ...(inboxRepos && { inboxRepos, inboxScope: repositoryScope(inboxRepos) }) };
     await save(storage, sync, views ? { ...item, viewOrder: views.map((view) => view.id) } : item, views ? { prefix: 'view:', views } : null);
@@ -146,14 +140,31 @@ export function watchSettings(onChange: (settings: Settings) => void): () => voi
   return () => browser.storage.onChanged.removeListener(listener);
 }
 
-/** The `settings` item as stored: the preferences, and each organization's views' order and repositories. */
-type StoredSettings = Partial<Omit<Settings, 'views' | 'viewsUnassigned'>> & {
-  viewsByOrg?: Record<string, { viewOrder: string[] }>;
-  reposByOrg?: Record<string, RepoRef[]>;
+/**
+ * The `settings` item as stored: the preferences, and each organization's views' order and repositories. Every field may
+ * be missing (an earlier version wrote the item, or nobody has changed it); one this version cannot read counts as
+ * missing (a preference as its default, a chosen organization as none), and keys it does not know stay in the item, as
+ * synced storage may be written by another device's version.
+ */
+const storedSettingsSchema = z.looseObject({
+  currentOrg: organizationSchema.nullable().optional().catch(null),
+  viewsByOrg: z.record(z.string(), z.object({ viewOrder: z.array(z.string()) })).optional().catch(undefined),
+  reposByOrg: z.record(z.string(), z.array(repoRefSchema)).optional().catch(undefined),
   /** Before views belonged to an organization: their order (as `view:<id>` items), or, earlier still, the views themselves. */
-  viewOrder?: string[];
-  views?: View[];
-};
+  viewOrder: z.array(z.string()).optional().catch(undefined),
+  views: z.array(z.unknown()).optional().catch(undefined),
+  inboxRepos: z.array(repoRefSchema).optional().catch(undefined),
+  inboxScope: z.string().optional().catch(undefined),
+  sidebarCollapsed: z.boolean().optional().catch(DEFAULT_SETTINGS.sidebarCollapsed),
+  inboxGroupByStack: z.boolean().optional().catch(DEFAULT_SETTINGS.inboxGroupByStack),
+  inboxEnabled: z.boolean().optional().catch(DEFAULT_SETTINGS.inboxEnabled),
+  prEnabled: z.boolean().optional().catch(DEFAULT_SETTINGS.prEnabled),
+  diffLayout: z.enum(['unified', 'split']).optional().catch(DEFAULT_SETTINGS.diffLayout),
+  theme: z.enum(['auto', 'light', 'dark']).optional().catch(DEFAULT_SETTINGS.theme),
+  mergeMethod: mergeMethodSchema.optional().catch(DEFAULT_SETTINGS.mergeMethod),
+});
+
+type StoredSettings = z.infer<typeof storedSettingsSchema>;
 
 /**
  * Writes the `settings` item and, given, one list of views as items of their own (`<prefix><id>`) over what `sync` holds
@@ -165,11 +176,11 @@ async function save(storage: SettingsStorage, sync: Record<string, unknown>, ite
   const listed = (key: string) => list !== null && key.startsWith(list.prefix) && !key.slice(list.prefix.length).includes('/');
   const unassigned = (key: string) => !key.slice('view:'.length).includes('/');
   const gone = Object.keys(sync).filter((key) => key.startsWith('view:') && !kept.has(key) && (listed(key) || (item.currentOrg && unassigned(key))));
-  const changed = list?.views.filter((view) => JSON.stringify(sync[`${list.prefix}${view.id}`]) !== JSON.stringify(view)) ?? [];
+  const changed = list?.views.map((view): [string, View] => [`${list.prefix}${view.id}`, view]).filter(([key, view]) => JSON.stringify(sync[key]) !== JSON.stringify(view)) ?? [];
   try {
     // Gone first, which makes room.
     if (gone.length > 0) await storage.remove(gone);
-    await storage.set({ settings: item, ...Object.fromEntries(changed.map((view) => [`${list!.prefix}${view.id}`, view])) });
+    await storage.set({ settings: item, ...Object.fromEntries(changed) });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new Error(/quota/i.test(reason) ? `Chrome's synced settings are full (${reason}): delete a section or simplify its filters.` : reason);

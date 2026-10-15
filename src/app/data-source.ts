@@ -62,7 +62,7 @@ export interface DataSource {
   rerunAllJobs(prId: string, runId: string): Promise<{ offered: boolean }>;
   /** Adds the viewer's reaction to a comment (by its node id; the PR's own for the description), or takes it back. */
   react(prId: string, subjectId: string, content: ReactionContent, add: boolean): Promise<void>;
-  /** A comment's Markdown as GitHub renders it on the PR, as HTML: what a comment box's Preview tab shows. */
+  /** A comment's Markdown the way GitHub renders it on the PR, in HTML: what a comment box's Preview tab shows. */
   previewMarkdown(text: string, prId: string): Promise<string>;
   getSettings(): Promise<Settings>;
   setSettings(patch: Partial<Settings>): Promise<Settings>;
@@ -142,9 +142,9 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     return pr;
   };
   return {
-    // Rows as GitHub's dashboard lists them: a CI rollup without its checks, and no branches; their branches come later,
-    // from branchesOf, and their merge status, reviewers, line counts and conversations from enrichInbox. A search whose
-    // parentheses do not pair up gets GitHub's answer to one: no rows, and why.
+    // Rows the way GitHub's dashboard lists them: a CI rollup without its checks, and no branches; their branches come
+    // later, from branchesOf, and their merge status, reviewers, line counts and conversations from enrichInbox. A
+    // search whose parentheses do not pair up gets GitHub's answer to one: no rows, and why.
     fetchInbox: (views) =>
       Promise.all(
         views.map(async (view) => {
@@ -172,9 +172,9 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
         prs: prs.map((pr) => ({ ...pr, ci: { ...pr.ci, checks: [] }, reviewers: [], additions: 0, deletions: 0, headRefName: '', baseRefName: '', conversations: null })),
       };
     },
-    // The fixture rows' own values, and those of the fixture PRs' stack entries, a moment later, as GitHub's page data
-    // would give them: the checks and the branches only for an open PR (its status checks and merge box), the viewer's
-    // review as octocat's.
+    // The fixture rows' own values, and those of the fixture PRs' stack entries, a moment later, the way GitHub's page
+    // data would give them: the checks and the branches only for an open PR (its status checks and merge box), the
+    // viewer's review as octocat's.
     enrichInbox: async (prs) => {
       await new Promise((resolve) => setTimeout(resolve, 400));
       const rows: Array<StackEntry & Pick<InboxFixtureRow, 'requiredCheckNames' | 'mergeBlockedReason'>> = [
@@ -220,13 +220,13 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
       await new Promise((resolve) => setTimeout(resolve, 300));
       return FIXTURE_PEOPLE[org.login] ?? [];
     },
-    // Five on the first page, then the rest after cursor 1, as GitHub's "Show more" would.
+    // Five on the first page, then the rest after cursor 1, like GitHub's "Show more".
     listTopRepositories: async (cursor) => {
       await new Promise((resolve) => setTimeout(resolve, 300));
       return cursor === 1 ? { repos: FIXTURE_TOP_REPOSITORIES.slice(5), nextCursor: null } : { repos: FIXTURE_TOP_REPOSITORIES.slice(0, 5), nextCursor: 1 };
     },
-    // Each stage of the fixture PR after a delay of its own, so the harness fills the page in as GitHub would. GitHub sends
-    // the first file's diff with the file list; the others follow a moment later.
+    // Each stage of the fixture PR after a delay of its own, so the harness fills the page in the way GitHub does.
+    // GitHub sends the first file's diff with the file list; the others follow a moment later.
     fetchPrStage: async (stage, repo, number) => {
       const pr = fixturePr(repo, number);
       await new Promise((resolve) => setTimeout(resolve, FIXTURE_STAGE_DELAYS[stage]));
@@ -243,8 +243,8 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
         threads: { threads, unresolvedThreadCount },
         mergeBox: { mergeStatus, reviewers, reviewDecision, viewerCanMerge, viewerCanEnableAutoMerge, allowedMergeMethods, defaultMergeMethod, autoMerge, isInMergeQueue },
         checks: { ci, requiredCheckNames, emptyReason: null },
-        // The other entries as GitHub's stack listing names them, without a verdict, checks or mergeability: those come
-        // with each entry's row details (enrichInbox).
+        // The other entries the way GitHub's stack listing names them, without a verdict, checks or mergeability: those
+        // come with each entry's row details (enrichInbox).
         stack: {
           stack: {
             ...stack,
@@ -394,5 +394,5 @@ const prStageRequests: { [S in PrStage]: (args: { repo: RepoRef; number: number 
   meta: (args) => rpc('pr.fetchMeta', args),
 };
 
-/** How long the harness takes over each stage of the PR page: the header first, as GitHub's page would come. */
+/** How long the harness takes over each stage of the PR page: the header first, the way GitHub's page comes. */
 const FIXTURE_STAGE_DELAYS: Record<PrStage, number> = { header: 200, stack: 450, meta: 500, activity: 600, files: 700, checks: 900, mergeBox: 1100, threads: 1300 };

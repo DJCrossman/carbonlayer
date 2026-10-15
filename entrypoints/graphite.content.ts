@@ -5,6 +5,8 @@
 // dialog and closes the tab. A banner on the page says how it went.
 import { browser } from 'wxt/browser';
 import { defineContentScript } from 'wxt/utils/define-content-script';
+import { z } from 'zod';
+import { graphiteInboxSnapshot } from '../src/lib/graphite';
 
 export default defineContentScript({
   matches: ['https://app.graphite.com/*'],
@@ -25,34 +27,33 @@ export default defineContentScript({
 
     ctx.addEventListener(window, 'message', (event) => {
       if (event.source !== window || event.origin !== location.origin) return;
-      const { source, kind, sections, defaultRepos, viewerLogin, error } = (event.data ?? {}) as {
-        source?: unknown;
-        kind?: unknown;
-        sections?: unknown;
-        defaultRepos?: unknown;
-        viewerLogin?: unknown;
-        error?: unknown;
-      };
-      if (source !== 'carbonlayer') return;
-      if (
-        kind === 'graphite-sections' &&
-        Array.isArray(sections) &&
-        sections.every((section: unknown) => typeof (section as { name?: unknown } | null)?.name === 'string') &&
-        Array.isArray(defaultRepos)
-      ) {
+      // Graphite's own messages are posted here too; ours say they are.
+      const data: unknown = event.data;
+      if (!postedByCarbonLayer.safeParse(data).success) return;
+      const message = fromPageWorld.parse(data);
+      if (message.kind === 'graphite-sections') {
+        const { sections, defaultRepos, viewerLogin } = message;
         banner.textContent = `CarbonLayer: copied ${sections.length} ${sections.length === 1 ? 'section' : 'sections'}, you can close this tab.`;
-        void browser.runtime.sendMessage({
-          kind: 'carbonlayer-graphite-sections',
-          sections,
-          defaultRepos,
-          viewerLogin: typeof viewerLogin === 'string' ? viewerLogin : undefined,
-        });
-      } else if (kind === 'graphite-sections-error' && typeof error === 'string') {
-        banner.textContent = `CarbonLayer: ${error}`;
-        void browser.runtime.sendMessage({ kind: 'carbonlayer-graphite-sections-error', error });
+        void browser.runtime.sendMessage({ kind: 'carbonlayer-graphite-sections', sections, defaultRepos, viewerLogin });
+      } else if (message.kind === 'graphite-sections-error') {
+        banner.textContent = `CarbonLayer: ${message.error}`;
+        void browser.runtime.sendMessage({ kind: 'carbonlayer-graphite-sections-error', error: message.error });
       }
     });
     // The page-world script is listening by now: both load at document_idle, and the background has answered since.
     window.postMessage({ source: 'carbonlayer', kind: 'graphite-sections-request' }, location.origin);
   },
 });
+
+/** A message the extension's scripts posted on the page. */
+const postedByCarbonLayer = z.object({ source: z.literal('carbonlayer') });
+
+/**
+ * What the page-world script (entrypoints/graphite-sections.content.ts) posts, and this script's own request, which it
+ * hears too.
+ */
+const fromPageWorld = z.discriminatedUnion('kind', [
+  graphiteInboxSnapshot.extend({ source: z.literal('carbonlayer'), kind: z.literal('graphite-sections') }),
+  z.object({ source: z.literal('carbonlayer'), kind: z.literal('graphite-sections-error'), error: z.string() }),
+  z.object({ source: z.literal('carbonlayer'), kind: z.literal('graphite-sections-request') }),
+]);

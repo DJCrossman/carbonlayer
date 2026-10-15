@@ -13,8 +13,9 @@ export function importViews(current: View[], incoming: View[], mode: 'replace' |
   const views = mode === 'replace' ? [] : [...current];
   for (const view of incoming) {
     const sameName = mode === 'append' ? views.findIndex((kept) => kept.name.trim().toLowerCase() === view.name.trim().toLowerCase()) : -1;
-    if (sameName >= 0) {
-      views[sameName] = { ...view, id: views[sameName]!.id };
+    const replaced = views[sameName];
+    if (replaced) {
+      views[sameName] = { ...view, id: replaced.id };
       continue;
     }
     views.push(views.some((kept) => kept.id === view.id) ? { ...view, id: crypto.randomUUID() } : view);
