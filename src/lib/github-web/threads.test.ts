@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { conversationsIn, reviewThreads } from './threads';
+import { conversationsIn, reviewThreads, threadsAnswer } from './threads';
 
 describe('reviewThreads', () => {
   // Thread 1 is anchored on the current diff; thread 2 is outdated and only the conversation says where it was.
@@ -16,7 +16,7 @@ describe('reviewThreads', () => {
     'text/html',
   );
   const { threads, threadIdsByReview } = reviewThreads(
-    {
+    threadsAnswer.parse({
       threads: [
         {
           id: '1',
@@ -44,7 +44,7 @@ describe('reviewThreads', () => {
         },
         { id: '2', isResolved: true, pullRequestReviewId: 77, commentsData: { comments: [{ databaseId: 502, author: { login: 'bo' }, body: 'old', bodyHTML: '<p>old</p>', createdAt: '2026-09-01T00:00:00Z', currentDiffResourcePath: '/o/r/pull/1/files#r502' }] } },
       ],
-    },
+    }),
     { diffSummaries: [{ path: 'src/new.ts', markersMap: { R69: { threads: [{ id: 1, start: 'R55' }] } } }] },
     page,
   );
@@ -73,15 +73,8 @@ describe('reviewThreads', () => {
 });
 
 describe('conversationsIn', () => {
-  // A thread without an id is no thread, as reviewThreads reads them.
-  const threads = [{ id: '1', isResolved: true }, { id: '2', isResolved: false }, { id: 3, isResolved: true }, { isResolved: true }];
-
-  it.each([
-    ['a list under `threads`', { threads }],
-    ['an object of threads under `threads`', { threads: Object.fromEntries(threads.map((thread, index) => [String(index), thread])) }],
-    ['a bare list', threads],
-  ])('counts the resolved threads of all, from %s', (_, data) => {
-    expect(conversationsIn(data)).toEqual({ resolved: 2, total: 3 });
+  it('counts the resolved threads of all', () => {
+    expect(conversationsIn({ threads: [{ id: '1', isResolved: true }, { id: '2', isResolved: false }, { id: 3, isResolved: true }] })).toEqual({ resolved: 2, total: 3 });
   });
 
   it('counts none in an answer without threads', () => {

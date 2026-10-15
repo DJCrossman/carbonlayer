@@ -12,13 +12,13 @@ import { repositoryCandidatesFrom, repositoryPickerPath } from './repositories';
  * signed in, when it does; the settings page says too.
  */
 export async function listOrganizations(load: { json: (path: string) => Promise<unknown>; page: (path: string) => Promise<Document> }, viewerLogin: string | null): Promise<Organization[]> {
-  const [settingsPage, picker] = await Promise.allSettled([load.page('/settings/organizations'), load.json(repositoryPickerPath(''))]);
+  const [settingsPage, picker] = await Promise.allSettled([load.page('/settings/organizations'), load.json(repositoryPickerPath('')).then(repositoryCandidatesFrom)]);
   for (const [route, result] of [['settings/organizations', settingsPage], ['repositories/picker/search', picker]] as const) {
     if (result.status === 'rejected') console.debug('[gg]', `${route} failed; the organizations come from elsewhere:`, result.reason instanceof Error ? result.reason.message : result.reason);
   }
   return organizationsFrom({
     settingsPage: settingsPage.status === 'fulfilled' ? settingsPage.value : null,
-    repositoryOwners: picker.status === 'fulfilled' ? repositoryCandidatesFrom(picker.value).map((repo) => repo.owner) : [],
+    repositoryOwners: picker.status === 'fulfilled' ? picker.value.map((repo) => repo.owner) : [],
     viewerLogin,
   });
 }
@@ -31,8 +31,10 @@ export async function listOrganizations(load: { json: (path: string) => Promise<
 export function organizationsFrom({ settingsPage, repositoryOwners, viewerLogin }: { settingsPage: Document | null; repositoryOwners: string[]; viewerLogin: string | null }): Organization[] {
   const viewer = settingsPage?.querySelector('meta[name="user-login"]')?.getAttribute('content') || viewerLogin;
   const listed: string[] = [];
-  for (const link of (settingsPage?.querySelector('main') ?? settingsPage?.body)?.querySelectorAll<HTMLAnchorElement>('a[href]') ?? []) {
-    const path = new URL(link.getAttribute('href')!, 'https://github.com').pathname;
+  for (const link of (settingsPage?.querySelector('main') ?? settingsPage?.body)?.querySelectorAll('a[href]') ?? []) {
+    const href = link.getAttribute('href');
+    if (href === null) continue;
+    const path = new URL(href, 'https://github.com').pathname;
     const login =
       /^\/orgs\/([\w-]+)(?:\/|$)/.exec(path)?.[1] ??
       /^\/organizations\/([\w-]+)\//.exec(path)?.[1] ??

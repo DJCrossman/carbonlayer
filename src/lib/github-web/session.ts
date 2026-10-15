@@ -3,6 +3,7 @@
 // A signed-out session gets a redirect to /login, a JSON 404 from the session-only endpoints, and pages whose
 // `meta[name="user-login"]` is empty; the PR page decides from that meta (pull-request.ts).
 
+import { z } from 'zod';
 import type { UserRef } from '../model';
 
 export const SIGNED_OUT = 'Sign in to github.com in this tab, then reload.';
@@ -40,17 +41,18 @@ export async function request(path: string, accept: 'application/json' | 'text/h
   if (response.ok) return response;
   if (response.status === 404 && response.headers.get('content-type')?.includes('json')) {
     // Only "Couldn’t authenticate you" names the session; a plain {"error":"Not Found"} may be a missing feature.
-    const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
-    if (/authenticate/i.test(String(body?.error))) throw new Error(SIGNED_OUT);
+    const notFound = z.object({ error: z.string() }).safeParse(await response.json().catch(() => null));
+    if (notFound.success && /authenticate/i.test(notFound.data.error)) throw new Error(SIGNED_OUT);
   }
   throw new Error(`GitHub answered ${response.status} for ${path.split('?')[0]}`);
 }
 
 /**
  * A write, sent the way GitHub's React UI sends it: JSON body, its verified-fetch headers, and the page's fetch
- * nonce (refreshed from every response). GitHub's own `{ error }` message is passed on verbatim.
+ * nonce (refreshed from every response). GitHub's own `{ error }` message is passed on verbatim. The answer is unread
+ * here: the one write that reads it gives it to `readAnswer` with the fields it reads.
  */
-export async function send<T>(path: string, method: 'POST' | 'PUT' | 'DELETE', body?: unknown): Promise<T> {
+export async function send(path: string, method: 'POST' | 'PUT' | 'DELETE', body?: unknown): Promise<unknown> {
   const nonce = document.querySelector('meta[name="fetch-nonce"]');
   let response: Response;
   try {
@@ -74,11 +76,12 @@ export async function send<T>(path: string, method: 'POST' | 'PUT' | 'DELETE', b
   const nextNonce = response.headers.get('X-Fetch-Nonce');
   if (nonce && nextNonce) nonce.setAttribute('content', nextNonce);
   if (response.redirected && new URL(response.url).pathname === '/login') throw new Error(SIGNED_OUT);
-  const data = (await response.json().catch(() => null)) as (T & { error?: unknown }) | null;
+  const answer: unknown = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(typeof data?.error === 'string' && data.error ? data.error : `GitHub answered ${response.status} to ${method} ${path.split('?')[0]}`);
+    const refused = z.object({ error: z.string().min(1) }).safeParse(answer);
+    throw new Error(refused.success ? refused.data.error : `GitHub answered ${response.status} to ${method} ${path.split('?')[0]}`);
   }
-  return data as T;
+  return answer;
 }
 
 /**
@@ -134,9 +137,22 @@ export async function submitForm(action: string, fields: Array<[string, string]>
   if (!response.ok && !response.redirected) throw new Error(`GitHub answered ${response.status} to POST ${url.pathname}`);
 }
 
-/** A JSON endpoint of GitHub's web UI. */
-export async function getJson<T>(path: string): Promise<T> {
-  return (await (await request(path, 'application/json')).json()) as T;
+/** A JSON endpoint of GitHub's web UI, read by `schema`: the fields its reader relies on (see `readAnswer`). */
+export async function getJson<S extends z.ZodType>(path: string, schema: S): Promise<z.infer<S>> {
+  const answer: unknown = await (await request(path, 'application/json')).json();
+  return readAnswer(path.split('?')[0] ?? path, schema, answer);
+}
+
+/**
+ * What GitHub answered at `endpoint`, in the shape `schema` gives the fields its reader relies on; other keys are left
+ * unread. An answer of another shape means GitHub changed it: that throws, naming the endpoint and what differs, and the
+ * error takes the reader's own way to the page (a stage's error with its Retry, a section's error, a row or card left as
+ * it was).
+ */
+export function readAnswer<S extends z.ZodType>(endpoint: string, schema: S, answer: unknown): z.infer<S> {
+  const read = schema.safeParse(answer);
+  if (!read.success) throw new Error(`${endpoint} did not match: ${z.prettifyError(read.error)}`);
+  return read.data;
 }
 
 /** A github.com page, parsed into a document (for its embedded React data and server-rendered timeline). */
@@ -145,17 +161,21 @@ export async function getPage(path: string): Promise<Document> {
 }
 
 /**
- * The React data GitHub embeds in a page (`<script type="application/json" data-target="react-app.embeddedData">`).
- * A page can carry several; this is the one whose payload has `routeKey`, or null when none has.
+ * The route data GitHub embeds in a page (`<script type="application/json" data-target="react-app.embeddedData">`,
+ * `{ payload: { <routeKey>: … } }`), read by `schema` as `readAnswer` reads an answer. A page can carry several; this is
+ * the one whose payload has `routeKey`, or null when none has.
  */
-export function embeddedPayload(page: Document, routeKey: string): EmbeddedData | null {
+export function embeddedPayload<S extends z.ZodType>(page: Document, routeKey: string, schema: S): z.infer<S> | null {
   for (const script of page.querySelectorAll('script[type="application/json"][data-target="react-app.embeddedData"]')) {
+    let data: unknown;
     try {
-      const data = JSON.parse(script.textContent ?? '') as Partial<EmbeddedData>;
-      if (data.payload && routeKey in data.payload) return { payload: data.payload, appPayload: data.appPayload ?? {} };
+      data = JSON.parse(script.textContent ?? '');
     } catch {
       // Another app's data that does not parse: keep looking.
+      continue;
     }
+    const embedded = z.object({ payload: z.record(z.string(), z.unknown()) }).safeParse(data);
+    if (embedded.success && routeKey in embedded.data.payload) return readAnswer(`the page's embedded ${routeKey}`, schema, embedded.data.payload[routeKey]);
   }
   return null;
 }
@@ -167,22 +187,20 @@ export function githubUser(login: string, avatarUrl?: string | null): UserRef {
 
 /** Runs `work` over `items` with at most `limit` requests to GitHub in flight, keeping results in order. */
 export async function politely<T, R>(items: T[], limit: number, work: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array<R>(items.length);
-  let next = 0;
+  const results: R[] = [];
+  // Each worker takes the next item from the one queue.
+  const queue = items.entries();
   const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) {
-      const index = next++;
-      results[index] = await work(items[index]!);
-    }
+    for (const [index, item] of queue) results[index] = await work(item);
   });
   await Promise.all(workers);
   return results;
 }
 
 /**
- * The first value in an unconfirmed response for which `matches(key, value)` holds, searching nested objects
- * breadth-first. Several endpoint shapes were inferred from GitHub's components rather than observed, so
- * readers look fields up by name wherever GitHub happens to nest them.
+ * The first value in a response for which `matches(key, value)` holds, searching nested objects breadth-first. Only
+ * for what the docs do not record the place of (docs/research/github-web-endpoints.md): a reader looks it up by name
+ * wherever GitHub happens to nest it, then reads what it found with its schema.
  */
 export function findInPayload(data: unknown, matches: (key: string, value: unknown) => boolean): unknown {
   const queue: unknown[] = [data];
@@ -195,19 +213,6 @@ export function findInPayload(data: unknown, matches: (key: string, value: unkno
     }
   }
   return undefined;
-}
-
-/** Logs the top-level keys of a response whose shape is still unconfirmed, once per label. */
-export function noteShape(label: string, data: unknown): void {
-  if (loggedShapes.has(label)) return;
-  loggedShapes.add(label);
-  const keys =
-    typeof data !== 'object' || data === null
-      ? [data === null ? 'null' : typeof data]
-      : Array.isArray(data)
-        ? [`array(${data.length})`, ...Object.keys(data[0] ?? {})]
-        : Object.keys(data);
-  console.debug('[gg]', label, keys);
 }
 
 /**
@@ -230,10 +235,3 @@ function untilHeadParsed(): Promise<void> {
     document.addEventListener('DOMContentLoaded', done);
   });
 }
-
-interface EmbeddedData {
-  payload: Record<string, unknown>;
-  appPayload: Record<string, unknown>;
-}
-
-const loggedShapes = new Set<string>();

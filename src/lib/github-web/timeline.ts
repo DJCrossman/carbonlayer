@@ -1,7 +1,7 @@
-// The PR conversation as GitHub server-renders it inside the React page: classic HTML with one
+// The PR conversation, server-rendered by GitHub inside the React page: classic HTML with one
 // `.TimelineItem` per comment, review header, commit or event (events carry an octicon badge).
 
-import { REACTION_CONTENTS, type Reaction, type ReactionContent, type TimelineItem } from '../model';
+import { REACTION_CONTENTS, type Reaction, type TimelineItem } from '../model';
 import { githubUser } from './session';
 
 /**
@@ -17,7 +17,7 @@ export function timelineFrom(
   },
 ): TimelineItem[] {
   const items: TimelineItem[] = [];
-  const seenReviews = new Set<Element>();
+  const seenReviews: Set<Element> = new Set();
   // Commit rows have no time of their own; they follow the "added N commits" row that has one.
   let lastTime = '';
 
@@ -143,10 +143,10 @@ export function reactionsIn(form: Element | null | undefined): { subjectId: stri
   if (!form) return { subjectId: null, reactions: [] };
   const reactions = [...form.querySelectorAll('button.social-reaction-summary-item')].flatMap((button): Reaction[] => {
     const [, value = '', un] = /^([A-Z_]+) (un)?react$/.exec(button.getAttribute('value')?.trim() ?? '') ?? [];
-    const content = value as ReactionContent;
+    const content = REACTION_CONTENTS.find((known) => known === value);
     const count = Number(/(\d+)\s*$/.exec(button.textContent ?? '')?.[1] ?? 0);
     const viewerHasReacted = un === 'un';
-    return REACTION_CONTENTS.includes(content) && (count > 0 || viewerHasReacted) ? [{ content, count, viewerHasReacted }] : [];
+    return content && (count > 0 || viewerHasReacted) ? [{ content, count, viewerHasReacted }] : [];
   });
   return { subjectId: form.querySelector('input[name="input[subjectId]"]')?.getAttribute('value') || null, reactions };
 }

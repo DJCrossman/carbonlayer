@@ -1,12 +1,12 @@
-// Writes, sent as GitHub's React PR page sends them (docs/research/github-web-mutations.md; the bodies come from
+// Writes, sent the way GitHub's React PR page sends them (docs/research/github-web-mutations.md; the bodies come from
 // GitHub's bundle, not from captured requests). A write names its PR or thread by id, so the PRs the app has
 // loaded are remembered here with what the requests need.
 
+import { z } from 'zod';
 import type { PrDetail } from '../model';
 import type { MergeMethod, RpcMethods } from '../rpc';
 import { rerunWorkflowJobs } from './actions';
-import type { MergeBox } from './merge-box';
-import { SIGNED_OUT, getJson, send, submitForm } from './session';
+import { SIGNED_OUT, getJson, readAnswer, send, submitForm } from './session';
 
 export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox.fetchMore' | 'inbox.enrich' | 'inbox.branches' | 'repos.search' | 'repos.top' | 'orgs.list' | 'orgs.people' | `pr.fetch${string}` | 'pr.reviewerCandidates' | 'markdown.preview'>]: (args: RpcMethods[M]['args']) => Promise<RpcMethods[M]['result']> } = {
   'pr.review': async ({ prId, event, body, threads }) => {
@@ -25,7 +25,8 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
   },
   'pr.replyThread': async ({ threadId, body }) => {
     const thread = threadFor(threadId);
-    const pull = pullRequests.get(thread.pullPath)!;
+    const pull = pullRequests.get(thread.pullPath);
+    if (!pull) throw new Error('Open the pull request first');
     await send(`${pull.path}/page_data/create_review_comment`, 'POST', {
       text: body,
       submitBatch: true,
@@ -43,7 +44,7 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
     const giveUpAt = Date.now() + 45_000;
     const pull = pullRequestFor(prId);
     // GitHub's merge request has no head guard, so check that nobody pushed since the page was loaded.
-    const header = await getJson<{ pullRequest?: { headSha?: string } }>(`${pull.path}/page_data/header`);
+    const header = await getJson(`${pull.path}/page_data/header`, z.object({ pullRequest: z.object({ headSha: z.string().nullish() }).nullish() }));
     const headOid = header.pullRequest?.headSha;
     if (headOid && expectedHeadOid && headOid !== expectedHeadOid) {
       throw new Error('New commits were pushed since this page loaded. Reload and review them before merging.');
@@ -54,12 +55,11 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
       return;
     }
     // A GitHub-native stack merges through the stack queue, then reports progress by request id.
-    const queued = await send<{ status?: string; uuid?: string }>(`${pull.path}/page_data/enqueue_stack`, 'POST', {
-      mergeAction: 'DIRECT_MERGE',
-      mergeMethod: method,
-      ...commit,
-      bypassRules: 'false',
-    });
+    const queued = readAnswer(
+      `${pull.path}/page_data/enqueue_stack`,
+      z.object({ status: z.string().nullish(), uuid: z.string().nullish() }),
+      await send(`${pull.path}/page_data/enqueue_stack`, 'POST', { mergeAction: 'DIRECT_MERGE', mergeMethod: method, ...commit, bypassRules: 'false' }),
+    );
     if (queued.uuid) await stackMergeSettled(pull, queued.uuid, queued.status, giveUpAt);
   },
   'pr.setAutoMerge': async ({ prId, enabled, method }) => {
@@ -225,22 +225,28 @@ function threadFor(threadId: string): KnownThread {
 
 /** The merge commit title and message GitHub's merge box proposes for this method. */
 async function proposedMergeCommit(pull: KnownPullRequest, method: MergeMethod): Promise<{ commitTitle: string; commitMessage: string }> {
-  const box = await getJson<MergeBox>(`${pull.path}/page_data/merge_box?merge_method=${method}&bypass_requirements=false`);
+  const box = await getJson(
+    `${pull.path}/page_data/merge_box?merge_method=${method}&bypass_requirements=false`,
+    z.object({ mergeRequirements: z.object({ commitMessageHeadline: z.string().nullish(), commitMessageBody: z.string().nullish() }).nullish() }),
+  );
   return { commitTitle: box.mergeRequirements?.commitMessageHeadline ?? '', commitMessage: box.mergeRequirements?.commitMessageBody ?? '' };
 }
 
 /**
- * Waits for a stack merge to be merged or queued, polling as GitHub's page does (1 s, backing off ×1.5), until
+ * Waits for a stack merge to be merged or queued, polling like GitHub's page does (1 s, backing off ×1.5), until
  * `giveUpAt`; GitHub carries on merging regardless, and the refetch that follows shows where it got to.
  */
-async function stackMergeSettled(pull: KnownPullRequest, uuid: string, initialStatus: string | undefined, giveUpAt: number): Promise<void> {
+async function stackMergeSettled(pull: KnownPullRequest, uuid: string, initialStatus: string | null | undefined, giveUpAt: number): Promise<void> {
   let status = initialStatus?.toLowerCase();
   let delay = 1000;
   while (status !== 'merged' && status !== 'enqueued') {
     if (Date.now() + delay > giveUpAt) return;
     await new Promise((resolve) => setTimeout(resolve, delay));
     delay *= 1.5;
-    const progress = await getJson<{ status?: string; error?: string; message?: string }>(`${pull.path}/page_data/merge_request_status/${encodeURIComponent(uuid)}`);
+    const progress = await getJson(
+      `${pull.path}/page_data/merge_request_status/${encodeURIComponent(uuid)}`,
+      z.object({ status: z.string().nullish(), error: z.string().nullish(), message: z.string().nullish() }),
+    );
     status = progress.status?.toLowerCase();
     if (status === 'failed') throw new Error(progress.error || progress.message || 'GitHub could not merge the stack');
   }

@@ -44,7 +44,8 @@ export function rerunForm(html: string, scope: 'failed' | 'all'): { action: stri
   // What a browser submits: hidden fields (`_method=put` among them, which GitHub reads as the PUT) and ticked boxes as they
   // come, so debug logging stays off. The submit button has no name to add.
   const fields = [...chosen.form.querySelectorAll('input[name]')].flatMap((input): Array<[string, string]> => {
-    const { type, name, value, checked } = input as HTMLInputElement;
+    if (!(input instanceof HTMLInputElement)) return [];
+    const { type, name, value, checked } = input;
     return type === 'hidden' || ((type === 'checkbox' || type === 'radio') && checked) ? [[name, value]] : [];
   });
   return { action: chosen.action, fields };

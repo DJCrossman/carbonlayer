@@ -136,6 +136,17 @@ describe('the PR page in stages', () => {
     expect(requests).toContain('actions/runs/31');
   });
 
+  it.each([
+    ['mergeBox', 'merge_box', { pullRequest: { mergeStateStatus: 7 } }, /expected string, received number[\s\S]*pullRequest\.mergeStateStatus/],
+    ['checks', 'status_checks', { statusChecks: [{ displayName: 'build', state: 1 }] }, /expected string, received number[\s\S]*statusChecks\[0\]\.state/],
+    ['threads', 'threads', { threads: [{ isResolved: false }] }, /threads\[0\]\.id/],
+  ] as const)('fails the %s stage, for its Retry, when GitHub sends page_data/%s in another shape, naming the endpoint', async (stage, route, answer, issue) => {
+    requests = serveGitHub({}, 'ana', { [route]: answer });
+    const failure = loadStage(stage);
+    await expect(failure).rejects.toThrow(`/o/r/pull/1/page_data/${route} did not match: `);
+    await expect(failure).rejects.toThrow(issue);
+  });
+
   it('asks a signed-out viewer to sign in from the header', async () => {
     requests = serveGitHub({}, '');
     await expect(loadStage('header')).rejects.toThrow(SIGNED_OUT);

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 import { SIGNED_OUT, embeddedPayload, getJson, request, send } from './session';
 
 afterEach(() => {
@@ -7,18 +8,23 @@ afterEach(() => {
 });
 
 describe('embeddedPayload', () => {
-  it("returns the embedded React data whose payload carries the route, skipping other apps' data", () => {
-    const html = `<html><body>
+  const html = `<html><body>
       <script type="application/json" data-target="react-app.embeddedData">{not json</script>
       <script type="application/json" data-target="react-app.embeddedData">{"payload":{"otherRoute":{}}}</script>
       <script type="application/json" data-target="react-app.embeddedData">{"payload":{"pullRequestsLayoutRoute":{"pullRequest":{"number":7}}},"appPayload":{"current_user":"ana"}}</script>
     </body></html>`;
-    const page = new DOMParser().parseFromString(html, 'text/html');
-    expect(embeddedPayload(page, 'pullRequestsLayoutRoute')).toEqual({
-      payload: { pullRequestsLayoutRoute: { pullRequest: { number: 7 } } },
-      appPayload: { current_user: 'ana' },
-    });
-    expect(embeddedPayload(page, 'pullsDashboardSurfaceContentRoute')).toBeNull();
+  const page = new DOMParser().parseFromString(html, 'text/html');
+
+  it("reads the route data of the embedded React data whose payload carries the route, skipping other apps' data", () => {
+    const layout = z.object({ pullRequest: z.object({ number: z.number() }) });
+    expect(embeddedPayload(page, 'pullRequestsLayoutRoute', layout)).toEqual({ pullRequest: { number: 7 } });
+    expect(embeddedPayload(page, 'pullsDashboardSurfaceContentRoute', layout)).toBeNull();
+  });
+
+  it('fails naming the route when its data is of another shape', () => {
+    expect(() => embeddedPayload(page, 'pullRequestsLayoutRoute', z.object({ pullRequest: z.object({ number: z.string() }) }))).toThrow(
+      /^the page's embedded pullRequestsLayoutRoute did not match: .*expected string, received number[\s\S]*pullRequest\.number/,
+    );
   });
 });
 
@@ -27,7 +33,7 @@ describe('reading with the session', () => {
     const fetch = vi.fn(async () => Response.json({ ok: 1 }));
     vi.stubGlobal('fetch', fetch);
     document.head.innerHTML = '<meta name="fetch-nonce" content="v2:nonce"><meta name="release" content="abc123">';
-    await expect(getJson('/pulls/inbox/queries?filter=review-requested')).resolves.toEqual({ ok: 1 });
+    await expect(getJson('/pulls/inbox/queries?filter=review-requested', z.object({ ok: z.number() }))).resolves.toEqual({ ok: 1 });
     expect(fetch).toHaveBeenCalledWith('/pulls/inbox/queries?filter=review-requested', {
       headers: {
         Accept: 'application/json',
@@ -51,7 +57,7 @@ describe('reading with the session', () => {
     body.remove();
     Object.defineProperty(document, 'readyState', { value: 'loading', configurable: true });
     try {
-      const reading = getJson('/o/r/pull/1/page_data/status_checks');
+      const reading = getJson('/o/r/pull/1/page_data/status_checks', z.object({ ok: z.number() }));
       expect(fetch).not.toHaveBeenCalled();
       document.head.innerHTML = '<meta name="fetch-nonce" content="v2:late">';
       await expect(reading).resolves.toEqual({ ok: 1 });
@@ -68,12 +74,20 @@ describe('reading with the session', () => {
     await expect(request('/pulls/inbox', 'text/html')).rejects.toThrow(SIGNED_OUT);
 
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'Couldn’t authenticate you' }, { status: 404 })));
-    await expect(getJson('/pulls/search?q=x')).rejects.toThrow(SIGNED_OUT);
+    await expect(getJson('/pulls/search?q=x', z.unknown())).rejects.toThrow(SIGNED_OUT);
   });
 
   it('reports any other 404 as such, without its query', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'Not Found' }, { status: 404 })));
-    await expect(getJson('/o/r/pull/1/page_data/merge_box?merge_method=MERGE')).rejects.toThrow('GitHub answered 404 for /o/r/pull/1/page_data/merge_box');
+    await expect(getJson('/o/r/pull/1/page_data/merge_box?merge_method=MERGE', z.unknown())).rejects.toThrow('GitHub answered 404 for /o/r/pull/1/page_data/merge_box');
+  });
+
+  it('reads only the fields its schema names, and fails naming the endpoint, without its query, when the answer is of another shape', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ diffstat: { linesAdded: 3, linesDeleted: 1, linesChanged: 4 }, other: true })));
+    const diffstat = z.object({ diffstat: z.object({ linesAdded: z.number(), linesDeleted: z.number() }) });
+    await expect(getJson('/o/r/pull/1/page_data/diffstat', diffstat)).resolves.toEqual({ diffstat: { linesAdded: 3, linesDeleted: 1 } });
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ diffstat: { linesAdded: '3', linesDeleted: 1 } })));
+    await expect(getJson('/o/r/pull/1/page_data/diffstat?x=1', diffstat)).rejects.toThrow(/^\/o\/r\/pull\/1\/page_data\/diffstat did not match: .*expected number, received string[\s\S]*diffstat\.linesAdded/);
   });
 });
 

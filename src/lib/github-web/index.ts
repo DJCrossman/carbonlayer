@@ -4,26 +4,28 @@
 // picker's and `pr.fetch`'s are kept briefly here, and pr-stages.ts shares a request between the PR page's stages while
 // it is on its way. Any successful write clears what is kept, and stops sharing the requests made before it.
 
+import { z } from 'zod';
+import type { PrDetail } from '../model';
 import type { RpcMethod, RpcMethods, RpcRequest, RpcResponse } from '../rpc';
 import { getSettings } from '../settings';
-import { branchesIn, enrichPull, fetchInbox, fetchViewPage } from './inbox';
+import { branchesHeaderAnswer, branchesIn, enrichPull, fetchInbox, fetchViewPage } from './inbox';
 import { mutations, pullRequestFor, rememberPullRequest } from './mutations';
 import { fetchFileDiffs, fetchPrStage, forgetPrAnswers } from './pr-stages';
 import { fetchPullRequestPage } from './pull-request';
 import { listOrganizations } from './organizations';
 import { organizationPeople } from './people';
 import { pickableRepositories, topRepositories } from './repositories';
-import { reviewerCandidatesFrom } from './reviews';
-import { getJson, getPage, noteShape, politely, render } from './session';
+import { availableReviewersAnswer, reviewerCandidatesFrom, suggestedReviewersAnswer } from './reviews';
+import { getJson, getPage, politely, render } from './session';
 
-export async function handleRpc(request: RpcRequest): Promise<RpcResponse> {
+export async function handleRpc<M extends RpcMethod>(request: RpcRequest<M>): Promise<RpcResponse> {
   try {
     if (!Object.hasOwn(handlers, request.method)) throw new Error(`Unknown request: ${String(request.method)}`);
-    // The table is typed per method; this one call site cannot express the method/args correlation.
-    const handler = handlers[request.method] as (args: unknown) => Promise<RpcMethods[RpcMethod]['result']>;
+    // The table is typed per method, so the handler for `M` takes `M`'s args.
+    const handler: (args: RpcMethods[M]['args']) => Promise<RpcMethods[M]['result']> = handlers[request.method];
     const result = await handler(request.args);
     if (Object.hasOwn(mutations, request.method)) {
-      cache.clear();
+      for (const answers of Object.values(kept)) answers.clear();
       forgetPrAnswers();
     }
     return { kind: 'gg-rpc-result', id: request.id, ok: true, result };
@@ -45,28 +47,24 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
   'inbox.branches': ({ prs }) =>
     // Six pull requests at a time; one GitHub does not answer has no branches.
     politely(prs, 6, ({ repo, number }) =>
-      getJson<unknown>(`/${repo.owner}/${repo.name}/pull/${number}/page_data/header`)
+      getJson(`/${repo.owner}/${repo.name}/pull/${number}/page_data/header`, branchesHeaderAnswer)
         .then((header) => branchesIn(header, repo))
         .catch((error: unknown) => {
           console.debug('[gg]', `page_data/header for ${repo.owner}/${repo.name}#${number} failed; the row waits for its merge box to name its branches:`, error instanceof Error ? error.message : error);
           return null;
         }),
     ),
-  'repos.search': async ({ query, owner }) =>
-    pickableRepositories(query.trim(), owner ?? null, async (path) => {
-      const data = await getJson<unknown>(path);
-      noteShape('repositories/picker/search', data);
-      return data;
-    }),
+  // The picker's answer is read where its envelope is looked for (repositoryCandidatesFrom).
+  'repos.search': async ({ query, owner }) => pickableRepositories(query.trim(), owner ?? null, (path) => getJson(path, z.unknown())),
   'repos.top': ({ cursor }) => (cursor === undefined || cursor === null ? topRepositories() : topRepositories(cursor)),
   'orgs.list': () =>
-    // Who is signed in is the github.com page's own business.
-    listOrganizations({ json: getJson, page: getPage }, document.querySelector('meta[name="user-login"]')?.getAttribute('content') || null),
+    // Who is signed in is the github.com page's own business. The picker's answer is read by repositoryCandidatesFrom.
+    listOrganizations({ json: (path) => getJson(path, z.unknown()), page: getPage }, document.querySelector('meta[name="user-login"]')?.getAttribute('content') || null),
   'orgs.people': ({ org }) => organizationPeople(org, getPage),
   'pr.fetch': async ({ repo, number, force }) => {
     const { mergeMethod } = await getSettings();
     const key = `pr:${repo.owner}/${repo.name}#${number}:${mergeMethod}`.toLowerCase();
-    const detail = await cached(key, 30_000, force, () => fetchPullRequestPage(repo, number));
+    const detail = await cached(kept.pullRequests, key, 30_000, force, () => fetchPullRequestPage(repo, number));
     rememberPullRequest(detail);
     return detail;
   },
@@ -85,8 +83,8 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
     const q = query.trim();
     // The picker asks again after every pause in typing; what it asked in the last minute is answered from memory.
     const [available, suggested] = await Promise.all([
-      cached(`reviewers:${path}?q=${q}`, 60_000, false, () => getJson<unknown>(`${path}/page_data/reviewers${q ? `?q=${encodeURIComponent(q)}` : ''}`)),
-      cached(`suggested-reviewers:${path}`, 60_000, false, () => getJson<unknown>(`${path}/page_data/suggested_reviewers`)),
+      cached(kept.availableReviewers, `${path}?q=${q}`, 60_000, false, () => getJson(`${path}/page_data/reviewers${q ? `?q=${encodeURIComponent(q)}` : ''}`, availableReviewersAnswer)),
+      cached(kept.suggestedReviewers, path, 60_000, false, () => getJson(`${path}/page_data/suggested_reviewers`, suggestedReviewersAnswer)),
     ]);
     return reviewerCandidatesFrom(available, suggested, q);
   },
@@ -108,16 +106,26 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
 };
 
 
-/** Shares one in-flight or fresh load per key for `ttlMs`; `force` reloads; failures are not kept. */
-function cached<T>(key: string, ttlMs: number, force: boolean | undefined, load: () => Promise<T>): Promise<T> {
-  const hit = cache.get(key);
-  if (!force && hit && hit.expiresAt > Date.now()) return hit.value as Promise<T>;
+/** Shares one in-flight or fresh load per key of `answers` for `ttlMs`; `force` reloads; failures are not kept. */
+function cached<T,>(answers: Map<string, Kept<T>>, key: string, ttlMs: number, force: boolean | undefined, load: () => Promise<T>): Promise<T> {
+  const hit = answers.get(key);
+  if (!force && hit && hit.expiresAt > Date.now()) return hit.value;
   const value = load();
-  cache.set(key, { expiresAt: Date.now() + ttlMs, value });
+  answers.set(key, { expiresAt: Date.now() + ttlMs, value });
   value.catch(() => {
-    if (cache.get(key)?.value === value) cache.delete(key);
+    if (answers.get(key)?.value === value) answers.delete(key);
   });
   return value;
 }
 
-const cache = new Map<string, { expiresAt: number; value: Promise<unknown> }>();
+interface Kept<T> {
+  expiresAt: number;
+  value: Promise<T>;
+}
+
+/** What `cached` keeps, a map for each kind of answer: `pr.fetch`'s pull requests and the reviewer picker's two lists. */
+const kept = {
+  pullRequests: new Map<string, Kept<PrDetail>>(),
+  availableReviewers: new Map<string, Kept<z.infer<typeof availableReviewersAnswer>>>(),
+  suggestedReviewers: new Map<string, Kept<z.infer<typeof suggestedReviewersAnswer>>>(),
+};

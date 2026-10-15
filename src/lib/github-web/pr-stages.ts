@@ -4,19 +4,19 @@
 // the header, the activity, the threads, the merge box and the stack; base_comparison_info feeds the files and the
 // threads' positions.
 
-import type { ChangedFileDiff, PrStage, PrStages, PrSummary, RepoRef, UserRef } from '../model';
-import type { MergeMethod } from '../rpc';
+import { z } from 'zod';
+import type { ChangedFileDiff, CheckRunSummary, PrStage, PrStages, PrSummary, RepoRef, UserRef } from '../model';
 import { getSettings } from '../settings';
 import { dynamicWorkflowChecks } from './actions';
-import { checksFrom } from './checks';
-import { changedFileList, fileDiffs, type BaseComparison } from './files';
+import { checksFrom, statusChecksAnswer } from './checks';
+import { baseComparisonAnswer, changedFileList, fileDiffs, type BaseComparison } from './files';
 import { deferredFields, searchPulls, summarisePull } from './inbox';
-import { mergeState } from './merge-box';
+import { mergeBoxAnswer, mergeState, type MergeBoxAnswer } from './merge-box';
 import { rememberPullRequest } from './mutations';
-import { reviewDecisionOf, reviewersOf } from './reviews';
+import { reviewDecisionOf, reviewRequestsAnswer, reviewersOf } from './reviews';
 import { SIGNED_OUT, embeddedPayload, getJson, getPage, githubUser } from './session';
-import { authorIn, graphiteStackComment, resolveStack, type NativeStack } from './stack';
-import { conversationsIn, reviewThreads } from './threads';
+import { authorHeaderAnswer, authorIn, graphiteStackComment, nativeStackSchema, resolveStack, stackMergeabilityAnswer } from './stack';
+import { conversationsIn, reviewThreads, threadsAnswer } from './threads';
 import { descriptionPermalink, reactionsIn, timelineFrom } from './timeline';
 
 /** One stage of a PR's page. */
@@ -35,7 +35,7 @@ export function fetchFileDiffs({ repo, number, paths }: { repo: RepoRef; number:
  * rather than taking an answer GitHub gave before the write.
  */
 export function forgetPrAnswers(): void {
-  answers.clear();
+  for (const waiting of Object.values(answers)) waiting.clear();
 }
 
 const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<PrStages[S]> } = {
@@ -85,7 +85,7 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
     rememberPullRequest({
       ...header,
       databaseId: pr.id,
-      repositoryDatabaseId: layout.repository?.id,
+      repositoryDatabaseId: layout.repository?.id ?? undefined,
       // Any of the conversation's reaction forms will do: their token serves every reaction in the repository.
       reactionToken: page.querySelector('form.js-pick-reaction input[name="authenticity_token"]')?.getAttribute('value') ?? undefined,
     });
@@ -207,55 +207,55 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
 
 /** What GitHub answers about one PR: a request another stage already has on its way is shared, any other is made. */
 function answersFor(pull: Pull) {
-  const ask = <T,>(request: GitHubRequest, variant: string, load: () => Promise<T>): Promise<T> => {
-    const key = `${pull.path.toLowerCase()} ${request} ${variant}`;
-    const asking = answers.get(key);
-    if (asking) return asking as Promise<T>;
+  const ask = <T,>(waiting: Map<string, Promise<T>>, variant: string, load: () => Promise<T>): Promise<T> => {
+    const key = `${pull.path.toLowerCase()} ${variant}`;
+    const asking = waiting.get(key);
+    if (asking) return asking;
     const value = load();
-    answers.set(key, value);
+    waiting.set(key, value);
     const answered = () => {
-      if (answers.get(key) === value) answers.delete(key);
+      if (waiting.get(key) === value) waiting.delete(key);
     };
     value.then(answered, answered);
     return value;
   };
   const data = `${pull.path}/page_data`;
   // A route behind a side card. GitHub answers 404 for one the repository or viewer lacks, which leaves the card empty;
-  // any other failure (no network, a 5xx, rate limiting) fails the stage, and the page offers to retry it.
-  const sideDetail = <T,>(route: string): Promise<T | null> =>
-    getJson<T>(`${data}/${route}`).catch((error: unknown) => {
+  // any other failure (no network, a 5xx, rate limiting, an answer of another shape) fails the stage, and the page offers
+  // to retry it.
+  const sideDetail = <S extends z.ZodType>(route: string, schema: S): Promise<z.infer<S> | null> =>
+    getJson(`${data}/${route}`, schema).catch((error: unknown) => {
       if (!(error instanceof Error) || !error.message.startsWith('GitHub answered 404')) throw error;
       console.debug('[gg]', `page_data/${route.split('?')[0]} failed; showing the page without it:`, error.message);
       return null;
     });
   const github = {
-    page: () => ask('page', '', () => getPage(pull.path)),
-    tabCounts: () => ask('tabCounts', '', () => getJson<{ filesChangedCount?: number; conversationCount?: number; unresolvedConversationCount?: number }>(`${data}/tab_counts`)),
-    diffstat: () => ask('diffstat', '', () => getJson<{ diffstat?: { linesAdded?: number; linesDeleted?: number } }>(`${data}/diffstat`)),
-    description: () => ask('description', '', () => sideDetail<{ bodyHtml?: string }>('description')),
-    threads: () => ask('threads', '', () => getJson<unknown>(`${data}/threads`)),
+    page: () => ask(answers.page, '', () => getPage(pull.path)),
+    tabCounts: () => ask(answers.tabCounts, '', () => getJson(`${data}/tab_counts`, tabCountsAnswer)),
+    diffstat: () => ask(answers.diffstat, '', () => getJson(`${data}/diffstat`, diffstatAnswer)),
+    description: () => ask(answers.description, '', () => sideDetail('description', descriptionAnswer)),
+    threads: () => ask(answers.threads, '', () => getJson(`${data}/threads`, threadsAnswer)),
     // Who opened the PR, for its entry in another PR's stack.
-    author: () => ask('author', '', () => getJson<unknown>(`${data}/header`).then(authorIn)),
-    comparison: () =>
-      ask('comparison', '', () => getJson<BaseComparison>(`${data}/base_comparison_info`).then((info) => ({ ...info, diffSummaries: info.diffSummaries ?? [] }))),
+    author: () => ask(answers.author, '', () => getJson(`${data}/header`, authorHeaderAnswer).then(authorIn)),
+    comparison: () => ask(answers.comparison, '', () => getJson(`${data}/base_comparison_info`, baseComparisonAnswer)),
     // The comparison is only asked for should GitHub want a range after all.
-    diffs: (paths: string[]) => ask('diffs', paths.join('\n'), () => fileDiffs(pull.path, paths, async () => (await github.comparison()).comparison?.fullDiff?.headOid ?? null)),
+    diffs: (paths: string[]) => ask(answers.diffs, paths.join('\n'), () => fileDiffs(pull.path, paths, async () => (await github.comparison()).comparison?.fullDiff?.headOid ?? null)),
     mergeBox: async () => {
       const { mergeMethod } = await getSettings();
-      return ask('mergeBox', mergeMethod, () => sideDetail<unknown>(`merge_box?merge_method=${mergeMethod}&bypass_requirements=false`));
+      return ask(answers.mergeBox, mergeMethod, () => sideDetail(`merge_box?merge_method=${mergeMethod}&bypass_requirements=false`, mergeBoxAnswer));
     },
-    reviewRequests: () => ask('reviewRequests', '', () => sideDetail<unknown>('review_requests')),
-    statusChecks: () => ask('statusChecks', '', () => sideDetail<unknown>('status_checks')),
-    dynamicChecks: (headRefName: string, headOid: string) => ask('dynamicChecks', headOid, () => dynamicWorkflowChecks(pull.repo, headRefName, headOid)),
-    labels: () => ask('labels', '', () => sideDetail<{ labels?: Array<{ name: string; color: string }> }>('labels')),
-    assignees: () => ask('assignees', '', () => sideDetail<{ assignees?: Array<{ login?: string; displayLogin?: string; avatarUrl?: string }> }>('assignees')),
+    reviewRequests: () => ask(answers.reviewRequests, '', () => sideDetail('review_requests', reviewRequestsAnswer)),
+    statusChecks: () => ask(answers.statusChecks, '', () => sideDetail('status_checks', statusChecksAnswer)),
+    dynamicChecks: (headRefName: string, headOid: string) => ask(answers.dynamicChecks, headOid, () => dynamicWorkflowChecks(pull.repo, headRefName, headOid)),
+    labels: () => ask(answers.labels, '', () => sideDetail('labels', labelsAnswer)),
+    assignees: () => ask(answers.assignees, '', () => sideDetail('assignees', assigneesAnswer)),
     stackMergeability: async () => {
       const { mergeMethod } = await getSettings();
-      return ask('stackMergeability', mergeMethod, () => sideDetail<unknown>(`stack_mergeability?merge_method=${mergeMethod}&bypass_requirements=false`));
+      return ask(answers.stackMergeability, mergeMethod, () => sideDetail(`stack_mergeability?merge_method=${mergeMethod}&bypass_requirements=false`, stackMergeabilityAnswer));
     },
-    // The entries of Graphite's stack comment, as the author's open PRs in this repository list them.
+    // The entries of Graphite's stack comment, the way the author's open PRs in this repository list them.
     authorsOpenPulls: (author: string) =>
-      ask('authorsOpenPulls', author, async () => {
+      ask(answers.authorsOpenPulls, author, async () => {
         const query = `repo:${pull.repo.owner}/${pull.repo.name} is:pr is:open author:${author}`;
         try {
           const { pulls } = await searchPulls(query);
@@ -272,13 +272,45 @@ function answersFor(pull: Pull) {
 
 /** What the PR page's embedded data says about the PR; a page that says nothing about it is an error. */
 function layoutOf(page: Document, pull: Pull): LayoutRoute {
-  const layout = embeddedPayload(page, 'pullRequestsLayoutRoute')?.payload.pullRequestsLayoutRoute as LayoutRoute | undefined;
-  if (!layout?.pullRequest) throw new Error(`GitHub's page for ${pull.repo.owner}/${pull.repo.name}#${pull.number} carries no pull request data`);
+  const layout = embeddedPayload(page, 'pullRequestsLayoutRoute', layoutRouteSchema);
+  if (!layout) throw new Error(`GitHub's page for ${pull.repo.owner}/${pull.repo.name}#${pull.number} carries no pull request data`);
   return layout;
 }
 
-/** GitHub's answers by `<pull path> <request> <variant>` while they are on their way. */
-const answers = new Map<string, Promise<unknown>>();
+/** page_data/tab_counts (the fields read here). */
+const tabCountsAnswer = z.object({ filesChangedCount: z.number().nullish(), conversationCount: z.number().nullish(), unresolvedConversationCount: z.number().nullish() });
+
+/** page_data/diffstat (the fields read here). */
+const diffstatAnswer = z.object({ diffstat: z.object({ linesAdded: z.number().nullish(), linesDeleted: z.number().nullish() }).nullish() });
+
+/** page_data/description (the fields read here), for a PR whose conversation renders no description. */
+const descriptionAnswer = z.object({ bodyHtml: z.string().nullish() });
+
+/** page_data/labels (the fields read here). */
+const labelsAnswer = z.object({ labels: z.array(z.object({ name: z.string(), color: z.string() })).nullish() });
+
+/** page_data/assignees (the fields read here). */
+const assigneesAnswer = z.object({ assignees: z.array(z.object({ login: z.string().nullish(), displayLogin: z.string().nullish(), avatarUrl: z.string().nullish() })).nullish() });
+
+/** GitHub's answers while they are on their way, a map for each request, by `<pull path> <variant>`. */
+const answers = {
+  page: new Map<string, Promise<Document>>(),
+  tabCounts: new Map<string, Promise<z.infer<typeof tabCountsAnswer>>>(),
+  diffstat: new Map<string, Promise<z.infer<typeof diffstatAnswer>>>(),
+  description: new Map<string, Promise<z.infer<typeof descriptionAnswer> | null>>(),
+  threads: new Map<string, Promise<z.infer<typeof threadsAnswer>>>(),
+  author: new Map<string, Promise<UserRef | null>>(),
+  comparison: new Map<string, Promise<BaseComparison>>(),
+  diffs: new Map<string, Promise<Record<string, ChangedFileDiff>>>(),
+  mergeBox: new Map<string, Promise<MergeBoxAnswer | null>>(),
+  reviewRequests: new Map<string, Promise<z.infer<typeof reviewRequestsAnswer> | null>>(),
+  statusChecks: new Map<string, Promise<z.infer<typeof statusChecksAnswer> | null>>(),
+  dynamicChecks: new Map<string, Promise<CheckRunSummary[]>>(),
+  labels: new Map<string, Promise<z.infer<typeof labelsAnswer> | null>>(),
+  assignees: new Map<string, Promise<z.infer<typeof assigneesAnswer> | null>>(),
+  stackMergeability: new Map<string, Promise<z.infer<typeof stackMergeabilityAnswer> | null>>(),
+  authorsOpenPulls: new Map<string, Promise<PrSummary[]>>(),
+} satisfies Record<GitHubRequest, Map<string, Promise<unknown>>>;
 
 type GitHubAnswers = ReturnType<typeof answersFor>;
 
@@ -308,25 +340,28 @@ interface Pull {
 }
 
 /** `payload.pullRequestsLayoutRoute` of the PR page (observed; the fields read here). */
-interface LayoutRoute {
-  pullRequest: {
+const layoutRouteSchema = z.object({
+  pullRequest: z.object({
     /** Database id. */
-    id: number;
-    relayId: string;
-    number: number;
-    title: string;
-    state: 'OPEN' | 'DRAFT' | 'MERGED' | 'CLOSED';
-    author: { login: string; avatarUrl?: string } | null;
-    baseBranch: string;
-    headBranch: string;
-    headSha: string;
-    createdTime: string;
-    closedTime?: string | null;
-    mergedTime?: string | null;
-  };
-  stack?: NativeStack | null;
+    id: z.number(),
+    relayId: z.string(),
+    number: z.number(),
+    title: z.string(),
+    /** 'OPEN' | 'DRAFT' | 'MERGED' | 'CLOSED' | … */
+    state: z.string(),
+    author: z.object({ login: z.string(), avatarUrl: z.string().nullish() }).nullish(),
+    baseBranch: z.string(),
+    headBranch: z.string(),
+    headSha: z.string(),
+    createdTime: z.string(),
+    closedTime: z.string().nullish(),
+    mergedTime: z.string().nullish(),
+  }),
+  stack: nativeStackSchema.nullish(),
   /** The base repository; `id` is its database id. */
-  repository?: { id?: number } | null;
-  mergeStatusButtonData?: { defaultMergeMethod?: MergeMethod } | null;
-  user?: { canEditTitle?: boolean } | null;
-}
+  repository: z.object({ id: z.number().nullish() }).nullish(),
+  mergeStatusButtonData: z.object({ defaultMergeMethod: z.enum(['MERGE', 'SQUASH', 'REBASE']).nullish() }).nullish(),
+  user: z.object({ canEditTitle: z.boolean().nullish() }).nullish(),
+});
+
+type LayoutRoute = z.infer<typeof layoutRouteSchema>;

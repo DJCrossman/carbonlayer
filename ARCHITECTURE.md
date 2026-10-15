@@ -56,6 +56,18 @@ and leaves that card empty (an open PR's checks card says why), and any other fa
 The page's own cache (below) decides when to ask again, so the content script asks GitHub every time, except the
 reviewer picker's searches and `pr.fetch`, kept 60 s and 30 s; a successful write clears those.
 
+Every answer GitHub sends is read by a zod schema of the fields its reader reads, kept next to that reader:
+`getJson(path, schema)` and `embeddedPayload(page, routeKey, schema)` parse with it (`readAnswer` in
+`src/lib/github-web/session.ts`, which the one write whose answer is read, a stack merge's `enqueue_stack`, uses too), and
+other keys are left unread. A field is required only where the reader cannot do without it; what GitHub may leave out or
+send as null is optional, as the reader already treated it. An answer of another shape throws `<endpoint> did not match:
+<zod's issues>`, and takes the reader's own way to the page: a PR page stage fails with its Retry, an inbox section shows
+it in place of its rows, and where a failure was already tolerated (the inbox's deferred fields and row details, a stack
+entry's conversations and author, "Group by stack"'s branches, the organizations' repository source) it is logged with
+`console.debug('[gg]', …)` and that part stays as it was. Where the docs record no place for what a reader needs (a
+section's deferred rows, the stack's mergeability list, how many approvals the rules require, the repository picker's
+envelope), it is looked for by name wherever GitHub nests it (`findInPayload`) and what is found is read by the schema.
+
 Graphite judges CI from every check run on the head commit, runs of the workflows GitHub triggers itself (event `dynamic`,
 such as Copilot's code review) included, while `status_checks`, the commit's status rollup and the PR's Checks tab all
 leave those out. So the PR page's checks and the inbox's open rows also read the branch's Actions list

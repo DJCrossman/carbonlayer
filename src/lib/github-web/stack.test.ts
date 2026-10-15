@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PrSummary } from '../model';
 import { githubUser } from './session';
-import { authorIn, graphiteStackComment, resolveStack } from './stack';
+import { authorHeaderAnswer, authorIn, graphiteStackComment, resolveStack } from './stack';
 
 const noLookups = { mergeability: async () => null, authorsOpenPulls: async () => [], conversations: async () => null, author: async () => null };
 
@@ -106,16 +106,15 @@ describe('native stacks', () => {
 
 describe("a stack entry's author", () => {
   it('is who its page header says opened the PR, a bot as GitHub names it, and nobody for a header without the PR', () => {
-    expect(authorIn({ pullRequest: { author: { isAgent: false, slug: 'riley', login: 'riley', displayName: 'Riley', avatarUrl: 'https://avatars.githubusercontent.com/u/7?v=4' } } })).toEqual({
+    expect(authorIn(authorHeaderAnswer.parse({ pullRequest: { author: { isAgent: false, slug: 'riley', login: 'riley', displayName: 'Riley', avatarUrl: 'https://avatars.githubusercontent.com/u/7?v=4' } } }))).toEqual({
       login: 'riley',
       avatarUrl: 'https://avatars.githubusercontent.com/u/7?v=4',
       url: 'https://github.com/riley',
     });
-    expect(authorIn({ pullRequest: { author: { isAgent: true, login: 'app/dependabot' } } })?.login).toBe('app/dependabot');
+    expect(authorIn(authorHeaderAnswer.parse({ pullRequest: { author: { isAgent: true, login: 'app/dependabot' } } }))?.login).toBe('app/dependabot');
     // A deleted account, as the PR's own page shows it.
-    expect(authorIn({ pullRequest: { author: null } })?.login).toBe('ghost');
-    expect(authorIn({ stack: null })).toBeNull();
-    expect(authorIn(null)).toBeNull();
+    expect(authorIn(authorHeaderAnswer.parse({ pullRequest: { author: null } }))?.login).toBe('ghost');
+    expect(authorIn(authorHeaderAnswer.parse({ stack: null }))).toBeNull();
   });
 });
 

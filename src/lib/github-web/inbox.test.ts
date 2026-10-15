@@ -130,6 +130,45 @@ describe('fetchInbox', () => {
     await expect(fetchViewPage({ id: 'a', name: 'Broken', query: 'is:pr (author:@me' }, 'org:acme', 2)).rejects.toThrow(invalid);
   });
 
+  it('fails a section whose search GitHub answered in another shape, naming the endpoint, while the others load', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.startsWith('/pulls/search')) return Response.json({ payload: { pullsDashboardSurfaceContentRoute: { results: [{ ...pull(9), number: '9' }], pageInfo: { totalCount: 1 } } } });
+        if (url.startsWith('/pulls/inbox/queries')) return Response.json({ results: [pull(4)], totalCount: 1 });
+        return Response.json([]);
+      }),
+    );
+    const [search, section] = await fetchInbox(
+      [
+        { id: 'b', name: 'Mine', query: 'is:pr author:@me' },
+        { id: 'c', name: 'Drafts', query: 'inbox:your-drafts' },
+      ],
+      'org:acme',
+    );
+    expect(search?.prs).toEqual([]);
+    expect(search?.error?.message).toMatch(/^\/pulls\/search did not match: .*expected number, received string[\s\S]*results\[0\]\.number/);
+    expect(section).toMatchObject({ prs: [{ number: 4 }] });
+  });
+
+  it('shows the rows without review and CI status when GitHub sends their deferred fields in another shape, naming the endpoint', async () => {
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.startsWith('/pulls/search')) return Response.json({ payload: { pullsDashboardSurfaceContentRoute: { results: [pull(9)], pageInfo: { totalCount: 1 } } } });
+        return Response.json({ payload: { pullsDashboardSurfaceContentDeferredData: { results: { '0': { id: 'PR_9', statusCheckRollup: { state: 'SUCCESS', totalCount: '2', successCount: 2 } } } } } });
+      }),
+    );
+    const [result] = await fetchInbox([{ id: 'b', name: 'Mine', query: 'is:pr author:@me' }], 'org:acme');
+    expect(result?.prs).toMatchObject([{ number: 9, ci: { state: 'NONE' } }]);
+    expect(console.debug).toHaveBeenCalledWith(
+      '[gg]',
+      expect.stringContaining('deferred fields failed'),
+      expect.stringMatching(/^\/pulls\/deferred did not match: .*expected number, received string[\s\S]*statusCheckRollup\.totalCount/),
+    );
+  });
+
   it('fails as a whole when signed out', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: "Couldn't authenticate you" }, { status: 404 })));
     await expect(fetchInbox([{ id: 'b', name: 'Mine', query: 'is:pr author:@me' }], 'org:acme')).rejects.toThrow(SIGNED_OUT);
@@ -168,9 +207,12 @@ describe('enrichPull', () => {
         requested.push(url);
         if (url.includes('/page_data/merge_box')) {
           return Response.json({
-            pullRequest: { mergeStateStatus: 'BLOCKED', latestOpinionatedReviews: [{ author: { login: 'bo', avatarUrl: 'https://avatars/bo' }, state: 'APPROVED' }] },
+            pullRequest: {
+              mergeStateStatus: 'BLOCKED',
+              latestOpinionatedReviews: [{ author: { login: 'bo', avatarUrl: 'https://avatars/bo' }, state: 'APPROVED' }],
+              pendingReviewRequests: [{ reviewer: { login: 'cy', avatarUrl: 'https://avatars/cy' }, isCodeOwner: false }],
+            },
             mergeRequirements: { conditions: [{ type: 'PULL_REQUEST_RULES', result: 'FAILED', displayName: 'Rules', message: 'At least 2 approving reviews are required' }] },
-            reviewerSection: { pendingRequestedReviews: [{ reviewer: { login: 'cy', avatarUrl: 'https://avatars/cy' }, isCodeOwner: false }] },
           });
         }
         // Signed out, review_requests names nobody.
@@ -207,10 +249,10 @@ describe('enrichPull', () => {
       vi.fn(async (url: string) => {
         if (url.includes('/page_data/review_requests')) {
           return Response.json({
-            pendingReviewRequests: [{ reviewer: { id: 7, displayLogin: 'acme/parcs', avatarUrl: '', reviewerType: 'Team' } }],
+            pendingReviewRequests: [{ reviewer: { id: '7', displayLogin: 'acme/parcs', avatarUrl: '', reviewerType: 'Team' } }],
             completedReviews: [
-              { reviewer: { id: 1, displayLogin: 'octocat', avatarUrl: 'https://avatars/octocat' }, state: 'APPROVED', submittedAt: '2026-10-02T00:00:00Z' },
-              { reviewer: { id: 2, displayLogin: 'Copilot', avatarUrl: 'https://avatars/in/946600' }, state: 'COMMENTED', submittedAt: '2026-10-01T00:00:00Z' },
+              { reviewer: { id: '1', displayLogin: 'octocat', avatarUrl: 'https://avatars/octocat' }, state: 'APPROVED', submittedAt: '2026-10-02T00:00:00Z' },
+              { reviewer: { id: '2', displayLogin: 'Copilot', avatarUrl: 'https://avatars/in/946600' }, state: 'COMMENTED', submittedAt: '2026-10-01T00:00:00Z' },
             ],
           });
         }
@@ -333,6 +375,31 @@ describe('enrichPull', () => {
     expect(requested.sort()).toEqual(['/acme/widgets/pull/8/page_data/diffstat', '/acme/widgets/pull/8/page_data/review_requests', '/acme/widgets/pull/8/page_data/threads']);
   });
 
+  it('keeps the merge status and rollup a row had when GitHub sends its merge box or checks in another shape, naming the endpoint', async () => {
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.includes('/page_data/merge_box')) return Response.json({ pullRequest: { mergeStateStatus: 7 } });
+        if (url.includes('/page_data/status_checks')) return Response.json({ statusChecks: [{ displayName: 'build', state: 1 }] });
+        return Response.json({});
+      }),
+    );
+    const found = await enrichPull(row, 'MERGE', null);
+    expect(found).not.toHaveProperty('mergeStatus');
+    expect(found).not.toHaveProperty('ci');
+    expect(console.debug).toHaveBeenCalledWith(
+      '[gg]',
+      expect.stringContaining('page_data/merge_box for acme/widgets#7 failed'),
+      expect.stringMatching(/^\/acme\/widgets\/pull\/7\/page_data\/merge_box did not match: .*expected string, received number[\s\S]*pullRequest\.mergeStateStatus/),
+    );
+    expect(console.debug).toHaveBeenCalledWith(
+      '[gg]',
+      expect.stringContaining('page_data/status_checks for acme/widgets#7 failed'),
+      expect.stringMatching(/^\/acme\/widgets\/pull\/7\/page_data\/status_checks did not match: .*expected string, received number[\s\S]*statusChecks\[0\]\.state/),
+    );
+  });
+
   it('leaves out what GitHub refuses, and reviewers nobody names', async () => {
     vi.spyOn(console, 'debug').mockImplementation(() => {});
     vi.stubGlobal(
@@ -373,7 +440,6 @@ describe('branchesIn', () => {
 
   it('names nothing without a base branch', () => {
     expect(branchesIn({}, repo)).toBeNull();
-    expect(branchesIn(null, repo)).toBeNull();
     expect(branchesIn(header({ baseBranch: undefined, headRepositoryOwnerLogin: 'acme', headRepositoryName: 'widgets' }), repo)).toBeNull();
   });
 });

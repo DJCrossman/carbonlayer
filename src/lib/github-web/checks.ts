@@ -1,10 +1,10 @@
 // CI for the PR page from page_data/status_checks: `{ statusChecks: [row], statusRollup: { combinedState,
-// summary: [{ state, count }] } }`. That shape and the row fields (`displayName`, `state`, `stateChangedAt`,
-// `targetUrl`, `description`, `additionalContext`, `avatarDescription`, `isRequired`) come from GitHub's bundle,
-// not from a response, so the list is also found by what its rows look like and fields have fallbacks.
+// summary: [{ state, count }] }, aliveChannels }` (verified signed in 2026-10-12, docs/research/github-web-endpoints.md),
+// rows `{ displayName, state, isRequired, targetUrl, description, additionalContext, stateChangedAt, … }`. The rows'
+// other names for those fields (`name`, `conclusion`, `detailsUrl`, …) date from before that and are still read.
 
+import { z } from 'zod';
 import type { CheckRunSummary, CheckState, CiSummary } from '../model';
-import { findInPayload, noteShape } from './session';
 
 /**
  * The checks with their states, counts and overall verdict, the names of the required ones, whether the rows say which
@@ -13,19 +13,12 @@ import { findInPayload, noteShape } from './session';
  * waits on the downstack PRs, not on CI, and the stack card reports that. `alsoChecks`, checks the list leaves out
  * (GitHub's own dynamic workflow runs), join it and count like it, never as required.
  */
-export function checksFrom(data: unknown, alsoChecks: CheckRunSummary[] = []): { ci: CiSummary; requiredCheckNames: string[]; marksRequired: boolean; listed: boolean } {
-  noteShape('page_data/status_checks', data);
-  const response = (data ?? {}) as { statusChecks?: unknown; statusRollup?: { combinedState?: string } };
-  const looksLikeChecks = (value: unknown) =>
-    Array.isArray(value) &&
-    value.some((item) => {
-      const row = item as Record<string, unknown> | null;
-      return !!row && ('displayName' in row || 'name' in row || 'context' in row) && ('state' in row || 'conclusion' in row || 'status' in row);
-    });
-  const found = Array.isArray(response.statusChecks) ? response.statusChecks : findInPayload(data, (_, value) => looksLikeChecks(value));
-  const listed = Array.isArray(found);
-  const rows = (listed ? found : []).filter((row: CheckRow) => !/mergeability_check/i.test(row.displayName ?? row.name ?? row.context ?? ''));
-  noteShape('page_data/status_checks row', rows);
+export function checksFrom(
+  answer: StatusChecksAnswer | null,
+  alsoChecks: CheckRunSummary[] = [],
+): { ci: CiSummary; requiredCheckNames: string[]; marksRequired: boolean; listed: boolean } {
+  const listed = Array.isArray(answer?.statusChecks);
+  const rows = (answer?.statusChecks ?? []).filter((row) => !/mergeability_check/i.test(row.displayName ?? row.name ?? row.context ?? ''));
 
   const checks = rows.map((row): CheckRunSummary => {
     // Anything not yet finished is PENDING.
@@ -69,11 +62,14 @@ export function checksFrom(data: unknown, alsoChecks: CheckRunSummary[] = []): {
     else counts.other++;
   }
   // GitHub's own verdict, for when the rows are missing: PASSED, PENDING*, SOME_FAILED, FAILED, PENDING_FAILED.
-  const combined = response.statusRollup?.combinedState?.toUpperCase() ?? '';
+  const combined = answer?.statusRollup?.combinedState?.toUpperCase() ?? '';
   const combinedState: CheckState = combined === 'PASSED' ? 'SUCCESS' : /FAILED/.test(combined) ? 'FAILURE' : /PENDING/.test(combined) ? 'PENDING' : 'NONE';
   // A required failure is final; otherwise, as in Graphite, the checks are running until the last one is done, and only
   // then do optional failures count (a failing check among running ones may still be re-run or superseded).
-  const requiredCheckNames = rows.flatMap((row, i) => ((row.isRequired ?? row.required) ? [checks[i]!.name] : []));
+  const requiredCheckNames = rows.flatMap((row, i) => {
+    const check = checks[i];
+    return check && (row.isRequired ?? row.required) ? [check.name] : [];
+  });
   const requiredFailed = checks.some((check) => check.state === 'FAILURE' && requiredCheckNames.includes(check.name));
   const state: CheckState = requiredFailed
     ? 'FAILURE'
@@ -94,26 +90,38 @@ export function checksFrom(data: unknown, alsoChecks: CheckRunSummary[] = []): {
   };
 }
 
+/**
+ * page_data/status_checks (the fields read here). Its other keys are kept, unread: the checks card names them when
+ * GitHub sends no rows.
+ */
+export const statusChecksAnswer = z.looseObject({
+  statusRollup: z.object({ combinedState: z.string().nullish() }).nullish(),
+  statusChecks: z
+    .array(
+      z.object({
+        displayName: z.string().nullish(),
+        name: z.string().nullish(),
+        context: z.string().nullish(),
+        state: z.string().nullish(),
+        conclusion: z.string().nullish(),
+        status: z.string().nullish(),
+        stateChangedAt: z.string().nullish(),
+        targetUrl: z.string().nullish(),
+        detailsUrl: z.string().nullish(),
+        url: z.string().nullish(),
+        description: z.string().nullish(),
+        additionalContext: z.string().nullish(),
+        title: z.string().nullish(),
+        avatarDescription: z.string().nullish(),
+        workflowName: z.string().nullish(),
+        app: z.object({ name: z.string().nullish() }).nullish(),
+        startedAt: z.string().nullish(),
+        completedAt: z.string().nullish(),
+        isRequired: z.boolean().nullish(),
+        required: z.boolean().nullish(),
+      }),
+    )
+    .nullish(),
+});
 
-interface CheckRow {
-  displayName?: string;
-  name?: string;
-  context?: string;
-  state?: string;
-  conclusion?: string | null;
-  status?: string;
-  stateChangedAt?: string | null;
-  targetUrl?: string | null;
-  detailsUrl?: string | null;
-  url?: string | null;
-  description?: string | null;
-  additionalContext?: string | null;
-  title?: string | null;
-  avatarDescription?: string | null;
-  workflowName?: string | null;
-  app?: { name?: string } | null;
-  startedAt?: string | null;
-  completedAt?: string | null;
-  isRequired?: boolean;
-  required?: boolean;
-}
+type StatusChecksAnswer = z.infer<typeof statusChecksAnswer>;

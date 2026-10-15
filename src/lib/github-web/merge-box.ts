@@ -1,19 +1,18 @@
 // What the merge box says: page_data/merge_box is `{ pullRequest: { state, isDraft, isInMergeQueue,
 // mergeStateStatus, autoMergeRequest, viewerMergeActions, latestOpinionatedReviews, pendingReviewRequests, … },
-// mergeRequirements: { state, conditions, commitMessageHeadline, commitMessageBody, … } }`, as GitHub's bundle
-// reads it (not yet seen in a response, so every field is optional).
+// mergeRequirements: { state, conditions, commitMessageHeadline, commitMessageBody, … } }` (its keys verified signed in
+// 2026-10-12, docs/research/github-web-mutations.md; not every field in them has been seen, so each is optional).
 
+import { z } from 'zod';
 import type { MergeStatus } from '../model';
 import type { MergeMethod } from '../rpc';
-import { findInPayload, noteShape } from './session';
+import { opinionatedReviewSchema, pendingReviewRequestSchema } from './reviews';
+import { findInPayload } from './session';
 
 /** Mergeability, the viewer's merge options and auto-merge / merge-queue state. */
-export function mergeState(data: unknown, pr: { isDraft: boolean; isOpen: boolean }): MergeState {
-  noteShape('page_data/merge_box', data);
-  const box = (data ?? {}) as MergeBox;
-  const pullRequest = box.pullRequest ?? {};
-  noteShape('page_data/merge_box pullRequest', pullRequest);
-  const conditions = Array.isArray(box.mergeRequirements?.conditions) ? box.mergeRequirements.conditions : [];
+export function mergeState(box: MergeBoxAnswer | null, pr: { isDraft: boolean; isOpen: boolean }): MergeState {
+  const pullRequest: NonNullable<MergeBoxAnswer['pullRequest']> = box?.pullRequest ?? {};
+  const conditions = box?.mergeRequirements?.conditions ?? [];
   const failed = (type: string) => conditions.some((condition) => condition.type === type && condition.result === 'FAILED');
 
   // A draft's box says DRAFT and fails the PULL_REQUEST_STATE condition; the other conditions still tell whether it
@@ -24,18 +23,14 @@ export function mergeState(data: unknown, pr: { isDraft: boolean; isOpen: boolea
       ? 'DIRTY'
       : failed('PULL_REQUEST_RULES') || failed('STACK')
         ? 'BLOCKED'
-        : box.mergeRequirements?.state === 'MERGEABLE' || conditions.some((condition) => condition.result === 'PASSED')
+        : box?.mergeRequirements?.state === 'MERGEABLE' || conditions.some((condition) => condition.result === 'PASSED')
           ? 'CLEAN'
           : 'UNKNOWN';
-  const mergeStatus: MergeStatus =
-    pr.isDraft || pullRequest.isDraft || reported === 'DRAFT'
-      ? fromConditions()
-      : reported && ['CLEAN', 'HAS_HOOKS', 'UNSTABLE', 'BLOCKED', 'BEHIND', 'DIRTY', 'UNKNOWN'].includes(reported)
-        ? (reported as MergeStatus)
-        : fromConditions();
+  const reportedStatus = (['CLEAN', 'HAS_HOOKS', 'UNSTABLE', 'BLOCKED', 'BEHIND', 'DIRTY', 'UNKNOWN'] as const).find((status) => status === reported);
+  const mergeStatus: MergeStatus = pr.isDraft || pullRequest.isDraft || reported === 'DRAFT' ? fromConditions() : (reportedStatus ?? fromConditions());
 
   // viewerMergeActions: [{ name: DIRECT_MERGE | AUTO_MERGE | MERGE_QUEUE, mergeMethods: [{ name, allowableStatus, isDefault }] }]
-  const actions = Array.isArray(pullRequest.viewerMergeActions) ? pullRequest.viewerMergeActions : [];
+  const actions = pullRequest.viewerMergeActions ?? [];
   const directMerge = actions.find((action) => action.name === 'DIRECT_MERGE');
   const allowed = (directMerge?.mergeMethods ?? [])
     .filter((method) => method.allowableStatus === 'ALLOWED' || method.allowableStatus === 'ALLOWED_WITH_BYPASS')
@@ -43,12 +38,13 @@ export function mergeState(data: unknown, pr: { isDraft: boolean; isOpen: boolea
     .filter((name): name is MergeMethod => name === 'MERGE' || name === 'SQUASH' || name === 'REBASE');
   const userCanMerge = conditions.some((condition) => condition.type === 'PULL_REQUEST_USER_STATE' && condition.result === 'PASSED');
   const autoMergeMethod = pullRequest.autoMergeRequest?.mergeMethod?.toUpperCase();
+  const defaultMethod = directMerge?.mergeMethods?.find((method) => method.isDefault)?.name;
 
   return {
     mergeStatus,
     // Without the actions list, assume every method; the merge box would say otherwise.
     allowedMergeMethods: directMerge ? allowed : ['MERGE', 'SQUASH', 'REBASE'],
-    defaultMergeMethod: (directMerge?.mergeMethods?.find((method) => method.isDefault)?.name as MergeMethod | undefined) ?? null,
+    defaultMergeMethod: defaultMethod === 'MERGE' || defaultMethod === 'SQUASH' || defaultMethod === 'REBASE' ? defaultMethod : null,
     viewerCanMerge: pr.isOpen && (directMerge ? directMerge.isAllowable !== false && allowed.length > 0 : userCanMerge),
     // GitHub says so in its own flag (verified 2026-10-13); the merge actions name AUTO_MERGE only in older answers.
     viewerCanEnableAutoMerge:
@@ -57,8 +53,8 @@ export function mergeState(data: unknown, pr: { isDraft: boolean; isOpen: boolea
       ? { method: autoMergeMethod === 'SQUASH' || autoMergeMethod === 'REBASE' ? autoMergeMethod : 'MERGE' }
       : null,
     isInMergeQueue: pullRequest.isInMergeQueue === true,
-    latestOpinionatedReviews: pullRequest.latestOpinionatedReviews ?? findInPayload(data, (key) => key === 'latestOpinionatedReviews') ?? null,
-    numReviewsRequired: Number(findInPayload(data, (key) => key === 'numReviewsRequired' || key === 'requiredApprovingReviewCount') ?? 0) || 0,
+    latestOpinionatedReviews: pullRequest.latestOpinionatedReviews ?? null,
+    numReviewsRequired: box?.numReviewsRequired ?? 0,
   };
 }
 
@@ -70,31 +66,56 @@ interface MergeState {
   viewerCanEnableAutoMerge: boolean;
   autoMerge: { method: MergeMethod } | null;
   isInMergeQueue: boolean;
-  /** Raw `latestOpinionatedReviews` when the merge box carries them (see reviews.ts). */
-  latestOpinionatedReviews: unknown;
+  /** The merge box's `latestOpinionatedReviews`, when it carries them (see reviews.ts). */
+  latestOpinionatedReviews: Array<z.infer<typeof opinionatedReviewSchema>> | null;
   numReviewsRequired: number;
 }
 
-/** page_data/merge_box (the fields read here). */
-export interface MergeBox {
-  pullRequest?: {
-    state?: string;
-    isDraft?: boolean;
-    isInMergeQueue?: boolean;
-    mergeStateStatus?: string;
-    autoMergeRequest?: { mergeMethod?: string } | null;
-    viewerCanEnableAutoMerge?: boolean;
-    viewerMergeActions?: Array<{
-      name: string;
-      isAllowable?: boolean;
-      mergeMethods?: Array<{ name: string; allowableStatus?: string; isDefault?: boolean }>;
-    }>;
-    latestOpinionatedReviews?: unknown;
-  };
-  mergeRequirements?: {
-    state?: string;
-    conditions?: Array<{ type: string; result: string }>;
-    commitMessageHeadline?: string;
-    commitMessageBody?: string;
-  };
-}
+/**
+ * page_data/merge_box: the fields `mergeState` reads, and those the inbox reads besides (why merging is blocked, the
+ * pending review requests, the branches and head commit). How many approvals the rules require is not recorded where
+ * GitHub puts it; it is looked for by name, wherever nested, and read as `numReviewsRequired`.
+ */
+export const mergeBoxAnswer = z.preprocess(
+  (answer) =>
+    typeof answer === 'object' && answer !== null
+      ? { ...answer, numReviewsRequired: findInPayload(answer, (key) => key === 'numReviewsRequired' || key === 'requiredApprovingReviewCount') }
+      : answer,
+  z.object({
+    pullRequest: z
+      .object({
+        isDraft: z.boolean().nullish(),
+        isInMergeQueue: z.boolean().nullish(),
+        isCrossRepo: z.boolean().nullish(),
+        mergeStateStatus: z.string().nullish(),
+        autoMergeRequest: z.object({ mergeMethod: z.string().nullish() }).nullish(),
+        viewerCanEnableAutoMerge: z.boolean().nullish(),
+        viewerMergeActions: z
+          .array(
+            z.object({
+              name: z.string(),
+              isAllowable: z.boolean().nullish(),
+              mergeMethods: z.array(z.object({ name: z.string(), allowableStatus: z.string().nullish(), isDefault: z.boolean().nullish() })).nullish(),
+            }),
+          )
+          .nullish(),
+        latestOpinionatedReviews: z.array(opinionatedReviewSchema).nullish(),
+        pendingReviewRequests: z.array(pendingReviewRequestSchema).nullish(),
+        headRefName: z.string().nullish(),
+        headRefOid: z.string().nullish(),
+        baseRefName: z.string().nullish(),
+      })
+      .nullish(),
+    mergeRequirements: z
+      .object({
+        state: z.string().nullish(),
+        conditions: z
+          .array(z.object({ type: z.string(), result: z.string(), message: z.string().nullish(), description: z.string().nullish(), displayName: z.string().nullish() }))
+          .nullish(),
+      })
+      .nullish(),
+    numReviewsRequired: z.number().nullish(),
+  }),
+);
+
+export type MergeBoxAnswer = z.infer<typeof mergeBoxAnswer>;

@@ -1,6 +1,7 @@
 // Changed files and their patches. page_data/base_comparison_info lists every file (`diffSummaries`) and
 // carries the first diffs (`diffContents`); the rest come from page_data/diff_entries, up to 20 paths per request.
 
+import { z } from 'zod';
 import type { ChangedFileDiff, ChangedFileSummary, RepoRef } from '../model';
 import { getJson } from './session';
 
@@ -38,7 +39,7 @@ export function changedFileList(repo: RepoRef, comparison: BaseComparison): { fi
 /**
  * The diffs of up to 20 changed files, by path, from one of GitHub's diff_entries requests. Without `range` GitHub
  * answers with the whole PR's diff (observed); if it ever refuses, the request is retried with the head OID as `range`,
- * as GitHub's own UI sends it, which `headOid` is only asked for then.
+ * the way GitHub's own UI sends it, which `headOid` is only asked for then.
  */
 export async function fileDiffs(pullPath: string, paths: string[], headOid: () => Promise<string | null>): Promise<Record<string, ChangedFileDiff>> {
   // As GitHub's UI does: each path encoded, joined with commas, the whole encoded again as one value;
@@ -46,12 +47,12 @@ export async function fileDiffs(pullPath: string, paths: string[], headOid: () =
   const params = new URLSearchParams({ paths: paths.map(encodeURIComponent).join(','), ctx: paths.map(() => '').join(':'), w: '0' });
   let entries: DiffEntry[];
   try {
-    entries = await getJson<DiffEntry[]>(`${pullPath}/page_data/diff_entries?${params}`);
+    entries = await getJson(`${pullPath}/page_data/diff_entries?${params}`, z.array(diffEntrySchema));
   } catch (error) {
     const range = await headOid();
     if (!range) throw error;
     params.set('range', range);
-    entries = await getJson<DiffEntry[]>(`${pullPath}/page_data/diff_entries?${params}`);
+    entries = await getJson(`${pullPath}/page_data/diff_entries?${params}`, z.array(diffEntrySchema));
     console.debug('[gg] diff_entries needed range=<head OID>');
   }
   return Object.fromEntries(entries.map((entry) => [entry.path, diffOf(entry)]));
@@ -79,28 +80,37 @@ export function patchOf(entry: DiffEntry): string | null {
   return lines.length > 0 ? lines.join('\n') : null;
 }
 
-/** page_data/base_comparison_info (the fields read here). */
-export interface BaseComparison {
-  diffSummaries: Array<{
-    path: string;
-    changeType?: string;
-    linesAdded?: number;
-    linesDeleted?: number;
-    markedAsViewed?: boolean;
-    /** Review thread anchors on the current diff: `{ R69: { threads: [{ id: 2694976171, start: 'R55' }] } }`. */
-    markersMap?: Record<string, { threads?: Array<{ id: number | string; start?: string }> }>;
-  }>;
-  diffContents?: DiffEntry[];
-  comparison?: { fullDiff?: { baseOid: string; headOid: string } };
-}
+/** One file's diff in page_data/diff_entries and base_comparison_info's `diffContents` (the fields read here). */
+const diffEntrySchema = z.object({
+  path: z.string(),
+  isBinary: z.boolean().nullish(),
+  isTooBig: z.boolean().nullish(),
+  oldTreeEntry: z.object({ path: z.string() }).nullish(),
+  diffLines: z.array(z.object({ type: z.string(), text: z.string(), displayNoNewLineWarning: z.boolean().nullish() })).nullish(),
+});
 
-export interface DiffEntry {
-  path: string;
-  status?: string;
-  isBinary?: boolean;
-  isTooBig?: boolean;
-  linesAdded?: number;
-  linesDeleted?: number;
-  oldTreeEntry?: { path: string } | null;
-  diffLines?: Array<{ type: string; text: string; displayNoNewLineWarning?: boolean }>;
-}
+export type DiffEntry = z.infer<typeof diffEntrySchema>;
+
+/** page_data/base_comparison_info (the fields read here); a comparison without files lists none. */
+export const baseComparisonAnswer = z.object({
+  diffSummaries: z
+    .array(
+      z.object({
+        path: z.string(),
+        changeType: z.string().nullish(),
+        linesAdded: z.number().nullish(),
+        linesDeleted: z.number().nullish(),
+        markedAsViewed: z.boolean().nullish(),
+        /** Review thread anchors on the current diff: `{ R69: { threads: [{ id: 2694976171, start: 'R55' }] } }`. */
+        markersMap: z
+          .record(z.string(), z.object({ threads: z.array(z.object({ id: z.union([z.number(), z.string()]), start: z.string().nullish() })).nullish() }))
+          .nullish(),
+      }),
+    )
+    .nullish()
+    .transform((summaries) => summaries ?? []),
+  diffContents: z.array(diffEntrySchema).nullish(),
+  comparison: z.object({ fullDiff: z.object({ baseOid: z.string(), headOid: z.string() }).nullish() }).nullish(),
+});
+
+export type BaseComparison = z.infer<typeof baseComparisonAnswer>;

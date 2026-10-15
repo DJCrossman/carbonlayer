@@ -1,14 +1,15 @@
 // Where the PR sits in its stack: GitHub's native stack (from the PR page's layout data) first, else the
 // stack Graphite lists in its PR comment, else the PR alone.
 
+import { z } from 'zod';
 import type { PrSummary, Stack, StackEntry, UserRef } from '../model';
-import { findInPayload, githubUser, noteShape, politely } from './session';
+import { findInPayload, githubUser, politely } from './session';
 
 export async function resolveStack(
   subject: { current: PrSummary; nativeStack: NativeStack | null; page: Document },
   lookups: {
     /** page_data/stack_mergeability: each stack entry's merge status; null when GitHub did not answer. */
-    mergeability(): Promise<unknown>;
+    mergeability(): Promise<StackMergeabilityAnswer | null>;
     /** The author's open PRs in this repository, for the Graphite comment's entries; empty when GitHub did not answer. */
     authorsOpenPulls(): Promise<PrSummary[]>;
     /** Another entry's conversations, from its own page_data/threads; null when GitHub did not answer. */
@@ -20,11 +21,7 @@ export async function resolveStack(
   const { current, nativeStack } = subject;
 
   if (nativeStack && nativeStack.pulls.length > 0) {
-    const statuses = await lookups.mergeability();
-    noteShape('page_data/stack_mergeability', statuses);
-    const rows = (Array.isArray(statuses) ? statuses : findInPayload(statuses, (_, value) => Array.isArray(value) && value.some((row) => !!row?.pull))) as
-      | Array<{ pull?: { number?: number }; status?: string }>
-      | undefined;
+    const rows = await lookups.mergeability();
     const statusByNumber = new Map((rows ?? []).map((row) => [row.pull?.number, row.status?.toUpperCase()]));
     // GitHub lists the top of the stack first; position 1 is the PR closest to trunk.
     const bottomFirst = [...nativeStack.pulls].reverse();
@@ -38,7 +35,8 @@ export async function resolveStack(
             state: pull.state === 'MERGED' || pull.state === 'CLOSED' ? pull.state : 'OPEN',
             isDraft: pull.state === 'DRAFT',
             headRefName: pull.headBranch,
-            baseRefName: index === 0 ? nativeStack.baseBranch : bottomFirst[index - 1]!.headBranch,
+            // The head of the PR below it; trunk for the bottom one.
+            baseRefName: bottomFirst[index - 1]?.headBranch ?? nativeStack.baseBranch,
             mergeStatus: pull.state === 'DRAFT' ? 'DRAFT' : ['MERGEABLE', 'CLEAN'].includes(statusByNumber.get(pull.number) ?? '') ? 'CLEAN' : 'UNKNOWN',
             nativeStack: { position: index + 1, size: nativeStack.size },
           }),
@@ -80,8 +78,8 @@ export function graphiteStackComment(page: Document): { entries: GraphiteEntry[]
     const link = item.querySelector('a[href*="/pull/"]');
     const number = Number(/\/pull\/(\d+)/.exec(link?.getAttribute('href') ?? '')?.[1] ?? /#(\d+)/.exec(item.textContent ?? '')?.[1]);
     if (number) {
-      const title = link?.cloneNode(true) as Element | undefined;
-      title?.querySelector('.issue-shorthand')?.remove();
+      const title = link?.cloneNode(true);
+      if (title instanceof Element) title.querySelector('.issue-shorthand')?.remove();
       const icon = item.querySelector('svg.octicon')?.getAttribute('class') ?? '';
       entries.push({
         number,
@@ -99,11 +97,11 @@ export function graphiteStackComment(page: Document): { entries: GraphiteEntry[]
 
 /**
  * Who opened a PR, as its page header (`page_data/header`) names them, for its entry in another PR's stack:
- * `pullRequest.author`, a bot or app as GitHub gives it, and the ghost account when GitHub names nobody, as the PR's own
- * page does. Null when the header says nothing about the pull request.
+ * `pullRequest.author`, a bot or app the way GitHub gives it, and the ghost account when GitHub names nobody, like the PR's
+ * own page does. Null when the header says nothing about the pull request.
  */
-export function authorIn(header: unknown): UserRef | null {
-  const pull = (header as { pullRequest?: { author?: { login?: string; avatarUrl?: string } | null } } | null)?.pullRequest;
+export function authorIn(header: AuthorHeaderAnswer): UserRef | null {
+  const pull = header.pullRequest;
   return pull ? githubUser(pull.author?.login ?? 'ghost', pull.author?.avatarUrl) : null;
 }
 
@@ -154,13 +152,37 @@ function withConversationsAndAuthors(
   });
 }
 
+/**
+ * page_data/stack_mergeability (the fields read here): each entry's merge status, `[{ pull: { number, … }, position,
+ * status, … }]`, the way GitHub's components receive them. Where the answer puts that list has not been seen, so it is
+ * a list, or the first one nested in the answer whose entries name their pull; none lists no statuses.
+ */
+export const stackMergeabilityAnswer = z.preprocess(
+  (answer) =>
+    Array.isArray(answer)
+      ? answer
+      : (findInPayload(answer, (_, value) => Array.isArray(value) && value.some((row: unknown) => typeof row === 'object' && row !== null && 'pull' in row && !!row.pull)) ?? []),
+  z.array(z.object({ pull: z.object({ number: z.number().nullish() }).nullish(), status: z.string().nullish() })),
+);
+
+type StackMergeabilityAnswer = z.infer<typeof stackMergeabilityAnswer>;
+
+/** page_data/header, for who opened the PR (the fields read here). */
+export const authorHeaderAnswer = z.object({
+  pullRequest: z.object({ author: z.object({ login: z.string().nullish(), avatarUrl: z.string().nullish() }).nullish() }).nullish(),
+});
+
+type AuthorHeaderAnswer = z.infer<typeof authorHeaderAnswer>;
+
 /** `pullRequestsLayoutRoute.stack` (observed): pulls listed top of the stack first. */
-export interface NativeStack {
-  baseBranch: string;
-  position: number;
-  size: number;
-  pulls: Array<{ number: number; title: string; state: string; url: string; headBranch: string; headOid?: string }>;
-}
+export const nativeStackSchema = z.object({
+  baseBranch: z.string(),
+  position: z.number(),
+  size: z.number(),
+  pulls: z.array(z.object({ number: z.number(), title: z.string(), state: z.string(), url: z.string(), headBranch: z.string(), headOid: z.string().nullish() })),
+});
+
+export type NativeStack = z.infer<typeof nativeStackSchema>;
 
 interface GraphiteEntry {
   number: number;

@@ -3,15 +3,16 @@
 // screen later what the dashboard has not at all (mergeability, reviewers, line counts, failing checks) from each PR's
 // page data.
 
+import { z } from 'zod';
 import type { CheckState, PrEnrichment, PrSummary, RepoRef, StackBranches, View, ViewResult } from '../model';
 import type { InboxRowToEnrich, MergeMethod } from '../rpc';
 import { inboxFilterOf, resolveViewQuery, type GitHubInboxFilter } from '../views';
 import { dynamicWorkflowChecks } from './actions';
-import { checksFrom } from './checks';
-import { mergeState } from './merge-box';
-import { reviewDecisionOf, reviewersOf } from './reviews';
-import { SIGNED_OUT, embeddedPayload, findInPayload, getJson, githubUser, noteShape, politely, request } from './session';
-import { conversationsIn } from './threads';
+import { checksFrom, statusChecksAnswer } from './checks';
+import { mergeBoxAnswer, mergeState, type MergeBoxAnswer } from './merge-box';
+import { reviewDecisionOf, reviewRequestsAnswer, reviewersOf } from './reviews';
+import { SIGNED_OUT, embeddedPayload, findInPayload, getJson, githubUser, politely, readAnswer, request } from './session';
+import { conversationsIn, threadsAnswer } from './threads';
 
 /**
  * Every view's first page of rows, cut to its limit, three views at a time so at most three requests are in flight. A
@@ -30,7 +31,7 @@ export async function fetchInbox(views: View[], scope: string): Promise<ViewResu
   });
 }
 
-/** Page `page` of a view's rows, as GitHub pages its search or section, whole: what "Load more" adds to a section. */
+/** Page `page` of a view's rows, the way GitHub pages its search or section, whole: what "Load more" adds to a section. */
 export function fetchViewPage(view: View, scope: string, page: number): Promise<ViewResult> {
   return fetchView(view, resolveViewQuery(view, scope), page, Infinity);
 }
@@ -39,9 +40,7 @@ async function fetchView(view: View, query: string, page: number, limit: number)
   const section = inboxFilterOf(view);
   let found: { pulls: Pull[]; totalCount: number };
   if (section) {
-    const data = await getJson<unknown>(`/pulls/inbox/queries?filter=${section}&max_pr_age=1m${page > 1 ? `&page=${page}` : ''}`);
-    noteShape('inbox/queries', data);
-    found = pullsIn(data);
+    found = pullsIn(await getJson(`/pulls/inbox/queries?filter=${section}&max_pr_age=1m${page > 1 ? `&page=${page}` : ''}`, sectionAnswer));
   } else {
     found = await searchPulls(query, page);
   }
@@ -55,64 +54,55 @@ async function fetchView(view: View, query: string, page: number, limit: number)
   };
 }
 
-/** Rows and their total from a section or search answer: `{ results, totalCount | pageInfo }`, `{ pulls }` or a bare array. */
-function pullsIn(data: unknown): { pulls: Pull[]; totalCount: number } {
-  const record = (data ?? {}) as Record<string, unknown>;
-  const rows = Array.isArray(data) ? data : Array.isArray(record.results) ? record.results : Array.isArray(record.pulls) ? record.pulls : [];
-  const pulls = rows.filter((row): row is Pull => {
-    const pull = row as Partial<Pull> | null;
-    return typeof pull?.id === 'string' && typeof pull.number === 'number' && (pull.itemType === undefined || pull.itemType === 'pull_request');
-  });
-  const pageInfo = record.pageInfo as { totalCount?: unknown } | undefined;
-  const totalCount = typeof record.totalCount === 'number' ? record.totalCount : typeof pageInfo?.totalCount === 'number' ? pageInfo.totalCount : pulls.length;
-  return { pulls, totalCount };
+/** The pull requests among a section's or search's rows (`{ results, totalCount | pageInfo }` or `{ pulls }`), and their total. */
+function pullsIn(answer: PullsPage): { pulls: Pull[]; totalCount: number } {
+  const pulls = (answer.results ?? answer.pulls ?? []).filter((pull) => pull.itemType == null || pull.itemType === 'pull_request');
+  return { pulls, totalCount: answer.totalCount ?? answer.pageInfo?.totalCount ?? pulls.length };
 }
 
 /**
- * A page of a search's rows (the first unless said), as GitHub's dashboard renders it. Also used for stack neighbours.
- * A search GitHub will not run throws GitHub's reason.
+ * A page of a search's rows (the first unless said), the way GitHub's dashboard renders it. Also used for stack
+ * neighbours. A search GitHub will not run throws GitHub's reason.
  */
 export async function searchPulls(query: string, page = 1): Promise<{ pulls: Pull[]; totalCount: number }> {
   const response = await request(`/pulls/search?${new URLSearchParams({ q: query, ...(page > 1 && { page: String(page) }) })}`, 'application/json');
-  let found: unknown;
-  if (response.headers.get('content-type')?.includes('json')) {
-    const data = (await response.json()) as { payload?: Record<string, unknown> } | null;
-    noteShape('pulls/search (JSON)', data);
-    found = data?.payload?.pullsDashboardSurfaceContentRoute ?? data;
-  } else {
-    const html = new DOMParser().parseFromString(await response.text(), 'text/html');
-    found = embeddedPayload(html, 'pullsDashboardSurfaceContentRoute')?.payload.pullsDashboardSurfaceContentRoute;
-  }
+  // Answered with JSON, the route's data comes in GitHub's `{ payload: { <route>: … } }`, the envelope its deferred fields
+  // come in; answered with a page, it is embedded there. A page without it has no rows.
+  const found = response.headers.get('content-type')?.includes('json')
+    ? readAnswer('/pulls/search', searchAnswer, await response.json()).payload.pullsDashboardSurfaceContentRoute
+    : embeddedPayload(new DOMParser().parseFromString(await response.text(), 'text/html'), 'pullsDashboardSurfaceContentRoute', searchRoute);
   // GitHub answers a search it will not run with a 200, no rows and why: "The search query contains invalid syntax.", or
   // that a date is not one it can read.
-  const { error } = (found ?? {}) as { error?: unknown };
-  if (typeof error === 'string' && error) throw new Error(error);
-  return pullsIn(found);
+  if (found?.error) throw new Error(found.error);
+  return found ? pullsIn(found) : { pulls: [], totalCount: 0 };
 }
 
 /**
  * The deferred fields (review decision, CI rollup, review counts) of these rows, by PR id. The rows still show without
  * them, so a failure is logged and yields none.
  */
-export async function deferredFields(pulls: Pull[], search: { section: GitHubInboxFilter } | { query: string }, page = 1): Promise<Map<string, Partial<Pull>>> {
+export async function deferredFields(pulls: Pull[], search: { section: GitHubInboxFilter } | { query: string }, page = 1): Promise<Map<string, DeferredRow>> {
   if (pulls.length === 0) return new Map();
   const params = new URLSearchParams('section' in search ? { page: String(page) } : { q: search.query, page: String(page) });
   for (const pull of pulls) params.append('ids[]', pull.id);
-  let data: unknown;
+  // A search answers `{ meta, payload: { pullsDashboardSurfaceContentDeferredData: { results: { "0": row, … } } } }` (an
+  // object keyed by index, not an array; verified). Where a section's answer puts its rows has not been seen: they are
+  // looked for wherever GitHub nests them, as the first list or object holding one with a PR's relay id.
+  let rows: DeferredRow[];
   try {
-    data = await getJson<unknown>(`${'section' in search ? '/pulls/inbox/deferred' : '/pulls/deferred'}?${params}`);
+    if ('section' in search) {
+      const answer = await getJson(`/pulls/inbox/deferred?${params}`, z.unknown());
+      const holdsRows = (value: unknown) => typeof value === 'object' && value !== null && Object.values(value).some((row) => z.object({ id: z.string() }).safeParse(row).success);
+      const found = holdsRows(answer) ? answer : findInPayload(answer, (_, value) => holdsRows(value));
+      rows = readAnswer('/pulls/inbox/deferred', z.array(deferredRowSchema), typeof found === 'object' && found !== null ? Object.values(found) : []);
+    } else {
+      const answer = await getJson(`/pulls/deferred?${params}`, searchDeferredAnswer);
+      rows = Object.values(answer.payload.pullsDashboardSurfaceContentDeferredData.results);
+    }
   } catch (error) {
     console.debug('[gg]', 'deferred fields failed; showing the rows without review and CI status:', error instanceof Error ? error.message : error);
     return new Map();
   }
-  noteShape('deferred', data);
-  // The rows sit wherever GitHub nests them: a search answers `{ meta, payload: { pullsDashboardSurfaceContentDeferredData:
-  // { results: { "0": row, … } } } }` (an object keyed by index, not an array); a section's answer is flatter. Each row
-  // carries its PR's relay id.
-  const holdsRows = (value: unknown) =>
-    typeof value === 'object' && value !== null && Object.values(value).some((row) => typeof (row as Partial<Pull> | null)?.id === 'string');
-  const found = holdsRows(data) ? data : findInPayload(data, (_, value) => holdsRows(value));
-  const rows = Object.values((found ?? {}) as Record<string, unknown>).filter((row): row is Pull => typeof (row as Partial<Pull> | null)?.id === 'string');
   return new Map(rows.map((row) => [row.id, row]));
 }
 
@@ -199,38 +189,37 @@ export async function enrichPull(pr: InboxRowToEnrich, mergeMethod: MergeMethod,
   // workflows (Copilot's review), which Graphite counts.
   const asksChecks = pr.state === 'OPEN';
   const [mergeBox, diffstat, reviewRequests, statusChecks, threads] = await Promise.allSettled([
-    asksMergeBox ? getJson<unknown>(`${data}/merge_box?merge_method=${mergeMethod}&bypass_requirements=false`) : null,
-    getJson<{ diffstat?: { linesAdded?: number; linesDeleted?: number } }>(`${data}/diffstat`),
-    getJson<{ pendingReviewRequests?: unknown; completedReviews?: unknown }>(`${data}/review_requests`),
-    asksChecks ? getJson<unknown>(`${data}/status_checks`) : null,
-    getJson<unknown>(`${data}/threads`),
+    asksMergeBox ? getJson(`${data}/merge_box?merge_method=${mergeMethod}&bypass_requirements=false`, mergeBoxAnswer) : null,
+    getJson(`${data}/diffstat`, z.object({ diffstat: z.object({ linesAdded: z.number().nullish(), linesDeleted: z.number().nullish() }).nullish() })),
+    getJson(`${data}/review_requests`, reviewRequestsAnswer),
+    asksChecks ? getJson(`${data}/status_checks`, statusChecksAnswer) : null,
+    getJson(`${data}/threads`, threadsAnswer),
   ]);
   const where = `${pr.repo.owner}/${pr.repo.name}#${pr.number}`;
   const found: PrEnrichment = {};
-  let named: { latestOpinionatedReviews: unknown; pendingReviewRequests: unknown } | null = null;
+  let named: Pick<NonNullable<MergeBoxAnswer['pullRequest']>, 'latestOpinionatedReviews' | 'pendingReviewRequests'> | null = null;
   let numReviewsRequired = 0;
   if (asksMergeBox && mergeBox.status === 'fulfilled') {
     const merge = mergeState(mergeBox.value, { isDraft: pr.isDraft, isOpen: true });
     found.mergeStatus = merge.mergeStatus;
     numReviewsRequired = merge.numReviewsRequired;
     // The first requirement the merge box says is unmet, e.g. "At least 1 approving review is required".
-    const { mergeRequirements } = (mergeBox.value ?? {}) as { mergeRequirements?: { conditions?: Array<{ result?: string; message?: string; description?: string; displayName?: string }> } };
-    const unmet = (Array.isArray(mergeRequirements?.conditions) ? mergeRequirements.conditions : []).find((condition) => condition?.result === 'FAILED');
+    const unmet = (mergeBox.value?.mergeRequirements?.conditions ?? []).find((condition) => condition.result === 'FAILED');
     const reason = unmet?.message || unmet?.description || unmet?.displayName;
     if (reason && (merge.mergeStatus === 'BLOCKED' || merge.mergeStatus === 'BEHIND' || merge.mergeStatus === 'UNSTABLE')) found.mergeBlockedReason = reason;
-    const pendingReviewRequests = findInPayload(mergeBox.value, (key) => key === 'pendingReviewRequests' || key === 'pendingRequestedReviews');
+    const pendingReviewRequests = mergeBox.value?.pullRequest?.pendingReviewRequests;
     if (merge.latestOpinionatedReviews != null || pendingReviewRequests !== undefined) named = { latestOpinionatedReviews: merge.latestOpinionatedReviews, pendingReviewRequests };
     // A fork's head branch says nothing about this repository's stacks.
-    const branches = (mergeBox.value as { pullRequest?: { headRefName?: unknown; baseRefName?: unknown; isCrossRepo?: unknown } } | null)?.pullRequest;
-    if (typeof branches?.baseRefName === 'string' && branches.baseRefName) found.baseRefName = branches.baseRefName;
-    if (typeof branches?.headRefName === 'string' && branches.headRefName && branches.isCrossRepo !== true) found.headRefName = branches.headRefName;
+    const branches = mergeBox.value?.pullRequest;
+    if (branches?.baseRefName) found.baseRefName = branches.baseRefName;
+    if (branches?.headRefName && branches.isCrossRepo !== true) found.headRefName = branches.headRefName;
   } else if (mergeBox.status === 'rejected') {
     const reason: unknown = mergeBox.reason;
     console.debug('[gg]', `page_data/merge_box for ${where} failed; the row keeps its merge status:`, reason instanceof Error ? reason.message : reason);
   }
 
   // Signed out, review_requests is `{}`: it names nobody.
-  const requests = reviewRequests.status === 'fulfilled' && (Array.isArray(reviewRequests.value?.pendingReviewRequests) || Array.isArray(reviewRequests.value?.completedReviews)) ? reviewRequests.value : null;
+  const requests = reviewRequests.status === 'fulfilled' && (reviewRequests.value.pendingReviewRequests || reviewRequests.value.completedReviews) ? reviewRequests.value : null;
   if (reviewRequests.status === 'rejected') {
     const reason: unknown = reviewRequests.reason;
     console.debug('[gg]', `page_data/review_requests for ${where} failed; the row names the reviewers its merge box does:`, reason instanceof Error ? reason.message : reason);
@@ -264,7 +253,7 @@ export async function enrichPull(pr: InboxRowToEnrich, mergeMethod: MergeMethod,
 
   if (asksChecks && statusChecks.status === 'fulfilled') {
     // The merge box names the head branch and commit, by which the Actions list finds GitHub's own dynamic workflow runs.
-    const head = mergeBox.status === 'fulfilled' ? (mergeBox.value as { pullRequest?: { headRefName?: string; headRefOid?: string } } | null)?.pullRequest : null;
+    const head = mergeBox.status === 'fulfilled' ? mergeBox.value?.pullRequest : null;
     const dynamicChecks = head?.headRefName && head.headRefOid ? await dynamicWorkflowChecks(pr.repo, head.headRefName, head.headRefOid) : [];
     const { ci, requiredCheckNames, marksRequired, listed } = checksFrom(statusChecks.value, dynamicChecks);
     if (listed) found.ci = ci;
@@ -281,42 +270,87 @@ export async function enrichPull(pr: InboxRowToEnrich, mergeMethod: MergeMethod,
  * they are enriched: `pullRequest.baseBranch` and `headBranch`, the head only when its repository is `repo` (a fork's
  * head branch says nothing about this repository's stacks). Null when the header names no base branch.
  */
-export function branchesIn(header: unknown, repo: RepoRef): StackBranches | null {
-  const pull = (header as { pullRequest?: { baseBranch?: unknown; headBranch?: unknown; headRepositoryOwnerLogin?: unknown; headRepositoryName?: unknown } } | null)?.pullRequest;
-  if (typeof pull?.baseBranch !== 'string' || !pull.baseBranch) return null;
+export function branchesIn(header: BranchesHeaderAnswer, repo: RepoRef): StackBranches | null {
+  const pull = header.pullRequest;
+  if (!pull?.baseBranch) return null;
   const sameRepository =
-    typeof pull.headRepositoryOwnerLogin === 'string' &&
-    typeof pull.headRepositoryName === 'string' &&
-    pull.headRepositoryOwnerLogin.toLowerCase() === repo.owner.toLowerCase() &&
-    pull.headRepositoryName.toLowerCase() === repo.name.toLowerCase();
-  return { baseRefName: pull.baseBranch, headRefName: sameRepository && typeof pull.headBranch === 'string' && pull.headBranch ? pull.headBranch : null };
+    pull.headRepositoryOwnerLogin?.toLowerCase() === repo.owner.toLowerCase() && pull.headRepositoryName?.toLowerCase() === repo.name.toLowerCase();
+  return { baseRefName: pull.baseBranch, headRefName: sameRepository && pull.headBranch ? pull.headBranch : null };
 }
 
-/** A dashboard row ("Pull"), as GitHub's dashboard components receive it. */
-export interface Pull {
-  id: string;
-  itemType?: string;
-  number: number;
-  title?: string;
-  permalink?: string;
-  repoNameWithOwner?: string;
-  author?: { displayLogin: string } | null;
-  state?: string;
-  displayState?: string;
-  isDraft?: boolean;
-  category?: string | null;
-  createdAt: string;
-  updatedAt: string;
-  mergedAt?: string | null;
-  closedAt?: string | null;
-  isReadByCurrentUser?: boolean | null;
-  commentCount?: number;
-  labels?: Array<{ name: string; color: string }>;
-  stackPosition?: number | null;
-  stackSize?: number | null;
+/** A dashboard row ("Pull"), the fields the inbox reads, from GitHub's dashboard components' props. */
+const pullSchema = z.object({
+  id: z.string(),
+  itemType: z.string().nullish(),
+  number: z.number(),
+  title: z.string().nullish(),
+  permalink: z.string().nullish(),
+  repoNameWithOwner: z.string().nullish(),
+  author: z.object({ displayLogin: z.string() }).nullish(),
+  state: z.string().nullish(),
+  displayState: z.string().nullish(),
+  isDraft: z.boolean().nullish(),
+  category: z.string().nullish(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  mergedAt: z.string().nullish(),
+  closedAt: z.string().nullish(),
+  isReadByCurrentUser: z.boolean().nullish(),
+  commentCount: z.number().nullish(),
+  labels: z.array(z.object({ name: z.string(), color: z.string() })).nullish(),
+  stackPosition: z.number().nullish(),
+  stackSize: z.number().nullish(),
   // Deferred fields, present after /deferred.
-  reviewDecisionState?: string | null;
-  statusCheckRollup?: { state?: string; totalCount: number; successCount: number } | null;
-  approvedReviewsCount?: number;
-  changesRequestedReviewsCount?: number;
-}
+  reviewDecisionState: z.string().nullish(),
+  statusCheckRollup: z.object({ state: z.string().nullish(), totalCount: z.number(), successCount: z.number() }).nullish(),
+  approvedReviewsCount: z.number().nullish(),
+  changesRequestedReviewsCount: z.number().nullish(),
+});
+
+export type Pull = z.infer<typeof pullSchema>;
+
+/** A section's or a search's page of rows (the fields read here). */
+const pullsPageSchema = z.object({
+  results: z.array(pullSchema).nullish(),
+  pulls: z.array(pullSchema).nullish(),
+  totalCount: z.number().nullish(),
+  pageInfo: z.object({ totalCount: z.number().nullish() }).nullish(),
+});
+
+type PullsPage = z.infer<typeof pullsPageSchema>;
+
+/**
+ * /pulls/inbox/queries: unconfirmed, expected `{ results, totalCount }` (docs/research/github-web-endpoints.md); a bare
+ * list of rows is read as its `results`.
+ */
+const sectionAnswer = z.preprocess((answer) => (Array.isArray(answer) ? { results: answer } : answer), pullsPageSchema);
+
+/** `pullsDashboardSurfaceContentRoute`, a search's page: its rows, and `error`, why GitHub would not run it (else null). */
+const searchRoute = pullsPageSchema.extend({ error: z.string().nullish() });
+
+/** /pulls/search answered with JSON: the route's data in GitHub's `{ payload }`. */
+const searchAnswer = z.object({ payload: z.object({ pullsDashboardSurfaceContentRoute: searchRoute }) });
+
+/** A row's deferred fields (review decision, CI rollup, review counts), by its PR's relay id. */
+const deferredRowSchema = pullSchema.pick({ id: true, reviewDecisionState: true, statusCheckRollup: true, approvedReviewsCount: true, changesRequestedReviewsCount: true });
+
+type DeferredRow = z.infer<typeof deferredRowSchema>;
+
+/** /pulls/deferred (verified signed in 2026-10-12): rows keyed by index. */
+const searchDeferredAnswer = z.object({
+  payload: z.object({ pullsDashboardSurfaceContentDeferredData: z.object({ results: z.record(z.string(), deferredRowSchema) }) }),
+});
+
+/** page_data/header, for the branches "Group by stack" chains (the fields read here). */
+export const branchesHeaderAnswer = z.object({
+  pullRequest: z
+    .object({
+      baseBranch: z.string().nullish(),
+      headBranch: z.string().nullish(),
+      headRepositoryOwnerLogin: z.string().nullish(),
+      headRepositoryName: z.string().nullish(),
+    })
+    .nullish(),
+});
+
+type BranchesHeaderAnswer = z.infer<typeof branchesHeaderAnswer>;

@@ -1,16 +1,15 @@
-// Review threads. page_data/threads has their comments but no positions; positions come from the anchors in
-// base_comparison_info's `diffSummaries[].markersMap`. A thread with no anchor is outdated: its path and diff
-// excerpt are read from the thread as the conversation renders it.
+// Review threads. page_data/threads (`{ threads: [thread], aliveChannel }`, its keys confirmed) has their comments but no
+// positions; positions come from the anchors in base_comparison_info's `diffSummaries[].markersMap`. A thread with no
+// anchor is outdated: its path and diff excerpt are read from the thread as the conversation renders it.
 
-import { REACTION_CONTENTS, type Reaction, type ReactionContent, type ReviewThread } from '../model';
+import { z } from 'zod';
+import { REACTION_CONTENTS, type Reaction, type ReviewThread } from '../model';
 import type { BaseComparison } from './files';
-import { githubUser, noteShape } from './session';
+import { githubUser } from './session';
 
 /** The threads, and which review opened which threads (by numeric review id). */
-export function reviewThreads(data: unknown, comparison: BaseComparison, page: Document): { threads: ReviewThread[]; threadIdsByReview: Map<string, string[]> } {
-  noteShape('page_data/threads', data);
-  const record = (data ?? {}) as { threads?: unknown };
-  const list = (Array.isArray(record.threads) ? record.threads : Array.isArray(data) ? data : Object.values(record.threads ?? {})) as RawThread[];
+export function reviewThreads(answer: ThreadsAnswer, comparison: BaseComparison, page: Document): { threads: ReviewThread[]; threadIdsByReview: Map<string, string[]> } {
+  const list = answer.threads ?? [];
 
   const anchors = new Map<string, { path: string; side: 'LEFT' | 'RIGHT'; line: number; startLine: number | null }>();
   for (const summary of comparison.diffSummaries) {
@@ -52,10 +51,10 @@ export function reviewThreads(data: unknown, comparison: BaseComparison, page: D
           subjectId: comment.id ?? null,
           // GitHub lists all eight reactions, given or not.
           reactions: (comment.reactionGroups ?? []).flatMap(({ reaction, reactors, totalCount }): Reaction[] => {
-            const content = reaction?.content as ReactionContent;
+            const content = REACTION_CONTENTS.find((known) => known === reaction?.content);
             const count = totalCount ?? reactors?.length ?? 0;
             const viewerHasReacted = !!reaction?.viewerHasReacted;
-            return REACTION_CONTENTS.includes(content) && (count > 0 || viewerHasReacted) ? [{ content, count, viewerHasReacted }] : [];
+            return content && (count > 0 || viewerHasReacted) ? [{ content, count, viewerHasReacted }] : [];
           }),
         })),
       },
@@ -68,10 +67,8 @@ export function reviewThreads(data: unknown, comparison: BaseComparison, page: D
  * How many of a PR's review conversations (threads) are resolved, of how many: Graphite's counter, for a PR the page
  * does not show. The threads are read as `reviewThreads` reads them.
  */
-export function conversationsIn(data: unknown): { resolved: number; total: number } {
-  const record = (data ?? {}) as { threads?: unknown };
-  const list = (Array.isArray(record.threads) ? record.threads : Array.isArray(data) ? data : Object.values(record.threads ?? {})) as RawThread[];
-  const threads = list.filter((thread) => thread?.id);
+export function conversationsIn(answer: ThreadsAnswer): { resolved: number; total: number } {
+  const threads = (answer.threads ?? []).filter((thread) => thread.id);
   return { resolved: threads.filter((thread) => thread.isResolved).length, total: threads.length };
 }
 
@@ -102,22 +99,45 @@ function threadAsRendered(page: Document, id: string): { path: string; isOutdate
   };
 }
 
-interface RawThread {
-  id: string | number;
-  isResolved?: boolean;
-  pullRequestReviewId?: number | string | null;
-  commentsData?: {
-    comments?: Array<{
-      id?: string;
-      databaseId?: number;
-      reviewId?: number | string;
-      author?: { login?: string; avatarUrl?: string } | null;
-      bodyHTML?: string;
-      createdAt?: string;
-      publishedAt?: string;
-      url?: string;
-      currentDiffResourcePath?: string;
-      reactionGroups?: Array<{ reaction?: { content?: string; viewerHasReacted?: boolean }; reactors?: unknown[]; totalCount?: number }>;
-    }>;
-  };
-}
+/** page_data/threads (the fields read here); a PR without review threads may leave `threads` out. */
+export const threadsAnswer = z.object({
+  threads: z
+    .array(
+      z.object({
+        id: z.union([z.string(), z.number()]),
+        isResolved: z.boolean().nullish(),
+        pullRequestReviewId: z.union([z.number(), z.string()]).nullish(),
+        commentsData: z
+          .object({
+            comments: z
+              .array(
+                z.object({
+                  id: z.string().nullish(),
+                  databaseId: z.number().nullish(),
+                  reviewId: z.union([z.number(), z.string()]).nullish(),
+                  author: z.object({ login: z.string().nullish(), avatarUrl: z.string().nullish() }).nullish(),
+                  bodyHTML: z.string().nullish(),
+                  createdAt: z.string().nullish(),
+                  publishedAt: z.string().nullish(),
+                  url: z.string().nullish(),
+                  currentDiffResourcePath: z.string().nullish(),
+                  reactionGroups: z
+                    .array(
+                      z.object({
+                        reaction: z.object({ content: z.string().nullish(), viewerHasReacted: z.boolean().nullish() }).nullish(),
+                        reactors: z.array(z.unknown()).nullish(),
+                        totalCount: z.number().nullish(),
+                      }),
+                    )
+                    .nullish(),
+                }),
+              )
+              .nullish(),
+          })
+          .nullish(),
+      }),
+    )
+    .nullish(),
+});
+
+type ThreadsAnswer = z.infer<typeof threadsAnswer>;
