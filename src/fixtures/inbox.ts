@@ -2,8 +2,8 @@
 // filters the section editor shows), covering each review, CI and merge state a row can show, native stack positions,
 // conversation counters (with and without a stack), unread rows, long titles, labels, team and bot reviewers, and one
 // row of globex's, the viewer's other organization. The viewer is octocat. Ages are relative to page load so the
-// harness always looks current. Each row has its checks, which the fixture source hands out only as GitHub would: the
-// dashboard's rollup at first, the list (with the required ones) when enriching an open row. The rows in "Needs
+// harness always looks current. Each row has its checks, which the fixture source hands out only the way GitHub would:
+// the dashboard's rollup at first, the list (with the required ones) when enriching an open row. The rows in "Needs
 // anyone's review" have no line counts and no merge state. The stacks' rows chain by branch, which the fixture source
 // names when asked for branches ("Group by stack"): octocat's is one of GitHub's own, across sections, nat's in "Needs
 // your review" a Graphite stack GitHub doesn't track.
@@ -24,7 +24,7 @@ const jdoe: UserRef = { login: 'jdoe', avatarUrl: 'https://avatars.githubusercon
 const kenji: UserRef = { login: 'kenji-w', avatarUrl: 'https://avatars.githubusercontent.com/u/990000105?v=4', url: 'https://github.com/kenji-w' };
 const platformTeam: UserRef = { login: 'acme/platform-reviewers', avatarUrl: '', url: 'https://github.com/orgs/acme/teams/platform-reviewers' };
 const designTeam: UserRef = { login: 'acme/design-systems', avatarUrl: '', url: 'https://github.com/orgs/acme/teams/design-systems' };
-// Bots as GitHub names them: Copilot's review and Dependabot's PRs come without an avatar here, and acme's own CI bot has none.
+// Bots the way GitHub names them: Copilot's review and Dependabot's PRs come without an avatar here, and acme's own CI bot has none.
 const copilot: UserRef = { login: 'Copilot', avatarUrl: '', url: 'https://github.com/apps/copilot-pull-request-reviewer' };
 const dependabot: UserRef = { login: 'dependabot[bot]', avatarUrl: '', url: 'https://github.com/apps/dependabot' };
 const acmeBot: UserRef = { login: 'acme-ci[bot]', avatarUrl: '', url: 'https://github.com/apps/acme-ci' };
@@ -38,17 +38,29 @@ export const inboxFixtures: Fixtures['inbox'] = DEFAULT_VIEWS.map((view) => {
 
 /** The pages after the first: "Merging and recently merged" goes on, as the user's does, for "Load more". */
 export const inboxPageFixtures: Fixtures['inboxPages'] = {
-  'graphite-merging-and-recently-merged': [
-    ['Cache the tenant settings lookup', 'Fix the date picker on Safari 17', 'Rename the billing feature flags', 'Drop the legacy CSV importer', 'Add retries to the webhook sender'],
-    ['Pin the Playwright browsers', 'Log slow queries over 500 ms', 'Move the icons into @acme/ui'],
-  ].map((titles, page) =>
-    titles.map((title, index) => {
+  'graphite-merging-and-recently-merged': (
+    [
+      [
+        ['Cache the tenant settings lookup', mona],
+        ['Fix the date picker on Safari 17', priya],
+        ['Rename the billing feature flags', nat],
+        ['Drop the legacy CSV importer', jdoe],
+        ['Add retries to the webhook sender', kenji],
+      ],
+      [
+        ['Pin the Playwright browsers', mona],
+        ['Log slow queries over 500 ms', priya],
+        ['Move the icons into @acme/ui', nat],
+      ],
+    ] satisfies Array<Array<[string, UserRef]>>
+  ).map((rows, page) =>
+    rows.map(([title, author], index) => {
       const age = (3.5 + page * 2.5 + index * 0.5) * DAY;
       return pr({
         repo: index % 2 ? 'acme/platform' : 'acme/widgets',
         number: 380 - page * 10 - index,
         title,
-        author: [mona, priya, nat, jdoe, kenji][index]!,
+        author,
         updated: age,
         state: 'MERGED',
         mergedAt: new Date(NOW - age).toISOString(),
@@ -502,7 +514,7 @@ function pr(fields: Omit<Partial<InboxFixtureRow>, 'repo'> & { repo: string; num
     isInMergeQueue: false,
     autoMerge: null,
     nativeStack: null,
-    // None, as GitHub's threads would say once the row is enriched.
+    // None, the way GitHub's threads would say once the row is enriched.
     conversations: { resolved: 0, total: 0 },
     ...overrides,
   };

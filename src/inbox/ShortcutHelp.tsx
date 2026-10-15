@@ -27,7 +27,7 @@ export function ShortcutHelp({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** ⌘ on macOS, Ctrl elsewhere; defined first, as SHORTCUTS is built when the module loads. */
+/** ⌘ on macOS, Ctrl elsewhere; defined first, since SHORTCUTS is built when the module loads. */
 const MOD = navigator.userAgent.includes('Mac') ? '⌘' : 'Ctrl+';
 
 const SHORTCUTS: Array<[keys: string[], action: string]> = [

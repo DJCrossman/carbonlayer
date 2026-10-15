@@ -1,4 +1,4 @@
-// What the PR page's comments drawer lists, as Graphite's: the review threads and the comments batched for the pending
+// What the PR page's comments drawer lists, like Graphite's: the review threads and the comments batched for the pending
 // review, narrowed to one reviewer and one status, sorted by where they sit in the diff or by how recent they are,
 // each with the code it sits on. The drawer (CommentsDrawer.tsx) only renders what this picks.
 import type { ReviewThreadDraft } from '../app/data-source';

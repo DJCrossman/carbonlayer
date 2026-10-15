@@ -3,7 +3,7 @@
 // except an open PR's checks, which says why it has none.
 import { useEffect, useState, type ReactNode } from 'react';
 import type { MergeMethod } from '../lib/rpc';
-import type { PrDetail, PrStage } from '../lib/model';
+import { mergeMethodSchema, type PrDetail, type PrStage } from '../lib/model';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
@@ -132,7 +132,7 @@ function StatusCard({
   // Reverting creates a branch on GitHub, so it asks first.
   const [revert, setRevert] = useState<'idle' | 'confirming' | 'reverting'>('idle');
   // The method Merge when ready merges with: auto-merge's own while it is on, else the one picked here.
-  const [picked, setPicked] = useState<MergeMethod>(mergeMethod);
+  const [picked, setPicked] = useState(mergeMethod);
   const method = pr.autoMerge?.method ?? picked;
   const methods = pr.allowedMergeMethods.length > 0 ? pr.allowedMergeMethods : (['SQUASH', 'MERGE', 'REBASE'] as const);
   // Who merged or closed it comes from the last such event in the timeline.
@@ -206,7 +206,7 @@ function StatusCard({
             disabled={busy}
             aria-label="Merge when ready with"
             onChange={async (event) => {
-              const chosen = event.target.value as MergeMethod;
+              const chosen = mergeMethodSchema.parse(event.currentTarget.value);
               setPicked(chosen);
               // While it is on, a new method applies at once.
               if (pr.autoMerge === null) return;
@@ -253,13 +253,14 @@ function ActionCard({
       const state = data[stage];
       return state.status === 'error' ? [{ stage, error: state.error }] : [];
     });
+    const [firstFailure] = failed;
     return (
-      <Card className={`side-card side-action ${failed.length > 0 ? 'is-danger' : 'is-neutral is-checking'}`}>
-        {failed.length > 0 ? (
+      <Card className={`side-card side-action ${firstFailure ? 'is-danger' : 'is-neutral is-checking'}`}>
+        {firstFailure ? (
           <div className="side-action-title" role="alert">
             <Icon name="alert" size={16} />
-            <span className="side-action-failed" title={failed[0]!.error}>
-              Could not check mergeability <span className="pr-muted">· {failed[0]!.error}</span>
+            <span className="side-action-failed" title={firstFailure.error}>
+              Could not check mergeability <span className="pr-muted">· {firstFailure.error}</span>
             </span>
             <Button variant="ghost" size="sm" icon="sync" onClick={() => onRetry(failed.map(({ stage }) => stage))}>
               Retry
@@ -314,7 +315,7 @@ function ActionCard({
           className="gg-btn gg-btn--default gg-btn--md side-action-button"
           href={failingCheck.url}
           onClick={(event) => {
-            // The run opens in this tab, as GitHub's own check links do; ⌘, Ctrl, Shift or Alt leave it to the browser.
+            // The run opens in this tab, like GitHub's own check links; ⌘, Ctrl, Shift or Alt leave it to the browser.
             if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
             event.preventDefault();
             followLink(event.currentTarget.href);
@@ -329,7 +330,7 @@ function ActionCard({
 }
 
 function MergeControls({ pr, mergeMethod, onMerge }: { pr: PrDetail; mergeMethod: MergeMethod; onMerge: (method: MergeMethod) => Promise<boolean> }) {
-  const [method, setMethod] = useState<MergeMethod>(mergeMethod);
+  const [method, setMethod] = useState(mergeMethod);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -364,7 +365,7 @@ function MergeControls({ pr, mergeMethod, onMerge }: { pr: PrDetail; mergeMethod
 
   return (
     <div className="merge-row">
-      <select className="pr-select" value={method} onChange={(event) => setMethod(event.target.value as MergeMethod)} aria-label="Merge method">
+      <select className="pr-select" value={method} onChange={(event) => setMethod(mergeMethodSchema.parse(event.currentTarget.value))} aria-label="Merge method">
         {pr.allowedMergeMethods.map((allowed) => (
           <option key={allowed} value={allowed}>
             {MERGE_LABELS[allowed].short}
@@ -483,7 +484,7 @@ function ChecksCard({ pr, reruns }: { pr: PrDetail; reruns: CheckReruns }) {
                 href={check.url ?? undefined}
                 title={check.description ?? undefined}
                 onClick={(event) => {
-                  // The run opens in this tab, as GitHub's own check links do; ⌘, Ctrl, Shift or Alt leave it to the browser.
+                  // The run opens in this tab, like GitHub's own check links; ⌘, Ctrl, Shift or Alt leave it to the browser.
                   if (!event.currentTarget.href || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
                   event.preventDefault();
                   followLink(event.currentTarget.href);

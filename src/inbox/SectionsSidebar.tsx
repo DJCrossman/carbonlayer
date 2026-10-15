@@ -1,6 +1,6 @@
 // Graphite's sections sidebar: every inbox section of the organization shown, which heads it, with its count, the one in
 // view highlighted; a click scrolls to it. Each row has ↑ / ↓ to reorder and a gear for the section editor; "Add section"
-// at the bottom opens it for a new one. Below it, the viewer's top repositories, as GitHub's homepage lists them.
+// at the bottom opens it for a new one. Below it, the viewer's top repositories, the way GitHub's homepage lists them.
 import { useId, type MouseEvent } from 'react';
 import type { Organization, TopRepository, View, ViewResult } from '../lib/model';
 import { sectionCount } from '../lib/views';

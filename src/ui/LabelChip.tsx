@@ -5,7 +5,9 @@ import './ui.css';
 
 export function LabelChip({ label }: { label: LabelSummary }) {
   const hex = /^#?([0-9a-f]{6})$/i.exec(label.color)?.[1] ?? 'ededed';
-  const [r, g, b] = [0, 2, 4].map((offset) => parseInt(hex.slice(offset, offset + 2), 16)) as [number, number, number];
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
   const max = Math.max(r, g, b) / 255;
   const min = Math.min(r, g, b) / 255;
   const lightness = (max + min) / 2;
@@ -18,14 +20,14 @@ export function LabelChip({ label }: { label: LabelSummary }) {
     else hue = (r - g) / 255 / chroma + 4;
     hue = (hue * 60 + 360) % 360;
   }
-  const style = {
+  const style: CSSProperties & Record<`--label-${string}`, number> = {
     '--label-r': r,
     '--label-g': g,
     '--label-b': b,
     '--label-h': Math.round(hue),
     '--label-s': Math.round(saturation * 100),
     '--label-l': Math.round(lightness * 100),
-  } as CSSProperties;
+  };
   return (
     <span className="gg-label-chip" style={style} title={label.name}>
       {label.name}

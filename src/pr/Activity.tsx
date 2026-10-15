@@ -85,7 +85,7 @@ export function Activity({
                         <div key={commit.id} className="timeline-commit">
                           <Icon name="git-commit" size={14} className="pr-fg-muted" />
                           {commit.author && <Avatar user={commit.author} size={16} />}
-                          {/* A commit opens in this tab, as GitHub's own commit links do; ⌘, Ctrl, Shift or Alt leave it to the browser. */}
+                          {/* A commit opens in this tab, like GitHub's own commit links; ⌘, Ctrl, Shift or Alt leave it to the browser. */}
                           <a
                             className="timeline-commit-message"
                             href={commit.url}

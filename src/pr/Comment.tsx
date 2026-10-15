@@ -68,7 +68,7 @@ export function CopyLink({ url, subject = 'comment' }: { url: string; subject?: 
 /** GitHub's own rendering of a Markdown body (already sanitised by GitHub). Links leave the iframe properly. */
 export function Markdown({ html, className }: { html: string; className?: string }) {
   const onClick = (event: MouseEvent<HTMLDivElement>) => {
-    const anchor = (event.target as Element).closest('a[href]');
+    const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null;
     if (!(anchor instanceof HTMLAnchorElement) || anchor.getAttribute('href')?.startsWith('#')) return;
     // A click with ⌘, Ctrl, Shift or Alt is the browser's: a new tab or window, or a download.
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;

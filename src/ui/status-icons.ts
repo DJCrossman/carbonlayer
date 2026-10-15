@@ -1,5 +1,5 @@
-// What the inbox's Review, CI and Merge columns show for a pull request, as Graphite draws them: one icon each, in a
-// tone, with a tooltip that says why. One function per column, so the PR page can show the same verdicts.
+// What the inbox's Review, CI and Merge columns show for a pull request, the way Graphite draws them: one icon each, in
+// a tone, with a tooltip that says why. One function per column, so the PR page can show the same verdicts.
 import type { CiSummary, PrSummary, ReviewDecision, ReviewerSummary } from '../lib/model';
 import type { IconName } from './Icon';
 

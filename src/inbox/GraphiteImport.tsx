@@ -9,7 +9,8 @@
 // replaces the views or is dismissed.
 import { Fragment, useEffect, useId, useState } from 'react';
 import { browser } from 'wxt/browser';
-import { importGraphiteSections, type GraphiteInboxSnapshot } from '../lib/graphite';
+import { z } from 'zod';
+import { graphiteInboxSnapshot, importGraphiteSections } from '../lib/graphite';
 import type { Organization, RepoRef, View } from '../lib/model';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
@@ -50,7 +51,7 @@ export function GraphiteImport({
   useEffect(() => {
     // Standalone (the harness) no extension copies anything.
     if (!browser?.runtime?.id) return;
-    const show = (copy: GraphiteCopy | undefined) => {
+    const show = (copy: z.infer<typeof graphiteCopy> | undefined) => {
       if (!copy) return;
       setWaitingForGraphite(false);
       if ('error' in copy) {
@@ -68,12 +69,12 @@ export function GraphiteImport({
       }
     };
     void browser.storage.local.get('graphiteImport').then(({ graphiteImport }) => {
-      const copy = graphiteImport as GraphiteCopy | undefined;
+      const copy = graphiteCopy.optional().parse(graphiteImport);
       // Why an earlier copy failed is not news now.
       if (copy && !('error' in copy)) show(copy);
     });
     const onChanged = (changes: Record<string, { newValue?: unknown }>, area: string) => {
-      if (area === 'local' && changes.graphiteImport) show(changes.graphiteImport.newValue as GraphiteCopy | undefined);
+      if (area === 'local' && changes.graphiteImport) show(graphiteCopy.optional().parse(changes.graphiteImport.newValue));
     };
     browser.storage.onChanged.addListener(onChanged);
     return () => browser.storage.onChanged.removeListener(onChanged);
@@ -249,4 +250,4 @@ export function GraphiteImport({
 }
 
 /** What the background stores under `graphiteImport` in storage.local: the sections copied, or why copying failed. */
-type GraphiteCopy = ({ at: string } & GraphiteInboxSnapshot) | { at: string; error: string };
+const graphiteCopy = z.union([graphiteInboxSnapshot.extend({ at: z.string() }), z.object({ at: z.string(), error: z.string() })]);

@@ -23,13 +23,13 @@ export function OrgPicker({
   onChange: (org: Organization) => void;
 }) {
   const popoverId = useId();
-  const root = useRef<HTMLDivElement>(null);
+  const root = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     const onMouseDown = (event: MouseEvent) => {
-      if (!root.current?.contains(event.target as Node)) setOpen(false);
+      if (!(event.target instanceof Node) || !root.current?.contains(event.target)) setOpen(false);
     };
     document.addEventListener('mousedown', onMouseDown);
     return () => document.removeEventListener('mousedown', onMouseDown);

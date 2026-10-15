@@ -1,5 +1,5 @@
-// One status column's verdict (src/ui/status-icons.ts) as Graphite draws it: a 16px icon in its tone, the reason on hover
-// anywhere over the cell.
+// One status column's verdict (src/ui/status-icons.ts) the way Graphite draws it: a 16px icon in its tone, the reason on
+// hover anywhere over the cell.
 import { Icon } from './Icon';
 import type { StatusIcon as Status } from './status-icons';
 import './ui.css';

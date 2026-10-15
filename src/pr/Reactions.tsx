@@ -16,8 +16,8 @@ export function Reactions({
 }) {
   const page = useContext(PrReactions);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const anchor = useRef<HTMLDivElement>(null);
-  const smiley = useRef<HTMLButtonElement>(null);
+  const anchor = useRef<HTMLDivElement | null>(null);
+  const smiley = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     if (!pickerOpen) return;
@@ -125,8 +125,8 @@ const REACTIONS: Record<ReactionContent, { emoji: string; name: string }> = {
 };
 
 /**
- * The reactions as GitHub last gave them, with the viewer's own as this page last set them: one GitHub already shows
- * changes nothing, any other moves its count by one. GitHub's order; a reaction nobody gives any more goes.
+ * The reactions the way GitHub last gave them, with the viewer's own as this page last set them: one GitHub already
+ * shows changes nothing, any other moves its count by one. GitHub's order; a reaction nobody gives any more goes.
  */
 function reactionsAfter(reactions: Reaction[], changed: Partial<Record<ReactionContent, boolean>> = {}): Reaction[] {
   const pending = REACTION_CONTENTS.filter(

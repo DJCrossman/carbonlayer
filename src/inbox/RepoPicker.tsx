@@ -25,7 +25,7 @@ export function RepoPicker({
   onChange: (repos: RepoRef[]) => void;
 }) {
   const popoverId = useId();
-  const root = useRef<HTMLDivElement>(null);
+  const root = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<RepoRef[]>(selected);
   const [text, setText] = useState('');
@@ -42,7 +42,7 @@ export function RepoPicker({
   useEffect(() => {
     if (!open) return;
     const onMouseDown = (event: MouseEvent) => {
-      if (!root.current?.contains(event.target as Node)) close();
+      if (!(event.target instanceof Node) || !root.current?.contains(event.target)) close();
     };
     document.addEventListener('mousedown', onMouseDown);
     return () => document.removeEventListener('mousedown', onMouseDown);
@@ -73,9 +73,11 @@ export function RepoPicker({
     ...(text.trim() ? [] : draft.filter((repo) => !results.some((other) => other.owner === repo.owner && other.name === repo.name))),
     ...results,
   ];
-  const typed = /^[\w.-]+\/[\w.-]+$/.test(text.trim()) ? { owner: text.trim().split('/')[0]!, name: text.trim().split('/')[1]! } : null;
+  const [, typedOwner, typedName] = /^([\w.-]+)\/([\w.-]+)$/.exec(text.trim()) ?? [];
+  const typed = typedOwner && typedName ? { owner: typedOwner, name: typedName } : null;
   if (typed && !listed.some((repo) => repo.owner.toLowerCase() === typed.owner.toLowerCase() && repo.name.toLowerCase() === typed.name.toLowerCase())) listed.push(typed);
-  const label = selected.length === 0 ? emptyLabel : `${selected[0]!.owner}/${selected[0]!.name}${selected.length > 1 ? ` +${selected.length - 1}` : ''}`;
+  const [firstSelected] = selected;
+  const label = firstSelected ? `${firstSelected.owner}/${firstSelected.name}${selected.length > 1 ? ` +${selected.length - 1}` : ''}` : emptyLabel;
 
   return (
     <div ref={root} className={chip ? 'gg-repo-picker is-chip' : 'gg-repo-picker'}>

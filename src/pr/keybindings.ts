@@ -69,7 +69,7 @@ export const PR_KEYBINDINGS: ReadonlyArray<{ chord: string; action: PrAction; la
  * 'pending'; the chord completes if the next stroke arrives within `timeoutMs`. A stroke that does
  * not continue the pending chord is read afresh. Modifier-only presses are ignored.
  */
-export function createChordReader<A>(
+export function createChordReader<A,>(
   bindings: ReadonlyArray<{ chord: string; action: A }>,
   { isMac, timeoutMs = 1500 }: { isMac: boolean; timeoutMs?: number },
 ): (event: KeyEventLike) => { action: A } | 'pending' | null {
@@ -103,7 +103,7 @@ export function createChordReader<A>(
     const otherMod = isMac ? event.ctrlKey : event.metaKey;
     if (stroke.mod !== mod || otherMod || stroke.alt !== event.altKey) return false;
     // A printable key already carries its shift state ("?" is shift+/), so shift only matters for
-    // named keys such as ArrowDown, and beside ⌘ / Ctrl, where the key may not show it (macOS can report
+    // named keys like ArrowDown, and beside ⌘ / Ctrl, where the key may not show it (macOS can report
     // ⌘⇧C as "c"): ⌘C must not take DevTools' ⌘⇧C.
     if (stroke.key.length === 1 && !stroke.mod) return event.key === stroke.key;
     return event.key === stroke.key && stroke.shift === event.shiftKey;

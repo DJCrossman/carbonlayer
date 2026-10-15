@@ -164,7 +164,7 @@ export function commentedRows(patch: string, first: DiffLineRef, last: DiffLineR
   return null;
 }
 
-/** A line on one side of a diff, as GitHub names it: the old file's (LEFT) or the new file's (RIGHT). */
+/** A line on one side of a diff, the way GitHub names it: the old file's (LEFT) or the new file's (RIGHT). */
 export interface DiffLineRef {
   side: 'LEFT' | 'RIGHT';
   line: number;

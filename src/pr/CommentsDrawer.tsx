@@ -49,8 +49,8 @@ export function CommentsDrawer({
   onRetry: () => void;
   onClose: () => void;
 }) {
-  const [filters, setFilters] = useState<DrawerFilters>({ reviewer: null, status: 'open', order: 'file' });
-  const panel = useRef<HTMLElement>(null);
+  const [filters, setFilters] = useState((): DrawerFilters => ({ reviewer: null, status: 'open', order: 'file' }));
+  const panel = useRef<HTMLElement | null>(null);
   const { shown, hidden, counts, reviewers } = useMemo(() => drawerContents(threads, batch, files, filters, viewerLogin), [threads, batch, files, filters, viewerLogin]);
   const showAll = () => setFilters((current) => ({ ...current, reviewer: null, status: 'all' }));
   const reviewer = reviewers.find((user) => user.login === filters.reviewer);
@@ -61,8 +61,8 @@ export function CommentsDrawer({
   const close = () => {
     // Focus inside it goes back to the Comments button in view rather than nowhere: the sidebar's, while it shows one.
     if (panel.current?.contains(document.activeElement)) {
-      const toggle = document.querySelector<HTMLElement>('.side-pr-actions .pr-comments-toggle') ?? document.querySelector<HTMLElement>('.pr-comments-toggle');
-      toggle?.focus({ preventScroll: true });
+      const toggle = document.querySelector('.side-pr-actions .pr-comments-toggle') ?? document.querySelector('.pr-comments-toggle');
+      if (toggle instanceof HTMLElement) toggle.focus({ preventScroll: true });
     }
     onClose();
   };
@@ -199,7 +199,7 @@ function Conversation({
   actions: NoteActions;
   onJump: () => void;
 }) {
-  const card = useRef<HTMLElement>(null);
+  const card = useRef<HTMLElement | null>(null);
   // The reply being written; null while the reply box is closed.
   const [reply, setReply] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -214,7 +214,10 @@ function Conversation({
   const closeReply = () => {
     setReply(null);
     // Back on the Reply button, from where Esc closes the drawer.
-    requestAnimationFrame(() => card.current?.querySelector<HTMLElement>('.comments-drawer-reply-toggle')?.focus());
+    requestAnimationFrame(() => {
+      const toggle = card.current?.querySelector('.comments-drawer-reply-toggle');
+      if (toggle instanceof HTMLElement) toggle.focus();
+    });
   };
   const sendReply = async () => {
     if (!thread || reply === null) return;
@@ -326,7 +329,7 @@ function FilterMenu({
   items: Array<{ key: string; label: ReactNode; checked?: boolean; onSelect: () => void } | null>;
 }) {
   const [open, setOpen] = useState(false);
-  const anchor = useRef<HTMLDivElement>(null);
+  const anchor = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -346,7 +349,8 @@ function FilterMenu({
         // Only the menu closes, not the drawer.
         event.preventDefault();
         setOpen(false);
-        anchor.current?.querySelector<HTMLElement>('.comments-filter-button')?.focus();
+        const button = anchor.current?.querySelector('.comments-filter-button');
+        if (button instanceof HTMLElement) button.focus();
       }}
     >
       <Button size="sm" className="comments-filter-button" aria-label={`${name} filter`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
@@ -382,5 +386,5 @@ function FilterMenu({
   );
 }
 
-/** The status filter's choices as Graphite names them; "All threads" once Clear all or Show all have cleared it. */
+/** The status filter's choices the way Graphite names them; "All threads" once Clear all or Show all have cleared it. */
 const STATUS_LABELS: Record<DrawerFilters['status'], string> = { open: 'Open', resolved: 'Resolved', pending: 'Added to review', all: 'All threads' };

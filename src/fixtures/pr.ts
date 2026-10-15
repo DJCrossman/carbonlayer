@@ -287,7 +287,7 @@ const zonesTs = [
   '  return Number(hours) * 60 + Number(minutes);',
   '}',
   '',
-  "export const DEFAULT_ZONE = 'main' as ZoneId;",
+  "export const DEFAULT_ZONE = 'main';",
 ];
 
 const legacyTs = [
@@ -314,12 +314,12 @@ const clientTs = [
   'export class ParcsClient {',
   '  constructor(private readonly options: ParcsClientOptions) {}',
   '',
-  '  async get<T>(path: string): Promise<T> {',
+  '  async get(path: string): Promise<unknown> {',
   '    const response = await fetch(`${this.options.baseUrl}${path}`, {',
   '      headers: { authorization: `Bearer ${this.options.apiKey}` },',
   '    });',
   '    if (!response.ok) throw new Error(`PARCS ${response.status}`);',
-  '    return response.json() as Promise<T>;',
+  '    return response.json();',
   '  }',
   '',
   '  async post(path: string, body: unknown): Promise<void> {',

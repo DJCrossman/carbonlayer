@@ -212,7 +212,7 @@ function PrRow({
   onIntent: (pr: PrSummary) => void;
   onOpen: (pr: PrSummary, newTab: boolean) => void;
 }) {
-  const row = useRef<HTMLDivElement>(null);
+  const row = useRef<HTMLDivElement | null>(null);
   // The pointer resting 150 ms on the row, not passing over it.
   const resting = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(resting.current), []);

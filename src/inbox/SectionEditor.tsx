@@ -1,9 +1,10 @@
 // The section editor, Graphite's "Update section" drawer for one inbox view: its name, its repositories and its filter,
-// edited row by row as Graphite does (each row one rule: what, how, which values; rows ANDed, "Add filter" ORs another
+// edited row by row like Graphite's (each row one rule: what, how, which values; rows ANDed, "Add filter" ORs another
 // group), or, under "Advanced", its search query by hand. Saving compiles the filter into the view's query with the same
 // mapping as the Graphite import (src/lib/graphite.ts). Opened from the inbox and the options page.
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { z } from 'zod';
 import { RULE_KINDS, searchForFilter, type GraphiteFilter, type GraphiteRule } from '../lib/graphite';
 import type { OrgMember, RepoCandidate, RepoRef, View } from '../lib/model';
 import { GITHUB_INBOX_FILTERS } from '../lib/views';
@@ -39,7 +40,15 @@ export function SectionEditor({
   const [groups, setGroups] = useState<RuleGroup[] | null>(() => {
     if (!view) return [newFilterGroup()];
     return view.filter
-      ? view.filter.groups.map((group) => ({ key: crypto.randomUUID(), rules: group.rules.map((rule) => ({ ...rule, key: crypto.randomUUID(), kind: rule.conditions[0]!.kind })) }))
+      ? view.filter.groups.map((group) => ({
+          key: crypto.randomUUID(),
+          rules: group.rules.map((rule) => {
+            // The filter's schema holds every rule to at least one condition, all of one kind.
+            const [first] = rule.conditions;
+            if (!first) throw new Error('A rule of the filter has no conditions');
+            return { ...rule, key: crypto.randomUUID(), kind: first.kind };
+          }),
+        }))
       : null;
   });
   const [query, setQuery] = useState(view && !view.filter ? view.query : '');
@@ -259,11 +268,14 @@ function RuleRow({ rule, first, people, onChange, onRemove }: { rule: Rule; firs
   const { label, field, verbs = ['is', 'is not'] } = RULE_KINDS[rule.kind] ?? { label: rule.kind };
   // Imported filters can hold kinds the editor does not offer; they stay as they are.
   const kinds = OFFERED_KINDS.includes(rule.kind) ? OFFERED_KINDS : [...OFFERED_KINDS, rule.kind];
-  const values = field ? rule.conditions.map((condition) => condition[field] as string | number) : [];
-  const setValues = (next: Array<string | number>) => onChange({ ...rule, conditions: next.map((value) => ({ kind: rule.kind, [field!]: value })) });
+  // The filter's schema holds each condition to the value its kind needs: a number of hours, else a string.
+  const values = field ? rule.conditions.map((condition) => z.union([z.string(), z.number()]).parse(condition[field])) : [];
+  const setValues = (next: Array<string | number>) => {
+    if (field) onChange({ ...rule, conditions: next.map((value) => ({ kind: rule.kind, [field]: value })) });
+  };
   const choices = CHOICES[rule.kind];
   // An imported window that is not one of the editor's stays offered.
-  const windows = CHOICES.LAST_UPDATED!.some(([hours]) => hours === values[0]) ? CHOICES.LAST_UPDATED! : [...CHOICES.LAST_UPDATED!, [values[0] ?? 168, `${values[0]} hours`] as const];
+  const windows = CHOICES.LAST_UPDATED.some(([hours]) => hours === values[0]) ? CHOICES.LAST_UPDATED : [...CHOICES.LAST_UPDATED, [values[0] ?? 168, `${values[0]} hours`] as const];
   return (
     <div className="gg-editor__rule">
       <span className="gg-editor__join">{first ? '' : 'And'}</span>
@@ -274,7 +286,8 @@ function RuleRow({ rule, first, people, onChange, onRemove }: { rule: Rule; firs
           const kind = event.target.value;
           // A kind with a fixed set of values starts on the usual one; the others wait for the user's.
           const initial = CHOICES[kind]?.[kind === 'LAST_UPDATED' ? 2 : 0]?.[0];
-          onChange({ ...rule, kind, conditions: initial === undefined ? [] : [{ kind, [RULE_KINDS[kind]!.field!]: initial }] });
+          const kindField = RULE_KINDS[kind]?.field;
+          onChange({ ...rule, kind, conditions: initial === undefined || !kindField ? [] : [{ kind, [kindField]: initial }] });
         }}
       >
         {kinds.map((kind) => (
@@ -301,7 +314,7 @@ function RuleRow({ rule, first, people, onChange, onRemove }: { rule: Rule; firs
         ) : choices ? (
           <>
             {values.map((value) => {
-              // Values the editor does not offer (Merging, say) read as Graphite's constant does.
+              // Values the editor does not offer (Merging, say) read the way Graphite's constant does.
               const text = choices.find(([choice]) => choice === value)?.[1] ?? String(value).charAt(0) + String(value).slice(1).toLowerCase().replace(/_/g, ' ');
               return (
                 <span key={value} className="gg-editor__chip">
@@ -365,7 +378,7 @@ function ValuesInput({
   onChange: (values: string[]) => void;
 }) {
   const listId = useId();
-  const list = useRef<HTMLUListElement>(null);
+  const list = useRef<HTMLUListElement | null>(null);
   const [text, setText] = useState('');
   // Whether the people matching what is typed show under the field, and which of them ↑ / ↓ or the mouse reached.
   const [listing, setListing] = useState(false);
@@ -516,8 +529,8 @@ const OFFERED_KINDS = [
   'LAST_UPDATED',
 ];
 
-/** The values offered for the kinds that have a fixed set, as Graphite's editor names them; only those GitHub can search. */
-const CHOICES: Record<string, Array<readonly [string | number, string]>> = {
+/** The values offered for the kinds that have a fixed set, in the words of Graphite's editor; only those GitHub can search. */
+const CHOICES: { LAST_UPDATED: Array<readonly [number, string]>; [kind: string]: Array<readonly [string | number, string]> } = {
   CONSOLIDATED_PR_STATUS_IS: [
     ['OPEN', 'Open'],
     ['DRAFT', 'Draft'],

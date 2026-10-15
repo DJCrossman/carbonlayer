@@ -13,7 +13,7 @@ import type { DataSource } from '../app/data-source';
 import { SaveCacheNow } from '../app/query-cache';
 import { toGitHubUrl, type AppRoute } from '../app/routes';
 import { useSettings } from '../app/use-settings';
-import type { Organization, PrSummary, RepoRef, StackBranches, TopRepository, View, ViewResult } from '../lib/model';
+import { viewResultSchema, type Organization, type PrSummary, type RepoRef, type StackBranches, type TopRepository, type View, type ViewResult } from '../lib/model';
 import type { Settings } from '../lib/settings';
 import { encodeViewsShareLink, sectionCount } from '../lib/views';
 import { createChordReader } from '../pr/keybindings';
@@ -42,14 +42,14 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   const topRepositories = useTopRepositories(source, inbox.org, inbox.settings?.inboxRepos ?? NO_REPOS);
   const moreRows = useMoreRows(source, inbox.org);
   const { settings, org } = inbox;
-  // Each section's rows as GitHub's dashboard gave them: its first page, then those "Load more" added. A section that
-  // could not load says why in place of its rows, those "Load more" added before too.
+  // Each section's rows the way GitHub's dashboard gave them: its first page, then those "Load more" added. A section
+  // that could not load says why in place of its rows, those "Load more" added before too.
   const dashboard = inbox.results.map((result) => ({
     result,
     added: result.error ? [] : (moreRows.addedTo(result.view, settings?.inboxScope ?? '')?.prs.filter((pr) => !result.prs.some((first) => first.id === pr.id)) ?? []),
   }));
-  // Enrichment is asked about rows as GitHub's dashboard gave them, by id: its key follows the dashboard's own CI rollup,
-  // which the enriched checks replace on screen, so the row is asked again when the rollup moves on and not before.
+  // Enrichment is asked about rows the way GitHub's dashboard gave them, by id: its key follows the dashboard's own CI
+  // rollup, which the enriched checks replace on screen, so the row is asked again when the rollup moves on and not before.
   const dashboardRows = new Map(dashboard.flatMap(({ result, added }) => [...result.prs, ...added].map((pr) => [pr.id, pr] as const)));
   const enrichment = useRowEnrichment(source, [...dashboardRows.values()], settings?.mergeMethod ?? 'MERGE');
   const loadAhead = useLoadAhead(source);
@@ -130,8 +130,9 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
     if (copy !== null && copy !== 'pending') {
       // The row under the pointer, else the one selected. With neither, or for ⌘C with text selected, the key stays the
       // browser's.
-      const row = document.querySelector<HTMLElement>('.gg-row:hover');
-      const at = row?.dataset.prId ? { viewId: row.closest<HTMLElement>('[data-view-id]')?.dataset.viewId ?? '', prId: row.dataset.prId } : selected;
+      const row = document.querySelector('.gg-row:hover');
+      const section = row?.closest('[data-view-id]');
+      const at = row instanceof HTMLElement && row.dataset.prId ? { viewId: (section instanceof HTMLElement ? section.dataset.viewId : undefined) ?? '', prId: row.dataset.prId } : selected;
       const pr = at && resultsByView.get(at.viewId)?.prs.find((candidate) => candidate.id === at.prId);
       if (!pr || (copy.action === 'copy-title-link' && document.getSelection()?.type === 'Range')) return;
       event.preventDefault();
@@ -527,10 +528,12 @@ function useInbox(source: DataSource, organizations: Organization[] | null) {
       // A section whose search changed (the repositories chosen, its query or limit) shows its last answer for the
       // organization until GitHub answers the new one.
       placeholderData: () =>
-        queryClient
-          .getQueryCache()
-          .findAll({ queryKey: ['inbox', org?.login], predicate: ({ queryKey, state }) => queryKey[3] === view.id && state.data !== undefined })
-          .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt)[0]?.state.data as ViewResult | undefined,
+        viewResultSchema.optional().parse(
+          queryClient
+            .getQueryCache()
+            .findAll({ queryKey: ['inbox', org?.login], predicate: ({ queryKey, state }) => queryKey[3] === view.id && state.data !== undefined })
+            .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt)[0]?.state.data,
+        ),
     })),
   });
   useEffect(() => {
@@ -699,8 +702,9 @@ function useTopRepositories(source: DataSource, org: Organization | null, chosen
   const owner = org?.login.toLowerCase() ?? null;
   const pages = useInfiniteQuery({
     queryKey: ['top-repositories'],
-    queryFn: ({ pageParam }) => source.listTopRepositories(pageParam),
-    initialPageParam: null as number | null,
+    // The first page has no cursor; each later one, the cursor the page before it named.
+    queryFn: ({ pageParam }: { pageParam: number | null }) => source.listTopRepositories(pageParam),
+    initialPageParam: null,
     getNextPageParam: (page) => page.nextCursor,
     staleTime: 10 * 60_000,
     enabled: chosen.length === 0 && owner !== null,
@@ -768,7 +772,7 @@ function useSectionInView(views: View[] | undefined): [string | null, (viewId: s
       // A smooth scroll to the section just gone to is not the reader scrolling.
       if (goneTo.current && Date.now() - goneTo.current.at < 1000) return;
       goneTo.current = null;
-      const sections = [...document.querySelectorAll<HTMLElement>('[data-view-id]')];
+      const sections = [...document.querySelectorAll('[data-view-id]')].filter((section) => section instanceof HTMLElement);
       const reached = sections.find((section) => section.getBoundingClientRect().bottom > 60) ?? sections.at(-1);
       setCurrent(reached?.dataset.viewId ?? null);
     };

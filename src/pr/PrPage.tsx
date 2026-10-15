@@ -53,7 +53,7 @@ function PrStagesView({ source, route, settings }: { source: DataSource; route: 
   const { data, reload } = usePrPageData(source, route.repo, route.number);
   const header = data.header;
   const prId = header.value?.id;
-  // Every comment box on the page previews its Markdown as GitHub renders it on this PR.
+  // Every comment box on the page previews its Markdown the way GitHub renders it on this PR.
   const previewMarkdown = useCallback((text: string) => source.previewMarkdown(text, prId ?? ''), [source, prId]);
   const title = header.value ? `${header.value.title} · #${header.value.number}` : `#${route.number}`;
   useEffect(() => {
@@ -91,7 +91,7 @@ function PrView({
   section: Extract<AppRoute, { page: 'pr' }>['section'];
   comment: Extract<AppRoute, { page: 'pr' }>['comment'];
 }) {
-  const [edits, setEdits] = useState<PendingEdits>({ viewed: {}, resolved: {}, isDraft: null, autoMerge: null, reactions: {} });
+  const [edits, setEdits] = useState((): PendingEdits => ({ viewed: {}, resolved: {}, isDraft: null, autoMerge: null, reactions: {} }));
   const pr = useMemo(() => optimisticPr(prDetailFrom(header, data), edits), [header, data, edits]);
   const files = useFileReview(pr);
   const checkReruns = useCheckReruns(pr, source, () => reload(STAGES_A_WRITE_CHANGES['pr.rerunFailedJobs']));
@@ -620,7 +620,7 @@ function PrActions({
   onCopied: () => void;
   inSidebar?: boolean;
 }) {
-  const menu = useRef<HTMLDivElement>(null);
+  const menu = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -690,7 +690,7 @@ function PrActions({
  * the sidebar would clip it.
  */
 function FinishReview({ batchCount, onToggle, popover, floating }: { batchCount: number; onToggle: () => void; popover: ReactNode; floating: boolean }) {
-  const anchor = useRef<HTMLDivElement>(null);
+  const anchor = useRef<HTMLDivElement | null>(null);
   const [at, setAt] = useState<{ top: number; right: number; above: boolean } | null>(null);
   useLayoutEffect(() => {
     if (!popover || !floating) return;
@@ -732,7 +732,7 @@ function FinishReview({ batchCount, onToggle, popover, floating }: { batchCount:
 }
 
 /**
- * Opens the page at the comment a GitHub link to the PR names (`route.comment`) and marks it, as GitHub's own page does:
+ * Opens the page at the comment a GitHub link to the PR names (`route.comment`) and marks it, like GitHub's own page:
  * the description, a comment or review in the activity, or a comment in a diff thread, once the stage that has it has
  * arrived. A link to a comment the page does not show (hidden, or gone) leaves the page as it is.
  */

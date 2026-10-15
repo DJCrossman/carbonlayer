@@ -33,7 +33,7 @@ export function StatePill({ pr }: { pr: Pick<PrSummary, 'state' | 'isDraft'> }) 
 }
 
 /**
- * The comment box every composer on the page uses, as GitHub's: Write and Preview tabs, GitHub's formatting toolbar and
+ * The comment box every composer on the page uses, like GitHub's: Write and Preview tabs, GitHub's formatting toolbar and
  * the shortcuts GitHub documents for comments, lists that carry on with Enter, and a URL pasted over text linking it
  * (markdown-editing.ts says what each does to the text). ⌘↵ / Ctrl+↵ submits, Esc cancels, and it grows with its content.
  */
@@ -59,8 +59,8 @@ export function CommentInput({
   /** The commented lines' current text: adds GitHub's "Add a suggestion", which puts them in a suggestion block. */
   suggestion?: () => string;
 }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  const previewTab = useRef<HTMLButtonElement>(null);
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  const previewTab = useRef<HTMLButtonElement | null>(null);
   const preview = useContext(MarkdownPreview);
   // While Preview shows: the height Write had, which the preview keeps so the box does not jump.
   const [previewing, setPreviewing] = useState<{ height: number } | null>(null);
@@ -69,7 +69,7 @@ export function CommentInput({
   // Where a command's selection goes once React shows its text, when the browser could not type the text in itself.
   const selectionAfter = useRef<Draft | null>(null);
   const isMac = navigator.userAgent.includes('Mac');
-  const tools: Tool[][] = suggestion
+  const tools: Array<[Tool, ...Tool[]]> = suggestion
     ? [[{ label: 'Add a suggestion', icon: 'file-diff', keys: 'G', stroke: 'g', command: (draft) => insertSuggestion(draft, suggestion()) }], ...TOOLBAR]
     : TOOLBAR;
 
@@ -198,7 +198,7 @@ export function CommentInput({
         {!previewing && (
           <div className="pr-comment-box-toolbar" role="toolbar" aria-label="Formatting">
             {tools.map((group, index) => (
-              <Fragment key={group[0]!.label}>
+              <Fragment key={group[0].label}>
                 {index > 0 && <span className="pr-comment-box-divider" />}
                 {group.map((tool) => (
                   <button
@@ -236,14 +236,14 @@ export function CommentInput({
   );
 }
 
-/** Renders a comment's Markdown as GitHub will show it, for the Preview tab of every comment box inside it. */
+/** Renders a comment's Markdown the way GitHub will show it, for the Preview tab of every comment box inside it. */
 export const MarkdownPreview = createContext<((text: string) => Promise<string>) | null>(null);
 
 /**
  * A part of the page fed by one stage of its data: its skeleton until the stage first arrives, then what `children`
  * renders from it. When the stage failed, a one-line error with a retry, below what it showed before if anything.
  */
-export function Staged<T>({
+export function Staged<T,>({
   state,
   what,
   skeleton,
@@ -322,8 +322,8 @@ function CommentPreview({ text, render, minHeight }: { text: string; render: ((t
 }
 
 /**
- * A toolbar button of the comment box. `keys` is its shortcut after ⌘ / Ctrl as GitHub's docs write it; `stroke` is
- * how the box's keydown reads that shortcut.
+ * A toolbar button of the comment box. `keys` is its shortcut after ⌘ / Ctrl the way GitHub's docs write it; `stroke`
+ * is how the box's keydown reads that shortcut.
  */
 interface Tool {
   label: string;
@@ -337,7 +337,7 @@ interface Tool {
  * GitHub's comment toolbar, in its order and groups, with the shortcuts GitHub documents for comments ("Keyboard
  * shortcuts", docs.github.com) and its task list's ⌘⇧L (GitHub's command list; the docs leave it out).
  */
-const TOOLBAR: Tool[][] = [
+const TOOLBAR: Array<[Tool, ...Tool[]]> = [
   [
     { label: 'Heading', icon: 'heading', command: insertHeading },
     { label: 'Bold', icon: 'bold', command: toggleBold, keys: 'B', stroke: 'b' },

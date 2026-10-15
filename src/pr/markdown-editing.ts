@@ -1,7 +1,7 @@
-// What each command of the comment box does to its text and selection, as GitHub's comment box does it. The toolbar's
-// styles are GitHub's markdown-toolbar-element (MIT, github.com/github/markdown-toolbar-element, the copy GitHub's PR
-// page loads), a URL pasted over text is GitHub's paste-markdown, and a suggestion is what its "Add a suggestion"
-// button inserts. Pure: a draft in, the draft after the command out.
+// What each command of the comment box does to its text and selection, the way GitHub's comment box does it. The
+// toolbar's styles are GitHub's markdown-toolbar-element (MIT, github.com/github/markdown-toolbar-element, the copy
+// GitHub's PR page loads), a URL pasted over text is GitHub's paste-markdown, and a suggestion is what its "Add a
+// suggestion" button inserts. Pure: a draft in, the draft after the command out.
 
 /** A comment box's text and its selection (start === end: only the caret), as a textarea has them. */
 export interface Draft {
@@ -249,9 +249,9 @@ function widenSelection(field: Draft, prefix: string, suffix: string, multiline:
   const { value } = field;
   if (field.selectionStart === field.selectionEnd) {
     let start = field.selectionStart;
-    while (value[start] !== undefined && start > 0 && !/\s/.test(value[start - 1]!)) start--;
+    while (value[start] !== undefined && start > 0 && !/\s/.test(value.charAt(start - 1))) start--;
     let end = field.selectionEnd;
-    while (value[end] !== undefined && !(multiline ? /\n/ : /\s/).test(value[end]!)) end++;
+    while (value[end] !== undefined && !(multiline ? /\n/ : /\s/).test(value.charAt(end))) end++;
     field.selectionStart = start;
     field.selectionEnd = end;
   } else if (
@@ -269,8 +269,8 @@ function widenSelection(field: Draft, prefix: string, suffix: string, multiline:
 function paragraphBreaks(field: Draft): { before: string; after: string } {
   const before = field.value.slice(0, field.selectionStart);
   const after = field.value.slice(field.selectionEnd);
-  const breaksBefore = /\n*$/.exec(before)![0].length;
-  const breaksAfter = /^\n*/.exec(after)![0].length;
+  const breaksBefore = before.length - before.replace(/\n+$/, '').length;
+  const breaksAfter = after.length - after.replace(/^\n+/, '').length;
   return {
     before: /\S/.test(before) && breaksBefore < 2 ? '\n'.repeat(2 - breaksBefore) : '',
     after: /\S/.test(after) && breaksAfter < 2 ? '\n'.repeat(2 - breaksAfter) : '',

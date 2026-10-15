@@ -154,7 +154,7 @@ function ReviewerPicker({
 
   useEffect(() => {
     let cancelled = false;
-    // The first list comes at once; typing waits for a 200 ms pause, as GitHub's picker does.
+    // The first list comes at once; typing waits for a 200 ms pause, like GitHub's picker.
     const timer = setTimeout(
       () =>
         latest.current.searchReviewers(query.trim()).then(

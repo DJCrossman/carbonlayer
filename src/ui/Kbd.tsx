@@ -1,4 +1,4 @@
-// A keyboard key cap, e.g. <Kbd>j</Kbd> or <Kbd>⌘</Kbd><Kbd>↵</Kbd>.
+// A keyboard key cap, e.g. <Kbd>⌘</Kbd><Kbd>↵</Kbd>, or one for a single key such as j.
 import type { ReactNode } from 'react';
 import './ui.css';
 
