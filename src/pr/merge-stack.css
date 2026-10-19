@@ -130,6 +130,34 @@
 
 .merge-stack-foot {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 8px;
   padding: 12px 16px;
+}
+
+/* Graphite's two options under the PRs, a checkbox each with its ⓘ. */
+.merge-stack-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--gg-border-muted);
+}
+.merge-stack-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.merge-stack-option input { margin: 0; accent-color: var(--gg-accent); }
+.merge-stack-option .gg-icon { flex: none; color: var(--gg-fg-muted); cursor: help; }
+
+/* Starting over while a merge of the stack is under way asks first, beside the buttons. */
+.merge-stack .merge-stack-replace {
+  flex: 1;
+  margin: 0;
+  color: var(--gg-fg-muted);
+  font-size: 12px;
 }

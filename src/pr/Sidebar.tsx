@@ -4,6 +4,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { MergeMethod } from '../lib/rpc';
 import { mergeMethodSchema, type PrDetail, type PrStage, type StackEntry } from '../lib/model';
+import type { StackMerge } from '../lib/stack-merges';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
@@ -28,6 +29,8 @@ export function Sidebar({
   onMarkReady,
   onMerge,
   onMergeStack,
+  backgroundMerge,
+  onDropBackgroundMerge,
   onRebaseStack,
   onViewThreads,
   checkReruns,
@@ -47,6 +50,10 @@ export function Sidebar({
   onMerge: (method: MergeMethod) => Promise<boolean>;
   /** Opens the dialog that merges the stack (MergeStackDialog.tsx), with the method picked here. */
   onMergeStack: (method: MergeMethod) => void;
+  /** The merge of this PR's stack CarbonLayer runs in the background (src/lib/stack-merges.ts), under way or stopped. */
+  backgroundMerge: StackMerge | null;
+  /** Cancels that merge, or dismisses it once stopped; resolves false when it could not, after saying why. */
+  onDropBackgroundMerge: (id: string) => Promise<boolean>;
   /** Rebases the PR's native stack onto its base branch, as GitHub's "Rebase stack" does; resolves false when it did not. */
   onRebaseStack: () => Promise<boolean>;
   onViewThreads: () => void;
@@ -70,17 +77,22 @@ export function Sidebar({
           {pr.stackSection.viewerCanRebase && <RebaseStack onRebaseStack={onRebaseStack} />}
         </Card>
       )}
-      <ActionCard
-        pr={pr}
-        data={data}
-        onRetry={onRetry}
-        mergeMethod={mergeMethod}
-        onMarkReady={onMarkReady}
-        onMerge={onMerge}
-        onMergeStack={onMergeStack}
-        onRebaseStack={onRebaseStack}
-        onViewThreads={onViewThreads}
-      />
+      {/* While CarbonLayer merges the stack, or once that stopped, it stands where the merge controls would. */}
+      {backgroundMerge ? (
+        <BackgroundMergeCard merge={backgroundMerge} onDrop={() => onDropBackgroundMerge(backgroundMerge.id)} />
+      ) : (
+        <ActionCard
+          pr={pr}
+          data={data}
+          onRetry={onRetry}
+          mergeMethod={mergeMethod}
+          onMarkReady={onMarkReady}
+          onMerge={onMerge}
+          onMergeStack={onMergeStack}
+          onRebaseStack={onRebaseStack}
+          onViewThreads={onViewThreads}
+        />
+      )}
       <Staged state={data.checks} what="the checks" onRetry={() => onRetry(['checks'])} skeleton={<SideCardSkeleton title="Checks" rows={3} />}>
         {({ emptyReason }) =>
           pr.ci.checks.length > 0 ? (
@@ -624,3 +636,82 @@ export const MERGE_LABELS = {
   MERGE: { short: 'Merge commit', verb: 'Merge' },
   REBASE: { short: 'Rebase', verb: 'Rebase and merge' },
 } as const;
+
+/**
+ * The stack merge CarbonLayer runs in the background (src/lib/stack-merges.ts): where it is, with Cancel, which stops it
+ * where it is; once it stopped, why, with Dismiss.
+ */
+function BackgroundMergeCard({ merge, onDrop }: { merge: StackMerge; onDrop: () => Promise<boolean> }) {
+  const [busy, setBusy] = useState(false);
+  const { step } = merge;
+  const shown = whereTheMergeIs(merge);
+  return (
+    <Card className={`side-card side-action is-${shown.tone}`}>
+      <div className="side-action-title">
+        <Icon name={shown.icon} size={16} />
+        <span>{shown.title}</span>
+      </div>
+      <div className="side-action-detail">{shown.detail}</div>
+      {merge.trouble && step.kind !== 'stopped' && (
+        <div className="side-action-detail side-merge-trouble" title={merge.trouble}>
+          {merge.trouble}
+        </div>
+      )}
+      {step.kind !== 'merged' && (
+        <Button
+          className="side-action-button"
+          disabled={busy}
+          title={step.kind === 'stopped' ? undefined : 'Stop merging the stack. Nothing done on GitHub so far is undone.'}
+          onClick={async () => {
+            setBusy(true);
+            if (!(await onDrop())) setBusy(false);
+          }}
+        >
+          {step.kind === 'stopped' ? 'Dismiss' : 'Cancel'}
+        </Button>
+      )}
+    </Card>
+  );
+}
+
+/** Where a stack merge CarbonLayer runs in the background is, as its card says it. */
+function whereTheMergeIs(merge: StackMerge): { tone: 'attention' | 'danger' | 'done'; icon: 'clock' | 'git-merge' | 'x-circle-fill'; title: string; detail: string } {
+  const { step } = merge;
+  const count = merge.prs.length;
+  const verb = MERGE_LABELS[merge.method].verb;
+  // What it does once nothing stands in the way, said where nothing more particular is.
+  const plan = `${verb} ${count} PRs into ${merge.trunk} once the stack can merge.`;
+  switch (step.kind) {
+    case 'stopped':
+      return { tone: 'danger', icon: 'x-circle-fill', title: 'Merge stopped', detail: step.reason };
+    case 'merged':
+      return { tone: 'done', icon: 'git-merge', title: `Merged ${count} PRs`, detail: `${verb} into ${merge.trunk}.` };
+    case 'merging':
+      return { tone: 'attention', icon: 'git-merge', title: 'Merging…', detail: `${verb} ${count} PRs into ${merge.trunk}.` };
+    case 'rebasing':
+      return { tone: 'attention', icon: 'clock', title: 'Rebasing stack…', detail: plan };
+    case 'starting':
+      return { tone: 'attention', icon: 'clock', title: 'Checking the stack…', detail: plan };
+    case 'waiting': {
+      const waiting = step.for;
+      if (waiting?.kind === 'checks') {
+        const { requiredPassed, required, optionalRunning } = waiting;
+        return {
+          tone: 'attention',
+          icon: 'clock',
+          title: required > 0 ? `Waiting for checks · ${requiredPassed} of ${required} required passed` : `Waiting for checks · ${optionalRunning} running`,
+          detail: required > 0 && optionalRunning > 0 ? `And ${optionalRunning} optional ${optionalRunning === 1 ? 'check' : 'checks'} to finish. ${plan}` : plan,
+        };
+      }
+      if (waiting?.kind === 'github') {
+        return {
+          tone: 'attention',
+          icon: 'clock',
+          title: `Waiting for GitHub · #${waiting.number}`,
+          detail: `GitHub does not say #${waiting.number} can merge with the PRs below it yet${waiting.status ? ` (${waiting.status})` : ''}. ${plan}`,
+        };
+      }
+      return { tone: 'attention', icon: 'clock', title: 'Checking the stack…', detail: plan };
+    }
+  }
+}

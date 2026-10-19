@@ -278,3 +278,6 @@ a.check-row[href]:hover { background: var(--gg-bg-hover); }
   white-space: nowrap;
   font-size: 12px;
 }
+
+/* Why the last step of a background stack merge could not reach GitHub; it tries again. */
+.side-merge-trouble { color: var(--gg-attention); font-size: 12px; }

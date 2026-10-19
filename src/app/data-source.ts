@@ -1,9 +1,12 @@
 // Everything the UI needs from the outside world, behind one interface so the same pages render
 // from the content script's RPC in the extension and from fixtures in the dev harness (`?fixtures=1`).
 
+import { browser } from 'wxt/browser';
+import { z } from 'zod/mini';
 import type { ChangedFileDiff, Emoji, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, StackEntry, TopRepository, View, ViewResult } from '../lib/model';
 import { rpc, type InboxRowToEnrich, type MergeCommit, type MergeMethod } from '../lib/rpc';
 import { getSettings, setSettings, watchSettings, type Settings, type SettingsStorage } from '../lib/settings';
+import { STACK_MERGES, stackMergesSchema, type StackMerge, type StackMergeRequest, type stackMergeMessage } from '../lib/stack-merges';
 import { resolveViewQuery } from '../lib/views';
 
 export interface ReviewThreadDraft {
@@ -59,6 +62,15 @@ export interface DataSource {
   setAutoMerge(prId: string, enabled: boolean, method: MergeMethod): Promise<void>;
   /** Rebases the PR's native stack onto its base branch; `complete` is false when GitHub was still at it as the answer was due. */
   rebaseStack(prId: string): Promise<{ complete: boolean }>;
+  /**
+   * Merges the stack up to a PR once it can, rebased first when asked, in the background (src/lib/stack-merges.ts), so it
+   * carries on when this page goes; in place of any merge of the same PRs.
+   */
+  startStackMerge(request: StackMergeRequest): Promise<void>;
+  /** Forgets a stack merge: one under way stops where it is (nothing done on GitHub is undone), one that stopped is dismissed. */
+  dropStackMerge(id: string): Promise<void>;
+  /** The stack merges under way, or stopped, at once and whenever they change. */
+  watchStackMerges(onChange: (merges: StackMerge[]) => void): () => void;
   reviewerCandidates(prId: string, query: string): Promise<{ suggested: ReviewerCandidate[]; reviewers: ReviewerCandidate[] }>;
   modifyReviewers(prId: string, add: ReviewerChange[], remove: ReviewerChange[]): Promise<void>;
   reRequestReview(prId: string, reviewerId: string): Promise<void>;
@@ -100,6 +112,35 @@ export function createRpcDataSource(): DataSource {
     revert: (prId) => rpc('pr.revert', { prId }),
     setAutoMerge: (prId, enabled, method) => rpc('pr.setAutoMerge', { prId, enabled, method }),
     rebaseStack: (prId) => rpc('pr.rebaseStack', { prId }),
+    // The background runs them (entrypoints/background.ts), and answers whether it saved the change (null) or why not.
+    startStackMerge: async (request) => {
+      const message: z.infer<typeof stackMergeMessage> = { kind: 'carbonlayer-start-stack-merge', request };
+      const refused = z.nullable(z.string()).parse(await browser.runtime.sendMessage(message));
+      if (refused !== null) throw new Error(refused);
+    },
+    dropStackMerge: async (id) => {
+      const message: z.infer<typeof stackMergeMessage> = { kind: 'carbonlayer-drop-stack-merge', id };
+      const refused = z.nullable(z.string()).parse(await browser.runtime.sendMessage(message));
+      if (refused !== null) throw new Error(refused);
+    },
+    // As the background saves them in storage.local, each change as it was made: a merge that merged is saved so, then
+    // forgotten. What this build cannot read is left out, saying what differs.
+    watchStackMerges: (onChange) => {
+      let changed = false;
+      const show = (stored: unknown) => {
+        const merges = stackMergesSchema.safeParse(stored ?? []);
+        if (merges.success) onChange(merges.data);
+        else console.error('[gg]', `${STACK_MERGES} in storage.local did not match:`, z.prettifyError(merges.error));
+      };
+      const listener = (changes: Record<string, { newValue?: unknown }>, area: string) => {
+        if (area !== 'local' || !Object.hasOwn(changes, STACK_MERGES)) return;
+        changed = true;
+        show(changes[STACK_MERGES]?.newValue);
+      };
+      browser.storage.onChanged.addListener(listener);
+      void browser.storage.local.get(STACK_MERGES).then((items) => changed || show(items[STACK_MERGES]));
+      return () => browser.storage.onChanged.removeListener(listener);
+    },
     reviewerCandidates: (prId, query) => rpc('pr.reviewerCandidates', { prId, query }),
     modifyReviewers: (prId, add, remove) => rpc('pr.modifyReviewers', { prId, add, remove }),
     reRequestReview: (prId, reviewerId) => rpc('pr.reRequestReview', { prId, reviewerId }),
@@ -136,6 +177,13 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     remove: async (keys) => keys.forEach((key) => delete stored[key]),
   };
   const listeners = new Set<(settings: Settings) => void>();
+  // Stack merges as the background runs one with nothing to wait for: merging, then merged a moment later, then forgotten.
+  let stackMerges: StackMerge[] = [];
+  const stackMergeWatchers = new Set<(merges: StackMerge[]) => void>();
+  const saveStackMerges = (merges: StackMerge[]) => {
+    stackMerges = merges;
+    for (const watcher of stackMergeWatchers) watcher(merges);
+  };
   // The rows the organization's inbox searches: its chosen repositories', or the view's own, else all of its own.
   const searched = async (view: View) => {
     const { currentOrg, inboxRepos } = await getSettings(memory);
@@ -300,6 +348,25 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     rebaseStack: async (...args) => {
       await log('rebaseStack', ...args);
       return { complete: true };
+    },
+    startStackMerge: async (request) => {
+      await log('startStackMerge', request);
+      const merge: StackMerge = { ...request, id: crypto.randomUUID(), startedAt: Date.now(), heads: null, step: { kind: 'merging', sentAt: Date.now() }, trouble: null };
+      saveStackMerges([...stackMerges.filter((other) => !other.prs.some((pr) => request.prs.some(({ number }) => number === pr.number))), merge]);
+      setTimeout(() => {
+        if (!stackMerges.some((other) => other.id === merge.id)) return;
+        saveStackMerges(stackMerges.map((other) => (other.id === merge.id ? { ...other, step: { kind: 'merged' } } : other)));
+        saveStackMerges(stackMerges.filter((other) => other.id !== merge.id));
+      }, 800);
+    },
+    dropStackMerge: async (id) => {
+      await log('dropStackMerge', id);
+      saveStackMerges(stackMerges.filter((merge) => merge.id !== id));
+    },
+    watchStackMerges: (onChange) => {
+      stackMergeWatchers.add(onChange);
+      onChange(stackMerges);
+      return () => stackMergeWatchers.delete(onChange);
     },
     reviewerCandidates: async (_prId, query) => {
       const needle = query.trim().toLowerCase();

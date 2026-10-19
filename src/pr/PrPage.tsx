@@ -13,6 +13,7 @@ import { SIGNED_OUT } from '../lib/github-web/session';
 import type { ChangedFile, PrDetail, PrStage, PrStages, ReactionContent } from '../lib/model';
 import { STAGES_A_WRITE_CHANGES, type MergeCommit, type MergeMethod } from '../lib/rpc';
 import type { Settings } from '../lib/settings';
+import { isUnderWay, type StackMerge, type StackMergeRequest } from '../lib/stack-merges';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
@@ -133,6 +134,10 @@ function PrView({
   // "Merge N PRs" and m open the dialog that does.
   const nextAction = nextActionFor(pr, (['mergeBox', 'stack', 'threads', 'checks'] as const).filter((stage) => data[stage].value === null || data[stage].status === 'placeholder'));
   const stackMerge = nextAction.kind === 'ready-as-stack' && pr.viewerCanMerge ? nextAction.prs : null;
+  // The merges CarbonLayer runs in the background in this repository, under way or stopped; the sidebar shows the one that
+  // merges this PR where the merge controls are.
+  const backgroundMerges = useBackgroundMerges(source, pr, reload);
+  const backgroundMerge = backgroundMerges.find((merge) => merge.prs.some(({ number }) => number === pr.number)) ?? null;
   useLinkedComment(comment, pr, data, files.revealThread);
   const linkedFile = useLinkedFile(file, pr.files);
 
@@ -212,12 +217,34 @@ function PrView({
     });
   }
 
-  function merge(method: MergeMethod, commit?: MergeCommit) {
-    // A merge as a stack merges the open PRs below this one with it.
+  function merge(method: MergeMethod) {
+    return mutate(STAGES_A_WRITE_CHANGES['pr.merge'], () => source.merge(pr.id, method, pr.headOid), 'Could not merge', { success: `Merged #${pr.number}` });
+  }
+
+  /**
+   * Starts merging the stack up to this PR in the background, once it can (src/lib/stack-merges.ts): the page shows how
+   * it goes, and says when it has merged.
+   */
+  async function mergeStack(method: MergeMethod, commit: MergeCommit | undefined, options: Pick<StackMergeRequest, 'ignoreOptionalChecks' | 'rebaseFirst'>): Promise<boolean> {
     const merging = stackToMerge(pr.stack);
-    return mutate(STAGES_A_WRITE_CHANGES['pr.merge'], () => source.merge(pr.id, method, pr.headOid, commit), 'Could not merge', {
-      success: merging ? `Merged ${merging.length} PRs` : `Merged #${pr.number}`,
-    });
+    if (!merging) return false;
+    try {
+      await source.startStackMerge({
+        repo: pr.repo,
+        number: pr.number,
+        prs: merging.map(({ number, title }) => ({ number, title })),
+        trunk: pr.stack.trunk,
+        method,
+        ...(commit && { commit }),
+        expectedHeadOid: pr.headOid,
+        ...options,
+      });
+    } catch (reason) {
+      showToast(`Could not start the merge: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger');
+      return false;
+    }
+    showToast(`Merging ${merging.length} PRs. CarbonLayer carries on if this tab closes.`);
+    return true;
   }
 
   function react(subjectId: string, content: ReactionContent, add: boolean) {
@@ -445,6 +472,16 @@ function PrView({
           onMarkReady={() => setDraft(false)}
           onMerge={merge}
           onMergeStack={setMergingStack}
+          backgroundMerge={backgroundMerge}
+          onDropBackgroundMerge={async (id) => {
+            try {
+              await source.dropStackMerge(id);
+              return true;
+            } catch (reason) {
+              showToast(`Could not stop the merge: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger');
+              return false;
+            }
+          }}
           onRebaseStack={async () => {
             let complete = false;
             const rebased = await mutate(
@@ -513,8 +550,9 @@ function PrView({
             pr={pr}
             prs={stackMerge}
             method={mergingStack}
+            underWay={backgroundMerges.some((merge) => isUnderWay(merge) && merge.prs.some(({ number }) => stackMerge.some((entry) => entry.number === number)))}
             proposeCommit={(method) => source.proposedMergeCommit(pr.id, method)}
-            onMerge={merge}
+            onStart={mergeStack}
             onClose={() => setMergingStack(null)}
           />
         )}
@@ -904,4 +942,38 @@ function useLinkedFile(anchor: string | undefined, files: ChangedFile[]): string
   }, [anchor, files]);
 
   return linked && linked.anchor === anchor ? linked.path : null;
+}
+
+/**
+ * The stack merges CarbonLayer runs in the background in the PR's repository (src/lib/stack-merges.ts), under way or
+ * stopped. Once the one that merges this PR has rebased the stack, the page loads again what that changed; once it has
+ * merged it, what the merge changed, and a toast says so.
+ */
+function useBackgroundMerges(source: DataSource, pr: PrDetail, reload: (stages: readonly PrStage[]) => Promise<void>): StackMerge[] {
+  const [merges, setMerges] = useState<StackMerge[]>([]);
+  const latestReload = useRef(reload);
+  latestReload.current = reload;
+  const { owner, name } = pr.repo;
+  const { number } = pr;
+  useEffect(() => {
+    // What the page showed before each change, to tell what the change did; undefined before the first.
+    let shown: StackMerge | null | undefined;
+    return source.watchStackMerges((all) => {
+      const inRepository = all.filter((candidate) => candidate.repo.owner === owner && candidate.repo.name === name);
+      const before = shown;
+      const next = inRepository.find((candidate) => candidate.prs.some((entry) => entry.number === number)) ?? null;
+      shown = next;
+      setMerges(inRepository);
+      if (!before || !next || before.id !== next.id || before.step.kind === next.step.kind) return;
+      if (next.step.kind === 'merged') {
+        showToast(`Merged ${next.prs.length} PRs`);
+        latestReload.current(STAGES_A_WRITE_CHANGES['pr.merge']).catch((reason: unknown) =>
+          showToast(`Merged, but reloading the PR failed: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger'),
+        );
+      } else if (before.step.kind === 'rebasing' && next.step.kind !== 'stopped') {
+        latestReload.current(STAGES_A_WRITE_CHANGES['pr.rebaseStack']).catch(() => {});
+      }
+    });
+  }, [source, owner, name, number]);
+  return merges;
 }
