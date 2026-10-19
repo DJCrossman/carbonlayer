@@ -1,11 +1,12 @@
 // Pure diff logic for the Files section: what the diff library can render for a changed file, which
 // notes (review threads, batched comments, the open composer) sit on which of its lines, where the
-// composer opens for selected lines, the rows a comment sits on (for the comments drawer), and the file
-// tree that orders the files.
+// composer opens for selected lines, the rows a comment sits on (for the comments drawer), the file
+// tree that orders the files, and the unchanged lines a diff leaves out, which expanding it shows.
 
 import { parsePatchFiles, type DiffLineAnnotation, type FileDiffMetadata, type SelectedLineRange } from '@pierre/diffs';
 import type { ReviewThreadDraft } from '../app/data-source';
 import type { ChangedFile, ReviewThread } from '../lib/model';
+import type { DiffEntryLine, LineRange } from '../lib/rpc';
 
 /** What an annotation in the diff carries. */
 export type DiffNote =
@@ -218,4 +219,69 @@ export function fileTree(files: ChangedFile[]): FileTreeNode[] {
 /** The files in the order the tree shows them, which is also the order the diffs are rendered in. */
 export function filesInTreeOrder(tree: FileTreeNode[]): ChangedFile[] {
   return tree.flatMap((node) => (node.kind === 'file' ? [node.file] : filesInTreeOrder(node.children)));
+}
+
+/**
+ * The new file's lines a diff of hunks leaves out, as ranges of their numbers: above its first hunk, between its hunks,
+ * and after its last. What expanding the diff's unchanged lines asks GitHub for, every range at once, since the diff
+ * library expands lines only once it has the whole file (`loadDiffFiles`). The diff does not say where the file ends: the
+ * last range runs 10,000 lines on, and GitHub's answer stops at the end of the file (assumed, unverified).
+ */
+export function hiddenLines(diff: FileDiffMetadata): LineRange[] {
+  const ranges: LineRange[] = [];
+  let next = 1;
+  for (const hunk of diff.hunks) {
+    // A hunk that adds no line names the line before it (`+12,0`).
+    const first = hunk.additionCount === 0 ? hunk.additionStart + 1 : hunk.additionStart;
+    if (first > next) ranges.push({ start: next, end: first - 1 });
+    next = first + hunk.additionCount;
+  }
+  ranges.push({ start: next, end: next + 9_999 });
+  return ranges;
+}
+
+/**
+ * The whole file on both sides, from GitHub's answer for every line its diff leaves out (`hiddenLines`): the old file is
+ * the unchanged and removed lines by their numbers in it (`left`), the new file the unchanged and added ones by theirs
+ * (`right`), each without its diff marker, and a side ends without a newline where GitHub warns of none. Throws when a
+ * side misses a line, which an answer that stopped short of a range before the end of the file would leave.
+ */
+export function fileContentsFrom(lines: DiffEntryLine[]): { old: string; new: string } {
+  const old = new Map<number, DiffEntryLine>();
+  const next = new Map<number, DiffEntryLine>();
+  for (const line of lines) {
+    if (line.type === 'CONTEXT' || line.type === 'DELETION') old.set(line.left, line);
+    if (line.type === 'CONTEXT' || line.type === 'ADDITION') next.set(line.right, line);
+  }
+  return { old: contentsOf('old', old), new: contentsOf('new', next) };
+
+  function contentsOf(side: 'old' | 'new', numbered: Map<number, DiffEntryLine>): string {
+    if (numbered.size === 0) return '';
+    const texts: string[] = [];
+    for (let number = 1; number <= numbered.size; number++) {
+      const line = numbered.get(number);
+      if (!line) throw new Error(`GitHub's answer has no line ${number} of the ${side} file`);
+      const marker = line.type === 'CONTEXT' ? ' ' : line.type === 'DELETION' ? '-' : '+';
+      texts.push(line.text.startsWith(marker) ? line.text.slice(1) : line.text);
+    }
+    return `${texts.join('\n')}${numbered.get(numbered.size)?.displayNoNewLineWarning ? '' : '\n'}`;
+  }
+}
+
+/**
+ * Whether GitHub takes a comment on the selected lines: both ends on lines of the diff's hunks. Whether it takes one on
+ * the unchanged lines expanded around them is not known (its own diff offers none there), so they take none.
+ */
+export function takesComments(diff: FileDiffMetadata, range: SelectedLineRange): boolean {
+  const side = range.side ?? 'additions';
+  return [
+    { line: range.start, side },
+    { line: range.end, side: range.endSide ?? side },
+  ].every(({ line, side }) =>
+    diff.hunks.some((hunk) =>
+      side === 'deletions'
+        ? line >= hunk.deletionStart && line < hunk.deletionStart + hunk.deletionCount
+        : line >= hunk.additionStart && line < hunk.additionStart + hunk.additionCount,
+    ),
+  );
 }

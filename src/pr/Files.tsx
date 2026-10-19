@@ -5,21 +5,23 @@
 // Until the file list arrives the section shows the header's file count over skeleton cards; then each file
 // shows a skeleton until its diff arrives.
 import { FileDiff, type FileDiffOptions, type SelectedLineRange } from '@pierre/diffs/react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent } from 'react';
-import type { ReviewThreadDraft } from '../app/data-source';
+import type { DataSource, ReviewThreadDraft } from '../app/data-source';
 import { fileAnchor } from '../app/routes';
 import type { ChangedFile, PrDetail, PrStages } from '../lib/model';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
 import { Skeleton } from '../ui/Skeleton';
 import { showToast } from '../ui/Toast';
-import { composerAnchorFor, currentLinesOf, fileNotes, filesInTreeOrder, fileTree, renderableDiff, type ComposerAnchor, type DiffNote, type FileTreeNode } from './diff';
-import type { StageState } from './page-data';
+import { composerAnchorFor, currentLinesOf, fileNotes, filesInTreeOrder, fileTree, hiddenLines, renderableDiff, takesComments, type ComposerAnchor, type DiffNote, type FileTreeNode } from './diff';
+import { prFileContentsQuery, type StageState } from './page-data';
 import { StageError } from './primitives';
 import { DiffNoteView, type NoteActions } from './Threads';
 import './files.css';
 
 export function FilesSection({
+  source,
   pr,
   listed,
   threads,
@@ -31,6 +33,8 @@ export function FilesSection({
   onToggleViewed,
   noteActions,
 }: {
+  /** Where the lines a diff leaves out are asked for, when the reader expands them. */
+  source: DataSource;
   pr: PrDetail;
   /** The file list and the diffs that have arrived so far. */
   listed: StageState<PrStages['files']>;
@@ -96,6 +100,7 @@ export function FilesSection({
           {review.order.map((file) => (
             <FileCard
               key={file.path}
+              source={source}
               file={file}
               missingDiff={diffs && !(file.path in diffs) ? missingDiff : null}
               pr={pr}
@@ -305,6 +310,7 @@ function FileTree({ pr, review }: { pr: PrDetail; review: FileReview }) {
 }
 
 function FileCard({
+  source,
   file,
   missingDiff,
   pr,
@@ -315,6 +321,7 @@ function FileCard({
   onToggleViewed,
   noteActions,
 }: {
+  source: DataSource;
   file: ChangedFile;
   /** Why the file has no diff yet: it is on its way, or its batch failed. */
   missingDiff: 'loading' | 'failed' | null;
@@ -363,6 +370,9 @@ function FileCard({
   const openComposer = useRef(review.openComposer);
   openComposer.current = review.openComposer;
   const setCollapsed = review.setCollapsed;
+  const queryClient = useQueryClient();
+  const { owner, name } = pr.repo;
+  const { number, headOid, baseRefName } = pr;
 
   // Stable identity unless a value the library renders from changes: it re-renders on every new options object.
   const options = useMemo(
@@ -379,21 +389,37 @@ function FileCard({
       enableGutterUtility: true,
       // A line number pressed and dragged across others, or clicked and then shift-clicked, selects those lines, as
       // does the "+" pressed and dragged; the composer opens for them when the pointer is released.
+      // Only lines of the diff take a comment: a selection that reaches an unchanged line expanded around them shows none.
       enableLineSelection: true,
-      onLineSelectionStart: setSelecting,
-      onLineSelectionChange: setSelecting,
+      onLineSelectionStart: (range) => setSelecting(range && fileDiff && takesComments(fileDiff, range) ? range : null),
+      onLineSelectionChange: (range) => setSelecting(range && fileDiff && takesComments(fileDiff, range) ? range : null),
       onLineSelectionEnd: (range) => {
         setSelecting(null);
         // Null when the one line already selected was clicked again: the composer stays, with whatever it holds.
-        if (range && fileDiff) openComposer.current(composerAnchorFor(file.path, fileDiff, range));
+        if (range && fileDiff && takesComments(fileDiff, range)) openComposer.current(composerAnchorFor(file.path, fileDiff, range));
       },
       // The "+" selects only while this is set; its selection ends above like any other.
       onGutterUtilityClick: () => undefined,
+      // The unchanged lines the diff leaves out show 20 at a time, as GitHub's "Expand up" and "Expand down" do, and 20 or
+      // fewer all at once. The library shows them once it has the whole file, which the first expand asks GitHub for (every
+      // hidden line in one request, kept with the diff), and keeps them shown, the file collapsed and opened again or not.
+      expansionLineCount: 20,
+      loadDiffFiles: async (partial) => {
+        try {
+          // Until its own header arrives, a PR opened from the inbox or a stack names no head commit.
+          if (!headOid) throw new Error('the pull request is still loading');
+          const contents = await queryClient.fetchQuery(prFileContentsQuery(source, { owner, name }, number, { headOid, baseRefName }, file.path, hiddenLines(partial)));
+          return { oldFile: { name: partial.prevName ?? partial.name, contents: contents.old }, newFile: { name: partial.name, contents: contents.new } };
+        } catch (reason) {
+          showToast(`Could not load the unchanged lines: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger');
+          throw reason;
+        }
+      },
       // Sticky file headers stop under the Files toolbar instead of at the very top. The path copies itself when clicked
-      // (onClick below), so it shows it on hover, as Graphite's does, without moving.
-      unsafeCSS: `[data-sticky] { top: ${STICKY_TOP}px; } [data-title] { margin: -2px -4px; padding: 2px 4px; border-radius: 4px; cursor: pointer; } [data-title]:hover { background: var(--gg-bg-hover); }`,
+      // (onClick below), so it shows it on hover, as Graphite's does, without moving. An expanded unchanged line has no "+".
+      unsafeCSS: `[data-sticky] { top: ${STICKY_TOP}px; } [data-title] { margin: -2px -4px; padding: 2px 4px; border-radius: 4px; cursor: pointer; } [data-title]:hover { background: var(--gg-bg-hover); } [data-line-type='context-expanded'] [data-gutter-utility-slot] { display: none; }`,
     }),
-    [diffStyle, themeType, collapsed, file.path, fileDiff],
+    [diffStyle, themeType, collapsed, file.path, fileDiff, queryClient, source, owner, name, number, headOid, baseRefName],
   );
 
   const viewedToggle = (

@@ -12,7 +12,8 @@ import { KEPT_STAGES, SaveCacheNow } from '../app/query-cache';
 import { enrichmentFoundBefore, inboxRowFor } from '../inbox/row-details';
 import { SIGNED_OUT } from '../lib/github-web/session';
 import { prStagesSchema, stackBranchesSchema, type ChangedFile, type ChangedFileDiff, type PrDetail, type PrStage, type PrStages, type PrSummary, type RepoRef, type ReviewThread, type StackEntry, type TimelineItem } from '../lib/model';
-import { filesInTreeOrder, fileTree } from './diff';
+import type { LineRange } from '../lib/rpc';
+import { fileContentsFrom, filesInTreeOrder, fileTree } from './diff';
 
 /**
  * Loads every stage of a PR's page and keeps each as it arrives. The diffs GitHub does not send with the file list follow
@@ -342,6 +343,20 @@ function prDiffQuery(ask: (path: string) => Promise<ChangedFileDiff | null>, rep
     queryKey: ['pr-diff', repo.owner, repo.name, number, head.headOid, head.baseRefName, path],
     queryFn: () => ask(path),
     // The same commit on the same base has the same diff.
+    staleTime: Infinity,
+    gcTime: IN_MEMORY_FOR_MS,
+  };
+}
+
+/**
+ * The query for a changed file's whole contents on both sides, on a head commit and base: what the first expand of the
+ * unchanged lines its diff leaves out (`hidden`) asks GitHub for. Kept beside the file's diff in this tab's memory, never on
+ * the device, for as long as the diff is: the same commit on the same base has the same file.
+ */
+export function prFileContentsQuery(source: DataSource, repo: RepoRef, number: number, head: Pick<PrStages['header'], 'headOid' | 'baseRefName'>, path: string, hidden: LineRange[]) {
+  return {
+    queryKey: ['pr-diff', repo.owner, repo.name, number, head.headOid, head.baseRefName, path, 'contents'],
+    queryFn: async () => fileContentsFrom(await source.fetchPrDiffLines(repo, number, path, head.headOid, hidden)),
     staleTime: Infinity,
     gcTime: IN_MEMORY_FOR_MS,
   };

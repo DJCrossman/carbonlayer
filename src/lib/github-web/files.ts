@@ -1,8 +1,10 @@
 // Changed files and their patches. page_data/base_comparison_info lists every file (`diffSummaries`) and
-// carries the first diffs (`diffContents`); the rest come from page_data/diff_entries, up to 20 paths per request.
+// carries the first diffs (`diffContents`); the rest come from page_data/diff_entries, up to 20 paths per request. The
+// lines a diff leaves out come from page_data/diff_entry_lines.
 
 import { z } from 'zod/mini';
 import type { ChangedFileDiff, ChangedFileSummary, RepoRef } from '../model';
+import type { DiffEntryLine, LineRange } from '../rpc';
 import { getJson } from './session';
 
 /** Every changed file in GitHub's order, and the diffs GitHub sent along with the list, by path. */
@@ -56,6 +58,34 @@ export async function fileDiffs(pullPath: string, paths: string[], headOid: () =
     console.debug('[gg] diff_entries needed range=<head OID>');
   }
   return Object.fromEntries(entries.map((entry) => [entry.path, diffOf(entry)]));
+}
+
+/**
+ * One changed file's diff lines with the lines it leaves out in `ranges` (by their numbers in the new file) put in, the
+ * way GitHub's "Expand up" / "Expand down" asks for them (page_data/diff_entry_lines, docs/research/github-web-endpoints.md):
+ * the path, each range as JSON, whitespace shown, and the head commit as `range`. GitHub answers with every line of the
+ * diff again, the ones asked for among them as CONTEXT lines; a line with no number on a side has none there.
+ */
+export async function expandedDiffLines(pullPath: string, path: string, headOid: string, ranges: LineRange[]): Promise<DiffEntryLine[]> {
+  const params = new URLSearchParams({ path });
+  for (const range of ranges) params.append('context_line_ranges[]', JSON.stringify({ start: range.start, end: range.end }));
+  params.set('w', '0');
+  params.set('range', headOid);
+  const answer = await getJson(
+    `${pullPath}/page_data/diff_entry_lines?${params}`,
+    z.object({
+      diffEntryLines: z.array(
+        z.object({ type: z.string(), left: z.nullish(z.number()), right: z.nullish(z.number()), text: z.string(), displayNoNewLineWarning: z.nullish(z.boolean()) }),
+      ),
+    }),
+  );
+  return answer.diffEntryLines.map((line) => ({
+    type: line.type,
+    left: line.left ?? 0,
+    right: line.right ?? 0,
+    text: line.text,
+    displayNoNewLineWarning: line.displayNoNewLineWarning ?? false,
+  }));
 }
 
 /** The diff a GitHub diff entry carries: its patch and, for a renamed or copied file, the path it had before. */

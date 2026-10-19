@@ -8,6 +8,7 @@ import { z } from 'zod/mini';
 import type { PrDetail } from '../model';
 import type { RpcMethod, RpcMethods, RpcRequest, RpcResponse } from '../rpc';
 import { getSettings } from '../settings';
+import { expandedDiffLines } from './files';
 import { branchesHeaderAnswer, branchesIn, enrichPull, fetchInbox, fetchViewPage } from './inbox';
 import { mutations, proposedMergeCommit, pullRequestFor, rememberPullRequest } from './mutations';
 import { fetchFileDiffs, fetchPrStage, forgetPrAnswers } from './pr-stages';
@@ -74,6 +75,7 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
   'pr.fetchActivity': (args) => fetchPrStage('activity', args),
   'pr.fetchFiles': (args) => fetchPrStage('files', args),
   'pr.fetchFileDiffs': (args) => fetchFileDiffs(args),
+  'pr.fetchDiffLines': ({ repo, number, path, headOid, ranges }) => expandedDiffLines(`/${repo.owner}/${repo.name}/pull/${number}`, path, headOid, ranges),
   'pr.fetchThreads': (args) => fetchPrStage('threads', args),
   'pr.fetchMergeBox': (args) => fetchPrStage('mergeBox', args),
   'pr.fetchChecks': (args) => fetchPrStage('checks', args),

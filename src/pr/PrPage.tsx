@@ -515,6 +515,7 @@ function PrView({
           }
         />
         <FilesSection
+          source={source}
           pr={pr}
           listed={data.files}
           threads={data.threads}

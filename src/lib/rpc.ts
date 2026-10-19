@@ -35,6 +35,12 @@ export type MergeCommit = z.infer<typeof mergeCommit>;
 /** What enriching an inbox row, or a stack entry, goes by (`inbox.enrich`); a stack entry may not know its author. */
 export type InboxRowToEnrich = z.infer<typeof inboxRowToEnrichSchema>;
 
+/** A line of a changed file's diff, as GitHub's diff_entry_lines numbers and marks it (`pr.fetchDiffLines`). */
+export type DiffEntryLine = RpcMethods['pr.fetchDiffLines']['result'][number];
+
+/** Lines of a file, by their numbers in the new file, the first to the last: what `pr.fetchDiffLines` asks for. */
+export type LineRange = RpcMethods['pr.fetchDiffLines']['args']['ranges'][number];
+
 /** Each method's args and result, the way its schemas read them (RPC_SCHEMAS). */
 export type RpcMethods = { [M in keyof typeof RPC_SCHEMAS]: { args: z.infer<(typeof RPC_SCHEMAS)[M]['args']>; result: z.infer<(typeof RPC_SCHEMAS)[M]['result']> } };
 
@@ -217,6 +223,15 @@ const RPC_SCHEMAS = {
   'pr.fetchFiles': { args: prPageRequest, result: prStagesSchema.shape.files },
   /** The diffs of up to 20 of the PR's changed files, by path: one of GitHub's diff_entries requests. */
   'pr.fetchFileDiffs': { args: z.extend(prPageRequest, { paths: z.array(z.string()) }), result: z.record(z.string(), changedFileDiffSchema) },
+  /**
+   * One changed file's diff on the head commit `headOid` with the lines it leaves out in `ranges` (by their numbers in the
+   * new file) put in, as GitHub's "Expand" asks for them (page_data/diff_entry_lines): every line of the diff again, each
+   * numbered in the old file (`left`) and the new (`right`), the lines asked for among them as unchanged (CONTEXT) ones.
+   */
+  'pr.fetchDiffLines': {
+    args: z.extend(prPageRequest, { path: z.string(), headOid: z.string(), ranges: z.array(z.object({ start: z.number(), end: z.number() })) }),
+    result: z.array(z.object({ type: z.string(), left: z.number(), right: z.number(), text: z.string(), displayNoNewLineWarning: z.boolean() })),
+  },
   'pr.fetchThreads': { args: prPageRequest, result: prStagesSchema.shape.threads },
   'pr.fetchMergeBox': { args: prPageRequest, result: prStagesSchema.shape.mergeBox },
   'pr.fetchChecks': { args: prPageRequest, result: prStagesSchema.shape.checks },

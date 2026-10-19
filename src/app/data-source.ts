@@ -4,7 +4,7 @@
 import { browser } from 'wxt/browser';
 import { z } from 'zod/mini';
 import type { ChangedFileDiff, Emoji, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, StackEntry, TopRepository, View, ViewResult } from '../lib/model';
-import { rpc, type InboxRowToEnrich, type MergeCommit, type MergeMethod } from '../lib/rpc';
+import { rpc, type DiffEntryLine, type InboxRowToEnrich, type LineRange, type MergeCommit, type MergeMethod } from '../lib/rpc';
 import { getSettings, setSettings, watchSettings, type Settings, type SettingsStorage } from '../lib/settings';
 import { STACK_MERGES, stackMergesSchema, type StackMerge, type StackMergeRequest, type stackMergeMessage } from '../lib/stack-merges';
 import { resolveViewQuery } from '../lib/views';
@@ -46,6 +46,8 @@ export interface DataSource {
   fetchPrStage<S extends PrStage>(stage: S, repo: RepoRef, number: number): Promise<PrStages[S]>;
   /** The diffs of up to 20 of a PR's changed files, by path. */
   fetchPrFileDiffs(repo: RepoRef, number: number, paths: string[]): Promise<Record<string, ChangedFileDiff>>;
+  /** A changed file's diff lines on the head commit with the lines it leaves out in `ranges` (new-file numbers) put in. */
+  fetchPrDiffLines(repo: RepoRef, number: number, path: string, headOid: string, ranges: LineRange[]): Promise<DiffEntryLine[]>;
   review(prId: string, event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT', body: string, threads?: ReviewThreadDraft[]): Promise<void>;
   comment(prId: string, body: string): Promise<void>;
   /** Merges with the merge commit the viewer wrote, else with the one GitHub proposes. */
@@ -100,6 +102,7 @@ export function createRpcDataSource(): DataSource {
     listTopRepositories: (cursor) => rpc('repos.top', { cursor }),
     fetchPrStage: (stage, repo, number) => prStageRequests[stage]({ repo, number }),
     fetchPrFileDiffs: (repo, number, paths) => rpc('pr.fetchFileDiffs', { repo, number, paths }),
+    fetchPrDiffLines: (repo, number, path, headOid, ranges) => rpc('pr.fetchDiffLines', { repo, number, path, headOid, ranges }),
     review: (prId, event, body, threads) => rpc('pr.review', { prId, event, body, threads }),
     comment: (prId, body) => rpc('pr.comment', { prId, body }),
     merge: (prId, method, expectedHeadOid, commit) => rpc('pr.merge', { prId, method, expectedHeadOid, commit }),
@@ -160,6 +163,8 @@ export interface Fixtures {
   /** The rows of each view's later pages, by view id, page 2 first. */
   inboxPages: Record<string, InboxFixtureRow[][]>;
   prs: PrDetail[];
+  /** The whole of each fixture file whose diff leaves lines out, at its PR's head, by path. */
+  fileContents: Record<string, string>;
 }
 
 /** An inbox row with its check list and what only its enrichment says: which checks are required, why it is blocked. */
@@ -321,6 +326,14 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
       const pr = fixturePr(repo, number);
       await new Promise((resolve) => setTimeout(resolve, 900));
       return Object.fromEntries(pr.files.filter((file) => paths.includes(file.path)).map((file) => [file.path, { patch: file.patch, previousPath: file.previousPath }]));
+    },
+    // What GitHub would answer, from the fixture file's whole contents, a moment later.
+    fetchPrDiffLines: async (repo, number, path, _headOid, ranges) => {
+      const patch = fixturePr(repo, number).files.find((file) => file.path === path)?.patch;
+      const contents = fixtures.fileContents[path];
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      if (!patch || contents === undefined) throw new Error(`GitHub answered 404 for /${repo.owner}/${repo.name}/pull/${number}/page_data/diff_entry_lines`);
+      return fixtureDiffEntryLines(patch, contents, ranges);
     },
     review: (...args) => log('review', ...args),
     comment: (...args) => log('comment', ...args),
@@ -531,3 +544,45 @@ const FIXTURE_EMOJIS: Emoji[] = [
   { name: 'thumbsup', character: '👍' },
   { name: 'white_check_mark', character: '✅' },
 ];
+
+/**
+ * What GitHub's diff_entry_lines answers for a fixture file (docs/research/github-web-endpoints.md): every line of its
+ * patch, numbered on its side or both (an added line's `left` and a removed line's `right` are 0 here), with the lines of
+ * `ranges` (by their numbers in the new file) that the patch leaves out put in as CONTEXT lines, up to the end of the file
+ * and no further.
+ */
+function fixtureDiffEntryLines(patch: string, contents: string, ranges: LineRange[]): DiffEntryLine[] {
+  const fileLines = contents.replace(/\n$/, '').split('\n');
+  const answer: DiffEntryLine[] = [];
+  // The next line of the old file and of the new.
+  let left = 1;
+  let right = 1;
+  for (const row of patch.split('\n')) {
+    const hunk = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(row);
+    if (hunk) {
+      // A hunk without lines on a side names the line before it there (`+12,0`).
+      putAskedLinesBefore(hunk[4] === '0' ? Number(hunk[3]) + 1 : Number(hunk[3]));
+      left = hunk[2] === '0' ? Number(hunk[1]) + 1 : Number(hunk[1]);
+      answer.push({ type: 'HUNK', left: 0, right: 0, text: row, displayNoNewLineWarning: false });
+    } else if (row.startsWith('\\')) {
+      const last = answer.at(-1);
+      if (last) last.displayNoNewLineWarning = true;
+    } else if (row.startsWith('-')) {
+      answer.push({ type: 'DELETION', left: left++, right: 0, text: row, displayNoNewLineWarning: false });
+    } else if (row.startsWith('+')) {
+      answer.push({ type: 'ADDITION', left: 0, right: right++, text: row, displayNoNewLineWarning: false });
+    } else {
+      answer.push({ type: 'CONTEXT', left: left++, right: right++, text: row, displayNoNewLineWarning: false });
+    }
+  }
+  putAskedLinesBefore(fileLines.length + 1);
+  return answer;
+
+  /** The unchanged lines asked for from the next new line up to `before`, numbered on both sides. */
+  function putAskedLinesBefore(before: number) {
+    for (; right < before; left++, right++) {
+      if (!ranges.some(({ start, end }) => right >= start && right <= end)) continue;
+      answer.push({ type: 'CONTEXT', left, right, text: ` ${fileLines[right - 1] ?? ''}`, displayNoNewLineWarning: right === fileLines.length && !contents.endsWith('\n') });
+    }
+  }
+}

@@ -234,6 +234,19 @@ hashes to it (`useLinkedFile` in `src/pr/PrPage.tsx`) the page keeps that file's
 keeps the files there for a link to them. An anchor no file has leaves the page at the files, and the reader scrolling,
 typing or clicking before the file is found leaves it where they are.
 
+Unchanged lines: between a diff's hunks, above the first and below the last, the library's separators ("29 unmodified
+lines") expand the unchanged lines the diff leaves out, as GitHub's and Graphite's do: 20 lines a click up or down, a gap
+of 20 or fewer at once, or all of it (`expansionLineCount` in `FileCard`). `@pierre/diffs` expands lines only once it has
+the whole file on both sides (`loadDiffFiles`), so a file's first expand asks GitHub for every line its diff hides in one
+`page_data/diff_entry_lines` request (`pr.fetchDiffLines`; the new file's ranges above, between and after the hunks,
+`hiddenLines` in `src/pr/diff.ts`, the last running 10,000 lines on, since the diff does not say where the file ends) and
+puts both sides together from the answer (`fileContentsFrom`); until then the separator below the last hunk reads "More
+unchanged context may be available". The contents are a query beside the file's diff (`['pr-diff', …, path,
+'contents']`, `prFileContentsQuery` in `src/pr/page-data.ts`), in this tab's memory and never on the device, and the
+library keeps the lines expanded while the file shows, collapsed and opened again or in the other layout. An expanded
+line looks like any unchanged line, numbered on both sides, and takes no comment (`takesComments`): it has no "+", and a
+selection that reaches it opens no composer.
+
 Stacks: GitHub-native `stack` from the PR page's embedded data first; otherwise Graphite's stack
 comment in the timeline, enriched through a `/pulls/search` query on the author's open PRs. The stack card
 (`src/pr/StackCard.tsx`) shows each entry as Graphite does: its dot on the rail, its author's avatar, number and title,

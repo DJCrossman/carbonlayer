@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, expect, it, vi } from 'vitest';
-import { changedFileList, fileDiffs, patchOf, type DiffEntry } from './files';
+import { changedFileList, expandedDiffLines, fileDiffs, patchOf, type DiffEntry } from './files';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -69,5 +69,52 @@ describe('fileDiffs', () => {
     expect(request.searchParams.has('range')).toBe(false);
     expect(diffs).toEqual({ 'src/a b.ts': { patch: '@@ -1 +1 @@', previousPath: null }, 'new.ts': { patch: '@@ -1 +1 @@', previousPath: 'old.ts' } });
     expect(headOid).not.toHaveBeenCalled();
+  });
+});
+
+describe('expandedDiffLines', () => {
+  it("asks the way GitHub's Expand does: the path, each range as JSON, whitespace shown and the head commit as the range", async () => {
+    const requested: URL[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        requested.push(new URL(url, 'https://github.com'));
+        return Response.json({
+          diffEntryLines: [
+            { type: 'HUNK', blobLineNumber: 0, position: 0, displayNoNewLineWarning: false, text: '@@ -1,2 +1,2 @@', html: '', left: 0, right: 0, problems: [] },
+            { type: 'CONTEXT', blobLineNumber: 1, position: 1, displayNoNewLineWarning: false, text: ' a', html: 'a', left: 1, right: 1, problems: [] },
+            { type: 'DELETION', blobLineNumber: 2, position: 2, text: '-b', html: 'b', left: 2, right: null, problems: [] },
+            { type: 'ADDITION', blobLineNumber: 2, position: 3, displayNoNewLineWarning: true, text: '+c', html: 'c', left: null, right: 2, problems: [] },
+          ],
+        });
+      }),
+    );
+    const lines = await expandedDiffLines('/o/r/pull/1', 'src/a b.ts', 'f'.repeat(40), [
+      { start: 7, end: 10 },
+      { start: 30, end: 10_029 },
+    ]);
+
+    expect(requested).toHaveLength(1);
+    const [request] = requested;
+    assert.isDefined(request);
+    expect(request.pathname).toBe('/o/r/pull/1/page_data/diff_entry_lines');
+    expect([...request.searchParams]).toEqual([
+      ['path', 'src/a b.ts'],
+      ['context_line_ranges[]', '{"start":7,"end":10}'],
+      ['context_line_ranges[]', '{"start":30,"end":10029}'],
+      ['w', '0'],
+      ['range', 'f'.repeat(40)],
+    ]);
+    expect(lines).toEqual([
+      { type: 'HUNK', left: 0, right: 0, text: '@@ -1,2 +1,2 @@', displayNoNewLineWarning: false },
+      { type: 'CONTEXT', left: 1, right: 1, text: ' a', displayNoNewLineWarning: false },
+      { type: 'DELETION', left: 2, right: 0, text: '-b', displayNoNewLineWarning: false },
+      { type: 'ADDITION', left: 0, right: 2, text: '+c', displayNoNewLineWarning: true },
+    ]);
+  });
+
+  it('refuses an answer of another shape, naming the endpoint', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ diffLines: [] })));
+    await expect(expandedDiffLines('/o/r/pull/1', 'a.ts', 'head', [{ start: 1, end: 2 }])).rejects.toThrow('/o/r/pull/1/page_data/diff_entry_lines did not match');
   });
 });
