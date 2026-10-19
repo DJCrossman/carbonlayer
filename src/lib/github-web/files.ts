@@ -64,7 +64,8 @@ export async function fileDiffs(pullPath: string, paths: string[], headOid: () =
  * One changed file's diff lines with the lines it leaves out in `ranges` (by their numbers in the new file) put in, the
  * way GitHub's "Expand up" / "Expand down" asks for them (page_data/diff_entry_lines, docs/research/github-web-endpoints.md):
  * the path, each range as JSON, whitespace shown, and the head commit as `range`. GitHub answers with every line of the
- * diff again, the ones asked for among them as CONTEXT lines; a line with no number on a side has none there.
+ * diff again, the ones asked for among them as INJECTED_CONTEXT lines (`~` before their text); a line with no number on a
+ * side has none there.
  */
 export async function expandedDiffLines(pullPath: string, path: string, headOid: string, ranges: LineRange[]): Promise<DiffEntryLine[]> {
   const params = new URLSearchParams({ path });

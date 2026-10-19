@@ -250,8 +250,10 @@ export function fileContentsFrom(lines: DiffEntryLine[]): { old: string; new: st
   const old = new Map<number, DiffEntryLine>();
   const next = new Map<number, DiffEntryLine>();
   for (const line of lines) {
-    if (line.type === 'CONTEXT' || line.type === 'DELETION') old.set(line.left, line);
-    if (line.type === 'CONTEXT' || line.type === 'ADDITION') next.set(line.right, line);
+    // The lines a range asked for come as INJECTED_CONTEXT, a `~` before their text; the diff's own as CONTEXT.
+    const unchanged = line.type === 'CONTEXT' || line.type === 'INJECTED_CONTEXT';
+    if (unchanged || line.type === 'DELETION') old.set(line.left, line);
+    if (unchanged || line.type === 'ADDITION') next.set(line.right, line);
   }
   return { old: contentsOf('old', old), new: contentsOf('new', next) };
 
@@ -261,7 +263,7 @@ export function fileContentsFrom(lines: DiffEntryLine[]): { old: string; new: st
     for (let number = 1; number <= numbered.size; number++) {
       const line = numbered.get(number);
       if (!line) throw new Error(`GitHub's answer has no line ${number} of the ${side} file`);
-      const marker = line.type === 'CONTEXT' ? ' ' : line.type === 'DELETION' ? '-' : '+';
+      const marker = line.type === 'CONTEXT' ? ' ' : line.type === 'INJECTED_CONTEXT' ? '~' : line.type === 'DELETION' ? '-' : '+';
       texts.push(line.text.startsWith(marker) ? line.text.slice(1) : line.text);
     }
     return `${texts.join('\n')}${numbered.get(numbered.size)?.displayNoNewLineWarning ? '' : '\n'}`;

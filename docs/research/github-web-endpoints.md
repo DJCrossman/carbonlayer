@@ -187,19 +187,20 @@ merge box's `pullRequest.headRefOid`). The answer, 200:
 { diffEntryLines: [{ type: 'HUNK'|'CONTEXT'|'DELETION'|…, blobLineNumber, position, displayNoNewLineWarning, text, html,
                      left, right, problems: [] }] }
 ```
-is the file's whole diff entry again with the lines asked for merged in as CONTEXT lines (56 entries for that file, the
-first `{ type: 'HUNK', text: '@@ -1,15 +1,19 @@', left: 0, right: 0 }`, then e.g. `{ type: 'CONTEXT', text:
-' #!/usr/bin/env bash', left: 1, right: 1 }` and `{ type: 'DELETION', text: '-# Tears down…' }`): `text` keeps its diff
-marker, `left` / `right` number the line in the old / new file. `expandedDiffLines` in `src/lib/github-web/files.ts`
+is the file's whole diff entry again with the lines asked for merged in as **INJECTED_CONTEXT** lines whose `text` starts
+with `~` (VERIFIED 2026-10-19: asking 7–10 of `.github/scripts/teardown-stall.sh` added `INJECTED_CONTEXT L6 R7 "~…"` …
+`L9 R10`; the same request without ranges answers only HUNK/CONTEXT/DELETION/ADDITION, 53 entries). The diff's own
+lines: the first `{ type: 'HUNK', text: '@@ -1,15 +1,19 @@', left: 0, right: 0 }`, then e.g. `{ type: 'CONTEXT', text:
+' #!/usr/bin/env bash', left: 1, right: 1 }`, `{ type: 'DELETION', text: '-# Tears down…', left: 2, right: 1 }`,
+`{ type: 'ADDITION', left: 2, right: 2 }`: `text` keeps its diff marker, `left` / `right` number the line in the old /
+new file (a removed line's `right` and an added line's `left` repeat the neighbouring number; neither is read). Also
+VERIFIED: the ranges are the new file's line numbers (7–10 came back as R7–R10), and a range running past the end of the
+file answers 200 with the entry as far as the file goes. `expandedDiffLines` in `src/lib/github-web/files.ts`
 asks it (`pr.fetchDiffLines`), and the PR page asks every range a file's diff hides in one request on the first expand
 (`hiddenLines` in `src/pr/diff.ts`), since `@pierre/diffs` expands lines only once it has the whole file on both sides.
-UNVERIFIED, and read defensively: that the ranges are the new file's line numbers (in that file the label's numbers fit
-either side); how GitHub answers a range past the end of the file (the range after the last hunk runs 10,000 lines on,
-and an answer that stops short of it is read as the end of the file; a GitHub that refused such a range would fail the
-first expand, with a toast); which path a renamed file is asked by (the new one is sent); the added lines' type (read as
-`ADDITION`, the name `diff_entries` uses; any other type is left out, and a side left a line short fails the expand,
-naming the line); and whether an added line's `left` or a removed line's `right` is a number (null is read as 0, and
-neither is read). Whether GitHub takes a review comment on an expanded line is not known either: the page offers none.
+UNVERIFIED: which path a renamed file is asked by (the new one is sent); any line type other than the five above is
+left out, and a side left a line short fails the expand, naming the line. Whether GitHub takes a review comment on an
+expanded line is not known either: the page offers none.
 
 ## Homepage's "Top repositories" (`/`, signed in) — classic HTML fragments (VERIFIED signed in 2026-10-13)
 - `GET /dashboard/my_top_repositories?location=left` → an HTML fragment (no `<html>` wrapper; `DOMParser` reads it):

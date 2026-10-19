@@ -239,8 +239,9 @@ lines") expand the unchanged lines the diff leaves out, as GitHub's and Graphite
 of 20 or fewer at once, or all of it (`expansionLineCount` in `FileCard`). `@pierre/diffs` expands lines only once it has
 the whole file on both sides (`loadDiffFiles`), so a file's first expand asks GitHub for every line its diff hides in one
 `page_data/diff_entry_lines` request (`pr.fetchDiffLines`; the new file's ranges above, between and after the hunks,
-`hiddenLines` in `src/pr/diff.ts`, the last running 10,000 lines on, since the diff does not say where the file ends) and
-puts both sides together from the answer (`fileContentsFrom`); until then the separator below the last hunk reads "More
+`hiddenLines` in `src/pr/diff.ts`, the last running 10,000 lines on, since the diff does not say where the file ends, and
+GitHub answers it as far as the file goes) and puts both sides together from the answer (`fileContentsFrom`; the lines
+asked for come as INJECTED_CONTEXT, a `~` before their text); until then the separator below the last hunk reads "More
 unchanged context may be available". The contents are a query beside the file's diff (`['pr-diff', …, path,
 'contents']`, `prFileContentsQuery` in `src/pr/page-data.ts`), in this tab's memory and never on the device, and the
 library keeps the lines expanded while the file shows, collapsed and opened again or in the other layout. An expanded

@@ -250,6 +250,19 @@ describe('fileContentsFrom', () => {
     expect(fileContentsFrom(answer.toReversed())).toEqual(fileContentsFrom(answer));
   });
 
+  it('puts in the lines a range asked for, which GitHub sends as INJECTED_CONTEXT with a `~` before their text', () => {
+    // The start of GitHub's answer for .github/scripts/teardown-stall.sh on offstreetparking/core#8986, asked for 7–10.
+    const answer = [
+      line('HUNK', 0, 0, '@@ -1,15 +1,19 @@'),
+      line('CONTEXT', 1, 1, ' #!/usr/bin/env bash'),
+      line('DELETION', 2, 1, '-# old'),
+      line('ADDITION', 2, 2, '+# new'),
+      line('INJECTED_CONTEXT', 3, 3, '~three'),
+      line('INJECTED_CONTEXT', 4, 4, '~four'),
+    ];
+    expect(fileContentsFrom(answer)).toEqual({ old: '#!/usr/bin/env bash\n# old\nthree\nfour\n', new: '#!/usr/bin/env bash\n# new\nthree\nfour\n' });
+  });
+
   it('ends a side without a newline where GitHub warns of none on its last line', () => {
     const answer = [line('CONTEXT', 1, 1, ' a'), line('DELETION', 2, 0, '-b', true), line('ADDITION', 0, 2, '+b')];
     expect(fileContentsFrom(answer)).toEqual({ old: 'a\nb', new: 'a\nb\n' });

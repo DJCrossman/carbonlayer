@@ -582,7 +582,7 @@ function fixtureDiffEntryLines(patch: string, contents: string, ranges: LineRang
   function putAskedLinesBefore(before: number) {
     for (; right < before; left++, right++) {
       if (!ranges.some(({ start, end }) => right >= start && right <= end)) continue;
-      answer.push({ type: 'CONTEXT', left, right, text: ` ${fileLines[right - 1] ?? ''}`, displayNoNewLineWarning: right === fileLines.length && !contents.endsWith('\n') });
+      answer.push({ type: 'INJECTED_CONTEXT', left, right, text: `~${fileLines[right - 1] ?? ''}`, displayNoNewLineWarning: right === fileLines.length && !contents.endsWith('\n') });
     }
   }
 }
