@@ -17,6 +17,7 @@ import { organizationPeople } from './people';
 import { pickableRepositories, topRepositories } from './repositories';
 import { availableReviewersAnswer, reviewerCandidatesFrom, suggestedReviewersAnswer } from './reviews';
 import { getJson, getPage, politely, render } from './session';
+import { stackReadiness } from './stack-readiness';
 
 export async function handleRpc<M extends RpcMethod>(request: RpcRequest<M>): Promise<RpcResponse> {
   try {
@@ -78,6 +79,7 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
   'pr.fetchChecks': (args) => fetchPrStage('checks', args),
   'pr.fetchStack': (args) => fetchPrStage('stack', args),
   'pr.fetchMeta': (args) => fetchPrStage('meta', args),
+  'pr.fetchStackReadiness': (args) => stackReadiness(args),
   'pr.reviewerCandidates': async ({ prId, query }) => {
     const { path } = pullRequestFor(prId);
     const q = query.trim();

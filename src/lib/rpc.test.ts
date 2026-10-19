@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod/mini';
-import { readRpcRequest, rpc } from './rpc';
+import { readRpcAnswer, readRpcRequest, rpc } from './rpc';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -40,5 +40,14 @@ describe('rpc', () => {
     await expect(rpc('pr.rerunAllJobs', { prId: 'PR_1', runId: '7' })).resolves.toEqual({ offered: true });
     answer = (id) => ({ kind: 'gg-rpc-result', id, ok: true, result: { offered: 'yes' } });
     await expect(rpc('pr.rerunAllJobs', { prId: 'PR_1', runId: '7' })).rejects.toThrow(/The answer to pr\.rerunAllJobs did not match: .*\n.*offered/);
+  });
+});
+
+describe('readRpcAnswer', () => {
+  it("reads the result of an answer the background got from a tab by the method's schema, and throws the failure it carries or what differs", () => {
+    expect(readRpcAnswer('pr.followStackRebase', { kind: 'gg-rpc-result', id: 'r-1', ok: true, result: { complete: true, extra: 1 } })).toEqual({ complete: true });
+    expect(() => readRpcAnswer('pr.merge', { kind: 'gg-rpc-result', id: 'r-1', ok: false, error: 'Pull request is not mergeable' })).toThrow('Pull request is not mergeable');
+    expect(() => readRpcAnswer('pr.followStackRebase', { kind: 'gg-rpc-result', id: 'r-1', ok: true, result: { complete: 'yes' } })).toThrow(/The answer to pr\.followStackRebase did not match: .*\n.*complete/);
+    expect(() => readRpcAnswer('pr.followStackRebase', undefined)).toThrow(/The answer to pr\.followStackRebase did not match/);
   });
 });

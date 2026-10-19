@@ -216,6 +216,17 @@ describe('mutations', () => {
     await expect(mutations['pr.rebaseStack']({ prId: 'PR_2' })).rejects.toThrow('Rebasing was stopped due to an error. Check pull request #1 for any issues, then try to rebase this stack again.');
   });
 
+  it('follows a stack rebase GitHub is still at without sending anything, until it is done or as long again as the first wait', async () => {
+    vi.useFakeTimers();
+    reads = { '/o/r/pull/2/page_data/stack_rebase_status': { jobState: 'RUNNING', pullRequestStates: [{ number: 2, state: 'PENDING' }] } };
+    const following = mutations['pr.followStackRebase']({ prId: 'PR_2' });
+    await vi.advanceTimersByTimeAsync(46_000);
+    await expect(following).resolves.toEqual({ complete: false });
+    reads = { '/o/r/pull/2/page_data/stack_rebase_status': { jobState: 'DONE', pullRequestStates: [{ number: 2, state: 'CONFLICTED' }] } };
+    await expect(mutations['pr.followStackRebase']({ prId: 'PR_2' })).rejects.toThrow('Rebasing was stopped due to merge conflicts. Resolve the merge conflicts in pull request #2');
+    expect(sent).toEqual([]);
+  });
+
   it("reverts the way GitHub's Revert button does, and says where GitHub went next", async () => {
     const landed = 'https://github.com/o/r/compare/main...revert-1-feature?expand=1';
     const fetch = vi.fn(async () => Object.defineProperty(new Response('<html></html>'), 'url', { value: landed }));

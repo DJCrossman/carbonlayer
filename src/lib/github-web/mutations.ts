@@ -101,6 +101,8 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
     await send(`${pull.path}/page_data/stack_rebase`, 'POST', { expectedHeadOids });
     return stackRebaseSettled(pull, giveUpAt);
   },
+  // A rebase still going when `pr.rebaseStack` answered, followed as long again.
+  'pr.followStackRebase': ({ prId }) => stackRebaseSettled(pullRequestFor(prId), Date.now() + 45_000),
   'pr.markFileViewed': async ({ prId, path, viewed }) => {
     const pull = pullRequestFor(prId);
     if (viewed) await send(`${pull.path}/file_review`, 'POST', { path, viewed: 'viewed' });

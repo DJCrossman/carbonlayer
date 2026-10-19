@@ -1,7 +1,8 @@
 // Content script on github.com: recognises the inbox (the homepage, signed in) and PR routes, hides GitHub's page
 // content below its header, shows app.html there in an iframe, and bridges theme, keystrokes, titles and navigation
 // (src/app/bridge.ts): a move to another page the app shows stays in the app, the address bar and history following it.
-// It also answers the app's data requests (src/lib/rpc.ts) with the user's github.com session.
+// It also answers the app's data requests (src/lib/rpc.ts) with the user's github.com session, and the background's, for
+// the stack merges it runs (src/lib/stack-merges.ts).
 // `?gh=1` leaves GitHub untouched for one visit. On every handled route it adds a "GitHub | CarbonLayer" switch to
 // GitHub's header, which saves the surface's setting; while that is off, GitHub's page stays untouched.
 // First: zod's messages (src/lib/zod-messages.ts).
@@ -143,9 +144,23 @@ export default defineContentScript({
       if (choice.success) choosePage(choice.data.surface, choice.data.showOurs);
     };
     browser.runtime.onMessage.addListener(onChoose);
+    // The background's stack merges (src/lib/stack-merges.ts) ask GitHub through a github.com tab with the requests the
+    // app's frame makes, answered the same way, with this page's session.
+    const onAsked = (message: unknown, _sender: unknown, sendResponse: (answer: RpcResponse) => void) => {
+      const asked = rpcRequestSchema.safeParse(message);
+      if (!asked.success) return;
+      const { id } = asked.data;
+      void Promise.resolve()
+        .then(() => handleRpc(readRpcRequest(asked.data)))
+        .catch((error: unknown): RpcResponse => ({ kind: 'gg-rpc-result', id, ok: false, error: error instanceof Error ? error.message : String(error) }))
+        .then(sendResponse);
+      return true;
+    };
+    browser.runtime.onMessage.addListener(onAsked);
     ctx.onInvalidated(() => {
       unwatchSettings();
       browser.runtime.onMessage.removeListener(onChoose);
+      browser.runtime.onMessage.removeListener(onAsked);
       awaitingSignIn?.disconnect();
       takeover?.release();
       takeover = null;

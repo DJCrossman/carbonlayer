@@ -442,3 +442,28 @@ export type ViewResult = z.infer<typeof viewResultSchema>;
 export const emojiSchema = z.union([z.object({ name: z.string(), character: z.string() }), z.object({ name: z.string(), imageUrl: z.string() })]);
 
 export type Emoji = z.infer<typeof emojiSchema>;
+
+/**
+ * What merging a GitHub-native stack waits on (src/lib/stack-merges.ts), as the PR page's own readers find it: for each PR
+ * the merge merges, bottom first, its state, head commit, checks (and which are required), and GitHub's verdict on
+ * merging it with the open PRs below it, its own `stack_mergeability` (`status`, its effectiveEntryStatus: READY when it
+ * can; `mergeState`, its merge requirements' state: MERGEABLE, MERGEABLE_IF_STATUSES_PASS, …; each null where GitHub
+ * gave none); and what the merge box of the PR the stack merges from says of it: its merge status and the section about the
+ * stack's branches.
+ */
+export const stackReadinessSchema = z.object({
+  mergeStatus: mergeStatusSchema,
+  stackSection: prDetailSchema.shape.stackSection,
+  prs: z.array(
+    z.object({
+      number: z.number(),
+      state: prSummarySchema.shape.state,
+      headOid: z.string(),
+      ci: ciSummarySchema,
+      requiredCheckNames: z.array(z.string()),
+      verdict: z.object({ status: z.nullable(z.string()), mergeState: z.nullable(z.string()) }),
+    }),
+  ),
+});
+
+export type StackReadiness = z.infer<typeof stackReadinessSchema>;

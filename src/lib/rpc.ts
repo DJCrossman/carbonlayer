@@ -21,6 +21,7 @@ import {
   reviewerCandidateSchema,
   stackBranchesSchema,
   stackEntrySchema,
+  stackReadinessSchema,
   topRepositorySchema,
   viewResultSchema,
   viewSchema,
@@ -120,12 +121,11 @@ export function rpc<M extends RpcMethod>(method: M, args: RpcMethods[M]['args'])
   const request: RpcRequest<M> = { kind: 'gg-rpc', id, method, args };
   return new Promise((resolve, reject) => {
     pending.set(id, (answer) => {
-      if (!answer.ok) return reject(new Error(answer.error));
-      // Each method's result schema, typed as reading that method's result, so this answer comes out as `M`'s.
-      const results: { [K in RpcMethod]: { result: z.ZodMiniType<RpcMethods[K]['result']> } } = RPC_SCHEMAS;
-      const result = results[method].result.safeParse(answer.result);
-      if (result.success) resolve(result.data);
-      else reject(new Error(`The answer to ${method} did not match: ${z.prettifyError(result.error)}`));
+      try {
+        resolve(readRpcAnswer(method, answer));
+      } catch (error) {
+        reject(error);
+      }
     });
     window.parent.postMessage(request, 'https://github.com');
     setTimeout(() => {
@@ -133,6 +133,22 @@ export function rpc<M extends RpcMethod>(method: M, args: RpcMethods[M]['args'])
       reject(new Error(`GitHub did not answer ${method} within 60 s`));
     }, 60_000);
   });
+}
+
+/**
+ * The result of the content script's answer to a `method` request, read by the method's schema: what `rpc` resolves
+ * with, and what the background reads of an answer it asked a github.com tab for (src/lib/stack-merges.ts). Throws the
+ * request's failure as the content script gave it, and, saying what differs, for an answer of another shape.
+ */
+export function readRpcAnswer<M extends RpcMethod>(method: M, answer: unknown): RpcMethods[M]['result'] {
+  const read = rpcAnswerSchema.safeParse(answer);
+  if (!read.success) throw new Error(`The answer to ${method} did not match: ${z.prettifyError(read.error)}`);
+  if (!read.data.ok) throw new Error(read.data.error);
+  // Each method's result schema, typed as reading that method's result, so this answer comes out as `M`'s.
+  const results: { [K in RpcMethod]: { result: z.ZodMiniType<RpcMethods[K]['result']> } } = RPC_SCHEMAS;
+  const result = results[method].result.safeParse(read.data.result);
+  if (!result.success) throw new Error(`The answer to ${method} did not match: ${z.prettifyError(result.error)}`);
+  return result.data;
 }
 
 /** Whether a method is one this build has (zod/mini's refinements check a value but do not narrow its type). */
@@ -161,7 +177,7 @@ const lineComment = {
 const reviewerChange = z.object({ id: z.string(), isTeam: z.boolean() });
 
 /** A merge commit's title and message, by the names GitHub's merge requests give them. */
-const mergeCommit = z.object({ commitTitle: z.string(), commitMessage: z.string() });
+export const mergeCommit = z.object({ commitTitle: z.string(), commitMessage: z.string() });
 
 /** Each method's args and result: what the content script reads a request by, and the app its answer. */
 const RPC_SCHEMAS = {
@@ -237,6 +253,14 @@ const RPC_SCHEMAS = {
    * was still rebasing as the answer was due (it carries on).
    */
   'pr.rebaseStack': { args: z.object({ prId: z.string() }), result: z.object({ complete: z.boolean() }) },
+  /** Follows GitHub's rebase of the PR's native stack for up to 45 s more, as `pr.rebaseStack` does once it has sent it. */
+  'pr.followStackRebase': { args: z.object({ prId: z.string() }), result: z.object({ complete: z.boolean() }) },
+  /**
+   * What merging the PR's native stack in the background waits on (src/lib/stack-merges.ts), for `prs`, the PRs it merges,
+   * bottom first and this one last: the PR page's own readers of each one's state, head, checks and GitHub's verdict on
+   * merging it with those below it, and of what this PR's merge box says of the stack's branches.
+   */
+  'pr.fetchStackReadiness': { args: z.extend(prPageRequest, { prs: z.array(z.number()) }), result: stackReadinessSchema },
   /** The merge commit GitHub's merge box proposes for merging the PR this way: what its own commit message editor starts with. */
   'pr.proposedMergeCommit': { args: z.object({ prId: z.string(), method: mergeMethodSchema }), result: mergeCommit },
   /** Whom the viewer can ask for a review: GitHub's suggestions, then everyone else matching `query`. */

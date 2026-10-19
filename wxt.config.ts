@@ -8,7 +8,8 @@ export default defineConfig({
     name: 'CarbonLayer – Graphite UI for GitHub',
     short_name: 'CarbonLayer',
     description: 'We have Graphite at home: a Graphite-style inbox and pull request page on top of your GitHub session.',
-    permissions: ['storage'],
+    // Alarms move a stack merge on in the background every 30 s (entrypoints/background.ts).
+    permissions: ['storage', 'alarms'],
     host_permissions: ['https://github.com/*'],
     action: { default_title: 'CarbonLayer' },
     // The content script embeds app.html in an iframe on github.com.
