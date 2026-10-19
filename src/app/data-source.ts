@@ -46,7 +46,10 @@ export interface DataSource {
   fetchPrStage<S extends PrStage>(stage: S, repo: RepoRef, number: number): Promise<PrStages[S]>;
   /** The diffs of up to 20 of a PR's changed files, by path. */
   fetchPrFileDiffs(repo: RepoRef, number: number, paths: string[]): Promise<Record<string, ChangedFileDiff>>;
-  /** A changed file's diff lines on the head commit with the lines it leaves out in `ranges` (new-file numbers) put in. */
+  /**
+   * A changed file's diff lines on the head commit with the lines it leaves out in `ranges` (new-file numbers) put in;
+   * without ranges, the lines of a diff GitHub held back.
+   */
   fetchPrDiffLines(repo: RepoRef, number: number, path: string, headOid: string, ranges: LineRange[]): Promise<DiffEntryLine[]>;
   review(prId: string, event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT', body: string, threads?: ReviewThreadDraft[]): Promise<void>;
   comment(prId: string, body: string): Promise<void>;
@@ -165,6 +168,8 @@ export interface Fixtures {
   prs: PrDetail[];
   /** The whole of each fixture file whose diff leaves lines out, at its PR's head, by path. */
   fileContents: Record<string, string>;
+  /** The patch of each fixture file whose lines GitHub holds back (`withheld: 'held-back'`), by path. */
+  heldBackPatches: Record<string, string>;
 }
 
 /** An inbox row with its check list and what only its enrichment says: which checks are required, why it is blocked. */
@@ -300,8 +305,8 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
         activity: { timeline },
         files: {
           baseOid,
-          files: files.map(({ patch, previousPath, ...summary }) => summary),
-          diffs: Object.fromEntries(files.slice(0, 1).map((file) => [file.path, { patch: file.patch, previousPath: file.previousPath }])),
+          files: files.map(({ patch, previousPath, withheld, generated, ...summary }) => summary),
+          diffs: Object.fromEntries(files.slice(0, 1).map(({ path, patch, previousPath, withheld, generated }) => [path, { patch, previousPath, withheld, generated }])),
         },
         threads: { threads, unresolvedThreadCount },
         mergeBox: { mergeStatus, reviewers, reviewDecision, viewerCanMerge, viewerCanEnableAutoMerge, allowedMergeMethods, defaultMergeMethod, autoMerge, isInMergeQueue, stackSection },
@@ -325,15 +330,16 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     fetchPrFileDiffs: async (repo, number, paths) => {
       const pr = fixturePr(repo, number);
       await new Promise((resolve) => setTimeout(resolve, 900));
-      return Object.fromEntries(pr.files.filter((file) => paths.includes(file.path)).map((file) => [file.path, { patch: file.patch, previousPath: file.previousPath }]));
+      return Object.fromEntries(pr.files.filter((file) => paths.includes(file.path)).map(({ path, patch, previousPath, withheld, generated }) => [path, { patch, previousPath, withheld, generated }]));
     },
-    // What GitHub would answer, from the fixture file's whole contents, a moment later.
+    // What GitHub would answer, from the fixture file's patch (the one GitHub sent, or the one it held back) and, for the
+    // lines its diff leaves out, its whole contents, a moment later.
     fetchPrDiffLines: async (repo, number, path, _headOid, ranges) => {
-      const patch = fixturePr(repo, number).files.find((file) => file.path === path)?.patch;
+      const patch = fixturePr(repo, number).files.find((file) => file.path === path)?.patch ?? fixtures.heldBackPatches[path];
       const contents = fixtures.fileContents[path];
       await new Promise((resolve) => setTimeout(resolve, 400));
-      if (!patch || contents === undefined) throw new Error(`GitHub answered 404 for /${repo.owner}/${repo.name}/pull/${number}/page_data/diff_entry_lines`);
-      return fixtureDiffEntryLines(patch, contents, ranges);
+      if (!patch || (ranges.length > 0 && contents === undefined)) throw new Error(`GitHub answered 404 for /${repo.owner}/${repo.name}/pull/${number}/page_data/diff_entry_lines`);
+      return fixtureDiffEntryLines(patch, contents ?? '', ranges);
     },
     review: (...args) => log('review', ...args),
     comment: (...args) => log('comment', ...args),

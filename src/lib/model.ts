@@ -279,8 +279,17 @@ export const changedFileSchema = z.object({
   status: z.enum(['added', 'removed', 'modified', 'renamed', 'copied', 'changed']),
   additions: z.number(),
   deletions: z.number(),
-  /** Unified diff hunks for this file, rebuilt from GitHub's diff lines; null for binary / too large. */
+  /** Unified diff hunks for this file, rebuilt from GitHub's diff lines; null when GitHub sent none (`withheld` says why). */
   patch: z.nullable(z.string()),
+  /**
+   * Why GitHub sent no lines for a file that has some: it calls the file `binary`, which no diff shows, or it held them
+   * back (`held-back`): a generated file (a lockfile, or one marked linguist-generated) whatever its size, one too big,
+   * and every deleted file, which GitHub marks too big. GitHub's own page loads those lines when asked
+   * (page_data/diff_entry_lines). Null when the lines came, or there are none.
+   */
+  withheld: z.nullable(z.enum(['binary', 'held-back'])),
+  /** Whether GitHub says the file is generated (its diff entry's `newTreeEntry.isGenerated`). */
+  generated: z.boolean(),
   viewerViewedState: z.enum(['VIEWED', 'UNVIEWED', 'DISMISSED']),
   blobUrl: z.string(),
 });
@@ -323,12 +332,15 @@ export const prDetailSchema = z.extend(prSummarySchema, {
 export type PrDetail = z.infer<typeof prDetailSchema>;
 
 /** A changed file the way GitHub lists it, before its diff arrives. */
-export const changedFileSummarySchema = z.omit(changedFileSchema, { patch: true, previousPath: true });
+export const changedFileSummarySchema = z.omit(changedFileSchema, { patch: true, previousPath: true, withheld: true, generated: true });
 
 export type ChangedFileSummary = z.infer<typeof changedFileSummarySchema>;
 
-/** What a changed file's diff adds to its summary: the patch, and the path it had before a rename or copy. */
-export const changedFileDiffSchema = z.pick(changedFileSchema, { patch: true, previousPath: true });
+/**
+ * What a changed file's diff adds to its summary: the patch (or why GitHub sent none), whether the file is generated, and
+ * the path it had before a rename or copy.
+ */
+export const changedFileDiffSchema = z.pick(changedFileSchema, { patch: true, previousPath: true, withheld: true, generated: true });
 
 export type ChangedFileDiff = z.infer<typeof changedFileDiffSchema>;
 

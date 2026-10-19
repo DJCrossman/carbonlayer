@@ -233,6 +233,32 @@
   color: var(--gg-fg-muted);
   text-align: center;
 }
+/* A renamed file's previous path, dimmed as in a diff's header. */
+.file-stub-prev-name { color: var(--gg-fg-muted); font: 12.5px var(--gg-font); }
+/* The line counts, as a diff's header shows them. */
+.file-stub-counts { display: inline-flex; gap: 6px; font: 12px var(--gg-font-mono); }
+/* GitHub calls the file generated (a lockfile, or one marked linguist-generated). */
+.file-generated {
+  flex: none;
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--gg-border);
+  border-radius: 10px;
+  color: var(--gg-fg-muted);
+  font: 500 11px/18px var(--gg-font);
+}
+/* A deleted file's quiet "Load diff", as GitHub's. */
+.file-stub-load {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--gg-accent);
+  font: inherit;
+  cursor: pointer;
+}
+.file-stub-load:hover { text-decoration: underline; }
+/* A held-back diff that did not load, with its retry, in place of the lines. */
+.file-card > .pr-stage-error { margin: 12px; }
 /* A collapsed file waiting for its diff: the header is the whole card. */
 .file-card.is-stub > .file-stub-header:last-child { border-bottom: 0; border-radius: var(--gg-radius); }
 /* A file's diff on its way. */

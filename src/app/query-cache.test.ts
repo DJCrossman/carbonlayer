@@ -9,12 +9,13 @@ afterEach(() => {
 });
 
 describe('keptOnDevice', () => {
-  it("keeps what a PR page loaded, except its diffs (and the files expanded in them), file list, threads and timeline, anything that failed, and the settings", async () => {
+  it("keeps what a PR page loaded, except its diffs (the files expanded in them and the diffs GitHub held back too), file list, threads and timeline, anything that failed, and the settings", async () => {
     const storage = memoryStorage();
     const page = new QueryClient();
     for (const stage of ['header', 'stack', 'activity', 'files', 'threads', 'mergeBox', 'checks', 'meta']) page.setQueryData(['pr', 'o', 'r', 1, stage], { stage });
     page.setQueryData(['pr-diff', 'o', 'r', 1, 'head', 'main', 'a.ts'], { patch: '@@' });
     page.setQueryData(['pr-diff', 'o', 'r', 1, 'head', 'main', 'a.ts', 'contents'], { old: 'a\n', new: 'b\n' });
+    page.setQueryData(['pr-diff', 'o', 'r', 1, 'head', 'main', 'pnpm-lock.yaml', 'held-back'], '@@ -1 +1 @@');
     page.setQueryData(['settings'], { diffLayout: 'split' });
     await page.prefetchQuery({ queryKey: ['pr', 'o', 'r', 2, 'header'], queryFn: () => Promise.reject(new Error('GitHub answered 502')), retry: false });
     await persistQueryClientSave({ queryClient: page, ...keptOnDevice(ana, storage) });

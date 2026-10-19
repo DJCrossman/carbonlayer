@@ -60,7 +60,7 @@ describe('the PR page in stages', () => {
     const files = await loadStage('files');
     expect(files.files.map((file) => file.path)).toEqual(['a.ts', 'b.ts']);
     expect(Object.keys(files.diffs)).toEqual(['a.ts']);
-    expect(await call('pr.fetchFileDiffs', { repo, number: 1, paths: ['b.ts'] })).toEqual({ 'b.ts': { patch: '@@ -0,0 +1,1 @@\n+x', previousPath: null } });
+    expect(await call('pr.fetchFileDiffs', { repo, number: 1, paths: ['b.ts'] })).toEqual({ 'b.ts': { patch: '@@ -0,0 +1,1 @@\n+x', previousPath: null, withheld: null, generated: false } });
     expect(requests).toEqual(['base_comparison_info', 'diff_entries']);
   });
 

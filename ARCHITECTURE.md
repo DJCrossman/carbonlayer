@@ -248,6 +248,23 @@ library keeps the lines expanded while the file shows, collapsed and opened agai
 line looks like any unchanged line, numbered on both sides, and takes no comment (`takesComments`): it has no "+", and a
 selection that reaches it opens no composer.
 
+Lines GitHub holds back: GitHub sends no lines for a generated file (a lockfile, or one marked `linguist-generated`)
+whatever its size, for one too big, and for every deleted file, which it marks too big; its own page shows them on
+"Load Diff". The reader tells those (`withheld: 'held-back'`) from binary files (`'binary'`) by the diff entry's
+`isBinary`, `isTooBig`, `diffLines` and line counts (`diffOf` in `src/lib/github-web/files.ts`), and keeps whether GitHub
+calls the file generated (`newTreeEntry.isGenerated`), which the file's header tags "Generated". A held-back file's card
+loads its lines by itself once it comes within a screen of the viewport (an `IntersectionObserver` with `root:
+document`, as the inbox's rows), a collapsed (viewed) one only once expanded: one `page_data/diff_entry_lines` request
+without ranges, as GitHub's "Load Diff" sends it (`pr.fetchDiffLines` with no ranges), made into the file's patch
+(`patchOf`) and kept beside its diff (`['pr-diff', …, path, 'held-back']`, `prHeldBackDiffQuery` in
+`src/pr/page-data.ts`), in this tab's memory and never on the device. Until then the card shows the skeleton, and a failure
+shows in the card with a Retry. A card holds the room its lines will take (a line's height each, at least) until they are
+drawn, so the files below stay where they will be and are near only once the reader is. As GitHub's page does, a deleted
+file reads "This file was deleted." with a quiet "Load diff", which loads it the same way, only when clicked; a file renamed
+without changes reads "File renamed without changes." and asks nothing; a binary file reads "Binary file not shown"; and
+a file with no lines at all, "No lines changed". Each keeps the header a diff has: the path (the old one → the new for a
+rename), the line counts, Viewed and the ⋯ menu.
+
 Stacks: GitHub-native `stack` from the PR page's embedded data first; otherwise Graphite's stack
 comment in the timeline, enriched through a `/pulls/search` query on the author's open PRs. The stack card
 (`src/pr/StackCard.tsx`) shows each entry as Graphite does: its dot on the rail, its author's avatar, number and title,

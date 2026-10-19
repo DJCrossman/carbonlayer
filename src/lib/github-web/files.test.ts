@@ -41,7 +41,34 @@ describe('changedFileList', () => {
       { path: 'src/file 1.ts', status: 'added', additions: 1, deletions: 0, viewerViewedState: 'UNVIEWED', blobUrl: 'https://github.com/o/r/blob/head/src/file%201.ts' },
       { path: 'old.ts', status: 'removed', additions: 0, deletions: 0, viewerViewedState: 'VIEWED', blobUrl: 'https://github.com/o/r/blob/base/old.ts' },
     ]);
-    expect(diffs).toEqual({ 'src/file 1.ts': { patch: '@@ -0,0 +1 @@\n+x', previousPath: null } });
+    expect(diffs).toEqual({ 'src/file 1.ts': { patch: '@@ -0,0 +1 @@\n+x', previousPath: null, withheld: null, generated: false } });
+  });
+
+  it('tells a binary file from one whose lines GitHub held back: generated, too big or deleted', () => {
+    const { diffs } = changedFileList(
+      { owner: 'o', name: 'r' },
+      {
+        diffSummaries: [],
+        diffContents: [
+          // offstreetparking/core#9188, 2026-10-19: a lockfile and a linguist-generated file, small, without their lines.
+          { path: 'pnpm-lock.yaml', isBinary: false, isTooBig: false, linesAdded: 10, linesDeleted: 0, diffLines: [], newTreeEntry: { isGenerated: true } },
+          { path: 'shard-timings.json', isBinary: false, isTooBig: false, linesAdded: 5370, linesDeleted: 0, diffLines: [] },
+          // offstreetparking/core#9190, 2026-10-19: a deleted file of 437 lines, which GitHub marks too big.
+          { path: 'envelope-rollup.test.ts', isTooBig: true, linesAdded: 0, linesDeleted: 437, diffLines: [] },
+          { path: 'logo.png', isBinary: true, linesAdded: 0, linesDeleted: 0, diffLines: [] },
+          { path: 'empty.txt', linesAdded: 0, linesDeleted: 0, diffLines: [] },
+          { path: 'a.ts', linesAdded: 1, linesDeleted: 0, diffLines: [{ type: 'HUNK', text: '@@ -0,0 +1 @@' }, { type: 'ADDITION', text: '+x' }] },
+        ],
+      },
+    );
+    expect(Object.fromEntries(Object.entries(diffs).map(([path, { patch, withheld, generated }]) => [path, [patch !== null, withheld, generated]]))).toEqual({
+      'pnpm-lock.yaml': [false, 'held-back', true],
+      'shard-timings.json': [false, 'held-back', false],
+      'envelope-rollup.test.ts': [false, 'held-back', false],
+      'logo.png': [false, 'binary', false],
+      'empty.txt': [false, null, false],
+      'a.ts': [true, null, false],
+    });
   });
 });
 
@@ -67,8 +94,21 @@ describe('fileDiffs', () => {
     expect(request.searchParams.get('paths')?.split(',')).toEqual(['src%2Fa%20b.ts', 'new.ts']);
     expect(request.searchParams.get('ctx')).toBe(':');
     expect(request.searchParams.has('range')).toBe(false);
-    expect(diffs).toEqual({ 'src/a b.ts': { patch: '@@ -1 +1 @@', previousPath: null }, 'new.ts': { patch: '@@ -1 +1 @@', previousPath: 'old.ts' } });
+    expect(diffs).toEqual({
+      'src/a b.ts': { patch: '@@ -1 +1 @@', previousPath: null, withheld: null, generated: false },
+      'new.ts': { patch: '@@ -1 +1 @@', previousPath: 'old.ts', withheld: null, generated: false },
+    });
     expect(headOid).not.toHaveBeenCalled();
+  });
+
+  it('reads the entries keyed by their place, as GitHub answered its own page on 2026-10-19', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ 0: { path: 'pnpm-lock.yaml', isBinary: false, isTooBig: false, linesAdded: 10, linesDeleted: 0, diffLines: [] } })),
+    );
+    expect(await fileDiffs('/o/r/pull/1', ['pnpm-lock.yaml'], async () => 'head')).toEqual({
+      'pnpm-lock.yaml': { patch: null, previousPath: null, withheld: 'held-back', generated: false },
+    });
   });
 });
 
@@ -110,6 +150,28 @@ describe('expandedDiffLines', () => {
       { type: 'CONTEXT', left: 1, right: 1, text: ' a', displayNoNewLineWarning: false },
       { type: 'DELETION', left: 2, right: 0, text: '-b', displayNoNewLineWarning: false },
       { type: 'ADDITION', left: 0, right: 2, text: '+c', displayNoNewLineWarning: true },
+    ]);
+  });
+
+  it("asks the way GitHub's Load Diff does for a file whose lines it held back: no ranges, whitespace shown, the head commit", async () => {
+    const requested: URL[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        requested.push(new URL(url, 'https://github.com'));
+        return Response.json({ diffEntryLines: [] });
+      }),
+    );
+    await expandedDiffLines('/o/r/pull/1', 'pnpm-lock.yaml', 'f'.repeat(40), []);
+    expect(requested.map((request) => [request.pathname, [...request.searchParams]])).toEqual([
+      [
+        '/o/r/pull/1/page_data/diff_entry_lines',
+        [
+          ['path', 'pnpm-lock.yaml'],
+          ['w', '0'],
+          ['range', 'f'.repeat(40)],
+        ],
+      ],
     ]);
   });
 

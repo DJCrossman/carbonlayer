@@ -2,7 +2,7 @@ import { hydratePartialDiff } from '@pierre/diffs';
 import { afterEach, assert, describe, expect, it, vi } from 'vitest';
 import { createFixtureDataSource } from '../app/data-source';
 import { fixtures } from '../fixtures';
-import { prFixtures } from '../fixtures/pr';
+import { heldBackPatches, prFixtures } from '../fixtures/pr';
 import type { ChangedFile, ReviewThread } from '../lib/model';
 import type { DiffEntryLine } from '../lib/rpc';
 import { commentedRows, composerAnchorFor, currentLinesOf, fileContentsFrom, fileNotes, filesInTreeOrder, fileTree, hiddenLines, renderableDiff, takesComments } from './diff';
@@ -18,13 +18,14 @@ const fileAt = (path: string): ChangedFile => {
 describe('renderableDiff', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('keeps every hunk of every fixture file and never reports a malformed hunk', () => {
+  it('keeps every hunk of every fixture file, those GitHub holds back too, and never reports a malformed hunk', () => {
     const errors = vi.spyOn(console, 'error');
     for (const pr of prFixtures) {
       for (const file of pr.files) {
-        if (file.patch === null) continue;
-        const diff = renderableDiff(file);
-        expect(diff?.hunks).toHaveLength(file.patch.split('\n').filter((line) => line.startsWith('@@ ')).length);
+        const patch = file.patch ?? heldBackPatches[file.path];
+        if (patch === undefined) continue;
+        const diff = renderableDiff({ ...file, patch });
+        expect(diff?.hunks).toHaveLength(patch.split('\n').filter((line) => line.startsWith('@@ ')).length);
         assert.exists(diff, file.path);
         const added = diff.hunks.reduce((sum, hunk) => sum + hunk.additionLines, 0);
         const removed = diff.hunks.reduce((sum, hunk) => sum + hunk.deletionLines, 0);
@@ -36,7 +37,7 @@ describe('renderableDiff', () => {
 
   it('marks added, removed, renamed and modified files with their change type and names', () => {
     expect(renderableDiff(fileAt('src/parcs/zones.ts'))).toMatchObject({ name: 'src/parcs/zones.ts', type: 'new' });
-    expect(renderableDiff(fileAt('src/parcs/legacy.ts'))).toMatchObject({ name: 'src/parcs/legacy.ts', type: 'deleted' });
+    expect(renderableDiff({ ...fileAt('src/parcs/legacy.ts'), patch: heldBackPatches['src/parcs/legacy.ts'] ?? null })).toMatchObject({ name: 'src/parcs/legacy.ts', type: 'deleted' });
     expect(renderableDiff(fileAt('src/parcs/new-name.ts'))).toMatchObject({
       name: 'src/parcs/new-name.ts',
       prevName: 'src/parcs/old-name.ts',

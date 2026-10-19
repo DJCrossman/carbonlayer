@@ -3,9 +3,10 @@
 // line annotations inside the diffs. `useFileReview` holds the reviewer's position in the files (current
 // file and thread, collapsed files, the open composer) so page-level keybindings can drive it.
 // Until the file list arrives the section shows the header's file count over skeleton cards; then each file
-// shows a skeleton until its diff arrives.
+// shows a skeleton until its diff arrives, and a file whose lines GitHub held back (generated, too big) until they load,
+// once the reader comes near it.
 import { FileDiff, type FileDiffOptions, type SelectedLineRange } from '@pierre/diffs/react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent } from 'react';
 import type { DataSource, ReviewThreadDraft } from '../app/data-source';
 import { fileAnchor } from '../app/routes';
@@ -15,7 +16,7 @@ import { Icon } from '../ui/Icon';
 import { Skeleton } from '../ui/Skeleton';
 import { showToast } from '../ui/Toast';
 import { composerAnchorFor, currentLinesOf, fileNotes, filesInTreeOrder, fileTree, hiddenLines, renderableDiff, takesComments, type ComposerAnchor, type DiffNote, type FileTreeNode } from './diff';
-import { prFileContentsQuery, type StageState } from './page-data';
+import { prFileContentsQuery, prHeldBackDiffQuery, type StageState } from './page-data';
 import { StageError } from './primitives';
 import { DiffNoteView, type NoteActions } from './Threads';
 import './files.css';
@@ -333,8 +334,36 @@ function FileCard({
   onToggleViewed: (path: string) => void;
   noteActions: NoteActions;
 }) {
+  const collapsed = review.isCollapsed(file);
+  const queryClient = useQueryClient();
+  const { owner, name } = pr.repo;
+  const { number, headOid, baseRefName } = pr;
+  // GitHub's own page shows neither a deleted file's lines nor a moved one's, until its "Load diff" for the first.
+  const removed = file.status === 'removed';
+  const movedOnly = file.status === 'renamed' && file.additions === 0 && file.deletions === 0;
+  const [deletedShown, setDeletedShown] = useState(false);
+  // The lines GitHub held back (a generated file, one too big, a deleted one) load by themselves once the card comes within
+  // a screen of the viewport, a deleted file's once asked for, and a collapsed file's only once it is expanded.
+  const card = useRef<HTMLDivElement | null>(null);
+  const heldBack = file.withheld === 'held-back' && file.patch === null && !movedOnly;
+  const [near, setNear] = useState(false);
+  useEffect(() => {
+    const element = card.current;
+    if (!heldBack || removed || near || !element) return;
+    // `root: document` is this page's own scrolling viewport (in the extension, the iframe's), where the margin applies.
+    const observer = new IntersectionObserver((entries) => entries.some((entry) => entry.isIntersecting) && setNear(true), { root: document, rootMargin: '100% 0px' });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [heldBack, removed, near]);
+  // Only a file whose lines GitHub held back has a query for them; until its own header arrives, a PR opened from the inbox
+  // or a stack names no head commit to ask them of.
+  const heldBackQueries = heldBack
+    ? [{ ...prHeldBackDiffQuery(source, { owner, name }, number, { headOid, baseRefName }, file.path), enabled: !collapsed && headOid !== '' && (removed ? deletedShown : near) }]
+    : [];
+  const [heldBackDiff] = useQueries({ queries: heldBackQueries });
+  const patch = file.patch ?? heldBackDiff?.data ?? null;
   // Keyed on the patch, not the object: a refetch returns new objects, and a new diff identity re-renders it.
-  const fileDiff = useMemo(() => renderableDiff(file), [file.path, file.previousPath, file.status, file.patch]);
+  const fileDiff = useMemo(() => renderableDiff({ ...file, patch }), [file.path, file.previousPath, file.status, patch]);
   const composer = review.composer?.path === file.path ? review.composer : null;
   // The diff keys each note by its place in the list, so a note keeps the place it was first shown in and new ones go
   // after it: a thread that arrives with a refresh leaves an open composer or reply, and what is typed in it, as it was.
@@ -351,8 +380,8 @@ function FileCard({
   }, [file.path, pr.threads, batch, composer]);
   // GitHub offers "Add a suggestion" on the new file's lines only.
   const suggestion =
-    composer && file.patch !== null && composer.side === 'additions' && (composer.startSide ?? 'additions') === 'additions'
-      ? currentLinesOf(file.patch, composer.startLine ?? composer.line, composer.line)
+    composer && patch !== null && composer.side === 'additions' && (composer.startSide ?? 'additions') === 'additions'
+      ? currentLinesOf(patch, composer.startLine ?? composer.line, composer.line)
       : null;
   // Lines being selected, until the pointer is released and the composer opens for them.
   const [selecting, setSelecting] = useState<SelectedLineRange | null>(null);
@@ -363,16 +392,12 @@ function FileCard({
       (composer ? { start: composer.startLine ?? composer.line, side: composer.startSide ?? composer.side, end: composer.line, endSide: composer.side } : null),
     [selecting, composer],
   );
-  const collapsed = review.isCollapsed(file);
   const viewed = file.viewerViewedState === 'VIEWED';
   const threadCount = pr.threads.filter((thread) => thread.path === file.path).length;
   const current = review.currentPath === file.path;
   const openComposer = useRef(review.openComposer);
   openComposer.current = review.openComposer;
   const setCollapsed = review.setCollapsed;
-  const queryClient = useQueryClient();
-  const { owner, name } = pr.repo;
-  const { number, headOid, baseRefName } = pr;
 
   // Stable identity unless a value the library renders from changes: it re-renders on every new options object.
   const options = useMemo(
@@ -435,9 +460,16 @@ function FileCard({
     if (event.nativeEvent.composedPath().some((target) => target instanceof Element && target.matches('[data-title], .file-stub-name'))) copyFileName(file.path);
   };
 
+  const collapseToggle = (
+    <button className="file-collapse" onClick={() => setCollapsed(file.path, !collapsed)} aria-expanded={!collapsed} title={collapsed ? 'Expand file (e)' : 'Collapse file (e)'}>
+      <Icon name={collapsed ? 'chevron-right' : 'chevron-down'} size={14} />
+    </button>
+  );
+  const generatedTag = file.generated && <span className="file-generated">Generated</span>;
+
   if (missingDiff) {
     return (
-      <div className={`file-card is-stub ${current ? 'is-current' : ''}`} id={`gg-file:${file.path}`} aria-busy={missingDiff === 'loading'} onClick={onClick}>
+      <div className={`file-card is-stub ${current ? 'is-current' : ''}`} id={`gg-file:${file.path}`} ref={card} aria-busy={missingDiff === 'loading'} onClick={onClick}>
         <div className="file-stub-header">
           <span className={`file-status is-${file.status}`}>{STATUS_LETTERS[file.status]}</span>
           <span className="file-stub-name">{file.path}</span>
@@ -459,28 +491,81 @@ function FileCard({
     );
   }
 
-  if (!fileDiff) {
+  // A file whose lines do not show (yet): its header as the diff's would be, and in place of the lines why there are none.
+  if (!fileDiff || movedOnly || (removed && !deletedShown)) {
+    const body = collapsed
+      ? null
+      : movedOnly
+        ? 'moved'
+        : file.withheld === 'binary'
+          ? 'binary'
+          : removed && !deletedShown
+            ? 'deleted'
+            : heldBackDiff?.isError
+              ? 'failed'
+              : heldBackDiff && heldBackDiff.data === undefined
+                ? 'loading'
+                : 'empty';
     return (
-      <div className={`file-card is-stub ${current ? 'is-current' : ''}`} id={`gg-file:${file.path}`} onClick={onClick}>
+      <div
+        className={`file-card is-stub ${current ? 'is-current' : ''}`}
+        id={`gg-file:${file.path}`}
+        ref={card}
+        aria-busy={heldBackDiff?.isFetching}
+        onClick={onClick}
+        // Lines on their way hold the room they will take (a line's height each, at least), so that the files below are
+        // where they will be, and a held-back file below is near only once the reader is.
+        style={body === 'loading' ? { minHeight: (file.additions + file.deletions) * DIFF_LINE_HEIGHT } : undefined}
+      >
         <div className="file-stub-header">
+          {collapseToggle}
           <span className={`file-status is-${file.status}`}>{STATUS_LETTERS[file.status]}</span>
+          {file.previousPath && <span className="file-stub-prev-name">{file.previousPath} →</span>}
           <span className="file-stub-name">{file.path}</span>
+          {generatedTag}
           <span className="files-toolbar-spacer" />
+          {/* As the diff's header counts them: removed lines when there are any or nothing was added, and the other way round. */}
+          <span className="file-stub-counts">
+            {(file.deletions > 0 || file.additions === 0) && <span className="pr-fg-danger">-{file.deletions}</span>}
+            {(file.additions > 0 || file.deletions === 0) && <span className="pr-fg-success">+{file.additions}</span>}
+          </span>
           {viewedToggle}
           <FileMenu path={file.path} prUrl={pr.url} />
         </div>
-        <div className="file-stub-body">
-          Binary or too large to display ·{' '}
-          <a href={file.blobUrl} target="_blank" rel="noopener">
-            open on GitHub
-          </a>
-        </div>
+        {body === 'moved' && <div className="file-stub-body">File renamed without changes.</div>}
+        {body === 'binary' && <div className="file-stub-body">Binary file not shown</div>}
+        {body === 'deleted' && (
+          <div className="file-stub-body">
+            This file was deleted.{' '}
+            <button className="file-stub-load" onClick={() => setDeletedShown(true)}>
+              Load diff
+            </button>
+          </div>
+        )}
+        {body === 'failed' && heldBackDiff && <StageError what="this file's diff" error={heldBackDiff.error?.message ?? ''} onRetry={() => void heldBackDiff.refetch()} />}
+        {body === 'loading' && (
+          <div className="file-diff-skeleton" aria-hidden="true">
+            {['40%', '65%', '55%', '30%'].map((width, index) => (
+              <Skeleton key={index} width={width} height={10} />
+            ))}
+          </div>
+        )}
+        {body === 'empty' && <div className="file-stub-body">No lines changed</div>}
       </div>
     );
   }
 
   return (
-    <div className={`file-card ${current ? 'is-current' : ''}`} id={`gg-file:${file.path}`} onClick={onClick}>
+    <div
+      className={`file-card ${current ? 'is-current' : ''}`}
+      id={`gg-file:${file.path}`}
+      ref={card}
+      onClick={onClick}
+      // The diff draws its lines only once they are highlighted: until then the card holds the room its hunks' rows will take
+      // (a line's height each, at least; the unchanged lines between hunks show only once expanded), so that the files below
+      // are where they will be, and a held-back file below is near only once the reader is.
+      style={collapsed ? undefined : { minHeight: fileDiff.hunks.reduce((rows, hunk) => rows + (diffStyle === 'split' ? hunk.splitLineCount : hunk.unifiedLineCount), 0) * DIFF_LINE_HEIGHT }}
+    >
       <FileDiff<DiffNote>
         fileDiff={fileDiff}
         options={options}
@@ -495,16 +580,8 @@ function FileCard({
             actions={noteActions}
           />
         )}
-        renderHeaderPrefix={() => (
-          <button
-            className="file-collapse"
-            onClick={() => setCollapsed(file.path, !collapsed)}
-            aria-expanded={!collapsed}
-            title={collapsed ? 'Expand file (e)' : 'Collapse file (e)'}
-          >
-            <Icon name={collapsed ? 'chevron-right' : 'chevron-down'} size={14} />
-          </button>
-        )}
+        renderHeaderPrefix={() => collapseToggle}
+        renderHeaderFilenameSuffix={file.generated ? () => generatedTag : undefined}
         renderHeaderMetadata={() => (
           <div className="file-header-meta">
             {threadCount > 0 && (
@@ -626,6 +703,9 @@ function subscribeToThemeChanges(onChange: () => void): () => void {
 
 /** Height of the sticky Files toolbar; file headers and the tree stick below it. Mirrors files.css. */
 const STICKY_TOP = 40;
+
+/** Height of a line of a diff. Mirrors files.css (`--diffs-line-height`). */
+const DIFF_LINE_HEIGHT = 20;
 
 /** Git's one-letter status codes. */
 const STATUS_LETTERS: Record<ChangedFile['status'], string> = {

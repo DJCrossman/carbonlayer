@@ -41,20 +41,22 @@ export function changedFileList(repo: RepoRef, comparison: BaseComparison): { fi
 /**
  * The diffs of up to 20 changed files, by path, from one of GitHub's diff_entries requests. Without `range` GitHub
  * answers with the whole PR's diff (observed); if it ever refuses, the request is retried with the head OID as `range`,
- * the way GitHub's own UI sends it, which `headOid` is only asked for then.
+ * the way GitHub's own UI sends it, which `headOid` is only asked for then. The entries come as a list, or keyed by their
+ * place in it (`{ "0": entry }`, as GitHub answered its own page's request on 2026-10-19).
  */
 export async function fileDiffs(pullPath: string, paths: string[], headOid: () => Promise<string | null>): Promise<Record<string, ChangedFileDiff>> {
   // As GitHub's UI does: each path encoded, joined with commas, the whole encoded again as one value;
   // `ctx` carries one (empty) context-range slot per path.
   const params = new URLSearchParams({ paths: paths.map(encodeURIComponent).join(','), ctx: paths.map(() => '').join(':'), w: '0' });
+  const answer = z.union([z.array(diffEntrySchema), z.record(z.string(), diffEntrySchema)]);
   let entries: DiffEntry[];
   try {
-    entries = await getJson(`${pullPath}/page_data/diff_entries?${params}`, z.array(diffEntrySchema));
+    entries = Object.values(await getJson(`${pullPath}/page_data/diff_entries?${params}`, answer));
   } catch (error) {
     const range = await headOid();
     if (!range) throw error;
     params.set('range', range);
-    entries = await getJson(`${pullPath}/page_data/diff_entries?${params}`, z.array(diffEntrySchema));
+    entries = Object.values(await getJson(`${pullPath}/page_data/diff_entries?${params}`, answer));
     console.debug('[gg] diff_entries needed range=<head OID>');
   }
   return Object.fromEntries(entries.map((entry) => [entry.path, diffOf(entry)]));
@@ -65,7 +67,8 @@ export async function fileDiffs(pullPath: string, paths: string[], headOid: () =
  * way GitHub's "Expand up" / "Expand down" asks for them (page_data/diff_entry_lines, docs/research/github-web-endpoints.md):
  * the path, each range as JSON, whitespace shown, and the head commit as `range`. GitHub answers with every line of the
  * diff again, the ones asked for among them as INJECTED_CONTEXT lines (`~` before their text); a line with no number on a
- * side has none there.
+ * side has none there. Without ranges it is the request GitHub's "Load Diff" makes for a file whose lines it held back
+ * (generated, too big or deleted), answered with the file's whole diff.
  */
 export async function expandedDiffLines(pullPath: string, path: string, headOid: string, ranges: LineRange[]): Promise<DiffEntryLine[]> {
   const params = new URLSearchParams({ path });
@@ -89,15 +92,26 @@ export async function expandedDiffLines(pullPath: string, path: string, headOid:
   }));
 }
 
-/** The diff a GitHub diff entry carries: its patch and, for a renamed or copied file, the path it had before. */
+/**
+ * The diff a GitHub diff entry carries: its patch, or why it has none, whether GitHub calls the file generated, and, for a
+ * renamed or copied file, the path it had before.
+ */
 function diffOf(entry: DiffEntry): ChangedFileDiff {
   const oldPath = entry.oldTreeEntry?.path;
-  return { patch: patchOf(entry), previousPath: oldPath && oldPath !== entry.path ? oldPath : null };
+  return {
+    patch: patchOf(entry),
+    previousPath: oldPath && oldPath !== entry.path ? oldPath : null,
+    // GitHub leaves out the lines of a generated file whatever its size (empty `diffLines`, while it counts the lines
+    // changed), and of one it calls too big, every deleted file among them.
+    withheld: entry.isBinary ? 'binary' : entry.isTooBig || (!entry.diffLines?.length && (entry.linesAdded ?? 0) + (entry.linesDeleted ?? 0) > 0) ? 'held-back' : null,
+    generated: entry.newTreeEntry?.isGenerated ?? false,
+  };
 }
 
 /**
  * The unified patch for one file, or null for binary, too-large and empty diffs. GitHub's diff lines already
- * carry their `+` / `-` / space prefix (observed); a line without one gets it added.
+ * carry their `+` / `-` / space prefix (observed); a line without one gets it added. The lines diff_entry_lines answers
+ * for a file whose lines GitHub held back are the same lines, which make that file's patch.
  */
 export function patchOf(entry: DiffEntry): string | null {
   if (entry.isBinary || entry.isTooBig || !entry.diffLines?.length) return null;
@@ -116,7 +130,10 @@ const diffEntrySchema = z.object({
   path: z.string(),
   isBinary: z.nullish(z.boolean()),
   isTooBig: z.nullish(z.boolean()),
+  linesAdded: z.nullish(z.number()),
+  linesDeleted: z.nullish(z.number()),
   oldTreeEntry: z.nullish(z.object({ path: z.string() })),
+  newTreeEntry: z.nullish(z.object({ isGenerated: z.nullish(z.boolean()) })),
   diffLines: z.nullish(z.array(z.object({ type: z.string(), text: z.string(), displayNoNewLineWarning: z.nullish(z.boolean()) }))),
 });
 

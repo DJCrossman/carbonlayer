@@ -227,6 +227,7 @@ const RPC_SCHEMAS = {
    * One changed file's diff on the head commit `headOid` with the lines it leaves out in `ranges` (by their numbers in the
    * new file) put in, as GitHub's "Expand" asks for them (page_data/diff_entry_lines): every line of the diff again, each
    * numbered in the old file (`left`) and the new (`right`), the lines asked for among them as unchanged (CONTEXT) ones.
+   * Without ranges, the whole diff of a file whose lines GitHub held back, as its "Load Diff" asks for it.
    */
   'pr.fetchDiffLines': {
     args: z.extend(prPageRequest, { path: z.string(), headOid: z.string(), ranges: z.array(z.object({ start: z.number(), end: z.number() })) }),

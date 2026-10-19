@@ -164,7 +164,9 @@ pageLimits: { filesLimit: 3000, linesChangedLimit: 10000, annotationsPaginatedLi
 viewerPendingReview, codeowners, fileFilter, markers, urls, user, pullRequest, repository
 ```
 `GET …/page_data/diff_entries?paths=<path1>,<path2>&ctx=:::&w=0&range=<redacted>` (paths are
-`encodeURIComponent`-ed then joined with `,`, so `/` appears as `%252F` in the final URL) → `DiffEntry[]`:
+`encodeURIComponent`-ed then joined with `,`, so `/` appears as `%252F` in the final URL) → `DiffEntry[]` (VERIFIED
+2026-10-19 on GitHub's own changes page's request, offstreetparking/core#9188 with `?gh=1`: an object keyed by the entries'
+places, `{ "0": entry }`; `fileDiffs` reads either):
 ```
 { path, pathDigest, status: 'MODIFIED'|…, isBinary, isTooBig, isSubmodule, truncatedReason, richDiff,
   linesAdded, linesDeleted, linesChanged, oldCommitOid, newCommitOid,
@@ -174,6 +176,26 @@ viewerPendingReview, codeowners, fileFilter, markers, urls, user, pullRequest, r
 ```
 A unified patch for `@pierre/diffs` can be rebuilt from `diffLines` (HUNK lines are the `@@` headers; prefix
 ADDITION with `+`, DELETION with `-`, CONTEXT with a space).
+
+Lines GitHub holds back (VERIFIED read-only 2026-10-19 on GitHub's own changes pages, `?gh=1`): an entry's keys are
+`isBinary, isSubmodule, isTooBig, diffLines, linesAdded, linesChanged, linesDeleted, oldCommitOid, newCommitOid,
+oldTreeEntry, newTreeEntry, path, pathDigest, richDiff, submodule, status, truncatedReason, diffSize`. On
+offstreetparking/core#9188, `apps/dashboard/tests/docker/shard-timings.json` (ADDED, +5370, `linguist-generated=true` in
+`.gitattributes`) and `pnpm-lock.yaml` (MODIFIED, +10) both came with `isBinary: false`, `isTooBig: false`,
+`truncatedReason: null`, `diffSize: ""` and `diffLines: []`: GitHub leaves out a generated file's lines (lockfiles and
+linguist-generated files) whatever its size. Its page shows "Load Diff" over "Some generated files are not rendered by
+default. Learn more about customizing how changed files appear on GitHub.", and renders such files as regions filled as
+they come into view ("Loading <path>"). On offstreetparking/core#9190, a deleted file
+(`…/reads/envelope-rollup.test.ts`, the summaries' `changeType: "REMOVED"`, −437) came with `status: "REMOVED"`,
+`diffLines: []`, `linesDeleted: 437`, `isTooBig: true`, `truncatedReason: null`: GitHub marks every deleted file too big,
+small or not, and its page shows it collapsed to "Load Diff" over "This file was deleted.". The reader calls such a file
+`held-back` (`isTooBig`, or no `diffLines` while lines were added or deleted) and a binary one `binary` (`diffOf` in
+`src/lib/github-web/files.ts`), and reads `newTreeEntry.isGenerated` (listed above; not re-checked on these entries) for the
+"Generated" tag. UNVERIFIED: an entry `isTooBig: true` for its size alone (no example at hand; GitHub's page shows "Large
+diffs are not rendered by default" with "Load diff", assumed to send the same request as below); a pure rename's entry (no
+example at hand: read as whatever it is, the page asking nothing for a rename with no lines added or deleted, and showing
+"File renamed without changes.", wording not checked against GitHub's); and the wording for a binary file, "Binary file
+not shown", which is GitHub's as remembered, not seen today.
 
 The unchanged lines a file's diff leaves out (VERIFIED read-only in a signed-in session, 2026-10-19, on GitHub's own
 changes page for offstreetparking/core#8986 with `?gh=1`): between hunks, above the first and below the last, GitHub's
@@ -201,6 +223,14 @@ asks it (`pr.fetchDiffLines`), and the PR page asks every range a file's diff hi
 UNVERIFIED: which path a renamed file is asked by (the new one is sent); any line type other than the five above is
 left out, and a side left a line short fails the expand, naming the line. Whether GitHub takes a review comment on an
 expanded line is not known either: the page offers none.
+
+"Load Diff" on a held-back file (VERIFIED 2026-10-19, `apps/dashboard/tests/docker/shard-timings.json` on
+offstreetparking/core#9188): `GET …/page_data/diff_entry_lines?path=<path>&w=0&range=<head OID>`, no
+`context_line_ranges[]`, answered 200 with 107,764 bytes: the file's whole diff entry, `{ diffEntryLines: [...] }`, lines of
+the shape above (HUNK / CONTEXT / DELETION / ADDITION with `left`, `right`, `text`). The page asks the same for a file it
+calls `held-back` (`pr.fetchDiffLines` with no ranges, `prHeldBackDiffQuery` in `src/pr/page-data.ts`) and makes its patch
+with `patchOf`. UNVERIFIED: that a deleted file's "Load Diff" and a too-big file's "Load diff" send the same request (the
+path of a deleted file, which the head commit no longer has, is sent as it is).
 
 ## Homepage's "Top repositories" (`/`, signed in) — classic HTML fragments (VERIFIED signed in 2026-10-13)
 - `GET /dashboard/my_top_repositories?location=left` → an HTML fragment (no `<html>` wrapper; `DOMParser` reads it):

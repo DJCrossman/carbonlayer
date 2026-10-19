@@ -33,6 +33,8 @@ const file = (path: string, patch: string | null): ChangedFile => ({
   additions: 0,
   deletions: 0,
   patch,
+  withheld: null,
+  generated: false,
   viewerViewedState: 'UNVIEWED',
   blobUrl: '',
 });

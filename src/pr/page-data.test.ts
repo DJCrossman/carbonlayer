@@ -1,9 +1,12 @@
 import { QueryClient } from '@tanstack/react-query';
-import { assert, describe, expect, it } from 'vitest';
+import { assert, describe, expect, it, vi } from 'vitest';
+import { createFixtureDataSource, type DataSource } from '../app/data-source';
+import { fixtures } from '../fixtures';
 import { prFixtures } from '../fixtures/pr';
 import type { PrEnrichment, PrStages, ViewResult } from '../lib/model';
+import type { DiffEntryLine } from '../lib/rpc';
 import { nextActionFor } from './next-action';
-import { prDetailFrom, stagesStandingIn, type PrPageData } from './page-data';
+import { prDetailFrom, prHeldBackDiffQuery, stagesStandingIn, type PrPageData } from './page-data';
 
 const pr42 = prFixtures.find((pr) => pr.number === 42);
 assert.isDefined(pr42);
@@ -60,10 +63,14 @@ describe('prDetailFrom', () => {
       ...nothingYet,
       files: {
         status: 'loading',
-        value: { baseOid, files: [first, second].map(({ patch, previousPath, ...summary }) => summary), diffs: { [first.path]: { patch: first.patch, previousPath: null } } },
+        value: {
+          baseOid,
+          files: [first, second].map(({ patch, previousPath, withheld, generated, ...summary }) => summary),
+          diffs: { [first.path]: { patch: first.patch, previousPath: null, withheld: null, generated: false } },
+        },
       },
     });
-    expect(pr.files).toEqual([{ ...first, previousPath: null }, { ...second, patch: null, previousPath: null }]);
+    expect(pr.files).toEqual([{ ...first, previousPath: null }, { ...second, patch: null, previousPath: null, withheld: null, generated: false }]);
   });
 });
 
@@ -108,5 +115,30 @@ describe('stagesStandingIn', () => {
     client.setQueryData(['pr', 'acme', 'widgets', 42, 'stack'], { stack: { ...stack, entries: stack.entries.map((entry) => ({ ...entry, author: null })) } });
     expect(Object.keys(stagesStandingIn(client, widgets, 43))).toEqual(['stack']);
     expect(stagesStandingIn(client, widgets, 7)).toEqual({});
+  });
+});
+
+describe('prHeldBackDiffQuery', () => {
+  const answer: DiffEntryLine[] = [
+    { type: 'HUNK', left: 0, right: 0, text: '@@ -1,2 +1,2 @@', displayNoNewLineWarning: false },
+    { type: 'CONTEXT', left: 1, right: 1, text: " lockfileVersion: '9.0'", displayNoNewLineWarning: false },
+    { type: 'DELETION', left: 2, right: 1, text: '-    react: 19.2.4', displayNoNewLineWarning: false },
+    { type: 'ADDITION', left: 2, right: 2, text: '+    react: 19.2.5', displayNoNewLineWarning: true },
+  ];
+
+  it("asks once for a held-back file's whole diff, without ranges, and makes its patch from GitHub's lines", async () => {
+    const fetchPrDiffLines = vi.fn(async (..._args: Parameters<DataSource['fetchPrDiffLines']>) => answer);
+    const query = prHeldBackDiffQuery({ ...createFixtureDataSource(fixtures), fetchPrDiffLines }, { owner: 'o', name: 'r' }, 1, { headOid: 'head', baseRefName: 'main' }, 'pnpm-lock.yaml');
+    const queryClient = new QueryClient();
+
+    expect(await queryClient.fetchQuery(query)).toBe("@@ -1,2 +1,2 @@\n lockfileVersion: '9.0'\n-    react: 19.2.4\n+    react: 19.2.5\n\\ No newline at end of file");
+    await queryClient.fetchQuery(query);
+    expect(fetchPrDiffLines.mock.calls).toEqual([[{ owner: 'o', name: 'r' }, 1, 'pnpm-lock.yaml', 'head', []]]);
+  });
+
+  it('fails, to be retried, when GitHub sends no lines for it', async () => {
+    const source = { ...createFixtureDataSource(fixtures), fetchPrDiffLines: async () => answer.slice(0, 0) };
+    const query = prHeldBackDiffQuery(source, { owner: 'o', name: 'r' }, 1, { headOid: 'head', baseRefName: 'main' }, 'pnpm-lock.yaml');
+    await expect(new QueryClient().fetchQuery({ ...query, retry: false })).rejects.toThrow('GitHub sent no lines for this file');
   });
 });

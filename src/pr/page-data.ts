@@ -10,6 +10,7 @@ import { askedTogether } from '../app/asked-together';
 import type { DataSource } from '../app/data-source';
 import { KEPT_STAGES, SaveCacheNow } from '../app/query-cache';
 import { enrichmentFoundBefore, inboxRowFor } from '../inbox/row-details';
+import { patchOf } from '../lib/github-web/files';
 import { SIGNED_OUT } from '../lib/github-web/session';
 import { prStagesSchema, stackBranchesSchema, type ChangedFile, type ChangedFileDiff, type PrDetail, type PrStage, type PrStages, type PrSummary, type RepoRef, type ReviewThread, type StackEntry, type TimelineItem } from '../lib/model';
 import type { LineRange } from '../lib/rpc';
@@ -211,7 +212,7 @@ export function prDetailFrom(header: PrStages['header'], data: PrPageData): PrDe
     threads: data.threads.value?.threads ?? NO_THREADS,
     unresolvedThreadCount: data.threads.value?.unresolvedThreadCount ?? 0,
     baseOid: listed?.baseOid ?? '',
-    files: listed ? listed.files.map((file) => ({ ...file, ...(listed.diffs[file.path] ?? { patch: null, previousPath: null }) })) : NO_FILES,
+    files: listed ? listed.files.map((file) => ({ ...file, ...(listed.diffs[file.path] ?? { patch: null, previousPath: null, withheld: null, generated: false }) })) : NO_FILES,
     // Its own entry keeps GitHub's verdict on merging it as a stack, which only the stack has.
     stack: stack
       ? { ...stack, entries: stack.entries.map((entry, index) => (index === stack.currentIndex ? { ...summary, readyToMergeAsStack: entry.readyToMergeAsStack } : entry)) }
@@ -321,7 +322,7 @@ export function stagesStandingIn(queryClient: QueryClient, repo: RepoRef, number
 
 /** The files whose diffs GitHub did not send with the list, in the order the files show: those asked for a batch at a time. */
 function diffsToAsk(listed: PrStages['files']): string[] {
-  return filesInTreeOrder(fileTree(listed.files.map((file): ChangedFile => ({ ...file, patch: null, previousPath: null }))))
+  return filesInTreeOrder(fileTree(listed.files.map((file): ChangedFile => ({ ...file, patch: null, previousPath: null, withheld: null, generated: false }))))
     .map((file) => file.path)
     .filter((path) => !(path in listed.diffs));
 }
@@ -357,6 +358,25 @@ export function prFileContentsQuery(source: DataSource, repo: RepoRef, number: n
   return {
     queryKey: ['pr-diff', repo.owner, repo.name, number, head.headOid, head.baseRefName, path, 'contents'],
     queryFn: async () => fileContentsFrom(await source.fetchPrDiffLines(repo, number, path, head.headOid, hidden)),
+    staleTime: Infinity,
+    gcTime: IN_MEMORY_FOR_MS,
+  };
+}
+
+/**
+ * The query for the diff GitHub held back from a changed file's entry (a generated file, one too big, or a deleted one),
+ * on a head commit and base: its whole diff, asked the way GitHub's "Load Diff" asks for it (diff_entry_lines without
+ * ranges), as a patch. Kept beside the file's diff in this tab's memory, never on the device, for as long as the diff is:
+ * the same commit on the same base has the same diff.
+ */
+export function prHeldBackDiffQuery(source: DataSource, repo: RepoRef, number: number, head: Pick<PrStages['header'], 'headOid' | 'baseRefName'>, path: string) {
+  return {
+    queryKey: ['pr-diff', repo.owner, repo.name, number, head.headOid, head.baseRefName, path, 'held-back'],
+    queryFn: async () => {
+      const patch = patchOf({ path, diffLines: await source.fetchPrDiffLines(repo, number, path, head.headOid, []) });
+      if (patch === null) throw new Error('GitHub sent no lines for this file');
+      return patch;
+    },
     staleTime: Infinity,
     gcTime: IN_MEMORY_FOR_MS,
   };
