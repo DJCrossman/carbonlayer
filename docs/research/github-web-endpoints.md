@@ -190,8 +190,9 @@ they come into view ("Loading <path>"). On offstreetparking/core#9190, a deleted
 `diffLines: []`, `linesDeleted: 437`, `isTooBig: true`, `truncatedReason: null`: GitHub marks every deleted file too big,
 small or not, and its page shows it collapsed to "Load Diff" over "This file was deleted.". The reader calls such a file
 `held-back` (`isTooBig`, or no `diffLines` while lines were added or deleted) and a binary one `binary` (`diffOf` in
-`src/lib/github-web/files.ts`), and reads `newTreeEntry.isGenerated` (listed above; not re-checked on these entries) for the
-"Generated" tag. UNVERIFIED: an entry `isTooBig: true` for its size alone (no example at hand; GitHub's page shows "Large
+`src/lib/github-web/files.ts`), and reads `newTreeEntry.isGenerated` for the "Generated" tag (VERIFIED 2026-10-20 on #9188:
+`newTreeEntry: { mode, path, lineCount, isGenerated }` is `isGenerated: true, lineCount: 5370` for shard-timings.json and
+`true, 27110` for pnpm-lock.yaml, `false, 154` for apps/dashboard/package.json, which came with its 21 lines). UNVERIFIED: an entry `isTooBig: true` for its size alone (no example at hand; GitHub's page shows "Large
 diffs are not rendered by default" with "Load diff", assumed to send the same request as below); a pure rename's entry (no
 example at hand: read as whatever it is, the page asking nothing for a rename with no lines added or deleted, and showing
 "File renamed without changes.", wording not checked against GitHub's); and the wording for a binary file, "Binary file
