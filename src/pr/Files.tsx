@@ -8,7 +8,7 @@
 import { Virtualizer } from '@pierre/diffs';
 import { FileDiff, VirtualizerContext, type FileDiffOptions, type SelectedLineRange } from '@pierre/diffs/react';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent } from 'react';
 import type { DataSource, ReviewThreadDraft } from '../app/data-source';
 import { fileAnchor } from '../app/routes';
 import type { ChangedFile, PrDetail, PrStages, ReviewThread } from '../lib/model';
@@ -136,8 +136,12 @@ interface FileReview {
   treeOpen: boolean;
   composer: ComposerAnchor | null;
   isCollapsed(file: ChangedFile): boolean;
+  /** Collapses or expands a file, its header kept where the reader sees it (`keepHeaderInPlace`). */
   setCollapsed(path: string, collapsed: boolean): void;
+  /** Collapses or expands every file, the header of the file the page has scrolled to kept where the reader sees it. */
   setAllCollapsed(collapsed: boolean): void;
+  /** The reader is done with a file (marked it viewed): when it is the current file, the next one becomes current. */
+  moveOnFrom(path: string): void;
   goToFile(path: string): void;
   stepFile(delta: 1 | -1): void;
   revealThread(threadId: string): void;
@@ -156,9 +160,18 @@ export function useFileReview(pr: PrDetail): FileReview {
   const [collapsed, setCollapsedState] = useState<Record<string, boolean>>({});
   const [treeOpen, setTreeOpen] = useState(true);
   const [composer, setComposer] = useState<ComposerAnchor | null>(null);
-  // Scrolling updates the current file, except right after j/k moved it (the page may not be able to
-  // scroll the last files to the top, which would otherwise hand "current" back to an earlier file).
+  // Scrolling updates the current file, except right after j/k or v moved it (the page may not be able to
+  // scroll the last files to the top, which would otherwise hand "current" back to an earlier file), and except back to a
+  // file marked viewed and moved on from, its header still at the top, until the reader scrolls into another one.
   const navigatedAt = useRef(0);
+  const movedOnFrom = useRef<string | null>(null);
+  // A file collapsed or expanded keeps its header where the reader saw it (keepHeaderInPlace), put back as the change is
+  // drawn: the diffs' own layout effects have drawn it by then, and the page is not yet painted.
+  const keepHeader = useRef<(() => void) | null>(null);
+  useLayoutEffect(() => {
+    keepHeader.current?.();
+    keepHeader.current = null;
+  }, [collapsed]);
 
   useEffect(() => {
     let frame = 0;
@@ -166,12 +179,9 @@ export function useFileReview(pr: PrDetail): FileReview {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         if (performance.now() - navigatedAt.current < 600) return;
-        let above: string | null = null;
-        for (const file of order) {
-          const element = document.getElementById(`gg-file:${file.path}`);
-          if (!element || element.getBoundingClientRect().top > STICKY_TOP + 12) break;
-          above = file.path;
-        }
+        const above = fileScrolledTo(order);
+        if (above === movedOnFrom.current) return;
+        movedOnFrom.current = null;
         if (above) setCurrentPath(above);
       });
     };
@@ -184,6 +194,7 @@ export function useFileReview(pr: PrDetail): FileReview {
 
   const goToFile = useCallback((path: string) => {
     navigatedAt.current = performance.now();
+    movedOnFrom.current = null;
     setCurrentPath(path);
     document.getElementById(`gg-file:${path}`)?.scrollIntoView({ block: 'start' });
   }, []);
@@ -223,8 +234,24 @@ export function useFileReview(pr: PrDetail): FileReview {
     treeOpen,
     composer,
     isCollapsed: (file) => collapsed[file.path] ?? file.viewerViewedState === 'VIEWED',
-    setCollapsed: useCallback((path: string, value: boolean) => setCollapsedState((current) => ({ ...current, [path]: value })), []),
-    setAllCollapsed: (value) => setCollapsedState(Object.fromEntries(order.map((file) => [file.path, value]))),
+    setCollapsed: useCallback((path: string, value: boolean) => {
+      keepHeader.current = keepHeaderInPlace(path, value);
+      setCollapsedState((current) => ({ ...current, [path]: value }));
+    }, []),
+    setAllCollapsed: (value) => {
+      // The files above the one the reader is in collapse or expand too: that one keeps its header where they see it.
+      const reading = fileScrolledTo(order);
+      keepHeader.current = reading === null ? null : keepHeaderInPlace(reading, value);
+      setCollapsedState(Object.fromEntries(order.map((file) => [file.path, value])));
+    },
+    moveOnFrom: (path) => {
+      if (path !== currentPath) return;
+      // The page scrolling to keep the file's header in place is not the reader scrolling.
+      navigatedAt.current = performance.now();
+      movedOnFrom.current = path;
+      const next = order[order.findIndex((file) => file.path === path) + 1];
+      if (next) setCurrentPath(next.path);
+    },
     goToFile,
     stepFile: (delta) => {
       const index = order.findIndex((file) => file.path === currentPath);
@@ -745,6 +772,42 @@ function subscribeToThemeChanges(onChange: () => void): () => void {
   const observer = new MutationObserver(onChange);
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   return () => observer.disconnect();
+}
+
+/**
+ * The file the page has scrolled to, the one the reader is in: the last whose card has reached the toolbar (j/k bring a
+ * card's top 10 px under it). Null above the files.
+ */
+function fileScrolledTo(order: ChangedFile[]): string | null {
+  let above: string | null = null;
+  for (const file of order) {
+    const element = document.getElementById(`gg-file:${file.path}`);
+    if (!element || element.getBoundingClientRect().top > STICKY_TOP + 12) break;
+    above = file.path;
+  }
+  return above;
+}
+
+/**
+ * Measures where a file's header shows before the file collapses or expands, and returns what puts it back there once the
+ * change is drawn, as GitHub's and Graphite's pages do. A collapsing file's header stays where the reader sees it: stuck
+ * under the toolbar while they were inside the file (its top above the header's place), where it lands with the next file
+ * right below it instead of both above the viewport; else where it was. An expanding file's header stays where it is.
+ * Nothing for a file out of sight: the browser's scroll anchoring keeps what the reader sees where it is.
+ */
+function keepHeaderInPlace(path: string, collapse: boolean): (() => void) | null {
+  const card = document.getElementById(`gg-file:${path}`);
+  const before = card?.getBoundingClientRect();
+  if (!card || !before || before.bottom <= STICKY_TOP || before.top >= innerHeight) return null;
+  // A diff's header sticks at STICKY_TOP inside the card's border, so a card collapsed to its header shows it there with
+  // its top a border higher.
+  const top = collapse ? Math.max(before.top, STICKY_TOP - card.clientTop) : before.top;
+  return () => {
+    const after = document.getElementById(`gg-file:${path}`)?.getBoundingClientRect().top;
+    // Instant whatever the page's scroll-behavior, so that the header does not travel there; near the end of the page the
+    // browser stops it at the furthest the page scrolls.
+    if (after !== undefined && after !== top) window.scrollBy({ top: after - top, behavior: 'instant' });
+  };
 }
 
 /** Height of the sticky Files toolbar; file headers and the tree stick below it. Mirrors files.css. */

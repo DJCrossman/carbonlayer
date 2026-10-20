@@ -205,6 +205,8 @@ function PrView({
       files.setCollapsed(path, value);
     };
     apply(viewed);
+    // The next file, which now shows right below the viewed one's header, is the one v marks next.
+    if (viewed) files.moveOnFrom(path);
     // The file shows its new state already; reloading every file and diff for it would only be slow.
     void mutate([], () => source.markFileViewed(pr.id, path, viewed), 'Could not update the viewed state', { undo: () => apply(!viewed) });
   }

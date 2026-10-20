@@ -278,6 +278,17 @@ toward its line (`scrollTowardLine`, by the line numbers drawn, a card marked `d
 centres it. Highlighting still tokenizes the whole file on the page's thread, one long task (about 0.15–0.3 s for 4,002
 lines); the library's worker pool would take it off.
 
+Viewed files: marking a file viewed (its checkbox, or v on the current file) collapses it to its header and, as GitHub's
+and Graphite's pages do, leaves the header where the reader sees it (`keepHeaderInPlace` in `src/pr/Files.tsx`): under the
+toolbar, where it stuck, when the reader was inside the file, so the next file follows right below it; where it was when
+it showed lower down; as near as the page scrolls at its end. Any collapse does the same (the chevron, e), and expanding a
+file keeps its header where it is. The card is measured before the change and the page scrolled once the change is drawn
+(a layout effect, after the diffs' own) and before it is painted, so nothing moves on the way. Collapse all and Expand
+all keep the header of the file the reader is in (`fileScrolledTo`) wherever the files above it go. A file out of sight
+changes nothing here: the browser's scroll anchoring keeps what the reader sees. Marking the current file viewed makes
+the next one current (`moveOnFrom`), so v goes on with it, and scrolling while the viewed file's header is still at the
+top leaves it so until the reader scrolls into another file.
+
 Stacks: GitHub-native `stack` from the PR page's embedded data first; otherwise Graphite's stack
 comment in the timeline, enriched through a `/pulls/search` query on the author's open PRs. The stack card
 (`src/pr/StackCard.tsx`) shows each entry as Graphite does: its dot on the rail, its author's avatar, number and title,
