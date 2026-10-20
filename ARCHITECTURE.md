@@ -265,6 +265,19 @@ without changes reads "File renamed without changes." and asks nothing; a binary
 a file with no lines at all, "No lines changed". Each keeps the header a diff has: the path (the old one → the new for a
 rename), the line counts, Viewed and the ⋯ menu.
 
+Long diffs: a diff whose hunks have more than 1,000 rows (in the unified layout, whichever shows; `VIRTUALIZED_FROM_ROWS`
+in `src/pr/Files.tsx`) draws only the rows near the viewport, with `@pierre/diffs`' own virtualization. `FilesSection`
+holds one `Virtualizer` set up on the document, the page's own scroll (the library's React `<Virtualizer>` would make a
+scroll container of its own), and gives it to such a card's `FileDiff` through `VirtualizerContext`, which makes the
+library draw a `VirtualizedFileDiff`: the header and some 150–200 rows around the viewport, in blocks of 50, the rest
+held as room of its estimated height (20 px a row, as `--diffs-line-height`), corrected as rows are drawn and measured.
+Shorter diffs draw whole, as before: the library would draw nearly as many rows anyway, and a whole diff keeps the
+browser's find. Sticky headers, notes, the composer, expanding lines, Viewed and the ⋯ menu work the same; a thread's
+note has a box only while its line is drawn, so revealing one (n / p, a comment link, the comments drawer) moves the page
+toward its line (`scrollTowardLine`, by the line numbers drawn, a card marked `data-virtualized`) until it is drawn, then
+centres it. Highlighting still tokenizes the whole file on the page's thread, one long task (about 0.15–0.3 s for 4,002
+lines); the library's worker pool would take it off.
+
 Stacks: GitHub-native `stack` from the PR page's embedded data first; otherwise Graphite's stack
 comment in the timeline, enriched through a `/pulls/search` query on the author's open PRs. The stack card
 (`src/pr/StackCard.tsx`) shows each entry as Graphite does: its dot on the rail, its author's avatar, number and title,

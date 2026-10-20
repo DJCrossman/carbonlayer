@@ -5,12 +5,13 @@
 // Until the file list arrives the section shows the header's file count over skeleton cards; then each file
 // shows a skeleton until its diff arrives, and a file whose lines GitHub held back (generated, too big) until they load,
 // once the reader comes near it.
-import { FileDiff, type FileDiffOptions, type SelectedLineRange } from '@pierre/diffs/react';
+import { Virtualizer } from '@pierre/diffs';
+import { FileDiff, VirtualizerContext, type FileDiffOptions, type SelectedLineRange } from '@pierre/diffs/react';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent } from 'react';
 import type { DataSource, ReviewThreadDraft } from '../app/data-source';
 import { fileAnchor } from '../app/routes';
-import type { ChangedFile, PrDetail, PrStages } from '../lib/model';
+import type { ChangedFile, PrDetail, PrStages, ReviewThread } from '../lib/model';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
 import { Skeleton } from '../ui/Skeleton';
@@ -49,6 +50,12 @@ export function FilesSection({
   noteActions: NoteActions;
 }) {
   const themeType = useDocumentTheme();
+  // A long diff draws only the lines near the viewport, which @pierre/diffs' Virtualizer follows on this page's own scroll.
+  const [virtualizer] = useState(() => new Virtualizer());
+  useEffect(() => {
+    virtualizer.setup(document);
+    return () => virtualizer.cleanUp();
+  }, [virtualizer]);
   const viewedCount = pr.files.filter((file) => file.viewerViewedState === 'VIEWED').length;
   const allCollapsed = review.order.every((file) => review.isCollapsed(file));
   // Before the list arrives, the header's count; a failed batch of diffs leaves its files without one.
@@ -102,6 +109,7 @@ export function FilesSection({
             <FileCard
               key={file.path}
               source={source}
+              virtualizer={virtualizer}
               file={file}
               missingDiff={diffs && !(file.path in diffs) ? missingDiff : null}
               pr={pr}
@@ -188,7 +196,8 @@ export function useFileReview(pr: PrDetail): FileReview {
       setCollapsedState((current) => ({ ...current, [thread.path]: false }));
       setCurrentPath(thread.path);
       setCurrentThreadId(threadId);
-      // The thread only has a box once its file is expanded and its line rendered (highlighting is async).
+      // The thread only has a box once its file is expanded and its line rendered (highlighting is async); a long diff
+      // draws only the lines near the viewport, so the page moves toward the line meanwhile.
       let frames = 0;
       const tryScroll = () => {
         const element = document.querySelector(`[data-thread-id="${CSS.escape(threadId)}"]`);
@@ -196,6 +205,8 @@ export function useFileReview(pr: PrDetail): FileReview {
           navigatedAt.current = performance.now();
           element.scrollIntoView({ block: 'center' });
         } else if (frames++ < 120) {
+          navigatedAt.current = performance.now();
+          scrollTowardLine(thread);
           requestAnimationFrame(tryScroll);
         }
       };
@@ -312,6 +323,7 @@ function FileTree({ pr, review }: { pr: PrDetail; review: FileReview }) {
 
 function FileCard({
   source,
+  virtualizer,
   file,
   missingDiff,
   pr,
@@ -323,6 +335,8 @@ function FileCard({
   noteActions,
 }: {
   source: DataSource;
+  /** What draws a long diff's lines only near the viewport. */
+  virtualizer: Virtualizer;
   file: ChangedFile;
   /** Why the file has no diff yet: it is on its way, or its batch failed. */
   missingDiff: 'loading' | 'failed' | null;
@@ -555,46 +569,56 @@ function FileCard({
     );
   }
 
+  // A long diff draws only the lines near the viewport (the library's own virtualization), a shorter one all of its lines,
+  // by its hunks' rows in the unified layout, whichever layout shows, so that a switch keeps it as it is (lines expanded
+  // around the hunks count none). The library settles which when the diff mounts; a new patch that crosses the line mounts
+  // it again, in the other.
+  const virtualized = fileDiff.hunks.reduce((rows, hunk) => rows + hunk.unifiedLineCount, 0) > VIRTUALIZED_FROM_ROWS;
+  const diff = (
+    <FileDiff<DiffNote>
+      fileDiff={fileDiff}
+      options={options}
+      lineAnnotations={notes}
+      selectedLines={selectedLines}
+      renderAnnotation={(annotation) => (
+        <DiffNoteView
+          note={annotation.metadata}
+          anchor={composer}
+          suggestion={suggestion}
+          current={annotation.metadata.kind === 'thread' && annotation.metadata.thread.id === review.currentThreadId}
+          actions={noteActions}
+        />
+      )}
+      renderHeaderPrefix={() => collapseToggle}
+      renderHeaderFilenameSuffix={file.generated ? () => generatedTag : undefined}
+      renderHeaderMetadata={() => (
+        <div className="file-header-meta">
+          {threadCount > 0 && (
+            <span className="file-comments" title={`${threadCount} review ${threadCount === 1 ? 'thread' : 'threads'}`}>
+              <Icon name="comment" size={14} />
+              {threadCount}
+            </span>
+          )}
+          {viewedToggle}
+          <FileMenu path={file.path} prUrl={pr.url} />
+        </div>
+      )}
+    />
+  );
+
   return (
     <div
       className={`file-card ${current ? 'is-current' : ''}`}
       id={`gg-file:${file.path}`}
       ref={card}
       onClick={onClick}
+      data-virtualized={virtualized || undefined}
       // The diff draws its lines only once they are highlighted: until then the card holds the room its hunks' rows will take
       // (a line's height each, at least; the unchanged lines between hunks show only once expanded), so that the files below
       // are where they will be, and a held-back file below is near only once the reader is.
       style={collapsed ? undefined : { minHeight: fileDiff.hunks.reduce((rows, hunk) => rows + (diffStyle === 'split' ? hunk.splitLineCount : hunk.unifiedLineCount), 0) * DIFF_LINE_HEIGHT }}
     >
-      <FileDiff<DiffNote>
-        fileDiff={fileDiff}
-        options={options}
-        lineAnnotations={notes}
-        selectedLines={selectedLines}
-        renderAnnotation={(annotation) => (
-          <DiffNoteView
-            note={annotation.metadata}
-            anchor={composer}
-            suggestion={suggestion}
-            current={annotation.metadata.kind === 'thread' && annotation.metadata.thread.id === review.currentThreadId}
-            actions={noteActions}
-          />
-        )}
-        renderHeaderPrefix={() => collapseToggle}
-        renderHeaderFilenameSuffix={file.generated ? () => generatedTag : undefined}
-        renderHeaderMetadata={() => (
-          <div className="file-header-meta">
-            {threadCount > 0 && (
-              <span className="file-comments" title={`${threadCount} review ${threadCount === 1 ? 'thread' : 'threads'}`}>
-                <Icon name="comment" size={14} />
-                {threadCount}
-              </span>
-            )}
-            {viewedToggle}
-            <FileMenu path={file.path} prUrl={pr.url} />
-          </div>
-        )}
-      />
+      {virtualized ? <VirtualizerContext value={virtualizer}>{diff}</VirtualizerContext> : diff}
     </div>
   );
 }
@@ -689,6 +713,28 @@ function FilesSkeleton({ count }: { count: number }) {
   ));
 }
 
+/**
+ * Moves the page toward a thread's line in a long diff, which draws only the lines near the viewport
+ * (`data-virtualized`): to the file while it draws none, then by the line numbers it has drawn on the thread's side, a
+ * line's height for each line between. The page stays where it is once the line is among those drawn, and for any other diff.
+ */
+function scrollTowardLine(thread: ReviewThread) {
+  const fileCard = document.getElementById(`gg-file:${thread.path}`);
+  if (!(fileCard instanceof HTMLElement) || fileCard.dataset.virtualized === undefined) return;
+  const side = thread.side === 'LEFT' ? 'deletions' : 'additions';
+  // The unified layout numbers an added or unchanged line by its new number, a removed one by its old.
+  const drawn = [...(fileCard.querySelector('diffs-container')?.shadowRoot?.querySelectorAll(`[data-unified] [data-gutter] [data-column-number], [data-${side}] [data-gutter] [data-column-number]`) ?? [])]
+    .filter((cell) => cell.getAttribute('data-line-type') !== (side === 'additions' ? 'change-deletion' : 'change-addition'))
+    .map((cell) => ({ line: Number(cell.getAttribute('data-column-number')), top: cell.getBoundingClientRect().top }));
+  const first = drawn[0];
+  const last = drawn.at(-1);
+  // An outdated thread sits above the file's first line.
+  const line = thread.line ?? 0;
+  if (!first || !last) fileCard.scrollIntoView({ block: 'start' });
+  else if (line < first.line) window.scrollBy({ top: first.top - (first.line - line) * DIFF_LINE_HEIGHT - innerHeight / 2, behavior: 'instant' });
+  else if (line > last.line) window.scrollBy({ top: last.top + (line - last.line) * DIFF_LINE_HEIGHT - innerHeight / 2, behavior: 'instant' });
+}
+
 /** The app's theme (set on <html> by the parent page or the harness), for the diff highlighter. */
 function useDocumentTheme(): 'light' | 'dark' | 'system' {
   const theme = useSyncExternalStore(subscribeToThemeChanges, () => document.documentElement.dataset.theme);
@@ -706,6 +752,14 @@ const STICKY_TOP = 40;
 
 /** Height of a line of a diff. Mirrors files.css (`--diffs-line-height`). */
 const DIFF_LINE_HEIGHT = 20;
+
+/**
+ * The rows past which a diff draws only those near the viewport. The library draws 150 to 200 rows around it (the
+ * viewport and 1,000 px either side, in blocks of 50), so a diff not much longer gains little, and loses the browser's
+ * find for the lines not drawn; drawing a whole diff freezes the page about a quarter of a millisecond a row, at every
+ * draw (its first, a switch of layout or theme): a quarter of a second for 1,000 rows (measured on 4,002: over a second).
+ */
+const VIRTUALIZED_FROM_ROWS = 1_000;
 
 /** Git's one-letter status codes. */
 const STATUS_LETTERS: Record<ChangedFile['status'], string> = {
