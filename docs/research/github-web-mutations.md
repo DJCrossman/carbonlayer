@@ -42,7 +42,14 @@ No Relay / persisted-query ids and, reactions aside, no `authenticity_token` are
    `{ authorEmail, commitMessage, commitTitle, mergeAction: "AUTO_MERGE", mergeMethod }` (no `bypassRules`; `authorEmail`
    only beside the commit editor, as for a direct merge; title and message the merge box's proposal unless edited). Its
    handler reads nothing of the answer but `{ error }` on a non-2xx, polls nothing (`merge_request_status` is only for
-   `DIRECT_MERGE`) and then reloads the merge box. Only `enable_auto_merge` remains for a PR alone. Off is
+   `DIRECT_MERGE`) and then reloads the merge box. Where the repository has no stack auto-merge (VERIFIED 2026-10-21 on
+   offstreetparking/core#9265, the top of a native stack, #9262 merged and #9263–#9265 open) GitHub refuses that request
+   with a non-2xx `{ "error": "Stack auto-merge is not enabled." }`, though the repository has "Allow auto-merge" ticked
+   and the merge box says `viewerCanEnableAutoMerge: true` (a PR's own auto-merge). That PR page's feature flags were
+   `pull_request_stacks`, `pull_requests_stacks_view_ui`, `pull_request_stacks_navigation_shortcuts` and
+   `pull_request_stacks_show_all_entries_statuses`, none for stack auto-merge, and GitHub's own merge box offered only
+   "Squash and merge stack (3)" (disabled) with its merge methods, no auto-merge; CarbonLayer then merges the stack when it
+   is ready itself (ARCHITECTURE.md). Only `enable_auto_merge` remains for a PR alone. Off is
    `disable_auto_merge`, no body, in a stack too (the stack's section sends it, analytics
    `stacks_direct_merge_section.disable_auto_merge`). Before confirming, a stack's confirm says "Auto-merge will be
    enabled for the following pull requests. This will replace any existing auto-merge selections in the stack." over the
