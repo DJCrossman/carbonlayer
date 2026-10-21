@@ -468,6 +468,18 @@ export const emojiSchema = z.union([z.object({ name: z.string(), character: z.st
 export type Emoji = z.infer<typeof emojiSchema>;
 
 /**
+ * Someone a comment box suggests after an `@`, as GitHub's list for the pull request has them: a user, by login, with the
+ * name they gave (empty when none) and whether they take part in the pull request, or a team, `login` being its
+ * `org/slug`, with its description (empty when none).
+ */
+export const mentionSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('user'), login: z.string(), name: z.string(), participant: z.boolean() }),
+  z.object({ kind: z.literal('team'), login: z.string(), description: z.string() }),
+]);
+
+export type Mention = z.infer<typeof mentionSchema>;
+
+/**
  * What merging a GitHub-native stack waits on (src/lib/stack-merges.ts), as the PR page's own readers find it: for each PR
  * the merge merges, bottom first, its state, head commit, checks (and which are required), and GitHub's verdict on
  * merging it with the open PRs below it, its own `stack_mergeability` (`status`, its effectiveEntryStatus: READY when it

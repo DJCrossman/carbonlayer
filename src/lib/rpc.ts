@@ -9,6 +9,7 @@ import {
   changedFileDiffSchema,
   ciSummarySchema,
   emojiSchema,
+  mentionSchema,
   mergeMethodSchema,
   organizationSchema,
   orgMemberSchema,
@@ -243,6 +244,8 @@ const RPC_SCHEMAS = {
   'markdown.preview': { args: z.object({ text: z.string(), prId: z.string() }), result: z.object({ html: z.string() }) },
   /** The emoji a comment box suggests after a `:`, in GitHub's order: the list GitHub's own comment box loads. */
   'markdown.emojis': { args: z.object({}), result: z.array(emojiSchema) },
+  /** The people and teams a comment box on the PR suggests after an `@`, in GitHub's order: the list GitHub's own comment box loads. */
+  'markdown.mentions': { args: z.object({ prId: z.string() }), result: z.array(mentionSchema) },
   'pr.review': {
     args: z.object({
       prId: z.string(),

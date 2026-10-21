@@ -3,7 +3,9 @@
 import { skipToken, useQuery } from '@tanstack/react-query';
 import { createContext, Fragment, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import type { Emoji, PrSummary } from '../lib/model';
+import { githubUser } from '../lib/github-web/session';
+import type { Emoji, Mention, PrSummary } from '../lib/model';
+import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
 import { Icon, type IconName } from '../ui/Icon';
 import { StatusPill } from '../ui/StatusPill';
@@ -15,8 +17,11 @@ import {
   insertEmoji,
   insertHeading,
   insertLink,
+  insertMention,
   insertSuggestion,
   linkPastedUrl,
+  mentionQueryAt,
+  mentionSuggestionsFor,
   toggleBold,
   toggleCode,
   toggleItalic,
@@ -39,10 +44,10 @@ export function StatePill({ pr }: { pr: Pick<PrSummary, 'state' | 'isDraft'> }) 
 
 /**
  * The comment box every composer on the page uses, like GitHub's: Write and Preview tabs, GitHub's formatting toolbar and
- * the shortcuts GitHub documents for comments, lists that carry on with Enter, a URL pasted over text linking it, and
- * GitHub's emoji suggested after a `:` (markdown-editing.ts says what each does to the text). ⌘↵ / Ctrl+↵ submits, Esc
- * cancels, and it grows with its content. While the emoji list shows, ↑ / ↓ move through it, Enter or Tab (or a click)
- * puts the one reached in, and Esc closes only the list.
+ * the shortcuts GitHub documents for comments, lists that carry on with Enter, a URL pasted over text linking it,
+ * GitHub's emoji suggested after a `:` and the PR's people and teams after an `@` (markdown-editing.ts says what each
+ * does to the text). ⌘↵ / Ctrl+↵ submits, Esc cancels, and it grows with its content. While either list shows, ↑ / ↓
+ * move through it, Enter or Tab (or a click) puts the one reached in, and Esc closes only the list.
  */
 export function CommentInput({
   value,
@@ -75,16 +80,22 @@ export function CommentInput({
   const pasteAsIs = useRef(false);
   // Where a command's selection goes once React shows its text, when the browser could not type the text in itself.
   const selectionAfter = useRef<Draft | null>(null);
-  // What a `:` before the caret asks for (emojiQueryAt), read from the text it was typed in, and which suggestion ↑ / ↓
-  // reached; null once Esc closed the list or the text lost focus. GitHub's emoji are asked for the first time a box
-  // asks for one, then kept by the page's cache: they rarely change.
-  const [emojiAsk, setEmojiAsk] = useState<{ value: string; at: number; query: string; active: number } | null>(null);
-  const asked = emojiAsk && emojiAsk.value === value && !previewing && !disabled ? emojiAsk : null;
+  // What a `:` or an `@` before the caret asks for (emojiQueryAt, mentionQueryAt), read from the text it was typed in, and
+  // which suggestion ↑ / ↓ reached; null once Esc closed the list or the text lost focus. GitHub's emoji are asked for
+  // the first time a box asks for one, then kept by the page's cache: they rarely change. The PR's people and teams are
+  // asked for the first time a box asks for one of them, then kept for five minutes.
+  const [ask, setAsk] = useState<{ value: string; at: number; query: string; active: number } | null>(null);
+  const asked = ask && ask.value === value && !previewing && !disabled ? ask : null;
+  // The character the query follows says which list it asks for.
+  const mentioning = asked !== null && asked.value[asked.at] === '@';
   const loadEmojis = useContext(EmojiList);
-  const emojis = useQuery({ queryKey: ['emojis'], queryFn: asked && loadEmojis ? loadEmojis : skipToken, staleTime: Infinity });
-  const suggestions = asked && emojis.data ? emojiSuggestionsFor(asked.query, emojis.data) : [];
-  const emojiListShown = suggestions.length > 0 || (asked !== null && emojis.isLoading);
-  const emojiListId = useId();
+  const emojis = useQuery({ queryKey: ['emojis'], queryFn: asked && !mentioning && loadEmojis ? loadEmojis : skipToken, staleTime: Infinity });
+  const mentionList = useContext(MentionList);
+  const mentions = useQuery({ queryKey: ['mentions', mentionList?.prId], queryFn: mentioning && mentionList ? mentionList.load : skipToken, staleTime: 5 * 60_000 });
+  const listed = mentioning ? mentions : emojis;
+  const suggestions: Array<Emoji | Mention> = !asked ? [] : mentioning ? mentionSuggestionsFor(asked.query, mentions.data ?? []) : emojiSuggestionsFor(asked.query, emojis.data ?? []);
+  const listShown = suggestions.length > 0 || (asked !== null && listed.isLoading);
+  const listId = useId();
   const isMac = navigator.userAgent.includes('Mac');
   const tools: Array<[Tool, ...Tool[]]> = suggestion
     ? [[{ label: 'Add a suggestion', icon: 'file-diff', keys: 'G', stroke: 'g', command: (draft) => insertSuggestion(draft, suggestion()) }], ...TOOLBAR]
@@ -157,25 +168,25 @@ export function CommentInput({
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     pasteAsIs.current = false;
-    // While the emoji list shows, it has its keys first: Esc, and ↑ / ↓, Enter and Tab pressed alone (with Shift, ⌘, Ctrl
-    // or ⌥ held, as in GitHub's list, they do what they always do).
-    if (asked && emojiListShown && event.target === ref.current && !event.nativeEvent.isComposing) {
+    // While a list of suggestions shows, it has its keys first: Esc, and ↑ / ↓, Enter and Tab pressed alone (with Shift,
+    // ⌘, Ctrl or ⌥ held, as in GitHub's list, they do what they always do).
+    if (asked && listShown && event.target === ref.current && !event.nativeEvent.isComposing) {
       const plain = !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey;
       const reached = suggestions[asked.active];
       if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
-        setEmojiAsk(null);
+        setAsk(null);
         return;
       }
       if (plain && (event.key === 'ArrowDown' || event.key === 'ArrowUp') && suggestions.length > 0) {
         event.preventDefault();
-        setEmojiAsk({ ...asked, active: (asked.active + (event.key === 'ArrowDown' ? 1 : -1) + suggestions.length) % suggestions.length });
+        setAsk({ ...asked, active: (asked.active + (event.key === 'ArrowDown' ? 1 : -1) + suggestions.length) % suggestions.length });
         return;
       }
       if (plain && (event.key === 'Enter' || event.key === 'Tab') && reached) {
         event.preventDefault();
-        carryOut((draft) => insertEmoji(draft, reached));
+        carryOut((draft) => ('kind' in reached ? insertMention(draft, reached) : insertEmoji(draft, reached)));
         return;
       }
     }
@@ -268,31 +279,32 @@ export function CommentInput({
         rows={Math.max(minRows, Math.min(12, value.split('\n').length))}
         disabled={disabled}
         aria-autocomplete="list"
-        aria-controls={suggestions.length > 0 ? emojiListId : undefined}
-        aria-activedescendant={asked && suggestions.length > 0 ? `${emojiListId}-${asked.active}` : undefined}
+        aria-controls={suggestions.length > 0 ? listId : undefined}
+        aria-activedescendant={asked && suggestions.length > 0 ? `${listId}-${asked.active}` : undefined}
         onChange={(event) => {
           onChange(event.target.value);
-          const query = emojiQueryAt(event.target);
-          setEmojiAsk(query && { ...query, value: event.target.value, active: 0 });
+          const query = emojiQueryAt(event.target) ?? mentionQueryAt(event.target);
+          setAsk(query && { ...query, value: event.target.value, active: 0 });
         }}
         // A move of the caret asks again: the list follows what is typed before it.
         onSelect={(event) => {
-          const query = emojiQueryAt(event.currentTarget);
-          setEmojiAsk(query && { ...query, value: event.currentTarget.value, active: 0 });
+          const query = emojiQueryAt(event.currentTarget) ?? mentionQueryAt(event.currentTarget);
+          setAsk(query && { ...query, value: event.currentTarget.value, active: 0 });
         }}
-        onBlur={() => setEmojiAsk(null)}
+        onBlur={() => setAsk(null)}
         onPaste={onPaste}
       />
       {previewing && <CommentPreview text={value} render={preview} minHeight={previewing.height} />}
-      {asked && emojiListShown && (
-        <EmojiSuggestions
+      {asked && listShown && (
+        <Suggestions
           textarea={ref}
           at={asked.at}
-          id={emojiListId}
-          suggestions={emojis.data ? suggestions : null}
+          trigger={mentioning ? '@' : ':'}
+          id={listId}
+          suggestions={listed.data ? suggestions : null}
           active={asked.active}
-          onReach={(index) => setEmojiAsk({ ...asked, active: index })}
-          onChoose={(emoji) => carryOut((draft) => insertEmoji(draft, emoji))}
+          onReach={(index) => setAsk({ ...asked, active: index })}
+          onChoose={(suggestion) => carryOut((draft) => ('kind' in suggestion ? insertMention(draft, suggestion) : insertEmoji(draft, suggestion)))}
         />
       )}
     </div>
@@ -304,6 +316,12 @@ export const MarkdownPreview = createContext<((text: string) => Promise<string>)
 
 /** Loads GitHub's emoji, which every comment box inside it suggests after a `:`; none are suggested without it. */
 export const EmojiList = createContext<(() => Promise<Emoji[]>) | null>(null);
+
+/**
+ * The pull request whose people and teams every comment box inside it suggests after an `@`, and what loads them;
+ * nobody is suggested without it.
+ */
+export const MentionList = createContext<{ prId: string; load: () => Promise<Mention[]> } | null>(null);
 
 /**
  * A part of the page fed by one stage of its data: its skeleton until the stage first arrives, then what `children`
@@ -420,13 +438,15 @@ const TOOLBAR: Array<[Tool, ...Tool[]]> = [
 ];
 
 /**
- * The emoji a comment box suggests for what was typed after a `:`, as GitHub's list: under the text typed (above it when
- * there is no room below), in the page's body, so no part of the page that scrolls (a diff, the drawer) clips it. A click
- * leaves the focus in the text, and never reaches the page beneath, whose popovers would take it for one outside them.
+ * What a comment box suggests for what was typed after a `:` (GitHub's emoji) or an `@` (the PR's people and teams), as
+ * GitHub's list: under the text typed (above it when there is no room below), in the page's body, so no part of the page
+ * that scrolls (a diff, the drawer) clips it. A click leaves the focus in the text, and never reaches the page beneath,
+ * whose popovers would take it for one outside them.
  */
-function EmojiSuggestions({
+function Suggestions({
   textarea,
   at,
+  trigger,
   id,
   suggestions,
   active,
@@ -434,14 +454,15 @@ function EmojiSuggestions({
   onChoose,
 }: {
   textarea: RefObject<HTMLTextAreaElement | null>;
-  /** Where the `:` is in the text: the list starts under what was typed after it. */
+  /** Where the `:` or the `@` is in the text: the list starts under what was typed after it. */
   at: number;
+  trigger: ':' | '@';
   id: string;
-  /** Null while GitHub's emoji are on their way. */
-  suggestions: Emoji[] | null;
+  /** Null while GitHub's emoji, or the PR's people and teams, are on their way. */
+  suggestions: Array<Emoji | Mention> | null;
   active: number;
   onReach: (index: number) => void;
-  onChoose: (emoji: Emoji) => void;
+  onChoose: (suggestion: Emoji | Mention) => void;
 }) {
   const box = useRef<HTMLDivElement | null>(null);
   const [place, setPlace] = useState<{ top: number; left: number } | null>(null);
@@ -473,29 +494,39 @@ function EmojiSuggestions({
       onPointerDown={(event) => event.stopPropagation()}
     >
       {suggestions ? (
-        <ul id={id} role="listbox" aria-label="Emoji" className="pr-emoji-suggestions-list">
-          {suggestions.map((emoji, index) => (
+        <ul id={id} role="listbox" aria-label={trigger === '@' ? 'People and teams' : 'Emoji'} className="pr-emoji-suggestions-list">
+          {suggestions.map((suggestion, index) => (
             <li
-              key={emoji.name}
+              key={'kind' in suggestion ? suggestion.login : suggestion.name}
               id={`${id}-${index}`}
               role="option"
               aria-selected={index === active}
               className="pr-emoji-suggestion"
               onMouseMove={() => onReach(index)}
-              onClick={() => onChoose(emoji)}
+              onClick={() => onChoose(suggestion)}
             >
-              {'character' in emoji ? (
-                <span className="pr-emoji-suggestion-emoji">{emoji.character}</span>
+              {'kind' in suggestion ? (
+                <>
+                  {suggestion.kind === 'user' ? <Avatar user={githubUser(suggestion.login)} size={16} /> : <Icon name="people" className="pr-mention-suggestion-team" />}
+                  <strong>{suggestion.login}</strong>
+                  <span className="pr-mention-suggestion-about">{suggestion.kind === 'user' ? suggestion.name : suggestion.description}</span>
+                </>
               ) : (
-                <img className="pr-emoji-suggestion-emoji" src={emoji.imageUrl} width={16} height={16} alt={`${emoji.name} emoji`} />
+                <>
+                  {'character' in suggestion ? (
+                    <span className="pr-emoji-suggestion-emoji">{suggestion.character}</span>
+                  ) : (
+                    <img className="pr-emoji-suggestion-emoji" src={suggestion.imageUrl} width={16} height={16} alt={`${suggestion.name} emoji`} />
+                  )}
+                  {suggestion.name}
+                </>
               )}
-              {emoji.name}
             </li>
           ))}
         </ul>
       ) : (
         <div role="status" className="pr-emoji-suggestions-loading">
-          Loading emoji…
+          {trigger === '@' ? 'Loading people…' : 'Loading emoji…'}
         </div>
       )}
     </div>,

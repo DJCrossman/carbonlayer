@@ -1,10 +1,10 @@
 // What each command of the comment box does to its text and selection, the way GitHub's comment box does it. The
 // toolbar's styles are GitHub's markdown-toolbar-element (MIT, github.com/github/markdown-toolbar-element, the copy
 // GitHub's PR page loads), a URL pasted over text is GitHub's paste-markdown, a suggestion is what its "Add a
-// suggestion" button inserts, and an emoji after a `:` is what its emoji suggestions offer and insert. Pure: a draft in,
-// the draft after the command out.
+// suggestion" button inserts, and an emoji after a `:` is what its emoji suggestions offer and insert, as a mention after
+// an `@` is what its mention suggestions insert. Pure: a draft in, the draft after the command out.
 
-import type { Emoji } from '../lib/model';
+import type { Emoji, Mention } from '../lib/model';
 
 /** A comment box's text and its selection (start === end: only the caret), as a textarea has them. */
 export interface Draft {
@@ -141,6 +141,47 @@ export function insertEmoji(draft: Draft, emoji: Emoji): Draft | null {
   const asked = emojiQueryAt(draft);
   if (!asked) return null;
   const typed = `${'character' in emoji ? emoji.character : `:${emoji.name}:`} `;
+  const caret = asked.at + typed.length;
+  return { value: draft.value.slice(0, asked.at) + typed + draft.value.slice(draft.selectionEnd), selectionStart: caret, selectionEnd: caret };
+}
+
+/**
+ * Whom the text asks for at the caret, read as an emoji's `:` is (emojiQueryAt): an `@` at the start of the text or after
+ * whitespace, then what was typed after it up to the caret, with no whitespace in it (`query`, empty right after the
+ * `@`); `at` is where the `@` is. Null with text selected, and where no such `@` comes before the caret: one inside a
+ * word (`a@b.com`), or a space typed since.
+ */
+export function mentionQueryAt({ value, selectionStart, selectionEnd }: Draft): { at: number; query: string } | null {
+  if (selectionStart !== selectionEnd) return null;
+  const query = /(?:^|\s)@(\S*)$/.exec(value.slice(0, selectionStart))?.[1];
+  return query === undefined ? null : { at: selectionStart - query.length - 1, query };
+}
+
+/**
+ * The five people and teams a comment box suggests for `query`, ranked CarbonLayer's way (GitHub's own scoring is
+ * unread): case aside, those whose login or a word of whose name begins with it (a team's slug or its whole `org/slug`),
+ * then those whose login or name only has it, each in GitHub's order, the PR's participants first. With nothing typed
+ * after the `@`, GitHub's first five.
+ */
+export function mentionSuggestionsFor(query: string, mentions: Mention[]): Mention[] {
+  const typed = query.toLowerCase();
+  // A user by their login and each word of their name, a team by its `org/slug` and its slug.
+  const begins = (mention: Mention) =>
+    (mention.kind === 'user' ? [mention.login, ...mention.name.split(/\s+/)] : [mention.login, mention.login.slice(mention.login.indexOf('/') + 1)]).some((word) =>
+      word.toLowerCase().startsWith(typed),
+    );
+  const has = (mention: Mention) => [mention.login, mention.kind === 'user' ? mention.name : ''].some((text) => text.toLowerCase().includes(typed));
+  return [...mentions.filter(begins), ...mentions.filter((mention) => !begins(mention) && has(mention))].slice(0, 5);
+}
+
+/**
+ * The `@` and what was typed after it (mentionQueryAt) replaced by a mention of the one chosen for it and a space, the
+ * caret after the space: `@login`, or `@org/slug` for a team. Null where the text asks for no one at the caret.
+ */
+export function insertMention(draft: Draft, mention: Mention): Draft | null {
+  const asked = mentionQueryAt(draft);
+  if (!asked) return null;
+  const typed = `@${mention.login} `;
   const caret = asked.at + typed.length;
   return { value: draft.value.slice(0, asked.at) + typed + draft.value.slice(draft.selectionEnd), selectionStart: caret, selectionEnd: caret };
 }

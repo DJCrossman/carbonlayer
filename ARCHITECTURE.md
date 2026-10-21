@@ -49,7 +49,11 @@ continue and links on paste, each a pure command in `src/pr/markdown-editing.ts`
 after a `:` that starts the text or follows whitespace, ranked and put in as GitHub does (`emojiSuggestionsFor`,
 `insertEmoji`: a Unicode emoji's character, `:name:` for one of GitHub's own) from the list GitHub's box loads
 (`markdown.emojis`: `GET /autocomplete/emojis_for_editor`), asked the first time a box asks for one and then kept by the
-page's cache (`['emojis']`, on the device too, for its 24 hours). A typed `:+1:` stays text, which GitHub renders. See
+page's cache (`['emojis']`, on the device too, for its 24 hours). A typed `:+1:` stays text, which GitHub renders. An `@`
+the same way suggests the PR's people and teams from the list GitHub's box loads for it (`markdown.mentions`:
+`GET /suggestions/pull_request/<id>`), ranked CarbonLayer's way (`mentionSuggestionsFor`) and put in as `@login` or
+`@org/slug` (`insertMention`), asked the first time a box asks for one and kept per PR (`['mentions', prId]`, fresh for
+five minutes). See
 `docs/research/github-web-endpoints.md`, `github-web-mutations.md` and `github-web-reviewers.md`. No api.github.com, no token. The background service worker brokers the one-click copy from Graphite (below), and runs
 stack merges, whose requests go through a github.com tab's content script all the same (below).
 

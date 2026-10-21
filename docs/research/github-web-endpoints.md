@@ -284,6 +284,25 @@ path of a deleted file, which the head commit no longer has, is sent as it is).
   own. A typed `:+1:` stays as it is; GitHub renders it. `markdown.emojis` reads the list (`src/lib/github-web/index.ts`),
   and `emojiQueryAt`, `emojiSuggestionsFor` and `insertEmoji` in `src/pr/markdown-editing.ts` do the rest.
 
+## The people and teams a comment box suggests (`/suggestions/pull_request/<id>`) — JSON (VERIFIED signed in 2026-10-21)
+- GitHub's comment boxes on a PR carry `<text-expander keys=": @ #" data-mention-url="/suggestions/pull_request/<PR
+  database id>?mention_suggester=1&repository=<repository name>&user_id=<owner login>">`; on offstreetparking/core#9264,
+  `/suggestions/pull_request/4941363778?mention_suggester=1&repository=core&user_id=offstreetparking`. The PR's database
+  id is the one a preview names it by (`pull.databaseId`). Without `repository` or `user_id` it answers 404.
+- `GET` with `Accept: application/json` and the React headers `getJson` sends → 200, a JSON array of
+  `{ "type": "user", "id": <number>, "login": <string>, "name": <string, "" when none>, "participant": <boolean> }` and
+  `{ "type": "team", "id": <number>, "name": "<org>/<team-slug>", "description": <string, may be ""> }`, in GitHub's
+  order: the PR's participants (`participant: true`) first, then the other users, then teams (17 entries on that PR).
+- It is the whole list: GitHub's box filters it in the browser as the user types and does not ask again per keystroke.
+  How GitHub ranks what was typed is UNREAD. CarbonLayer ranks it its own way (`mentionSuggestionsFor`): case aside, those
+  whose login or a word of whose name begins with the query (a team: its slug or its whole `org/slug`), then those whose
+  login or name only has it, each in GitHub's order, five at most; a bare `@` lists GitHub's first five, the viewer among
+  them, as GitHub's list has them.
+- CarbonLayer opens the list at an `@` at the start of the text or after whitespace (not inside `a@b.com`), for what
+  follows it up to the caret, and Enter or Tab puts `@login` (a team: `@org/slug`) and a space in place of the `@` and the
+  query. `markdown.mentions` reads the list (`src/lib/github-web/index.ts`, kept five minutes per PR for every box on the
+  page), and `mentionQueryAt`, `mentionSuggestionsFor` and `insertMention` in `src/pr/markdown-editing.ts` do the rest.
+
 ## Writes
 Review submit, comment, inline comment, resolve, merge, auto-merge, viewed and draft: see
 `github-web-mutations.md` (read from GitHub's bundles; none sent yet).

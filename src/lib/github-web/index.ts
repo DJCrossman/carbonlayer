@@ -1,11 +1,12 @@
 // Answers the app's RPC requests with the user's github.com session: same-origin requests from the content
 // script to the endpoints GitHub's own React UI uses (docs/research/github-web-*.md). No token, no api.github.com.
 // The page's own cache (src/app/query-cache.tsx) decides when to ask again, so reads go to GitHub; only the reviewer
-// picker's and `pr.fetch`'s are kept briefly here, and pr-stages.ts shares a request between the PR page's stages while
-// it is on its way. Any successful write clears what is kept, and stops sharing the requests made before it.
+// picker's, the comment boxes' people and teams and `pr.fetch`'s are kept briefly here, and pr-stages.ts shares a request
+// between the PR page's stages while it is on its way. Any successful write clears what is kept, and stops sharing the
+// requests made before it.
 
 import { z } from 'zod/mini';
-import type { PrDetail } from '../model';
+import type { Mention, PrDetail } from '../model';
 import type { RpcMethod, RpcMethods, RpcRequest, RpcResponse } from '../rpc';
 import { getSettings } from '../settings';
 import { expandedDiffLines } from './files';
@@ -113,6 +114,28 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
     const emojis = await getJson('/autocomplete/emojis_for_editor', z.record(z.string(), z.union([z.tuple([z.string(), z.string()]), z.tuple([z.string()])])));
     return Object.entries(emojis).map(([name, [imageUrl, character]]) => (character === undefined ? { name, imageUrl } : { name, character }));
   },
+  'markdown.mentions': ({ prId }) => {
+    // Everyone GitHub's comment box on the PR suggests after an `@`, in its order: the PR's participants, the other users,
+    // then teams (docs/research/github-web-endpoints.md). It is the whole list, which every box on the page shares.
+    const pull = pullRequestFor(prId);
+    const [, owner = '', repository = ''] = pull.repoPath.split('/');
+    return cached(kept.mentions, pull.path, 5 * 60_000, false, async () => {
+      const suggestions = await getJson(
+        `/suggestions/pull_request/${pull.databaseId}?${new URLSearchParams({ mention_suggester: '1', repository, user_id: owner })}`,
+        z.array(
+          z.discriminatedUnion('type', [
+            z.object({ type: z.literal('user'), login: z.string(), name: z.string(), participant: z.boolean() }),
+            z.object({ type: z.literal('team'), name: z.string(), description: z.string() }),
+          ]),
+        ),
+      );
+      return suggestions.map((suggestion) =>
+        suggestion.type === 'user'
+          ? { kind: 'user', login: suggestion.login, name: suggestion.name, participant: suggestion.participant }
+          : { kind: 'team', login: suggestion.name, description: suggestion.description },
+      );
+    });
+  },
   ...mutations,
 };
 
@@ -134,9 +157,13 @@ interface Kept<T> {
   value: Promise<T>;
 }
 
-/** What `cached` keeps, a map for each kind of answer: `pr.fetch`'s pull requests and the reviewer picker's two lists. */
+/**
+ * What `cached` keeps, a map for each kind of answer: `pr.fetch`'s pull requests, the reviewer picker's two lists and
+ * the people and teams the comment boxes suggest.
+ */
 const kept = {
   pullRequests: new Map<string, Kept<PrDetail>>(),
   availableReviewers: new Map<string, Kept<z.infer<typeof availableReviewersAnswer>>>(),
   suggestedReviewers: new Map<string, Kept<z.infer<typeof suggestedReviewersAnswer>>>(),
+  mentions: new Map<string, Kept<Mention[]>>(),
 };

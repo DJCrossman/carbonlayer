@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Emoji } from '../lib/model';
+import type { Emoji, Mention } from '../lib/model';
 import {
   continueList,
   emojiQueryAt,
@@ -7,8 +7,11 @@ import {
   insertEmoji,
   insertHeading,
   insertLink,
+  insertMention,
   insertSuggestion,
   linkPastedUrl,
+  mentionQueryAt,
+  mentionSuggestionsFor,
   toggleBold,
   toggleCode,
   toggleItalic,
@@ -269,5 +272,66 @@ describe('insertEmoji', () => {
 
   it('does nothing where the text asks for no emoji', () => {
     expect(insertEmoji(draft('a:b|'), { name: '+1', character: '👍' })).toBeNull();
+  });
+});
+
+describe('mentionQueryAt', () => {
+  it('reads what was typed after an `@` that starts the text or follows whitespace, up to the caret', () => {
+    expect(mentionQueryAt(draft('@mo|'))).toEqual({ at: 0, query: 'mo' });
+    expect(mentionQueryAt(draft('cc @acme/pa|rcs'))).toEqual({ at: 3, query: 'acme/pa' });
+    expect(mentionQueryAt(draft('Thanks\n@|'))).toEqual({ at: 7, query: '' });
+  });
+
+  it('asks for nobody after an `@` inside a word, once a space is typed, or over a selection', () => {
+    expect(mentionQueryAt(draft('mail a@b.com|'))).toBeNull();
+    expect(mentionQueryAt(draft('@mona |'))).toBeNull();
+    expect(mentionQueryAt(draft('|@mona|'))).toBeNull();
+  });
+});
+
+describe('mentionSuggestionsFor', () => {
+  // As GitHub's list has them: the PR's participants, the other users, then teams.
+  const mentions: Mention[] = [
+    { kind: 'user', login: 'mona', name: 'Mona Lisa', participant: true },
+    { kind: 'user', login: 'octocat', name: 'The Octocat', participant: true },
+    { kind: 'user', login: 'hubot', name: '', participant: true },
+    { kind: 'user', login: 'acme-deploy', name: 'Acme Deploy Bot', participant: false },
+    { kind: 'user', login: 'riley', name: 'Riley Acorn', participant: false },
+    { kind: 'user', login: 'mack', name: 'Mack Stone', participant: false },
+    { kind: 'team', login: 'acme/parcs', description: 'Parking and curbside services' },
+    { kind: 'team', login: 'acme/platform', description: '' },
+  ];
+  const logins = (query: string) => mentionSuggestionsFor(query, mentions).map((mention) => mention.login);
+
+  it("offers GitHub's first five for a bare `@`", () => {
+    expect(logins('')).toEqual(['mona', 'octocat', 'hubot', 'acme-deploy', 'riley']);
+  });
+
+  it("puts a login or a word of a name that begins with the query before one that only has it, case aside, each in GitHub's order", () => {
+    expect(logins('AC')).toEqual(['acme-deploy', 'riley', 'acme/parcs', 'acme/platform', 'mack']);
+  });
+
+  it('suggests five at most', () => {
+    expect(logins('o')).toEqual(['octocat', 'mona', 'hubot', 'acme-deploy', 'riley']);
+  });
+
+  it('finds a team by its slug as by its whole `org/slug`', () => {
+    expect(logins('pla')).toEqual(['acme/platform']);
+    expect(logins('acme/pa')).toEqual(['acme/parcs']);
+  });
+});
+
+describe('insertMention', () => {
+  it('puts `@login` and a space in place of the `@` and what follows it, the caret after the space', () => {
+    expect(marked(insertMention(draft('cc @mo|'), { kind: 'user', login: 'mona', name: 'Mona Lisa', participant: true }))).toBe('cc @mona |');
+    expect(marked(insertMention(draft('@ri|\nmore'), { kind: 'user', login: 'riley', name: 'Riley Acorn', participant: false }))).toBe('@riley |\nmore');
+  });
+
+  it('puts a team in as `@org/slug`', () => {
+    expect(marked(insertMention(draft('@pla|'), { kind: 'team', login: 'acme/platform', description: '' }))).toBe('@acme/platform |');
+  });
+
+  it('does nothing where the text asks for nobody', () => {
+    expect(insertMention(draft('a@b|'), { kind: 'user', login: 'mona', name: 'Mona Lisa', participant: true })).toBeNull();
   });
 });

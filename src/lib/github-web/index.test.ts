@@ -128,6 +128,36 @@ describe('handleRpc', () => {
     fetch.mockImplementation(async () => Response.json({ '+1': { image: 'https://github.githubassets.com/images/icons/emoji/unicode/1f44d.png?v8' } }));
     expect(await call('markdown.emojis', {})).toMatchObject({ ok: false, error: expect.stringMatching(/^\/autocomplete\/emojis_for_editor did not match: /) });
   });
+
+  it("lists the people and teams GitHub's comment box suggests on the PR, in its order, once for every box, and refuses a list of another shape", async () => {
+    rememberPullRequest({ id: 'PR_7', repo: { owner: 'acme', name: 'widgets' }, number: 7, databaseId: 700 });
+    rememberPullRequest({ id: 'PR_8', repo: { owner: 'acme', name: 'widgets' }, number: 8, databaseId: 800 });
+    const fetch = vi.fn(async (_path: string, _init: RequestInit) =>
+      Response.json([
+        { type: 'user', id: 1, login: 'mona', name: 'Mona Lisa', participant: true },
+        { type: 'user', id: 2, login: 'hubot', name: '', participant: false },
+        { type: 'team', id: 3, name: 'acme/parcs', description: '' },
+      ]),
+    );
+    vi.stubGlobal('fetch', fetch);
+    expect(await call('markdown.mentions', { prId: 'PR_7' })).toMatchObject({
+      ok: true,
+      result: [
+        { kind: 'user', login: 'mona', name: 'Mona Lisa', participant: true },
+        { kind: 'user', login: 'hubot', name: '', participant: false },
+        { kind: 'team', login: 'acme/parcs', description: '' },
+      ],
+    });
+    const [first] = fetch.mock.calls;
+    assert.isDefined(first);
+    expect(first[0]).toBe('/suggestions/pull_request/700?mention_suggester=1&repository=widgets&user_id=acme');
+    expect(first[1].headers).toMatchObject({ Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'GitHub-Is-React': 'true' });
+    await call('markdown.mentions', { prId: 'PR_7' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    fetch.mockImplementation(async () => Response.json([{ type: 'user', id: 1, login: 'mona' }]));
+    expect(await call('markdown.mentions', { prId: 'PR_8' })).toMatchObject({ ok: false, error: expect.stringMatching(/^\/suggestions\/pull_request\/800 did not match: /) });
+  });
 });
 
 /** A request answered the way the content script answers the app's: read by its method's schemas, then handled. */

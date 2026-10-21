@@ -94,8 +94,9 @@
 .pr-comment-box-preview { box-sizing: border-box; padding: 8px 10px; overflow-wrap: anywhere; }
 .pr-comment-box-raw { margin: 6px 0 0; white-space: pre-wrap; font: 12px/1.45 var(--gg-font-mono); color: var(--gg-fg); }
 
-/* The emoji a comment box suggests after a `:`, as GitHub's list: in the body, under the text typed, over every other
-   part of the page (the drawer and the review popover included), its rows the page's menu rows. */
+/* The emoji a comment box suggests after a `:`, or the people and teams after an `@`, as GitHub's list: in the body,
+   under the text typed, over every other part of the page (the drawer and the review popover included), its rows the
+   page's menu rows. */
 .pr-emoji-suggestions {
   position: fixed;
   z-index: 60;
@@ -124,6 +125,9 @@
 .pr-emoji-suggestion[aria-selected='true'] { background: var(--gg-bg-hover); }
 .pr-emoji-suggestion-emoji { flex: none; width: 16px; font-size: 16px; line-height: 16px; text-align: center; }
 .pr-emoji-suggestions-loading { padding: 4px 8px; color: var(--gg-fg-muted); font-size: 12px; }
+/* A person's row: their avatar, login and name; a team's: its icon, `org/slug` and description, cut short when long. */
+.pr-mention-suggestion-team { flex: none; color: var(--gg-fg-muted); }
+.pr-mention-suggestion-about { overflow: hidden; text-overflow: ellipsis; color: var(--gg-fg-muted); }
 
 /* A stage of the page's data that failed to load: one line where its part would be, with a retry. */
 .pr-stage-error {

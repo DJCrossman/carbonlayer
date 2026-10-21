@@ -3,7 +3,7 @@
 
 import { browser } from 'wxt/browser';
 import { z } from 'zod/mini';
-import type { ChangedFileDiff, Emoji, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, StackEntry, TopRepository, View, ViewResult } from '../lib/model';
+import type { ChangedFileDiff, Emoji, Mention, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, StackEntry, TopRepository, View, ViewResult } from '../lib/model';
 import { rpc, type DiffEntryLine, type InboxRowToEnrich, type LineRange, type MergeCommit, type MergeMethod } from '../lib/rpc';
 import { getSettings, setSettings, watchSettings, type Settings, type SettingsStorage } from '../lib/settings';
 import { STACK_MERGES, stackMergesSchema, type StackMerge, type StackMergeRequest, type stackMergeMessage } from '../lib/stack-merges';
@@ -88,6 +88,8 @@ export interface DataSource {
   previewMarkdown(text: string, prId: string): Promise<string>;
   /** The emoji a comment box suggests after a `:`, in GitHub's order. */
   listEmojis(): Promise<Emoji[]>;
+  /** The people and teams a comment box on the PR suggests after an `@`, in GitHub's order. */
+  listMentions(prId: string): Promise<Mention[]>;
   getSettings(): Promise<Settings>;
   setSettings(patch: Partial<Settings>): Promise<Settings>;
   watchSettings(onChange: (settings: Settings) => void): () => void;
@@ -155,6 +157,7 @@ export function createRpcDataSource(): DataSource {
     react: (prId, subjectId, content, add) => rpc('pr.react', { prId, subjectId, content, add }),
     previewMarkdown: async (text, prId) => (await rpc('markdown.preview', { text, prId })).html,
     listEmojis: () => rpc('markdown.emojis', {}),
+    listMentions: (prId) => rpc('markdown.mentions', { prId }),
     getSettings,
     setSettings,
     watchSettings,
@@ -420,6 +423,11 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
       await new Promise((resolve) => setTimeout(resolve, 500));
       return FIXTURE_EMOJIS;
     },
+    // Whom a fixture PR's comment boxes suggest after an `@`, in GitHub's order, a moment later.
+    listMentions: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      return FIXTURE_MENTIONS;
+    },
     getSettings: () => getSettings(memory),
     setSettings: async (patch) => {
       const saved = await setSettings(patch, memory);
@@ -552,6 +560,21 @@ const FIXTURE_EMOJIS: Emoji[] = [
   { name: 'thumbsdown', character: '👎' },
   { name: 'thumbsup', character: '👍' },
   { name: 'white_check_mark', character: '✅' },
+];
+
+/**
+ * Whom the harness's comment boxes suggest after an `@`, in GitHub's order: the PR's participants (hubot gave no name),
+ * the other people who can be mentioned, then teams.
+ */
+const FIXTURE_MENTIONS: Mention[] = [
+  { kind: 'user', login: 'mona', name: 'Mona Lisa', participant: true },
+  { kind: 'user', login: 'octocat', name: 'The Octocat', participant: true },
+  { kind: 'user', login: 'hubot', name: '', participant: true },
+  { kind: 'user', login: 'acme-deploy', name: 'Acme Deploy Bot', participant: false },
+  { kind: 'user', login: 'riley', name: 'Riley Acorn', participant: false },
+  { kind: 'user', login: 'mack', name: 'Mack Stone', participant: false },
+  { kind: 'team', login: 'acme/parcs', description: 'Parking and curbside services' },
+  { kind: 'team', login: 'acme/platform', description: '' },
 ];
 
 /**
