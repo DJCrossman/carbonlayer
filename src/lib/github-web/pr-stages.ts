@@ -133,6 +133,7 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
       autoMerge: merge.autoMerge,
       isInMergeQueue: merge.isInMergeQueue,
       stackSection: merge.stackSection,
+      autoMergeRange: merge.autoMergeRange,
     };
   },
 

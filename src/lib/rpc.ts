@@ -60,6 +60,7 @@ export const STAGES_A_WRITE_CHANGES = {
   'pr.setDraft': ['header', 'activity', 'mergeBox'],
   // The page moves on to GitHub's page for the revert pull request; nothing shown here changes.
   'pr.revert': [],
+  // The merge box also says which PRs of a native stack auto-merge covers, which the stack card marks.
   'pr.setAutoMerge': ['mergeBox'],
   // Rebasing force-pushes every branch of the stack, this PR's too.
   'pr.rebaseStack': ['header', 'activity', 'mergeBox', 'checks', 'stack'],

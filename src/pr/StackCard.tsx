@@ -187,6 +187,8 @@ function StackRow({
           <MergeStatus status={pr.mergeStatus} state={pr.state} />
         )}
         <RelativeTime date={pr.updatedAt} />
+        {/* Graphite's, after the age: GitHub merges it once every PR auto-merge covers meets the merge requirements. */}
+        {pr.willMergeWhenReady && <span className="stack-merge-when-ready">will merge when ready</span>}
       </span>
     </li>
   );

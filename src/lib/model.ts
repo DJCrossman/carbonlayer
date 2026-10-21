@@ -193,6 +193,12 @@ export const stackEntrySchema = z.extend(prSummarySchema, {
    * of such a stack, absent outside one.
    */
   readyToMergeAsStack: z.optional(z.boolean()),
+  /**
+   * Whether GitHub merges it once it and the other PRs auto-merge covers all meet the merge requirements: auto-merge is on
+   * for its GitHub-native stack, and the viewed PR's merge box marks it in the range (`autoMergeRange`). Absent until that
+   * merge box arrives.
+   */
+  willMergeWhenReady: z.optional(z.boolean()),
 });
 
 export type StackEntry = z.infer<typeof stackEntrySchema>;
@@ -387,18 +393,24 @@ export const prStagesSchema = z.object({
   /** Every changed file, and the diffs GitHub sent along with the list; the others come a batch at a time (`pr.fetchFileDiffs`). */
   files: z.object({ baseOid: z.string(), files: z.array(changedFileSummarySchema), diffs: z.record(z.string(), changedFileDiffSchema) }),
   threads: z.pick(prDetailSchema, { threads: true, unresolvedThreadCount: true }),
-  mergeBox: z.pick(prDetailSchema, {
-    mergeStatus: true,
-    reviewers: true,
-    reviewDecision: true,
-    viewerCanMerge: true,
-    viewerCanEnableAutoMerge: true,
-    allowedMergeMethods: true,
-    defaultMergeMethod: true,
-    autoMerge: true,
-    isInMergeQueue: true,
-    stackSection: true,
-  }),
+  mergeBox: z.extend(
+    z.pick(prDetailSchema, {
+      mergeStatus: true,
+      reviewers: true,
+      reviewDecision: true,
+      viewerCanMerge: true,
+      viewerCanEnableAutoMerge: true,
+      allowedMergeMethods: true,
+      defaultMergeMethod: true,
+      autoMerge: true,
+      isInMergeQueue: true,
+      stackSection: true,
+    }),
+    {
+      /** The PRs of its native stack, by number, that GitHub merges once they all meet the merge requirements, auto-merge being on for the stack; the stack card marks them. */
+      autoMergeRange: z.optional(z.array(z.number())),
+    },
+  ),
   checks: z.extend(z.pick(prDetailSchema, { ci: true, requiredCheckNames: true }), {
     /** Why the checks list is empty when it is (GitHub answered 404, or sent no rows): the card shows it, so an empty card is never a mystery. */
     emptyReason: z.nullable(z.string()),

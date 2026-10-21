@@ -354,7 +354,10 @@ asks first ("Start over"), and replaces it. The fixtures' data source stands in 
 a moment later. "Merge when ready" on a PR of a native stack turns auto-merge
 on the way GitHub's stack does, `enqueue_stack` with `AUTO_MERGE` (`pr.setAutoMerge`), for it and the open PRs below it
 that are not queued, and while it is on the status card says so in GitHub's words; it goes off with `disable_auto_merge`,
-as for a PR alone.
+as for a PR alone. While it is on, the stack card's row for each PR it covers reads Graphite's "will merge when ready"
+after its age: the PRs the viewed PR's merge box marks (each STACK entry's `pull.isInAutoMergeRange`, `autoMergeRange` in
+`mergeState`), which the page puts on the stack's entries (`StackEntry.willMergeWhenReady`), so they follow the switch as
+the merge box reloads.
 
 A native stack's branches: GitHub's merge box shows one section about them, the first that applies (module `MDN` in its
 bundle), which the merge box stage reads (`stackSection` in `mergeState`, `src/lib/github-web/merge-box.ts`, from the

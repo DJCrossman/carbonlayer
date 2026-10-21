@@ -104,6 +104,12 @@ Data endpoints (all `page_data/*` need a session; `tab_counts`, `diffstat` and `
   counts the dashboard rows lack (`enrichPull` in `src/lib/github-web/inbox.ts`). Whether the merge box names reviewers
   (`latestOpinionatedReviews`, `pendingReviewRequests` / `pendingRequestedReviews`) has not been seen signed in; without
   them the row shows no reviewer avatars.
+  In a native stack, `mergeRequirements` (beside `pullRequest`) has a STACK condition whose `entries` are
+  `[{ pull: { number, state, headOid, headBranch, title, url, isInAutoMergeRange, isUnstackable }, position:
+  'AFTER'|'CURRENT'|'BEFORE', status, failedSubConditions }]` (verified signed in on offstreetparking/core#9265, the top
+  of a four-PR stack with auto-merge off, 2026-10-21: every entry `isInAutoMergeRange: false`). GitHub marks each PR that
+  auto-merge, once on for the stack, merges when they all meet the requirements; `mergeState` reads them as
+  `autoMergeRange`, and the stack card's rows for them read "will merge when ready".
 - `GET …/page_data/header` → `{ pullRequest: { author, baseBranch, headBranch, headRepositoryOwnerLogin,
   headRepositoryName, headSha, number, state, … }, stack, … }`, lighter than the merge box. A PR from a fork has a head
   repository other than its own, whose head branch says nothing about this repository's stacks. `pr.merge` reads

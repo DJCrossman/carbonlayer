@@ -74,6 +74,9 @@ export function mergeState(box: MergeBoxAnswer | null, pr: { isDraft: boolean; i
       ? { method: autoMergeMethod === 'SQUASH' || autoMergeMethod === 'REBASE' ? autoMergeMethod : 'MERGE' }
       : null,
     isInMergeQueue: pullRequest.isInMergeQueue === true,
+    // GitHub marks each entry auto-merge covers once it is on for the stack (`isInAutoMergeRange`), as its stack list's
+    // "Auto-merge enabled" popover reads it; an entry that says nothing is not counted.
+    autoMergeRange: (stack?.entries ?? []).flatMap(({ pull }) => (pull?.isInAutoMergeRange && typeof pull.number === 'number' ? [pull.number] : [])),
     stackSection: stackSectionKind && {
       kind: stackSectionKind,
       baseRefName: pullRequest.stackedBaseRefName ?? '',
@@ -92,6 +95,8 @@ interface MergeState {
   viewerCanEnableAutoMerge: boolean;
   autoMerge: { method: MergeMethod } | null;
   isInMergeQueue: boolean;
+  /** The PRs of its native stack, by number, that GitHub merges once they all meet the merge requirements, auto-merge being on for the stack. */
+  autoMergeRange: number[];
   stackSection: PrDetail['stackSection'];
   /** The merge box's `latestOpinionatedReviews`, when it carries them (see reviews.ts). */
   latestOpinionatedReviews: Array<z.infer<typeof opinionatedReviewSchema>> | null;
@@ -149,9 +154,18 @@ export const mergeBoxAnswer = z.pipe(
               description: z.nullish(z.string()),
               displayName: z.nullish(z.string()),
               // The STACK condition's: whether the PR is in a native stack, and each entry's place (BEFORE, CURRENT,
-              // AFTER) and status (NEEDS_MERGE_STATE, MERGE_CONFLICTS, NEEDS_REBASE, IRRELEVANT_DRAFT, …).
+              // AFTER), status (NEEDS_MERGE_STATE, MERGE_CONFLICTS, NEEDS_REBASE, IRRELEVANT_DRAFT, …) and PR, which
+              // says whether auto-merge covers it.
               isStacked: z.nullish(z.boolean()),
-              entries: z.nullish(z.array(z.object({ position: z.nullish(z.string()), status: z.nullish(z.string()) }))),
+              entries: z.nullish(
+                z.array(
+                  z.object({
+                    position: z.nullish(z.string()),
+                    status: z.nullish(z.string()),
+                    pull: z.nullish(z.object({ number: z.nullish(z.number()), isInAutoMergeRange: z.nullish(z.boolean()) })),
+                  }),
+                ),
+              ),
               // PULL_REQUEST_RULES': which kind of rule failed.
               ruleRollups: z.nullish(z.array(z.object({ ruleType: z.nullish(z.string()), result: z.nullish(z.string()) }))),
             }),

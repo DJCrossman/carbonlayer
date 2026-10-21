@@ -180,7 +180,7 @@ export function useLoadAhead(source: DataSource): (pr: PrToLoad) => void {
  * failed) what the page shows without it. Its own entry in the stack is this PR as the page has it.
  */
 export function prDetailFrom(header: PrStages['header'], data: PrPageData): PrDetail {
-  const mergeBox: PrStages['mergeBox'] = data.mergeBox.value ?? {
+  const { autoMergeRange, ...mergeBox }: PrStages['mergeBox'] = data.mergeBox.value ?? {
     mergeStatus: header.isDraft ? 'DRAFT' : 'UNKNOWN',
     reviewers: [],
     reviewDecision: 'NONE',
@@ -213,9 +213,16 @@ export function prDetailFrom(header: PrStages['header'], data: PrPageData): PrDe
     unresolvedThreadCount: data.threads.value?.unresolvedThreadCount ?? 0,
     baseOid: listed?.baseOid ?? '',
     files: listed ? listed.files.map((file) => ({ ...file, ...(listed.diffs[file.path] ?? { patch: null, previousPath: null, withheld: null, generated: false }) })) : NO_FILES,
-    // Its own entry keeps GitHub's verdict on merging it as a stack, which only the stack has.
+    // Its own entry keeps GitHub's verdict on merging it as a stack, which only the stack has; whether auto-merge covers an
+    // entry only the merge box says, so each entry follows "Merge when ready" once the merge box reloads.
     stack: stack
-      ? { ...stack, entries: stack.entries.map((entry, index) => (index === stack.currentIndex ? { ...summary, readyToMergeAsStack: entry.readyToMergeAsStack } : entry)) }
+      ? {
+          ...stack,
+          entries: stack.entries.map((entry, index) => ({
+            ...(index === stack.currentIndex ? { ...summary, readyToMergeAsStack: entry.readyToMergeAsStack } : entry),
+            willMergeWhenReady: autoMergeRange?.includes(entry.number),
+          })),
+        }
       : { entries: [summary], currentIndex: 0, trunk: header.baseRefName, source: 'none' },
   };
 }

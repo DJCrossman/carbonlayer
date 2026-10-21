@@ -110,6 +110,59 @@ describe('mergeState', () => {
     });
   });
 
+  describe('the PRs of a native stack auto-merge covers', () => {
+    // The merge box of offstreetparking/core#9265, the top of a four-PR stack, signed in with auto-merge off (2026-10-21):
+    // each STACK entry's PR says `isInAutoMergeRange: false`. `marks` replaces what an entry's PR says, by number; null
+    // leaves the key out.
+    const pr9265 = (marks: Record<number, boolean | null> = {}) =>
+      mergeBoxAnswer.parse({
+        pullRequest: { mergeStateStatus: 'BLOCKED', isInMergeQueue: false, viewerCanEnableAutoMerge: true, autoMergeRequest: null },
+        mergeRequirements: {
+          state: 'UNMERGEABLE',
+          conditions: [
+            { type: 'PULL_REQUEST_RULES', result: 'FAILED', message: 'At least 1 approving review is required by reviewers with write access.' },
+            {
+              type: 'STACK',
+              result: 'PASSED',
+              isStacked: true,
+              entries: [9265, 9264, 9263, 9262].map((number, index) => {
+                const mark = marks[number] ?? false;
+                return {
+                  pull: {
+                    number,
+                    state: 'OPEN',
+                    headOid: String(number).padStart(40, '0'),
+                    headBranch: `stack/${number}`,
+                    title: `Part ${4 - index}`,
+                    url: `/offstreetparking/core/pull/${number}`,
+                    ...(marks[number] !== null && { isInAutoMergeRange: mark }),
+                    isUnstackable: false,
+                  },
+                  position: index === 0 ? 'CURRENT' : 'BEFORE',
+                  status: 'NEEDS_MERGE_STATE',
+                  failedSubConditions: [],
+                };
+              }),
+            },
+          ],
+        },
+      });
+
+    it('names none while auto-merge is off', () => {
+      expect(mergeState(pr9265(), open).autoMergeRange).toEqual([]);
+    });
+
+    it('names each entry GitHub marks, this PR among them, and leaves out one marked false or saying nothing', () => {
+      expect(mergeState(pr9265({ 9265: true, 9264: true, 9263: false, 9262: null }), open).autoMergeRange).toEqual([9265, 9264]);
+    });
+
+    it('names none outside a stack, and leaves out an entry whose PR GitHub did not send', () => {
+      expect(mergeState({}, open).autoMergeRange).toEqual([]);
+      const withoutPull = { mergeRequirements: { conditions: [{ type: 'STACK', result: 'PASSED', isStacked: true, entries: [{ position: 'CURRENT', status: 'NEEDS_MERGE_STATE' }] }] } };
+      expect(mergeState(mergeBoxAnswer.parse(withoutPull), open).autoMergeRange).toEqual([]);
+    });
+  });
+
   it('assumes every merge method and asks the user-state condition when the actions are missing', () => {
     const state = mergeState({ mergeRequirements: { conditions: [{ type: 'PULL_REQUEST_USER_STATE', result: 'PASSED' }] } }, open);
     expect(state).toMatchObject({ allowedMergeMethods: ['MERGE', 'SQUASH', 'REBASE'], viewerCanMerge: true, viewerCanEnableAutoMerge: false });

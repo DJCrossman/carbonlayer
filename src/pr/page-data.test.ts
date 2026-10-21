@@ -55,6 +55,15 @@ describe('prDetailFrom', () => {
     expect(nextActionFor(pr, ['mergeBox', 'threads'])).toMatchObject({ kind: 'checking' });
   });
 
+  it('marks each entry of the stack the merge box says auto-merge covers, its own too, once the merge box arrives', () => {
+    const stackOnly: PrPageData = { ...nothingYet, stack: { status: 'ready', value: { stack } } };
+    expect(prDetailFrom(header, stackOnly).stack.entries.map((entry) => entry.willMergeWhenReady)).toEqual([undefined, undefined, undefined]);
+    const mergeBox: PrStages['mergeBox'] = { mergeStatus, reviewers, reviewDecision, viewerCanMerge, viewerCanEnableAutoMerge, allowedMergeMethods, defaultMergeMethod, autoMerge, isInMergeQueue, stackSection, autoMergeRange: [41, 42] };
+    const pr = prDetailFrom(header, { ...stackOnly, mergeBox: { status: 'ready', value: mergeBox } });
+    expect(pr.stack.entries.map((entry) => [entry.number, entry.willMergeWhenReady])).toEqual([[41, true], [42, true], [43, false]]);
+    expect(pr).not.toHaveProperty('autoMergeRange');
+  });
+
   it("joins each file's diff to it as the diffs arrive; a file still waiting has no patch", () => {
     const [first, second] = files;
     assert.isDefined(first);
