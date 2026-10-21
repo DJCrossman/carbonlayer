@@ -1,9 +1,10 @@
 // Leaving the PR page. Inside github.com the app is an iframe, so links must move the top window (the
 // content script then re-renders the new page) rather than the iframe. Opened directly (the harness,
-// `window.parent === window`) there is no parent: other PRs open in the harness, everything else in a tab.
+// `window.parent === window`) there is no parent: other PRs and this PR's comments open in the harness, everything else in
+// a tab.
 
 import { postToParent } from '../app/bridge';
-import { toAppHash } from '../app/routes';
+import { parseGitHubLocation, toAppHash } from '../app/routes';
 import type { PrSummary } from '../lib/model';
 
 /** Shows another PR (stack navigation): the top window navigates, or the harness changes its route. */
@@ -22,4 +23,13 @@ export function openOnGitHub(prUrl: string): void {
 export function followLink(url: string): void {
   if (window.parent === window) window.open(url, '_blank', 'noopener');
   else postToParent({ type: 'gg:navigate', url, newTab: !url.startsWith('https://github.com/') });
+}
+
+/**
+ * Focuses a comment on this page, as a click on its time does on GitHub: the top window moves to its permalink without
+ * loading (a history entry, so Back leaves it again) and the page marks it; the harness changes its route.
+ */
+export function focusComment(url: string): void {
+  if (window.parent === window) location.hash = toAppHash(parseGitHubLocation(new URL(url)));
+  else postToParent({ type: 'gg:navigate', url });
 }

@@ -219,9 +219,12 @@ review's `#pullrequestreview-<id>` (their elements' ids), and a diff comment's `
 such a link opens the page at the comment: the content script carries its anchor in the app's route
 (`#/pr/<o>/<r>/<n>?comment=discussion_r<id>`, `comment` in `src/app/routes.ts`, GitHub's files-view `#r<id>` read as
 `#discussion_r<id>`), and the page (`useLinkedComment` in `src/pr/PrPage.tsx`) waits for the stage that has it, opens a
-diff comment's file and thread, scrolls the comment into view and marks it (`is-linked`) as GitHub marks a linked
-comment. A comment the page does not show (hidden, or gone) leaves the page as it is, as does the reader scrolling,
-typing or clicking first.
+diff comment's file and thread, scrolls the comment into view unless the reader already sees all of it, and marks it
+(`is-linked`) as GitHub marks a linked comment, for as long as the route names it (GitHub's `:target`). A comment the
+page does not show (hidden, or gone) leaves the page as it is, as does the reader scrolling, typing or clicking first.
+A plain click on a comment's time, a link to its permalink as GitHub's is, does the same in place (`focusComment` in
+`src/pr/navigation.ts`): the top window moves to the permalink inside the app, a history entry, so the address bar holds
+the link to copy and Back takes the mark off; ⌘ / Ctrl / Shift / Alt clicks stay the browser's.
 
 File links: each file's header copies as Graphite's does (`FileCard` in `src/pr/Files.tsx`), each copy confirmed in a
 toast. A click on its path copies the path: `@pierre/diffs` draws the path in the diff's shadow root, so the card hears

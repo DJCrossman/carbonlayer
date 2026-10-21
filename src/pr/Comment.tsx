@@ -6,7 +6,7 @@ import { Avatar } from '../ui/Avatar';
 import { Icon } from '../ui/Icon';
 import { RelativeTime } from '../ui/RelativeTime';
 import { showToast } from '../ui/Toast';
-import { followLink } from './navigation';
+import { focusComment, followLink } from './navigation';
 import './comment.css';
 import './markdown.css';
 
@@ -28,7 +28,17 @@ export function Comment({ author, createdAt, bodyHtml, url, action, footer, comp
         <strong>{author?.login ?? 'ghost'}</strong>
         {action}
         {url ? (
-          <a className="pr-comment-time" href={url} target="_blank" rel="noopener">
+          // Its permalink, as GitHub's time is: a click focuses the comment in place, the address bar holding the link.
+          <a
+            className="pr-comment-time"
+            href={url}
+            onClick={(event) => {
+              // A click with ⌘, Ctrl, Shift or Alt, or another button, is the browser's: a new tab or window, or a download.
+              if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+              event.preventDefault();
+              focusComment(url);
+            }}
+          >
             <RelativeTime date={createdAt} />
           </a>
         ) : (

@@ -886,8 +886,9 @@ function FinishReview({ batchCount, onToggle, popover, floating }: { batchCount:
  * arrived. A link to a comment the page does not show (hidden, or gone) leaves the page as it is.
  */
 function useLinkedComment(anchor: string | undefined, pr: PrDetail, data: PrPageData, revealThread: (threadId: string, readerMoved?: () => boolean) => void) {
-  // Where the linked comment shows. Each link is looked up once, so a later reload of the stage leaves the reader be.
-  const [linked, setLinked] = useState<{ find: () => Element | null | undefined; block: ScrollLogicalPosition } | null>(null);
+  // Where the linked comment shows, for the anchor that names it. Each link is looked up once, so a later reload of the
+  // stage leaves the reader be; a route that names no comment forgets it, so that naming it again looks it up again.
+  const [linked, setLinked] = useState<{ anchor: string; find: () => Element | null | undefined; block: ScrollLogicalPosition } | null>(null);
   const lookedUp = useRef<string | null>(null);
   // As a browser does with a link's anchor, the link gives up once the reader has scrolled, typed or clicked.
   const readerMoved = useRef(false);
@@ -904,6 +905,7 @@ function useLinkedComment(anchor: string | undefined, pr: PrDetail, data: PrPage
   }, [anchor]);
 
   useEffect(() => {
+    if (!anchor) lookedUp.current = null;
     if (!anchor || lookedUp.current === anchor) return;
     const isLinked = (url: string | null | undefined) => url?.endsWith(`#${anchor}`) ?? false;
     // A comment's timestamp links to its permalink (Comment.tsx), so the permalink finds it on the page.
@@ -911,7 +913,7 @@ function useLinkedComment(anchor: string | undefined, pr: PrDetail, data: PrPage
       [...document.querySelectorAll(`${scope} a.pr-comment-time`)].find((link) => link.getAttribute('href') === url)?.closest('.pr-comment');
     if (anchor.startsWith('issue-')) {
       lookedUp.current = anchor;
-      if (isLinked(pr.descriptionUrl)) setLinked({ find: () => document.getElementById('pr-description'), block: 'start' });
+      if (isLinked(pr.descriptionUrl)) setLinked({ anchor, find: () => document.getElementById('pr-description'), block: 'start' });
     } else if (anchor.startsWith('discussion_r')) {
       if (data.threads.status === 'loading') return;
       lookedUp.current = anchor;
@@ -919,28 +921,34 @@ function useLinkedComment(anchor: string | undefined, pr: PrDetail, data: PrPage
       const url = thread?.comments.map((comment) => comment.url).find(isLinked);
       // A reader who scrolled, typed or clicked while the threads loaded keeps their place, as with any other link.
       if (!thread || !url || readerMoved.current) return;
-      // Its file expanded and the thread opened, resolved or not; its diff may still be on its way.
-      revealThread(thread.id, () => readerMoved.current);
-      setLinked({ find: () => commentIn(`[data-thread-id="${CSS.escape(thread.id)}"]`, url), block: 'center' });
+      // In the diff's thread, not its copy in the comments drawer.
+      const find = () => commentIn(`[data-thread-id="${CSS.escape(thread.id)}"]`, url);
+      // Its file expanded and the thread opened, resolved or not; its diff may still be on its way. A comment the reader
+      // already sees stays where it is.
+      revealThread(thread.id, () => readerMoved.current || readerSees(find()));
+      setLinked({ anchor, find, block: 'center' });
     } else {
       if (data.activity.status === 'loading') return;
       lookedUp.current = anchor;
       const url = pr.timeline.map((entry) => (entry.kind === 'comment' || entry.kind === 'review' ? entry.url : null)).find(isLinked);
-      if (url) setLinked({ find: () => commentIn('.timeline', url)?.closest('.timeline-card'), block: 'start' });
+      if (url) setLinked({ anchor, find: () => commentIn('.timeline', url)?.closest('.timeline-card'), block: 'start' });
     }
   }, [anchor, pr, data.threads.status, data.activity.status, revealThread]);
 
-  // Once it has a box, into view and marked until another link replaces it; for ten seconds at most.
+  // As GitHub's `:target`, the mark follows the route: it stays while the route names the comment, and a route that names
+  // another, or none, takes it off.
+  const shown = linked?.anchor === anchor ? linked : null;
+  // Once it has a box, into view unless the reader already sees it whole, and marked; it is looked for ten seconds at most.
   useEffect(() => {
-    if (!linked) return;
+    if (!shown) return;
     let marked: Element | null = null;
     let frame = 0;
     const started = performance.now();
     const land = () => {
       if (readerMoved.current) return;
-      const element = linked.find();
+      const element = shown.find();
       if (element && element.getClientRects().length > 0) {
-        element.scrollIntoView({ block: linked.block });
+        if (!readerSees(element)) element.scrollIntoView({ block: shown.block });
         element.classList.add('is-linked');
         marked = element;
       } else if (performance.now() - started < 10_000) {
@@ -952,7 +960,7 @@ function useLinkedComment(anchor: string | undefined, pr: PrDetail, data: PrPage
       cancelAnimationFrame(frame);
       marked?.classList.remove('is-linked');
     };
-  }, [linked]);
+  }, [shown]);
 }
 
 /**
@@ -1024,4 +1032,20 @@ function useBackgroundMerges(source: DataSource, pr: PrDetail, reload: (stages: 
     });
   }, [source, owner, name, number]);
   return merges;
+}
+
+/**
+ * Whether the reader already sees all of an element: inside the viewport, and neither its top nor its bottom under what
+ * sticks to the top of the page (the files' toolbar, a diff's file header) or floats over it (the shortcut legend).
+ */
+function readerSees(element: Element | null | undefined): boolean {
+  if (!element) return false;
+  const box = element.getBoundingClientRect();
+  if (box.height === 0 || box.top < 0 || box.bottom > innerHeight) return false;
+  // Just inside its top and bottom edges, clear of a rounded corner.
+  const x = box.left + Math.min(box.width / 2, 16);
+  return [box.top + 2, box.bottom - 2].every((y) => {
+    const onTop = document.elementFromPoint(x, y);
+    return onTop !== null && element.contains(onTop);
+  });
 }
