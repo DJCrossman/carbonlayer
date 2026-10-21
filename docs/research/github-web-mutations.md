@@ -139,7 +139,7 @@ Need a session (404 signed out): `status_checks`, `merge_box`, `stack_mergeabili
   description, message, result, stack, isStacked, entries }`, each entry `{ position: "BEFORE"|"CURRENT"|"AFTER",
   status, … }` (`NEEDS_MERGE_STATE`, `IRRELEVANT_DRAFT`, `IRRELEVANT_MERGED`, `IRRELEVANT_AFTER`, `IRRELEVANT_QUEUED`,
   `MERGE_CONFLICTS`, `NEEDS_REBASE`, `BLOCKED_STACK`). GitHub's bundle reads each entry's PR as `entry.pull` (`number`,
-  `headOid`, `state`, `url`, `isInAutoMergeRange`); that key is not yet confirmed on a live answer. GitHub's merge box
+  `headOid`, `state`, `url`, `isInAutoMergeRange`); (VERIFIED live 2026-10-19 on #8986: entries are `{ pull, position, failedSubConditions, status }`). GitHub's merge box
   (module `MDN`) shows one section about the stack's branches, the first that applies: the CURRENT entry
   `MERGE_CONFLICTS`, "This branch has conflicts that must be resolved"; any entry but AFTER ones `MERGE_CONFLICTS`, "This
   stack has conflicts that must be resolved" (both "Use the command line to resolve conflicts within the stack before
