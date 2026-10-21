@@ -146,22 +146,27 @@ function StackRow({
       {/* Who opened it; an entry whose page header GitHub did not answer keeps the space empty. */}
       <span className="stack-author">{pr.author && <Avatar user={pr.author} size={16} />}</span>
       <span className="stack-number pr-muted">#{pr.number}</span>
-      {current ? (
-        <span className="stack-title">{pr.title}</span>
-      ) : (
-        <a
-          className="stack-title"
-          href={pr.url}
-          onClick={(event) => {
-            // A click with ⌘, Ctrl, Shift or Alt, or another button, is the browser's: a new tab or window, or a download.
-            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
-            event.preventDefault();
-            goToPr(pr);
-          }}
-        >
-          {pr.title}
-        </a>
-      )}
+      {/* The title, and right after it Graphite's "will merge when ready" (GitHub merges it once every PR auto-merge covers
+          meets the merge requirements), so the statuses keep their column on every row. */}
+      <span className="stack-title-line">
+        {current ? (
+          <span className="stack-title">{pr.title}</span>
+        ) : (
+          <a
+            className="stack-title"
+            href={pr.url}
+            onClick={(event) => {
+              // A click with ⌘, Ctrl, Shift or Alt, or another button, is the browser's: a new tab or window, or a download.
+              if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+              event.preventDefault();
+              goToPr(pr);
+            }}
+          >
+            {pr.title}
+          </a>
+        )}
+        {pr.willMergeWhenReady && <span className="stack-merge-when-ready">will merge when ready</span>}
+      </span>
       <span className="stack-status">
         {/* Graphite's conversation counter, resolved of all; an entry with none, or whose threads GitHub did not send, shows nothing. */}
         {pr.conversations && pr.conversations.total > 0 && (
@@ -187,8 +192,6 @@ function StackRow({
           <MergeStatus status={pr.mergeStatus} state={pr.state} />
         )}
         <RelativeTime date={pr.updatedAt} />
-        {/* Graphite's, after the age: GitHub merges it once every PR auto-merge covers meets the merge requirements. */}
-        {pr.willMergeWhenReady && <span className="stack-merge-when-ready">will merge when ready</span>}
       </span>
     </li>
   );

@@ -102,6 +102,9 @@ a.stack-title:hover { color: var(--gg-accent); }
 .stack-status > span { display: inline-flex; }
 .stack-conversations { align-items: center; gap: 3px; font-variant-numeric: tabular-nums; }
 .stack-status .gg-time { min-width: 52px; text-align: right; }
-/* Graphite's "will merge when ready" right after the age, emphasised, behind a dot as muted as the age. */
-.stack-merge-when-ready { gap: 4px; margin-left: -4px; color: var(--gg-fg); font-weight: 500; white-space: nowrap; }
+/* The title and Graphite's "will merge when ready" share the row's free space: the title gives way first. */
+.stack-title-line { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; }
+.stack-title-line .stack-title { flex: 0 1 auto; }
+/* Graphite's "will merge when ready" right after the title, emphasised, behind a muted dot. */
+.stack-merge-when-ready { flex: none; display: inline-flex; gap: 6px; color: var(--gg-fg); font-size: 12px; font-weight: 500; white-space: nowrap; }
 .stack-merge-when-ready::before { content: '·'; color: var(--gg-fg-muted); font-weight: 400; }
