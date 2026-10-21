@@ -841,7 +841,7 @@ function FinishReview({ batchCount, onToggle, popover, floating }: { batchCount:
  * the description, a comment or review in the activity, or a comment in a diff thread, once the stage that has it has
  * arrived. A link to a comment the page does not show (hidden, or gone) leaves the page as it is.
  */
-function useLinkedComment(anchor: string | undefined, pr: PrDetail, data: PrPageData, revealThread: (threadId: string) => void) {
+function useLinkedComment(anchor: string | undefined, pr: PrDetail, data: PrPageData, revealThread: (threadId: string, readerMoved?: () => boolean) => void) {
   // Where the linked comment shows. Each link is looked up once, so a later reload of the stage leaves the reader be.
   const [linked, setLinked] = useState<{ find: () => Element | null | undefined; block: ScrollLogicalPosition } | null>(null);
   const lookedUp = useRef<string | null>(null);
@@ -873,9 +873,10 @@ function useLinkedComment(anchor: string | undefined, pr: PrDetail, data: PrPage
       lookedUp.current = anchor;
       const thread = pr.threads.find((candidate) => candidate.comments.some((comment) => isLinked(comment.url)));
       const url = thread?.comments.map((comment) => comment.url).find(isLinked);
-      if (!thread || !url) return;
+      // A reader who scrolled, typed or clicked while the threads loaded keeps their place, as with any other link.
+      if (!thread || !url || readerMoved.current) return;
       // Its file expanded and the thread opened, resolved or not; its diff may still be on its way.
-      revealThread(thread.id);
+      revealThread(thread.id, () => readerMoved.current);
       setLinked({ find: () => commentIn(`[data-thread-id="${CSS.escape(thread.id)}"]`, url), block: 'center' });
     } else {
       if (data.activity.status === 'loading') return;

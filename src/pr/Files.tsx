@@ -144,7 +144,8 @@ interface FileReview {
   moveOnFrom(path: string): void;
   goToFile(path: string): void;
   stepFile(delta: 1 | -1): void;
-  revealThread(threadId: string): void;
+  /** Opens a thread's file and brings the thread into view, giving up on the way once `readerMoved` says so. */
+  revealThread(threadId: string, readerMoved?: () => boolean): void;
   stepThread(delta: 1 | -1): void;
   toggleTree(): void;
   openComposer(anchor: ComposerAnchor): void;
@@ -200,7 +201,7 @@ export function useFileReview(pr: PrDetail): FileReview {
   }, []);
 
   const revealThread = useCallback(
-    (threadId: string) => {
+    (threadId: string, readerMoved?: () => boolean) => {
       const thread = pr.threads.find((candidate) => candidate.id === threadId);
       if (!thread) return;
       navigatedAt.current = performance.now();
@@ -208,9 +209,10 @@ export function useFileReview(pr: PrDetail): FileReview {
       setCurrentPath(thread.path);
       setCurrentThreadId(threadId);
       // The thread only has a box once its file is expanded and its line rendered (highlighting is async); a long diff
-      // draws only the lines near the viewport, so the page moves toward the line meanwhile.
+      // draws only the lines near the viewport, so the page moves toward the line meanwhile, unless the reader moves first.
       let frames = 0;
       const tryScroll = () => {
+        if (readerMoved?.()) return;
         const element = document.querySelector(`[data-thread-id="${CSS.escape(threadId)}"]`);
         if (element && element.getClientRects().length > 0) {
           navigatedAt.current = performance.now();
