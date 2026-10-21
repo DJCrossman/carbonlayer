@@ -187,7 +187,8 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     remove: async (keys) => keys.forEach((key) => delete stored[key]),
   };
   const listeners = new Set<(settings: Settings) => void>();
-  // Stack merges as the background runs one with nothing to wait for: merging, then merged a moment later, then forgotten.
+  // Stack merges as the background runs one with nothing to wait for: merging, then merged a moment later, then forgotten;
+  // one merging when ready waits, as for a stack not ready yet, until it is dropped.
   let stackMerges: StackMerge[] = [];
   const stackMergeWatchers = new Set<(merges: StackMerge[]) => void>();
   const saveStackMerges = (merges: StackMerge[]) => {
@@ -370,8 +371,10 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     },
     startStackMerge: async (request) => {
       await log('startStackMerge', request);
-      const merge: StackMerge = { ...request, id: crypto.randomUUID(), startedAt: Date.now(), heads: null, step: { kind: 'merging', sentAt: Date.now() }, trouble: null };
+      const step: StackMerge['step'] = request.whenReady ? { kind: 'waiting', for: null } : { kind: 'merging', sentAt: Date.now() };
+      const merge: StackMerge = { ...request, id: crypto.randomUUID(), startedAt: Date.now(), heads: null, step, trouble: null };
       saveStackMerges([...stackMerges.filter((other) => !other.prs.some((pr) => request.prs.some(({ number }) => number === pr.number))), merge]);
+      if (request.whenReady) return;
       setTimeout(() => {
         if (!stackMerges.some((other) => other.id === merge.id)) return;
         saveStackMerges(stackMerges.map((other) => (other.id === merge.id ? { ...other, step: { kind: 'merged' } } : other)));

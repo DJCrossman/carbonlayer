@@ -281,3 +281,14 @@ a.check-row[href]:hover { background: var(--gg-bg-hover); }
 
 /* Why the last step of a background stack merge could not reach GitHub; it tries again. */
 .side-merge-trouble { color: var(--gg-attention); font-size: 12px; }
+
+/* CarbonLayer's own "Merge when ready" once it stopped, under the switch it turned off: why, and Dismiss. */
+.side-merge-when-ready-stopped {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--gg-danger);
+  font-size: 12px;
+}
+.side-merge-when-ready-stopped > span { flex: 1; min-width: 0; }

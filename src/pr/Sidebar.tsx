@@ -4,7 +4,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { MergeMethod } from '../lib/rpc';
 import { mergeMethodSchema, type PrDetail, type PrStage, type StackEntry } from '../lib/model';
-import type { StackMerge } from '../lib/stack-merges';
+import { isUnderWay, type StackMerge } from '../lib/stack-merges';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
@@ -50,7 +50,10 @@ export function Sidebar({
   onMerge: (method: MergeMethod) => Promise<boolean>;
   /** Opens the dialog that merges the stack (MergeStackDialog.tsx), with the method picked here. */
   onMergeStack: (method: MergeMethod) => void;
-  /** The merge of this PR's stack CarbonLayer runs in the background (src/lib/stack-merges.ts), under way or stopped. */
+  /**
+   * The merge of this PR's stack CarbonLayer runs in the background (src/lib/stack-merges.ts), under way or stopped: the
+   * merge dialog's stands where the merge controls would, and one merging when ready shows as "Merge when ready".
+   */
   backgroundMerge: StackMerge | null;
   /** Cancels that merge, or dismisses it once stopped; resolves false when it could not, after saying why. */
   onDropBackgroundMerge: (id: string) => Promise<boolean>;
@@ -65,7 +68,14 @@ export function Sidebar({
 }) {
   return (
     <aside className="pr-sidebar" aria-label="Status">
-      <StatusCard pr={pr} mergeMethod={mergeMethod} onAutoMerge={onAutoMerge} onRevert={onRevert} />
+      <StatusCard
+        pr={pr}
+        mergeMethod={mergeMethod}
+        onAutoMerge={onAutoMerge}
+        onRevert={onRevert}
+        ownMergeWhenReady={backgroundMerge?.whenReady ? backgroundMerge : null}
+        onDropBackgroundMerge={onDropBackgroundMerge}
+      />
       {/* GitHub's merge box says so of a stack behind its base branch, which merges all the same. */}
       {pr.stackSection?.kind === 'rebase-optional' && (
         <Card className="side-card side-action is-attention">
@@ -77,8 +87,8 @@ export function Sidebar({
           {pr.stackSection.viewerCanRebase && <RebaseStack onRebaseStack={onRebaseStack} />}
         </Card>
       )}
-      {/* While CarbonLayer merges the stack, or once that stopped, it stands where the merge controls would. */}
-      {backgroundMerge ? (
+      {/* While CarbonLayer merges the stack from the dialog, or once that stopped, it stands where the merge controls would. */}
+      {backgroundMerge && !backgroundMerge.whenReady ? (
         <BackgroundMergeCard merge={backgroundMerge} onDrop={() => onDropBackgroundMerge(backgroundMerge.id)} />
       ) : (
         <ActionCard
@@ -161,18 +171,29 @@ function StatusCard({
   mergeMethod,
   onAutoMerge,
   onRevert,
+  ownMergeWhenReady,
+  onDropBackgroundMerge,
 }: {
   pr: PrDetail;
   mergeMethod: MergeMethod;
   onAutoMerge: (enabled: boolean, method: MergeMethod) => Promise<boolean>;
   onRevert: () => Promise<boolean>;
+  /**
+   * CarbonLayer's own "Merge when ready" for this PR's stack, armed where GitHub refused its stack auto-merge to the
+   * repository: under way, which shows the switch on, or stopped, which says why until it is dismissed.
+   */
+  ownMergeWhenReady: StackMerge | null;
+  onDropBackgroundMerge: (id: string) => Promise<boolean>;
 }) {
   const [busy, setBusy] = useState(false);
   // Reverting creates a branch on GitHub, so it asks first.
   const [revert, setRevert] = useState<'idle' | 'confirming' | 'reverting'>('idle');
-  // The method Merge when ready merges with: auto-merge's own while it is on, else the one picked here.
+  // The method Merge when ready merges with: auto-merge's own while it is on (GitHub's or CarbonLayer's), else the one
+  // picked here.
   const [picked, setPicked] = useState(mergeMethod);
-  const method = pr.autoMerge?.method ?? picked;
+  const armed = ownMergeWhenReady && isUnderWay(ownMergeWhenReady) ? ownMergeWhenReady : null;
+  const on = pr.autoMerge !== null || armed !== null;
+  const method = armed?.method ?? pr.autoMerge?.method ?? picked;
   const methods = pr.allowedMergeMethods.length > 0 ? pr.allowedMergeMethods : (['SQUASH', 'MERGE', 'REBASE'] as const);
   // Who merged or closed it comes from the last such event in the timeline.
   const ending = pr.state === 'OPEN' ? undefined : pr.timeline.findLast((item) => item.kind === (pr.state === 'MERGED' ? 'merged' : 'closed'));
@@ -226,14 +247,14 @@ function StatusCard({
           </div>
         </div>
       )}
-      {pr.state === 'OPEN' && (pr.viewerCanEnableAutoMerge || pr.autoMerge !== null) && (
+      {pr.state === 'OPEN' && (pr.viewerCanEnableAutoMerge || on) && (
         <div className="side-switch-row">
-          <label className="side-switch" title={stackBlocks && pr.autoMerge === null ? 'Merging is blocked due to failing stack merge requirements' : undefined}>
+          <label className="side-switch" title={stackBlocks && !on ? 'Merging is blocked due to failing stack merge requirements' : undefined}>
             <input
               type="checkbox"
               role="switch"
-              checked={pr.autoMerge !== null}
-              disabled={busy || (stackBlocks && pr.autoMerge === null)}
+              checked={on}
+              disabled={busy || (stackBlocks && !on)}
               onChange={async (event) => {
                 setBusy(true);
                 await onAutoMerge(event.target.checked, method);
@@ -252,7 +273,7 @@ function StatusCard({
               const chosen = mergeMethodSchema.parse(event.currentTarget.value);
               setPicked(chosen);
               // While it is on, a new method applies at once.
-              if (pr.autoMerge === null) return;
+              if (!on) return;
               setBusy(true);
               await onAutoMerge(true, chosen);
               setBusy(false);
@@ -270,6 +291,21 @@ function StatusCard({
         <p className="pr-muted side-checks-empty">
           This pull request and {mergingWithIt} {mergingWithIt === 1 ? 'other' : 'others'} in the stack will automatically merge when they all meet the merge requirements.
         </p>
+      )}
+      {/* CarbonLayer's own, in place of GitHub's stack auto-merge: who merges the stack and why, and where it is. */}
+      {armed && (
+        <p className="pr-muted side-checks-empty side-merge-when-ready">
+          {armed.step.kind === 'merging' ? 'Merging… ' : armed.step.kind === 'waiting' && armed.step.for?.kind === 'stack-rebase' ? 'Waiting for the stack to be rebased. ' : ''}
+          CarbonLayer will merge this stack when it's ready: GitHub's stack auto-merge isn't available for this repository.
+        </p>
+      )}
+      {armed?.trouble && (
+        <p className="side-checks-empty side-merge-trouble" title={armed.trouble}>
+          {armed.trouble}
+        </p>
+      )}
+      {ownMergeWhenReady?.step.kind === 'stopped' && (
+        <StoppedMergeWhenReady reason={ownMergeWhenReady.step.reason} onDismiss={() => onDropBackgroundMerge(ownMergeWhenReady.id)} />
       )}
     </Card>
   );
@@ -714,4 +750,25 @@ function whereTheMergeIs(merge: StackMerge): { tone: 'attention' | 'danger' | 'd
       return { tone: 'attention', icon: 'clock', title: 'Checking the stack…', detail: plan };
     }
   }
+}
+
+/** CarbonLayer's own "Merge when ready" once it stopped: why, in GitHub's words where GitHub gave any, with Dismiss. */
+function StoppedMergeWhenReady({ reason, onDismiss }: { reason: string; onDismiss: () => Promise<boolean> }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="side-merge-when-ready-stopped" role="status">
+      <span>CarbonLayer stopped merging this stack when ready: {reason}</span>
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          if (!(await onDismiss())) setBusy(false);
+        }}
+      >
+        Dismiss
+      </Button>
+    </div>
+  );
 }

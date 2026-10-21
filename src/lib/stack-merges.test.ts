@@ -5,18 +5,20 @@ import {
   UnansweredRequest,
   advanceStackMerge,
   isUnderWay,
+  mergeStackWhenReady,
   stackMergeMessage,
   stackMergesSchema,
   whatTheStackWaitsFor,
   type GitHubThroughATab,
   type StackMerge,
+  type StackMergeRequest,
 } from './stack-merges';
 
 const HOUR = 60 * 60_000;
 
 describe('whatTheStackWaitsFor', () => {
-  const waitsFor = (readiness: StackReadiness, options: Partial<{ heads: Record<string, string>; ignoreOptionalChecks: boolean; rebase: boolean }> = {}) =>
-    whatTheStackWaitsFor(readiness, { heads: { '41': 'h41', '42': 'h42' }, ignoreOptionalChecks: true, rebase: false, ...options });
+  const waitsFor = (readiness: StackReadiness, options: Partial<{ heads: Record<string, string>; ignoreOptionalChecks: boolean; rebase: boolean; whenReady: boolean }> = {}) =>
+    whatTheStackWaitsFor(readiness, { heads: { '41': 'h41', '42': 'h42' }, ignoreOptionalChecks: true, rebase: false, whenReady: false, ...options });
 
   it('merges once every required check has passed and GitHub says each PR can merge with those below it', () => {
     expect(waitsFor(stack())).toEqual({ kind: 'merge' });
@@ -72,6 +74,44 @@ describe('whatTheStackWaitsFor', () => {
       reason: 'This stack has conflicts that must be resolved',
     });
     expect(waitsFor({ ...stack(), mergeStatus: 'DIRTY' })).toEqual({ kind: 'stop', reason: 'This branch has conflicts that must be resolved' });
+  });
+
+  describe('merging when ready', () => {
+    const whenReady = { whenReady: true } as const;
+
+    it('merges once every required check of the open PRs has passed and GitHub says each can merge, optional checks aside', () => {
+      expect(waitsFor(stack(), whenReady)).toEqual({ kind: 'merge' });
+      expect(waitsFor(stack({ 42: [check('build', 'SUCCESS'), check('test', 'SUCCESS'), check('deploy-preview', 'FAILURE')] }), whenReady)).toEqual({ kind: 'merge' });
+    });
+
+    it('keeps waiting through a failing or cancelled required check, counting it as not passed', () => {
+      expect(waitsFor(stack({ 41: [check('build', 'FAILURE', 'Failing after 2m'), check('lint', 'SUCCESS')] }), whenReady)).toEqual({ kind: 'checks', requiredPassed: 3, required: 4, optionalRunning: 0 });
+      expect(waitsFor(stack({ 42: [check('build', 'SUCCESS'), check('test', 'CANCELLED')] }), whenReady)).toEqual({ kind: 'checks', requiredPassed: 3, required: 4, optionalRunning: 0 });
+    });
+
+    it('keeps waiting while GitHub says a PR cannot merge yet, missing reviews among the reasons', () => {
+      expect(waitsFor(stack({}, { 41: { status: 'NOT_READY', mergeState: 'BLOCKED' } }), whenReady)).toEqual({ kind: 'github', number: 41, status: 'NOT_READY' });
+    });
+
+    it('keeps waiting through new commits', () => {
+      expect(waitsFor(stack(), { ...whenReady, heads: { '41': 'h41', '42': 'older' } })).toEqual({ kind: 'merge' });
+    });
+
+    it('waits for a stack GitHub says must be rebased, and merges one that is only out of date as it is', () => {
+      expect(waitsFor({ ...stack(), stackSection: { kind: 'rebase-required', baseRefName: 'main', viewerCanRebase: true } }, whenReady)).toEqual({ kind: 'stack-rebase' });
+      expect(waitsFor({ ...stack(), stackSection: { kind: 'rebase-optional', baseRefName: 'main', viewerCanRebase: true } }, whenReady)).toEqual({ kind: 'merge' });
+    });
+
+    it('stops on a closed PR and on conflicts, in GitHub\'s words', () => {
+      expect(waitsFor({ ...stack(), prs: stack().prs.map((pr) => (pr.number === 41 ? { ...pr, state: 'CLOSED' } : pr)) }, whenReady)).toEqual({ kind: 'stop', reason: '#41 was closed meanwhile.' });
+      expect(waitsFor({ ...stack(), stackSection: { kind: 'conflicts', baseRefName: 'main', viewerCanRebase: false } }, whenReady)).toEqual({ kind: 'stop', reason: 'This stack has conflicts that must be resolved' });
+      expect(waitsFor({ ...stack(), mergeStatus: 'DIRTY' }, whenReady)).toEqual({ kind: 'stop', reason: 'This branch has conflicts that must be resolved' });
+    });
+
+    it('merges the PRs still open, whichever merged meanwhile', () => {
+      const merged41 = { ...stack({ 41: [check('build', 'FAILURE')] }, { 41: { status: null, mergeState: null } }), prs: stack().prs.map((pr) => (pr.number === 41 ? { ...pr, state: 'MERGED' as const } : pr)) };
+      expect(waitsFor(merged41, whenReady)).toEqual({ kind: 'merge' });
+    });
   });
 });
 
@@ -214,12 +254,155 @@ describe('advanceStackMerge', () => {
     expect((await advanceStackMerge(unknown, gitHub({ 'pr.fetchHeader': () => header({ state: 'MERGED' }) }), START + 60_000)).step).toEqual({ kind: 'merged' });
   });
 
+  describe('merging when ready', () => {
+    it('keeps waiting through a failing check and new commits, then merges from the PR at the top with the heads it saw last and the commit GitHub proposes', async () => {
+      let readiness: StackReadiness = stack({ 41: [check('build', 'FAILURE'), check('lint', 'SUCCESS')] });
+      let state: PrStages['header']['state'] = 'OPEN';
+      const github = gitHub({
+        'pr.fetchStackReadiness': () => readiness,
+        'pr.fetchHeader': () => header({ state, headOid: 'h42-pushed' }),
+        'pr.merge': () => {
+          state = 'MERGED';
+        },
+      });
+      // Armed on a head the stack has since moved on from: no matter.
+      const failing = await advanceStackMerge(merge({ whenReady: true, expectedHeadOid: 'older', rebaseFirst: false }), github, START);
+      expect(failing.step).toEqual({ kind: 'waiting', for: { kind: 'checks', requiredPassed: 3, required: 4, optionalRunning: 0 }, lookedAt: START, unchangedSince: START });
+      const stillFailing = stack({ 41: [check('build', 'FAILURE'), check('lint', 'SUCCESS')] });
+      readiness = { ...stillFailing, prs: stillFailing.prs.map((pr) => (pr.number === 42 ? { ...pr, headOid: 'h42-pushed' } : pr)) };
+      const pushed = await advanceStackMerge(failing, github, START + 30_000);
+      expect(pushed.step).toEqual({ kind: 'waiting', for: { kind: 'checks', requiredPassed: 3, required: 4, optionalRunning: 0 }, lookedAt: START + 30_000, unchangedSince: START + 30_000 });
+      expect(pushed.heads).toEqual({ '41': 'h41', '42': 'h42-pushed' });
+      readiness = { ...stack(), prs: stack().prs.map((pr) => (pr.number === 42 ? { ...pr, headOid: 'h42-pushed' } : pr)) };
+      const ready = await advanceStackMerge(pushed, github, START + 60_000);
+      expect(ready.step).toEqual({ kind: 'merging', sentAt: null });
+      expect((await advanceStackMerge(ready, github, START + 60_000)).step).toEqual({ kind: 'merged' });
+      expect(github.asked.filter(([method]) => method === 'pr.merge')).toEqual([['pr.merge', { prId: 'PR_42', method: 'SQUASH', expectedHeadOid: 'h42-pushed' }]]);
+    });
+
+    it('keeps waiting for missing reviews and a stack GitHub says must be rebased, with no time cap, and never rebases it', async () => {
+      const blocked = gitHub({ 'pr.fetchStackReadiness': () => stack({}, { 42: { status: 'NOT_READY', mergeState: 'BLOCKED' } }) });
+      const waiting = merge({ whenReady: true, rebaseFirst: false, step: { kind: 'waiting', for: null } });
+      expect((await advanceStackMerge(waiting, blocked, START + 7 * 24 * HOUR)).step).toMatchObject({ kind: 'waiting', for: { kind: 'github', number: 42, status: 'NOT_READY' } });
+      const diverged = gitHub({ 'pr.fetchStackReadiness': () => ({ ...stack(), stackSection: { kind: 'rebase-required', baseRefName: 'main', viewerCanRebase: true } }) });
+      expect((await advanceStackMerge(waiting, diverged, START)).step).toMatchObject({ kind: 'waiting', for: { kind: 'stack-rebase' } });
+      expect(diverged.asked.map(([method]) => method)).toEqual(['pr.fetchStackReadiness']);
+    });
+
+    it('stops on a closed PR, conflicts and a merge GitHub refused, in its words', async () => {
+      const waiting = merge({ whenReady: true, rebaseFirst: false, step: { kind: 'waiting', for: null } });
+      const closed = gitHub({ 'pr.fetchStackReadiness': () => ({ ...stack(), prs: stack().prs.map((pr) => (pr.number === 41 ? { ...pr, state: 'CLOSED' } : pr)) }) });
+      expect((await advanceStackMerge(waiting, closed, START)).step).toEqual({ kind: 'stopped', reason: '#41 was closed meanwhile.' });
+      const conflicted = gitHub({ 'pr.fetchStackReadiness': () => ({ ...stack(), stackSection: { kind: 'conflicts', baseRefName: 'main', viewerCanRebase: false } }) });
+      expect((await advanceStackMerge(waiting, conflicted, START)).step).toEqual({ kind: 'stopped', reason: 'This stack has conflicts that must be resolved' });
+      const refused = gitHub({
+        'pr.fetchHeader': () => header(),
+        'pr.merge': () => {
+          throw new Error('Pull request is not mergeable');
+        },
+      });
+      const merging = merge({ whenReady: true, rebaseFirst: false, heads: { '41': 'h41', '42': 'h42' }, step: { kind: 'merging', sentAt: null } });
+      expect((await advanceStackMerge(merging, refused, START)).step).toEqual({ kind: 'stopped', reason: 'Pull request is not mergeable' });
+    });
+
+    it('looks at the stack again when a merge was refused because its PR was pushed to after it looked', async () => {
+      let headOid = 'h42';
+      const github = gitHub({
+        'pr.fetchHeader': () => header({ headOid }),
+        'pr.merge': () => {
+          headOid = 'h42-pushed';
+          throw new Error('New commits were pushed since this page loaded. Reload and review them before merging.');
+        },
+      });
+      const merging = merge({ whenReady: true, rebaseFirst: false, heads: { '41': 'h41', '42': 'h42' }, step: { kind: 'merging', sentAt: null } });
+      expect((await advanceStackMerge(merging, github, START)).step).toEqual({ kind: 'waiting', for: null });
+    });
+
+    it('looks again after a quarter of the time the stack has waited unchanged, every 30 s at first and every 5 minutes at most', async () => {
+      const github = gitHub({ 'pr.fetchStackReadiness': () => stack({}, { 42: { status: 'NOT_READY', mergeState: 'BLOCKED' } }) });
+      const looked = (waited: number) =>
+        merge({ whenReady: true, rebaseFirst: false, heads: { '41': 'h41', '42': 'h42' }, step: { kind: 'waiting', for: { kind: 'github', number: 42, status: 'NOT_READY' }, lookedAt: START + waited, unchangedSince: START } });
+      const lookAfter = async (waited: number, after: number) => {
+        const before = looked(waited);
+        return (await advanceStackMerge(before, github, START + waited + after)) !== before;
+      };
+      // A minute unchanged: every 30 s, the alarm's own pace, give or take its 5 s.
+      expect([await lookAfter(60_000, 20_000), await lookAfter(60_000, 26_000), await lookAfter(60_000, 30_000)]).toEqual([false, true, true]);
+      // Eight minutes: every 2 minutes.
+      expect([await lookAfter(8 * 60_000, 60_000), await lookAfter(8 * 60_000, 2 * 60_000)]).toEqual([false, true]);
+      // A day: every 5 minutes.
+      expect([await lookAfter(24 * HOUR, 4 * 60_000), await lookAfter(24 * HOUR, 5 * 60_000)]).toEqual([false, true]);
+      // One not due asks GitHub nothing.
+      const asked = github.asked.length;
+      await lookAfter(24 * HOUR, 60_000);
+      expect(github.asked.length).toBe(asked);
+    });
+
+    it('counts the wait as unchanged while the stack waits for the same thing at the same heads, and from the last change otherwise', async () => {
+      let readiness = stack({}, { 42: { status: 'NOT_READY', mergeState: 'BLOCKED' } });
+      const github = gitHub({ 'pr.fetchStackReadiness': () => readiness });
+      const waiting = merge({ whenReady: true, rebaseFirst: false, heads: { '41': 'h41', '42': 'h42' }, step: { kind: 'waiting', for: { kind: 'github', number: 42, status: 'NOT_READY' }, lookedAt: START + HOUR, unchangedSince: START } });
+      const same = await advanceStackMerge(waiting, github, START + HOUR + 5 * 60_000);
+      expect(same.step).toMatchObject({ lookedAt: START + HOUR + 5 * 60_000, unchangedSince: START });
+      readiness = stack({}, { 41: { status: 'NOT_READY', mergeState: 'BLOCKED' } });
+      expect((await advanceStackMerge(same, github, START + 2 * HOUR)).step).toMatchObject({ for: { kind: 'github', number: 41 }, unchangedSince: START + 2 * HOUR });
+      const blocked = stack({}, { 42: { status: 'NOT_READY', mergeState: 'BLOCKED' } });
+      readiness = { ...blocked, prs: blocked.prs.map((pr) => (pr.number === 41 ? { ...pr, headOid: 'h41-pushed' } : pr)) };
+      expect((await advanceStackMerge(same, github, START + 2 * HOUR)).step).toMatchObject({ for: { kind: 'github', number: 42 }, unchangedSince: START + 2 * HOUR });
+    });
+  });
+
   it('leaves a merge that ended as it is', async () => {
     const github = gitHub({});
     const stopped = merge({ step: { kind: 'stopped', reason: 'Cancelled' } });
     expect(await advanceStackMerge(stopped, github, START + 7 * HOUR)).toBe(stopped);
     expect(github.asked).toEqual([]);
     expect([isUnderWay(stopped), isUnderWay(merge({ step: { kind: 'merged' } })), isUnderWay(merge())]).toEqual([false, false, true]);
+  });
+});
+
+describe('mergeStackWhenReady', () => {
+  const STACK = { repo: REPO, number: 42, prs: merge().prs, trunk: 'main', method: 'MERGE', expectedHeadOid: 'h42' } as const;
+  /** The page's data source as far as "Merge when ready" goes: GitHub's answer to auto-merge, and the stack merges started. */
+  const source = (setAutoMerge: () => Promise<void>) => {
+    const started: StackMergeRequest[] = [];
+    const asked: Array<[string, boolean, string]> = [];
+    return {
+      started,
+      asked,
+      setAutoMerge: async (prId: string, enabled: boolean, method: string) => {
+        asked.push([prId, enabled, method]);
+        await setAutoMerge();
+      },
+      startStackMerge: async (request: StackMergeRequest) => {
+        started.push(request);
+      },
+    };
+  };
+
+  it("leaves the stack to GitHub's auto-merge once GitHub accepts it", async () => {
+    const page = source(async () => {});
+    expect(await mergeStackWhenReady('PR_42', STACK, page)).toBe('github');
+    expect(page.asked).toEqual([['PR_42', true, 'MERGE']]);
+    expect(page.started).toEqual([]);
+  });
+
+  it("merges the stack itself when ready, by GitHub's merge rules, where GitHub says the repository has no stack auto-merge", async () => {
+    for (const refusal of ['Stack auto-merge is not enabled.', 'stack auto-merge is NOT enabled']) {
+      const page = source(async () => {
+        throw new Error(refusal);
+      });
+      expect(await mergeStackWhenReady('PR_42', STACK, page)).toBe('carbonlayer');
+      expect(page.started).toEqual([{ ...STACK, ignoreOptionalChecks: true, rebaseFirst: false, whenReady: true }]);
+    }
+  });
+
+  it('passes any other refusal on, starting nothing', async () => {
+    const page = source(async () => {
+      throw new Error('Pull request is in clean status');
+    });
+    await expect(mergeStackWhenReady('PR_42', STACK, page)).rejects.toThrow('Pull request is in clean status');
+    expect(page.started).toEqual([]);
   });
 });
 
@@ -230,12 +413,16 @@ describe('what the page and the background send each other and keep', () => {
     expect(stackMergeMessage.parse({ kind: 'carbonlayer-drop-stack-merge', id: 'm-1' })).toEqual({ kind: 'carbonlayer-drop-stack-merge', id: 'm-1' });
     expect(() => stackMergeMessage.parse({ kind: 'carbonlayer-start-stack-merge', request: { ...request, method: 'FAST_FORWARD' } })).toThrow(/method/);
     expect(() => stackMergeMessage.parse({ kind: 'carbonlayer-start-stack-merge', request: { ...request, rebaseFirst: undefined } })).toThrow(/rebaseFirst/);
+    expect(() => stackMergeMessage.parse({ kind: 'carbonlayer-start-stack-merge', request: { ...request, whenReady: undefined } })).toThrow(/whenReady/);
     expect(stackMergeMessage.safeParse({ kind: 'carbonlayer-merge-everything' }).success).toBe(false);
     expect([id, startedAt, heads, step, trouble]).toEqual(['m-1', START, null, { kind: 'starting' }, null]);
   });
 
   it('keeps stack merges of the shape this build writes, and refuses others', () => {
-    const kept = [merge({ step: { kind: 'waiting', for: { kind: 'github', number: 41, status: 'NOT_READY' } } })];
+    const kept = [
+      merge({ step: { kind: 'waiting', for: { kind: 'github', number: 41, status: 'NOT_READY' } } }),
+      merge({ whenReady: true, step: { kind: 'waiting', for: { kind: 'stack-rebase' }, lookedAt: START, unchangedSince: START } }),
+    ];
     expect(stackMergesSchema.parse(JSON.parse(JSON.stringify(kept)))).toEqual(kept);
     expect(stackMergesSchema.safeParse([{ ...merge(), step: { kind: 'paused' } }]).success).toBe(false);
   });
@@ -259,6 +446,7 @@ function merge(changes: Partial<StackMerge> = {}): StackMerge {
     expectedHeadOid: 'h42',
     ignoreOptionalChecks: true,
     rebaseFirst: true,
+    whenReady: false,
     startedAt: START,
     heads: null,
     step: { kind: 'starting' },

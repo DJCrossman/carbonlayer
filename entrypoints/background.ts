@@ -3,9 +3,11 @@
 // copy the sections, stores them where the import dialog looks (`graphiteImport` in storage.local), then closes the
 // Graphite tab and returns to the one that asked. Which tab is copying lives in storage.session: the worker may stop
 // while Graphite loads, and a browser restart should forget it.
-// It also runs the stack merges the merge dialog starts (src/lib/stack-merges.ts), so they carry on when their PR's tab
-// closes: kept in storage.local, moved on every 30 s by an alarm, each step asking GitHub through a github.com tab's
-// content script, in a tab of its own (opened in the background, closed once the merge ends) when no other is open.
+// It also runs the stack merges the merge dialog starts, and those "Merge when ready" arms where GitHub has no stack
+// auto-merge for the repository (src/lib/stack-merges.ts), so they carry on when their PR's tab closes: kept in
+// storage.local, moved on every 30 s by an alarm, each step asking GitHub through a github.com tab's content script, in a
+// tab of its own (opened in the background, closed once the merge ends, or after each look of a merge waiting to merge
+// when ready) when no other is open.
 // First: zod's messages (src/lib/zod-messages.ts).
 import '../src/lib/zod-messages';
 import { browser } from 'wxt/browser';
@@ -130,10 +132,11 @@ async function moveStackMergesOn(): Promise<void> {
 }
 
 /**
- * Moves a stack merge on (advanceStackMerge) and saves where it got to, unless it was dropped meanwhile; a rebase or merge
- * it has just decided on is sent at once, anything else waits for the next alarm. A merge that merged is saved so for the
- * pages watching, then forgotten. Once it has ended, the tab opened for it closes, and with no merge left under way, the
- * alarm stops.
+ * Moves a stack merge on (advanceStackMerge) and saves where it got to, unless it was dropped meanwhile or had nothing to
+ * do yet; a rebase or merge it has just decided on is sent at once, anything else waits for the next alarm. A merge that
+ * merged is saved so for the pages watching, then forgotten. Once it has ended, the tab opened for it closes, as it does
+ * while a merge waits to merge when ready, which may wait for days: the next look opens one again. With no merge left
+ * under way, the alarm stops.
  */
 async function moveOn(id: string): Promise<void> {
   // An alarm while this merge is still at its step leaves it be.
@@ -148,6 +151,7 @@ async function moveOn(id: string): Promise<void> {
       const merge = (await readStackMerges()).find((candidate) => candidate.id === id);
       if (!merge || !isUnderWay(merge)) break;
       const next = await advanceStackMerge(merge, github, Date.now());
+      if (next === merge) break;
       const saved = await changeStackMerges((merges) => merges.map((candidate) => (candidate.id === id ? next : candidate)));
       if (!saved.some((candidate) => candidate.id === id)) break;
       if (next.step.kind === 'merged') await changeStackMerges((merges) => merges.filter((candidate) => candidate.id !== id));
@@ -160,7 +164,7 @@ async function moveOn(id: string): Promise<void> {
   }
   const merges = await readStackMerges();
   const merge = merges.find((candidate) => candidate.id === id);
-  if (!merge || !isUnderWay(merge)) await closeTabOpenedFor(id);
+  if (!merge || !isUnderWay(merge) || (merge.whenReady && merge.step.kind === 'waiting')) await closeTabOpenedFor(id);
   if (!merges.some(isUnderWay)) await browser.alarms.clear(STACK_MERGE_ALARM);
 }
 
@@ -169,7 +173,7 @@ async function moveOn(id: string): Promise<void> {
  * requests the app's frame makes): the tab that answered last, else the one opened for the merge, one showing its PR, or
  * any other. A tab without CarbonLayer's content script (one that loaded before it, or failed to load) is passed over.
  * With none to ask, it opens the PR's page, GitHub's own (`?gh=1`), in a tab in the background, which closes once the
- * merge ends.
+ * merge ends (or, merging when ready, once it has looked).
  */
 function gitHubThroughATab(id: string): GitHubThroughATab {
   let answeredBy: number | null = null;

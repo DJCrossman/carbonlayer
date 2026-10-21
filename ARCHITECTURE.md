@@ -26,7 +26,7 @@ CSP. The content script is a thin bridge.
 | `github.content.ts` | Content script on `github.com/*`, run at `document_start`. Recognises the inbox (the homepage `/`, only when `<meta name="user-login">` names a signed-in user: signed out, `/` is GitHub's marketing page and stays untouched, so at `document_start` the script waits for that tag, or for `<body>`, before hiding anything) and PR (`/:owner/:repo/pull/:n`, plus `/files`, `/changes`, `/commits`, `/checks`) routes (`src/app/routes.ts`). On a handled route it reads the settings, then hides GitHub's `main` with a `<style>` on `<html>` before the page paints, and mounts the iframe (`app.html?theme=<theme>#<route>`) on `<html>` too, below GitHub's header, so Turbo's `<body>` swaps leave both in place and a soft navigation moves the loaded app with `gg:route` instead of reloading it. The frame opens in the theme the app will show (the options' theme, else GitHub's), which `app-theme.ts` puts on before the first paint: the app's light default would otherwise show while its code loads, a white flash on GitHub's dark theme. It forwards theme, keydown, the window's focus and who is signed in (`gg:viewer`, answering the app's `gg:ready` with `<meta name="user-login">` once the parser has reached it) to the iframe, performs top-level navigations the iframe asks for (`src/app/bridge.ts`), answers the iframe's RPC requests with `handleRpc` from `src/lib/github-web/` (session fetches), and re-routes on every same-document navigation (the Navigation API's `navigate` event; `wxt:locationchange` where there is none). A page the app asks for that it shows in this tab moves the tab inside the app instead of loading (below, "Moving between pages"). `?gh=1` leaves GitHub untouched for one visit. The `inboxEnabled` / `prEnabled` settings leave it untouched until switched back. On every handled route the script adds a "GitHub \| CarbonLayer" switch (`role="group"`, two `aria-pressed` buttons, plain DOM, GitHub's colour variables) to GitHub's header, just before the + / notifications cluster (`[data-testid="top-bar-actions"]` in the signed-in global nav, `.AppHeader-actions` on older headers; signed out, the marketing header's search-and-sign-in cluster; failing those, the header's end). A click switches this tab at once (GitHub's view loads the URL afresh when the app moved the tab since the page loaded, as GitHub's page below it is another URL's) and keeps that choice in the tab's `sessionStorage` for as long as the tab lives, and saves it as the default for tabs opened later; other open tabs keep their page until they load again. The popup's switches do the same for the tab in view: they save the default and send that tab's content script a `gg:choose` runtime message. GitHub's headers are server-rendered React partials, and a node inserted among their children before hydration makes React render the header again without it, so the switch lives in an open shadow root on that cluster beside a `<slot>` for GitHub's own children; it is placed once the header is parsed and again after a Turbo `<body>` swap or a React re-render. |
 | `app-theme.ts` | `app.html`'s first script, a blocking one in its `<head>`: sets `<html data-theme>` from `?theme=` (`themeOpenedIn` in `src/app/frame-theme.ts`, which imports nothing, so the script stays a few hundred bytes) before the page is parsed or painted, and `app/main.tsx` keeps that theme until it has GitHub's (`gg:theme`) and the options' own. A file of its own (WXT unlisted script), since the extension's CSP blocks inline scripts. |
 | `app/` | The React app (`entrypoints/app/main.tsx`): hash router → `InboxPage` (`src/inbox/`) or `PrPage` (`src/pr/`), inside the page's TanStack Query cache (`PageQueries`, below), which a move to another page (`gg:route`) keeps; another page or PR opens at its top. Data comes through a `DataSource` (`src/app/data-source.ts`): the RPC-backed one in the extension, a fixture-backed one when opened with `?fixtures=1` (the dev harness). Listed in `web_accessible_resources` for `https://github.com/*`. |
-| `background.ts` | Brokers the one-click copy from Graphite: opens `app.graphite.com` next to the inbox's tab, remembers both tabs in `storage.session`, stores the copied sections under `graphiteImport` in `storage.local`, then closes the Graphite tab and re-activates the inbox. And runs the stack merges the merge dialog starts (below, "Merging a GitHub-native stack"). |
+| `background.ts` | Brokers the one-click copy from Graphite: opens `app.graphite.com` next to the inbox's tab, remembers both tabs in `storage.session`, stores the copied sections under `graphiteImport` in `storage.local`, then closes the Graphite tab and re-activates the inbox. And runs the stack merges the merge dialog starts, and those "Merge when ready" arms where GitHub has no stack auto-merge for the repository (below, "Merging a GitHub-native stack"). |
 | `graphite.content.ts` / `graphite-sections.content.ts` | On `app.graphite.com`, only in the tab the background opened: the isolated script asks the page-world script (`world: 'MAIN'`) for the inbox's sections; that one waits for the inbox to render, walks React's internal state above a sidebar item to the inbox `snapshot` (`inboxSnapshotOf` in `src/lib/graphite.ts`, which reads each fiber's props by zod schemas) and posts the sections, the inbox's repositories and the signed-in login back, the copy read as `graphiteInboxSnapshot` (every section named, the rest as Graphite holds it) at each hop: the page world, the isolated script and the background. A snapshot of another shape is reported, saying what differs, rather than copied. A banner in the tab reports the result. |
 | `options/` | Options page: the inbox's organization, its repositories and views editor, merge method, diff layout, theme, on/off switches. |
 | `popup/` | Toolbar popup: on/off toggles, links to inbox and options. |
@@ -345,19 +345,40 @@ GitHub's state rather than sent again. Each step asks GitHub through a github.co
 the tab that answered last, else one showing the PR, else any; the content script writes only to a PR whose page it has
 loaded, so a step that writes loads its header first. With no tab to ask, the worker opens the PR's own GitHub page
 (`?gh=1`) in a tab in the background (never in front), uses it for the rest of the merge, and closes it once the merge
-ends, unless the viewer is looking at it; which tab it opened lives in `storage.session`. While a merge covers a PR, its
-page shows it where the next step would be ("Rebasing stack…", "Waiting for checks · 3 of 5 required passed", "Waiting
-for GitHub · #41", "Merging…"), with Cancel, which forgets it (nothing done on GitHub is undone); a merge that stopped
-says why, with Dismiss. Once it has rebased, the page loads again what a rebase changes; once merged, what a merge
-changes, with a toast "Merged N PRs"; the merge is then forgotten. Starting a merge of PRs another merge under way has
-asks first ("Start over"), and replaces it. The fixtures' data source stands in for the worker with a merge that merges
-a moment later. "Merge when ready" on a PR of a native stack turns auto-merge
-on the way GitHub's stack does, `enqueue_stack` with `AUTO_MERGE` (`pr.setAutoMerge`), for it and the open PRs below it
-that are not queued, and while it is on the status card says so in GitHub's words; it goes off with `disable_auto_merge`,
-as for a PR alone. While it is on, the stack card's row for each PR it covers reads Graphite's "will merge when ready"
-after its age: the PRs the viewed PR's merge box marks (each STACK entry's `pull.isInAutoMergeRange`, `autoMergeRange` in
-`mergeState`), which the page puts on the stack's entries (`StackEntry.willMergeWhenReady`), so they follow the switch as
-the merge box reloads.
+ends, unless the viewer is looking at it; which tab it opened lives in `storage.session`. While a merge from the dialog
+covers a PR, its page shows it where the next step would be ("Rebasing stack…", "Waiting for checks · 3 of 5 required
+passed", "Waiting for GitHub · #41", "Merging…"), with Cancel, which forgets it (nothing done on GitHub is undone); a
+merge that stopped says why, with Dismiss. Once it has rebased, the page loads again what a rebase changes; once merged,
+what a merge changes, with a toast "Merged N PRs"; the merge is then forgotten. Starting a merge of PRs another merge
+under way has asks first ("Start over"), and replaces it. The fixtures' data source stands in for the worker with a
+merge that merges a moment later (one merging when ready waits until it is dropped). "Merge when ready" on a PR of a
+native stack turns auto-merge on the way GitHub's stack does, `enqueue_stack` with `AUTO_MERGE` (`pr.setAutoMerge`), for
+it and the open PRs below it that are not queued, and while it is on the status card says so in GitHub's words; it goes
+off with `disable_auto_merge`, as for a PR alone. While it is on, the stack card's row for each PR it covers reads
+Graphite's "will merge when ready" after its age: the PRs the viewed PR's merge box marks (each STACK entry's
+`pull.isInAutoMergeRange`, `autoMergeRange` in `mergeState`), which the page puts on the stack's entries
+(`StackEntry.willMergeWhenReady`), so they follow the switch as the merge box reloads.
+
+Where GitHub refuses its stack auto-merge to the repository, in its words "Stack auto-merge is not enabled." (matched
+whatever the case; any other refusal is a toast, as ever), CarbonLayer merges the stack when it is ready itself
+(`mergeStackWhenReady` in `src/lib/stack-merges.ts`): a stack merge as above of the open PRs from the bottom through this
+one, from this one, marked `whenReady`, which the same background runner moves on by other rules. It goes by GitHub's own
+merge rules, so optional checks never hold it up, never rebases on its own (a rebase force-pushes every branch) and has no
+time cap. It waits through failing checks, missing reviews and new commits (it merges the heads it saw last, and a merge
+`pr.merge` refuses because the PR was pushed to since sends it back to looking), and through a stack GitHub says must be
+rebased ("Waiting for the stack to be rebased", the next step offering GitHub's Rebase stack); an out-of-date stack merges
+as it is, and PRs merged meanwhile are left out. Once every required check of the PRs still open has passed and GitHub
+says each can merge with those below it, it sends `pr.merge` with the switch's method and the commit GitHub proposes then,
+and follows it as above. Only a closed PR, conflicts (in GitHub's words) and a merge GitHub refused stop it. Since it may
+wait for days, it looks at the stack again after a quarter of the time the stack has waited for the same thing at the same
+heads, from every 30 s (checks that just started) up to every 5 minutes (a review that comes after a day merges within 5
+minutes), and a tab the worker opens to ask GitHub closes after each look, so an idle stack keeps none open; none comes to
+the front. While it is under way the switch is on, with "CarbonLayer will merge this stack when it's ready: GitHub's stack
+auto-merge isn't available for this repository." under it in place of GitHub's sentence, the rows of the open PRs it merges
+read "will merge when ready", and the next step shows as ever; the page of every PR it merges shows the same, read from
+`storage.local`. The switch turned off cancels it (nothing on GitHub to undo), another method merges the same PRs with it,
+and once it stopped the switch is off and the status card says why, with Dismiss. A PR alone, and a stack only Graphite's
+comment lists, keep GitHub's `enable_auto_merge`.
 
 A native stack's branches: GitHub's merge box shows one section about them, the first that applies (module `MDN` in its
 bundle), which the merge box stage reads (`stackSection` in `mergeState`, `src/lib/github-web/merge-box.ts`, from the

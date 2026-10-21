@@ -13,7 +13,7 @@ import { SIGNED_OUT } from '../lib/github-web/session';
 import type { ChangedFile, PrDetail, PrStage, PrStages, ReactionContent } from '../lib/model';
 import { STAGES_A_WRITE_CHANGES, type MergeCommit, type MergeMethod } from '../lib/rpc';
 import type { Settings } from '../lib/settings';
-import { isUnderWay, type StackMerge, type StackMergeRequest } from '../lib/stack-merges';
+import { isUnderWay, mergeStackWhenReady, type StackMerge, type StackMergeRequest } from '../lib/stack-merges';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
@@ -138,6 +138,21 @@ function PrView({
   // merges this PR where the merge controls are.
   const backgroundMerges = useBackgroundMerges(source, pr, reload);
   const backgroundMerge = backgroundMerges.find((merge) => merge.prs.some(({ number }) => number === pr.number)) ?? null;
+  // CarbonLayer's own "Merge when ready", armed where GitHub refused its stack auto-merge: it marks the rows of the open PRs
+  // it will merge, as GitHub's merge box marks those its stack auto-merge covers.
+  const mergingWhenReady = backgroundMerge?.whenReady && isUnderWay(backgroundMerge) ? backgroundMerge : null;
+  const stack = useMemo(
+    () =>
+      mergingWhenReady
+        ? {
+            ...pr.stack,
+            entries: pr.stack.entries.map((entry) =>
+              entry.state === 'OPEN' && mergingWhenReady.prs.some(({ number }) => number === entry.number) ? { ...entry, willMergeWhenReady: true } : entry,
+            ),
+          }
+        : pr.stack,
+    [pr.stack, mergingWhenReady],
+  );
   useLinkedComment(comment, pr, data, files.revealThread);
   const linkedFile = useLinkedFile(file, pr.files);
 
@@ -240,6 +255,7 @@ function PrView({
         ...(commit && { commit }),
         expectedHeadOid: pr.headOid,
         ...options,
+        whenReady: false,
       });
     } catch (reason) {
       showToast(`Could not start the merge: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger');
@@ -247,6 +263,47 @@ function PrView({
     }
     showToast(`Merging ${merging.length} PRs. CarbonLayer carries on if this tab closes.`);
     return true;
+  }
+
+  /**
+   * "Merge when ready" turned on or off, or its method changed: GitHub's auto-merge, as GitHub's merge box sets it. For a
+   * PR of a GitHub-native stack whose repository GitHub refuses its stack auto-merge, CarbonLayer merges the stack when it
+   * is ready instead (mergeStackWhenReady); turning that off cancels it, with nothing on GitHub to undo, and another
+   * method merges the same PRs with it.
+   */
+  async function setMergeWhenReady(enabled: boolean, method: MergeMethod): Promise<boolean> {
+    if (mergingWhenReady) {
+      const { repo, number, prs, trunk, expectedHeadOid, ignoreOptionalChecks, rebaseFirst } = mergingWhenReady;
+      try {
+        if (enabled) await source.startStackMerge({ repo, number, prs, trunk, method, expectedHeadOid, ignoreOptionalChecks, rebaseFirst, whenReady: true });
+        else await source.dropStackMerge(mergingWhenReady.id);
+        return true;
+      } catch (reason) {
+        showToast(`Could not change Merge when ready: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger');
+        return false;
+      }
+    }
+    // Another method for an auto-merge already on: turned off, then on again with it.
+    const switching = enabled && pr.autoMerge !== null && pr.autoMerge.method !== method;
+    setEdits((current) => ({ ...current, autoMerge: enabled ? method : false }));
+    return mutate(
+      STAGES_A_WRITE_CHANGES['pr.setAutoMerge'],
+      async () => {
+        if (switching) await source.setAutoMerge(pr.id, false, method);
+        if (!enabled || pr.stack.source !== 'native') return source.setAutoMerge(pr.id, enabled, method);
+        // The open PRs from the bottom of the stack through this one, which GitHub's stack auto-merge would cover.
+        const merging = pr.stack.entries.slice(0, pr.stack.currentIndex + 1).filter((entry) => entry.state === 'OPEN');
+        const by = await mergeStackWhenReady(
+          pr.id,
+          { repo: pr.repo, number: pr.number, prs: merging.map(({ number, title }) => ({ number, title })), trunk: pr.stack.trunk, method, expectedHeadOid: pr.headOid },
+          source,
+        );
+        // CarbonLayer's own shows from the merge the background keeps, not as GitHub's auto-merge.
+        if (by === 'carbonlayer') setEdits((current) => ({ ...current, autoMerge: null }));
+      },
+      'Could not change Merge when ready',
+      { undo: () => setEdits((current) => ({ ...current, autoMerge: null })) },
+    );
   }
 
   function react(subjectId: string, content: ReactionContent, add: boolean) {
@@ -403,7 +460,7 @@ function PrView({
               {() =>
                 pr.stack.source !== 'none' && (
                   <StackCard
-                    stack={pr.stack}
+                    stack={stack}
                     collapsed={stackCollapsed}
                     onToggle={() => setStackCollapsed((collapsed) => !collapsed)}
                     source={source}
@@ -445,20 +502,7 @@ function PrView({
             )
           }
           mergeMethod={mergeMethod}
-          onAutoMerge={(enabled, method) => {
-            // Another method for an auto-merge already on: turned off, then on again with it.
-            const switching = enabled && pr.autoMerge !== null && pr.autoMerge.method !== method;
-            setEdits((current) => ({ ...current, autoMerge: enabled ? method : false }));
-            return mutate(
-              STAGES_A_WRITE_CHANGES['pr.setAutoMerge'],
-              async () => {
-                if (switching) await source.setAutoMerge(pr.id, false, method);
-                await source.setAutoMerge(pr.id, enabled, method);
-              },
-              'Could not change Merge when ready',
-              { undo: () => setEdits((current) => ({ ...current, autoMerge: null })) },
-            );
-          }}
+          onAutoMerge={setMergeWhenReady}
           onRevert={async () => {
             try {
               const { url } = await source.revert(pr.id);
