@@ -234,6 +234,15 @@
   text-decoration: none !important;
 }
 a.check-row[href]:hover { background: var(--gg-bg-hover); }
+/* A long list of checks scrolls inside the card, eight and a half rows tall, the half row saying there is more; the rows'
+   hover reaches the card's edges as before. */
+.checks-list {
+  max-height: calc(26px * 8.5);
+  margin: 0 -6px;
+  padding: 0 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .check-name {
   min-width: 0;
   overflow: hidden;
