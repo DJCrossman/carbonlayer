@@ -82,8 +82,10 @@ export default defineBackground(() => {
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === STACK_MERGE_ALARM) void moveStackMergesOn();
   });
-  // An alarm may not outlive a browser restart: the merges still under way set it again.
-  browser.runtime.onStartup.addListener(() => void moveStackMergesOn());
+  // Chrome clears an extension's alarms when it is updated (an unpacked build reloaded too), and an alarm may not outlive
+  // a browser restart: each time the worker starts, the merges still under way set it again, as Chrome's alarms guide has
+  // it. A merge armed to merge when ready before an update would otherwise wait for good.
+  void moveStackMergesOn();
 });
 
 /** The Graphite tab copying sections for an import, and the tab that asked for them; none when no copy is under way. */
