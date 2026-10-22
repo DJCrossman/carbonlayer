@@ -67,6 +67,9 @@
 }
 .pr-comments-toggle[aria-pressed='true'] .gg-icon { color: inherit; }
 .pr-header-number { color: var(--gg-fg-subtle); }
+/* The repository's name links to it, muted like the rest of the line until the pointer is on it. */
+.pr-header-repo { color: inherit; text-decoration: none; }
+.pr-header-repo:hover { color: var(--gg-accent); text-decoration: underline; }
 .pr-badge {
   display: inline-grid;
   place-items: center;

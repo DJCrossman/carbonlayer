@@ -625,7 +625,20 @@ function PrHeader({ pr, actions }: { pr: PrDetail; /** The comments button, Fini
     <header className="pr-header">
       <div className="pr-header-top">
         <span className="pr-muted">
-          {pr.repo.owner}/{pr.repo.name} <span className="pr-header-number">#{pr.number}</span>
+          {/* The repository's page on GitHub, in this tab as GitHub's own link to it opens. */}
+          <a
+            className="pr-header-repo"
+            href={`https://github.com/${pr.repo.owner}/${pr.repo.name}`}
+            onClick={(event) => {
+              // A click with ⌘, Ctrl, Shift or Alt, or another button, is the browser's: a new tab or window, or a download.
+              if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+              event.preventDefault();
+              followLink(event.currentTarget.href);
+            }}
+          >
+            {pr.repo.owner}/{pr.repo.name}
+          </a>{' '}
+          <span className="pr-header-number">#{pr.number}</span>
         </span>
         <span className="pr-header-spacer" />
         {actions}
