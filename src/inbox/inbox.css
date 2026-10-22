@@ -276,6 +276,15 @@
   gap: 6px;
   min-width: 0;
 }
+.gg-section__status-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 4px;
+  color: var(--gg-accent);
+  white-space: nowrap;
+}
+.gg-section__status-link:hover { text-decoration: underline; }
 .gg-section__query {
   padding: 4px 6px;
   border: 1px solid var(--gg-border-muted);

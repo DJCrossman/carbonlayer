@@ -95,7 +95,14 @@ export function InboxSection({
         <div className="gg-section__error">
           <Icon name="alert" size={14} />
           <div className="gg-section__error-text">
-            {result.error.message}
+            {/* GitHub's status page, where an outage behind the error would be posted. */}
+            <span>
+              {result.error.message}{' '}
+              <a className="gg-section__status-link" href="https://www.githubstatus.com/" target="_blank" rel="noopener">
+                GitHub status
+                <Icon name="link-external" size={12} />
+              </a>
+            </span>
             <code className="gg-section__query" title="What GitHub was asked">
               {result.error.query}
             </code>
