@@ -82,6 +82,33 @@ describe('reading with the session', () => {
     await expect(getJson('/o/r/pull/1/page_data/merge_box?merge_method=MERGE', z.unknown())).rejects.toThrow('GitHub answered 404 for /o/r/pull/1/page_data/merge_box');
   });
 
+  it('asks again after a gateway error, a second and then three seconds later, before reporting it', async () => {
+    vi.useFakeTimers();
+    const fetch = vi.fn(async () => new Response('', { status: 502 }));
+    vi.stubGlobal('fetch', fetch);
+    const failed = expect(request('/pulls/search?q=x', 'application/json')).rejects.toThrow('GitHub answered 502 for /pulls/search');
+    await vi.advanceTimersByTimeAsync(999);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(3_000);
+    await failed;
+    expect(fetch).toHaveBeenCalledTimes(3);
+
+    fetch.mockResolvedValueOnce(new Response('', { status: 504 })).mockResolvedValueOnce(Response.json({ ok: 1 }));
+    const answered = getJson('/pulls/search?q=x', z.object({ ok: z.number() }));
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(answered).resolves.toEqual({ ok: 1 });
+    vi.useRealTimers();
+  });
+
+  it('reports a server error at once', async () => {
+    const fetch = vi.fn(async () => new Response('', { status: 500 }));
+    vi.stubGlobal('fetch', fetch);
+    await expect(request('/pulls/search?q=x', 'application/json')).rejects.toThrow('GitHub answered 500 for /pulls/search');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('reads only the fields its schema names, and fails naming the endpoint, without its query, when the answer is of another shape', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ diffstat: { linesAdded: 3, linesDeleted: 1, linesChanged: 4 }, other: true })));
     const diffstat = z.object({ diffstat: z.object({ linesAdded: z.number(), linesDeleted: z.number() }) });

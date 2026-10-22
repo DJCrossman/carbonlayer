@@ -32,10 +32,18 @@ export async function request(path: string, accept: 'application/json' | 'text/h
       }
     : { Accept: accept };
   let response: Response;
-  try {
-    response = await fetch(path, { headers, credentials: 'same-origin' });
-  } catch {
-    throw new Error('Could not reach GitHub (network error)');
+  // GitHub's gateway now and then answers a read 502, 503 or 504 that succeeds when asked again: it is asked again a
+  // second later, then three seconds after that, before its failure is shown.
+  const waits = [1_000, 3_000];
+  for (;;) {
+    try {
+      response = await fetch(path, { headers, credentials: 'same-origin' });
+    } catch {
+      throw new Error('Could not reach GitHub (network error)');
+    }
+    const wait = waits.shift();
+    if (wait === undefined || ![502, 503, 504].includes(response.status)) break;
+    await new Promise((resolve) => setTimeout(resolve, wait));
   }
   if (response.redirected && new URL(response.url).pathname === '/login') throw new Error(SIGNED_OUT);
   if (response.ok) return response;
