@@ -1,7 +1,7 @@
 # Every push to main becomes a release: typecheck and tests, a build, a GitHub Release carrying the zip, and, once the
 # Chrome Web Store secrets are set and the CWS_PUBLISH variable is "true" (docs/deploy.md), that zip uploaded and
 # submitted to the store through its REST API.
-# Only GitHub's own actions are used; pnpm comes from corepack and the store calls are plain curl.
+# Only GitHub's own actions are used; pnpm comes from npm and the store calls are plain curl, signed with openssl.
 name: Release
 
 on:
@@ -60,27 +60,41 @@ jobs:
             --notes "Built from ${{ github.sha }}. Load unpacked from the zip, or wait for the Chrome Web Store update."
 
       # Off until the repository variable CWS_PUBLISH is "true" (Settings → Secrets and variables → Actions → Variables).
+      # The store's API v2, as a service account the developer dashboard lists under Account (docs/deploy.md).
       - name: Upload to the Chrome Web Store and submit it for review
         if: vars.CWS_PUBLISH == 'true' && env.CWS_EXTENSION_ID != ''
         env:
-          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
-          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
-          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          CWS_SERVICE_ACCOUNT_KEY: ${{ secrets.CWS_SERVICE_ACCOUNT_KEY }}
+          ITEM: publishers/${{ secrets.CWS_PUBLISHER_ID }}/items/${{ secrets.CWS_EXTENSION_ID }}
         run: |
           set -euo pipefail
+          # An access token for the service account: a JWT signed with its key, exchanged at Google's token endpoint.
+          key=$(mktemp)
+          jq -r .private_key <<< "$CWS_SERVICE_ACCOUNT_KEY" > "$key"
+          base64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+          header=$(printf '{"alg":"RS256","typ":"JWT"}' | base64url)
+          claims=$(jq -nc --arg iss "$(jq -r .client_email <<< "$CWS_SERVICE_ACCOUNT_KEY")" --argjson iat "$(date +%s)" \
+            '{iss: $iss, scope: "https://www.googleapis.com/auth/chromewebstore", aud: "https://oauth2.googleapis.com/token", iat: $iat, exp: ($iat + 600)}' | base64url)
+          signature=$(printf '%s.%s' "$header" "$claims" | openssl dgst -sha256 -sign "$key" | base64url)
+          rm "$key"
           token=$(curl -sS --fail-with-body -X POST https://oauth2.googleapis.com/token \
-            -d client_id="$CWS_CLIENT_ID" -d client_secret="$CWS_CLIENT_SECRET" \
-            -d refresh_token="$CWS_REFRESH_TOKEN" -d grant_type=refresh_token | jq -r .access_token)
+            -d grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer -d assertion="$header.$claims.$signature" | jq -r .access_token)
           test -n "$token" && test "$token" != null
+          echo "::add-mask::$token"
 
-          upload=$(curl -sS --fail-with-body -X PUT \
-            -H "Authorization: Bearer $token" -H "x-goog-api-version: 2" \
-            -T "$zip" "https://www.googleapis.com/upload/chromewebstore/v1.1/items/$CWS_EXTENSION_ID")
+          api=https://chromewebstore.googleapis.com
+          upload=$(curl -sS --fail-with-body -X POST -H "Authorization: Bearer $token" -T "$zip" "$api/upload/v2/$ITEM:upload")
           echo "$upload"
-          test "$(echo "$upload" | jq -r .uploadState)" = SUCCESS
+          # A package the store is still processing is asked after every ten seconds, for five minutes at most.
+          state=$(jq -r .uploadState <<< "$upload")
+          for _ in $(seq 30); do
+            [ "$state" = IN_PROGRESS ] || [ "$state" = UPLOAD_IN_PROGRESS ] || break
+            sleep 10
+            state=$(curl -sS --fail-with-body -H "Authorization: Bearer $token" "$api/v2/$ITEM:fetchStatus" | jq -r .lastAsyncUploadState)
+          done
+          echo "Upload: $state"
+          test "$state" = SUCCEEDED
 
-          publish=$(curl -sS --fail-with-body -X POST \
-            -H "Authorization: Bearer $token" -H "x-goog-api-version: 2" -H "Content-Length: 0" \
-            "https://www.googleapis.com/chromewebstore/v1.1/items/$CWS_EXTENSION_ID/publish")
+          publish=$(curl -sS --fail-with-body -X POST -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d '{}' "$api/v2/$ITEM:publish")
           echo "$publish"
-          echo "$publish" | jq -e '.status | index("OK")' > /dev/null
+          jq -e '.state | IN("PENDING_REVIEW", "STAGED", "PUBLISHED", "PUBLISHED_TO_TESTERS")' <<< "$publish" > /dev/null
