@@ -274,14 +274,23 @@ describe('mutations', () => {
     await expect(mutations['pr.revert']({ prId: 'PR_1' })).rejects.toThrow('GitHub answered 422 to the revert');
   });
 
+  it("reacts to a diff comment as GitHub's files view does: the PR's comment reaction route, by the comment's database id", async () => {
+    await mutations['pr.react']({ prId: 'PR_1', subjectId: 'PRRC_1_9002', content: 'HEART', add: true });
+    await mutations['pr.react']({ prId: 'PR_1', subjectId: 'PRRC_1_9002', content: 'HEART', add: false });
+    expect(sent).toEqual([
+      { method: 'POST', path: `${P}/add_comment_reaction`, body: { reaction: 'HEART', commentId: 9002 } },
+      { method: 'POST', path: `${P}/remove_comment_reaction`, body: { reaction: 'HEART', commentId: 9002 } },
+    ]);
+  });
+
   it("reacts through GitHub's reactable-item route by the subject's node id, POST adding and DELETE removing, and passes on GitHub's refusal", async () => {
     const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({ data: { addReaction: { subject: { id: 'IC_7' } } } }));
     vi.stubGlobal('fetch', fetch);
     await mutations['pr.react']({ prId: 'PR_1', subjectId: 'IC_7', content: 'THUMBS_UP', add: true });
-    await mutations['pr.react']({ prId: 'PR_1', subjectId: 'PRRC_9', content: 'HEART', add: false });
+    await mutations['pr.react']({ prId: 'PR_1', subjectId: 'PRR_3', content: 'HEART', add: false });
     expect(fetch.mock.calls.map(([url, init]) => [url, init.method, JSON.parse(String(init.body))])).toEqual([
       ['/reactable_item/reactions', 'POST', { subjectId: 'IC_7', content: 'THUMBS_UP' }],
-      ['/reactable_item/reactions', 'DELETE', { subjectId: 'PRRC_9', content: 'HEART' }],
+      ['/reactable_item/reactions', 'DELETE', { subjectId: 'PRR_3', content: 'HEART' }],
     ]);
     expect(fetch.mock.calls[0]).toHaveProperty([1, 'headers', 'GitHub-Verified-Fetch'], 'true');
     fetch.mockResolvedValueOnce(Response.json({ data: null, errors: [{ message: 'Could not add reaction' }] }));
@@ -348,7 +357,7 @@ function pullRequest({ id, number = 1, stackSource }: { id: string; number?: num
         isResolved: false,
         isOutdated: false,
         diffHunk: '',
-        comments: ['9001', '9002'].map((commentId) => ({ id: commentId, author: { login: 'ana', avatarUrl: '', url: '' }, bodyHtml: '', createdAt: '', url: '', subjectId: null, reactions: [] })),
+        comments: ['9001', '9002'].map((commentId) => ({ id: commentId, author: { login: 'ana', avatarUrl: '', url: '' }, bodyHtml: '', createdAt: '', url: '', subjectId: `PRRC_${number}_${commentId}`, reactions: [] })),
       },
     ],
   };

@@ -203,9 +203,18 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
   'pr.react': async ({ prId, subjectId, content, add }) => {
     // Only on a PR the app has loaded, as every write.
     pullRequestFor(prId);
-    // GitHub's React UI reacts to anything reactable by its node id, the description, a comment, a review or a diff comment
-    // alike: POST adds, DELETE removes (its bundle, 2026-10-22; docs/research/github-web-mutations.md). It answers in
-    // GraphQL's shape, without `data` when it would not.
+    // A diff comment, as GitHub's own files view reacts to one: the PR's comment reaction route, naming the comment by its
+    // database id (its bundle, 2026-10-22; docs/research/github-web-mutations.md).
+    const diffComment = diffComments.get(subjectId);
+    if (diffComment) {
+      await send(`${diffComment.pullPath}/page_data/${add ? 'add_comment_reaction' : 'remove_comment_reaction'}`, 'POST', {
+        reaction: content,
+        commentId: Number(diffComment.databaseId),
+      });
+      return;
+    }
+    // Anything else reactable, by its node id, as GitHub's React reaction viewer does: POST adds, DELETE removes. It answers
+    // in GraphQL's shape, without `data` when it would not.
     const answer = readAnswer(
       '/reactable_item/reactions',
       z.object({ data: z.nullish(z.unknown()), errors: z.nullish(z.array(z.object({ message: z.string() }))) }),
@@ -246,6 +255,9 @@ export function rememberPullRequest(
   if (loaded.id) pullPaths.set(loaded.id, path);
   for (const thread of loaded.threads ?? []) {
     threads.set(thread.id, { pullPath: path, path: thread.path, lastCommentDatabaseId: thread.comments.at(-1)?.id ?? '' });
+    for (const comment of thread.comments) {
+      if (comment.subjectId && /^\d+$/.test(comment.id)) diffComments.set(comment.subjectId, { pullPath: path, databaseId: comment.id });
+    }
   }
 }
 
@@ -397,3 +409,5 @@ interface KnownThread {
 const pullRequests = new Map<string, KnownPullRequest>();
 const pullPaths = new Map<string, string>();
 const threads = new Map<string, KnownThread>();
+/** The diff comments of the loaded PRs' threads by their node id (`PRRC_…`), which a reaction names: their PR's path and database id. */
+const diffComments = new Map<string, { pullPath: string; databaseId: string }>();

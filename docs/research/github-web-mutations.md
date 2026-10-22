@@ -211,15 +211,18 @@ is `@github/markdown-toolbar-element` (chunk `hj-ece3bec966e8a2b6.js`), its shor
 and ⌘G for a suggestion).
 
 ## Reactions
-**What CarbonLayer sends (since 2026-10-22):** GitHub's React UI reacts to anything reactable by its node id, through
+**What CarbonLayer sends (since 2026-10-22).** A diff comment (`PRRC_…`) as GitHub's files view reacts to one:
+`POST P/add_comment_reaction` or `POST P/remove_comment_reaction`, JSON `{ reaction: "THUMBS_UP", commentId: <the review
+comment's database id, a number> }` (`10y-80d81b4460babeb2.js`, its `commentDatabaseId`); the content script finds the
+database id by the node id among the threads it has loaded. GitHub's conversation page uses the same two routes with
+`{ reaction, issueCommentId }` for a conversation comment and `{ reaction, reviewSummaryCommentId }` for a review
+(`s9-a66348c89404f31d.js`; which id each takes is not confirmed); no variant for the description was seen.
+Everything else goes the way GitHub's React reaction viewer reacts to anything reactable by its node id, through
 `/reactable_item/reactions` (module `UK8` in `imj-726732cadc7a4f06.js`, read 2026-10-22): `POST` adds, `DELETE` removes, a
 JSON body `{ subjectId, content }` (`content` as `THUMBS_UP`, …), sent through its `verifiedFetchJSON` with
 `GitHub-Is-React` (`Sr` in `app-runtime`: `Accept` and `Content-Type: application/json`, `GitHub-Verified-Fetch`, and
 its usual `X-Requested-With` / nonce headers). It answers in GraphQL's shape, `{ data: { addReaction | removeReaction:
 { subject } } }`, or without `data` and with `errors: [{ message }]` when it would not. Not yet seen answering CarbonLayer.
-The PR files view also has per-comment routes, `P/add_comment_reaction` / `P/remove_comment_reaction` with
-`{ reaction, commentId: <review comment database id> }` (or `{ reaction, issueCommentId }` for a conversation comment),
-through `verifiedFetch` (`10y-80d81b4460babeb2.js`, `s9-a66348c89404f31d.js`); unused.
 
 **The classic form, no longer used.** Sent from the app for a diff comment (`PRRC_…`) on 2026-10-22, it was refused:
 `GitHub answered 406 to POST /offstreetparking/core/reactions`. What follows is how GitHub's classic page reacts (seen on
