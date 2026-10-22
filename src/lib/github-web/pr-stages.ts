@@ -86,8 +86,6 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
       ...header,
       databaseId: pr.id,
       repositoryDatabaseId: layout.repository?.id ?? undefined,
-      // Any of the conversation's reaction forms will do: their token serves every reaction in the repository.
-      reactionToken: page.querySelector('form.js-pick-reaction input[name="authenticity_token"]')?.getAttribute('value') ?? undefined,
       // The sidebar's form that sets the assignees, the one posting to `/issues/{n}/assignees`, carries a token of its own.
       assigneesToken:
         [...page.querySelectorAll('form')]

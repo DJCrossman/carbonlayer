@@ -210,7 +210,20 @@ is `@github/markdown-toolbar-element` (chunk `hj-ece3bec966e8a2b6.js`), its shor
 ⌘⇧L, toggle preview ⌘⇧P) and the docs' "Keyboard shortcuts → Comments" (which also lists ⌘⇧8 for a bulleted list
 and ⌘G for a suggestion).
 
-## Reactions (a classic form; seen on the owner's signed-in PR page, 2026-10-14)
+## Reactions
+**What CarbonLayer sends (since 2026-10-22):** GitHub's React UI reacts to anything reactable by its node id, through
+`/reactable_item/reactions` (module `UK8` in `imj-726732cadc7a4f06.js`, read 2026-10-22): `POST` adds, `DELETE` removes, a
+JSON body `{ subjectId, content }` (`content` as `THUMBS_UP`, …), sent through its `verifiedFetchJSON` with
+`GitHub-Is-React` (`Sr` in `app-runtime`: `Accept` and `Content-Type: application/json`, `GitHub-Verified-Fetch`, and
+its usual `X-Requested-With` / nonce headers). It answers in GraphQL's shape, `{ data: { addReaction | removeReaction:
+{ subject } } }`, or without `data` and with `errors: [{ message }]` when it would not. Not yet seen answering CarbonLayer.
+The PR files view also has per-comment routes, `P/add_comment_reaction` / `P/remove_comment_reaction` with
+`{ reaction, commentId: <review comment database id> }` (or `{ reaction, issueCommentId }` for a conversation comment),
+through `verifiedFetch` (`10y-80d81b4460babeb2.js`, `s9-a66348c89404f31d.js`); unused.
+
+**The classic form, no longer used.** Sent from the app for a diff comment (`PRRC_…`) on 2026-10-22, it was refused:
+`GitHub answered 406 to POST /offstreetparking/core/reactions`. What follows is how GitHub's classic page reacts (seen on
+the owner's signed-in PR page, 2026-10-14).
 GitHub's conversation page reacts with the server-rendered `form.js-pick-reaction` under each comment (in
 `.comment-reactions.js-reactions-container`): `POST /{owner}/{repo}/reactions`, form-encoded, fields in this order:
 - `_method=put`; `authenticity_token=<86-character token>`; `input[subjectId]=<the subject's node id>`;
@@ -219,13 +232,8 @@ GitHub's conversation page reacts with the server-rendered `form.js-pick-reactio
 - Some forms also carry an empty `input[context]=`; CarbonLayer leaves it out.
 
 Subjects seen: `PR_…` (the PR itself: its description), `IC_…` (conversation comments), `PRR_…` (review summaries).
-Diff comments are `PRRC_…`; CarbonLayer sends them through the same form, as GitHub's classic timeline did for review
-comments, but no such form was seen on this page: UNVERIFIED. The token is per form action, so one token from any
-reaction form on the PR page serves every subject in its repository. The header stage reads
-`form.js-pick-reaction input[name="authenticity_token"]` from the PR page it fetches and remembers it with the PR
-(`rememberPullRequest`); without one `pr.react` fails with "Reload the pull request to react". It goes out through
-`submitForm` (`session.ts`): same origin, `X-Requested-With: XMLHttpRequest`, any 2xx or a redirect elsewhere than sign-in
-counting as done; what GitHub answers is not recorded.
+Diff comments are `PRRC_…`; no classic form for them was seen on this page. The form's token is per form action, so one
+token from any reaction form on the PR page served every subject in its repository.
 
 Where the current reactions are:
 - conversation items (the description, comments, review summaries), in the PR page's HTML: inside the item's form, one

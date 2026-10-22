@@ -201,26 +201,28 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
   'pr.rerunFailedJobs': ({ prId, runId }) => rerunWorkflowJobs(pullRequestFor(prId).repoPath, runId, 'failed'),
   'pr.rerunAllJobs': ({ prId, runId }) => rerunWorkflowJobs(pullRequestFor(prId).repoPath, runId, 'all'),
   'pr.react': async ({ prId, subjectId, content, add }) => {
-    // GitHub's conversation page reacts with a classic form, its fields in this order, the clicked button's value last.
-    const pull = pullRequestFor(prId);
-    if (!pull.reactionToken) throw new Error('Reload the pull request to react');
-    await submitForm(`${pull.repoPath}/reactions`, [
-      ['_method', 'put'],
-      ['authenticity_token', pull.reactionToken],
-      ['input[subjectId]', subjectId],
-      ['input[content]', `${content} ${add ? 'react' : 'unreact'}`],
-    ]);
+    // Only on a PR the app has loaded, as every write.
+    pullRequestFor(prId);
+    // GitHub's React UI reacts to anything reactable by its node id, the description, a comment, a review or a diff comment
+    // alike: POST adds, DELETE removes (its bundle, 2026-10-22; docs/research/github-web-mutations.md). It answers in
+    // GraphQL's shape, without `data` when it would not.
+    const answer = readAnswer(
+      '/reactable_item/reactions',
+      z.object({ data: z.nullish(z.unknown()), errors: z.nullish(z.array(z.object({ message: z.string() }))) }),
+      await send('/reactable_item/reactions', add ? 'POST' : 'DELETE', { subjectId, content }),
+    );
+    if (!answer.data) throw new Error(answer.errors?.[0]?.message ?? `GitHub did not ${add ? 'add' : 'remove'} the reaction`);
   },
 };
 
 /**
  * Remembers what later writes about a PR need, from whichever part of it has loaded: the page's id, head and stack, the
  * comparison's base, the threads (the PR page loads them in stages, pr-stages.ts), the database ids a preview names, and
- * the tokens GitHub's reaction forms and its sidebar's assignees form carry.
+ * the token its sidebar's assignees form carries.
  */
 export function rememberPullRequest(
   loaded: Pick<PrDetail, 'repo' | 'number'> &
-    Partial<Pick<PrDetail, 'id' | 'headOid' | 'baseOid' | 'nativeStack' | 'threads'>> & { databaseId?: number; repositoryDatabaseId?: number; reactionToken?: string; assigneesToken?: string },
+    Partial<Pick<PrDetail, 'id' | 'headOid' | 'baseOid' | 'nativeStack' | 'threads'>> & { databaseId?: number; repositoryDatabaseId?: number; assigneesToken?: string },
 ): void {
   const path = `/${loaded.repo.owner}/${loaded.repo.name}/pull/${loaded.number}`;
   const known = pullRequests.get(path) ?? {
@@ -232,7 +234,6 @@ export function rememberPullRequest(
     isNativeStack: false,
     databaseId: '',
     repositoryDatabaseId: '',
-    reactionToken: '',
     assigneesToken: '',
   };
   if (loaded.headOid !== undefined) known.headOid = loaded.headOid;
@@ -240,7 +241,6 @@ export function rememberPullRequest(
   if (loaded.nativeStack !== undefined) known.isNativeStack = loaded.nativeStack !== null;
   if (loaded.databaseId !== undefined) known.databaseId = String(loaded.databaseId);
   if (loaded.repositoryDatabaseId !== undefined) known.repositoryDatabaseId = String(loaded.repositoryDatabaseId);
-  if (loaded.reactionToken !== undefined) known.reactionToken = loaded.reactionToken;
   if (loaded.assigneesToken !== undefined) known.assigneesToken = loaded.assigneesToken;
   pullRequests.set(path, known);
   if (loaded.id) pullPaths.set(loaded.id, path);
@@ -381,8 +381,6 @@ interface KnownPullRequest {
   /** GitHub's database ids of the PR and its repository, as a preview names them; empty until the header has loaded. */
   databaseId: string;
   repositoryDatabaseId: string;
-  /** The `authenticity_token` of the PR page's reaction forms, one for every subject in the repository; empty until the header has loaded. */
-  reactionToken: string;
   /** The `authenticity_token` of the PR page's sidebar form that sets its assignees, that form's own; empty until the header has loaded. */
   assigneesToken: string;
 }

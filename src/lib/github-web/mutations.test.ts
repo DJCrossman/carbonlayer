@@ -274,34 +274,18 @@ describe('mutations', () => {
     await expect(mutations['pr.revert']({ prId: 'PR_1' })).rejects.toThrow('GitHub answered 422 to the revert');
   });
 
-  it("reacts with GitHub's reaction form: its fields in order, the PR page's token, the button's value adding or removing", async () => {
-    rememberPullRequest({ repo: { owner: 'o', name: 'r' }, number: 1, reactionToken: 'token-from-the-page' });
-    const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({}));
+  it("reacts through GitHub's reactable-item route by the subject's node id, POST adding and DELETE removing, and passes on GitHub's refusal", async () => {
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => Response.json({ data: { addReaction: { subject: { id: 'IC_7' } } } }));
     vi.stubGlobal('fetch', fetch);
     await mutations['pr.react']({ prId: 'PR_1', subjectId: 'IC_7', content: 'THUMBS_UP', add: true });
     await mutations['pr.react']({ prId: 'PR_1', subjectId: 'PRRC_9', content: 'HEART', add: false });
-    expect(fetch.mock.calls.map(([url, init]) => [new URL(url).pathname, init.method, [...new URLSearchParams(String(init.body))]])).toEqual([
-      [
-        '/o/r/reactions',
-        'POST',
-        [
-          ['_method', 'put'],
-          ['authenticity_token', 'token-from-the-page'],
-          ['input[subjectId]', 'IC_7'],
-          ['input[content]', 'THUMBS_UP react'],
-        ],
-      ],
-      [
-        '/o/r/reactions',
-        'POST',
-        [
-          ['_method', 'put'],
-          ['authenticity_token', 'token-from-the-page'],
-          ['input[subjectId]', 'PRRC_9'],
-          ['input[content]', 'HEART unreact'],
-        ],
-      ],
+    expect(fetch.mock.calls.map(([url, init]) => [url, init.method, JSON.parse(String(init.body))])).toEqual([
+      ['/reactable_item/reactions', 'POST', { subjectId: 'IC_7', content: 'THUMBS_UP' }],
+      ['/reactable_item/reactions', 'DELETE', { subjectId: 'PRRC_9', content: 'HEART' }],
     ]);
+    expect(fetch.mock.calls[0]).toHaveProperty([1, 'headers', 'GitHub-Verified-Fetch'], 'true');
+    fetch.mockResolvedValueOnce(Response.json({ data: null, errors: [{ message: 'Could not add reaction' }] }));
+    await expect(mutations['pr.react']({ prId: 'PR_1', subjectId: 'IC_7', content: 'ROCKET', add: true })).rejects.toThrow('Could not add reaction');
   });
 
   it("sets the labels with the labels menu's own form: its token, an empty field first, then every label the PR keeps or gains", async () => {
@@ -338,10 +322,6 @@ describe('mutations', () => {
       ],
     ]);
     expect(fetch.mock.calls[0]?.[0]).toBe('/o/r/issues/1/show_partial?partial=issues%2Fsidebar%2Flabels_menu_content');
-  });
-
-  it('asks for a reload to react while the PR page has given no token', async () => {
-    await expect(mutations['pr.react']({ prId: 'PR_2', subjectId: 'PR_2', content: 'ROCKET', add: true })).rejects.toThrow('Reload the pull request to react');
   });
 
   it('refuses to write to a pull request the app has not loaded', async () => {

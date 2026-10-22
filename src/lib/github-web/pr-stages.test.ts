@@ -97,14 +97,6 @@ describe('the PR page in stages', () => {
     expect(requests.filter((request) => request === 'page')).toHaveLength(2);
   });
 
-  it("reacts with the token of the page's reaction forms", async () => {
-    await loadStage('header');
-    requests.length = 0;
-    await call('pr.react', { prId: 'PR_1', subjectId: 'PR_1', content: 'HOORAY', add: false });
-    expect(requests).toEqual(['POST reactions']);
-    expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/\/o\/r\/reactions$/), expect.objectContaining({ body: expect.stringContaining('authenticity_token=reaction-token') }));
-  });
-
   it("assigns with the token of the sidebar's assignees form, by user id from GitHub's assignees menu, an empty field first", async () => {
     await loadStage('header');
     requests.length = 0;
