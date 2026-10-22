@@ -77,24 +77,28 @@ jobs:
             '{iss: $iss, scope: "https://www.googleapis.com/auth/chromewebstore", aud: "https://oauth2.googleapis.com/token", iat: $iat, exp: ($iat + 600)}' | base64url)
           signature=$(printf '%s.%s' "$header" "$claims" | openssl dgst -sha256 -sign "$key" | base64url)
           rm "$key"
-          token=$(curl -sS --fail-with-body -X POST https://oauth2.googleapis.com/token \
-            -d grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer -d assertion="$header.$claims.$signature" | jq -r .access_token)
+          # Each request that fails prints what Google answered, then stops the step.
+          answer=$(curl -sS --fail-with-body -X POST https://oauth2.googleapis.com/token \
+            -d grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer -d assertion="$header.$claims.$signature") || { echo "$answer"; exit 1; }
+          token=$(jq -r .access_token <<< "$answer")
           test -n "$token" && test "$token" != null
           echo "::add-mask::$token"
 
           api=https://chromewebstore.googleapis.com
-          upload=$(curl -sS --fail-with-body -X POST -H "Authorization: Bearer $token" -T "$zip" "$api/upload/v2/$ITEM:upload")
+          upload=$(curl -sS --fail-with-body -X POST -H "Authorization: Bearer $token" -T "$zip" "$api/upload/v2/$ITEM:upload") || { echo "$upload"; exit 1; }
           echo "$upload"
           # A package the store is still processing is asked after every ten seconds, for five minutes at most.
           state=$(jq -r .uploadState <<< "$upload")
           for _ in $(seq 30); do
             [ "$state" = IN_PROGRESS ] || [ "$state" = UPLOAD_IN_PROGRESS ] || break
             sleep 10
-            state=$(curl -sS --fail-with-body -H "Authorization: Bearer $token" "$api/v2/$ITEM:fetchStatus" | jq -r .lastAsyncUploadState)
+            status=$(curl -sS --fail-with-body -H "Authorization: Bearer $token" "$api/v2/$ITEM:fetchStatus") || { echo "$status"; exit 1; }
+            state=$(jq -r .lastAsyncUploadState <<< "$status")
           done
           echo "Upload: $state"
           test "$state" = SUCCEEDED
 
-          publish=$(curl -sS --fail-with-body -X POST -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d '{}' "$api/v2/$ITEM:publish")
+          # A submission the store refuses says why: a permission without its justification on the item's Privacy tab, say.
+          publish=$(curl -sS --fail-with-body -X POST -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d '{}' "$api/v2/$ITEM:publish") || { echo "$publish"; exit 1; }
           echo "$publish"
           jq -e '.state | IN("PENDING_REVIEW", "STAGED", "PUBLISHED", "PUBLISHED_TO_TESTERS")' <<< "$publish" > /dev/null

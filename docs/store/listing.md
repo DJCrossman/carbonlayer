@@ -44,6 +44,9 @@ We have Graphite at home.
 - **Permission justifications**:
   - `storage`: keeps the user's inbox sections, chosen organization and repositories, and display settings, synced
     across their Chrome profile.
+  - `alarms`: while a stack merge the user started is under way (merging a stack of pull requests once its checks pass),
+    the background worker looks at it every 30 seconds and takes its next step, so it carries on when the pull request's
+    tab is closed. No alarm runs when no merge is under way.
   - Host permission `https://github.com/*`: the extension replaces the GitHub homepage and pull request pages with
     its own views, and reads and posts to github.com's own pages and JSON routes with the user's session to show and
     act on pull requests. This is the product. On app.graphite.com it only reads the user's inbox sections, once, when
