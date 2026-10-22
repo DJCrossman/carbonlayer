@@ -156,7 +156,7 @@
 .pr-menu-list .gg-icon { color: var(--gg-fg-muted); }
 .pr-menu-separator { height: 1px; margin: 4px -4px; background: var(--gg-border-muted); }
 
-/* The header's actions again, under the reviewers: one row across the sidebar, Finish review taking what the other two
+/* The header's actions again, under the assignees: one row across the sidebar, Finish review taking what the other two
    leave (its popover floats below its right edge, review.css). The menu is fixed to its button, so the sidebar's
    scrolling cannot clip it, and opens above it when there is no room below. */
 .side-pr-actions { display: flex; align-items: center; gap: 6px; }

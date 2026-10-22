@@ -110,7 +110,7 @@ function PrView({
   const retry = (stages: PrStage[]) => void reload(stages).catch(() => {});
   const [batch, setBatch] = useState<ReviewThreadDraft[]>([]);
   const [review, setReview] = useState<{ open: boolean; event: ReviewEvent; body: string }>({ open: false, event: 'COMMENT', body: '' });
-  // Once the header's actions scroll out of sight, they appear again under the reviewers (PrActions, twice).
+  // Once the header's actions scroll out of sight, they appear again under the assignees (PrActions, twice).
   const [headerActionsInView, setHeaderActionsInView] = useState(true);
   useEffect(() => {
     const button = document.querySelector('.pr-header .pr-review-anchor');
@@ -788,7 +788,7 @@ function optimisticPr(pr: PrDetail, edits: PendingEdits): PrDetail {
 
 /**
  * The PR's actions: the comments drawer's button, Finish review, the header's "Merge N PRs" while the stack can merge, and
- * More actions. In the header, and again under the reviewers while the header's are scrolled out of sight, where the
+ * More actions. In the header, and again under the assignees while the header's are scrolled out of sight, where the
  * sidebar's own next step offers the merge; the review popover and the menu open beside the ones in view.
  */
 function PrActions({

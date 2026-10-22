@@ -68,7 +68,7 @@ export function Sidebar({
   labelsCard: ReactNode;
   /** The Assignees card (Assignees.tsx), wired to the page's data source. */
   assigneesCard: ReactNode;
-  /** The header's actions again, under the reviewers, while the header's are out of sight (PrPage's PrActions). */
+  /** The header's actions again, under the assignees, while the header's are out of sight (PrPage's PrActions). */
   actions: ReactNode;
 }) {
   return (
@@ -127,7 +127,6 @@ export function Sidebar({
       <Staged state={data.mergeBox} what="the reviewers" onRetry={() => onRetry(['mergeBox'])} skeleton={<SideCardSkeleton title="Reviewers" rows={2} />}>
         {() => reviewersCard}
       </Staged>
-      {actions}
       <Staged
         state={data.meta}
         what="labels and assignees"
@@ -147,6 +146,7 @@ export function Sidebar({
           </>
         )}
       </Staged>
+      {actions}
     </aside>
   );
 }
