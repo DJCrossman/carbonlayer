@@ -62,6 +62,8 @@ export interface DataSource {
   resolveThread(threadId: string, resolved: boolean): Promise<void>;
   markFileViewed(prId: string, path: string, viewed: boolean): Promise<void>;
   setDraft(prId: string, draft: boolean): Promise<void>;
+  /** Closes an open PR without merging it. */
+  close(prId: string): Promise<void>;
   /** Reverts a merged PR; resolves with GitHub's page for the revert pull request. */
   revert(prId: string): Promise<{ url: string }>;
   setAutoMerge(prId: string, enabled: boolean, method: MergeMethod): Promise<void>;
@@ -125,6 +127,7 @@ export function createRpcDataSource(): DataSource {
     resolveThread: (threadId, resolved) => rpc('pr.resolveThread', { threadId, resolved }),
     markFileViewed: (prId, path, viewed) => rpc('pr.markFileViewed', { prId, path, viewed }),
     setDraft: (prId, draft) => rpc('pr.setDraft', { prId, draft }),
+    close: (prId) => rpc('pr.close', { prId }),
     revert: (prId) => rpc('pr.revert', { prId }),
     setAutoMerge: (prId, enabled, method) => rpc('pr.setAutoMerge', { prId, enabled, method }),
     rebaseStack: (prId) => rpc('pr.rebaseStack', { prId }),
@@ -378,6 +381,7 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     resolveThread: (...args) => log('resolveThread', ...args),
     markFileViewed: (...args) => log('markFileViewed', ...args),
     setDraft: (...args) => log('setDraft', ...args),
+    close: (...args) => log('close', ...args),
     revert: async (...args) => {
       await log('revert', ...args);
       return { url: 'https://github.com/acme/widgets/compare/main...revert-41-parcs-client?expand=1' };

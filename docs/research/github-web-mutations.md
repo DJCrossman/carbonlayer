@@ -97,6 +97,14 @@ No Relay / persisted-query ids and, reactions aside, no `authenticity_token` are
 5. **Viewed**: `POST /{owner}/{repo}/pull/{n}/file_review` `{ path, viewed: "viewed" }`; unviewed: `DELETE`
    same URL `{ path, _method: "delete" }`. Current state: `base_comparison_info` → `diffSummaries[].markedAsViewed`.
 6. **Draft**: `POST P/convert_to_draft` (no body); ready: `POST P/mark_ready_for_review` (optional body).
+7. **Close**: `POST /{owner}/{repo}/pull/{n}/page_data/close_pull_request`, no body, through GitHub's verified fetch
+   (read 2026-10-22 from the React bundle `yc-b1797c01c5652a4b.js`, where GitHub's Copilot task "archive and close"
+   dialog closes a PR with it as mutation `["closePullRequest", repoNwo, number]`, failing on a non-2xx with "Failed to
+   close pull request"; not yet sent). No React reopen route was found in the PR page's scripts. The classic
+   conversation page closes through its new-comment form, `POST /{owner}/{repo}/pull/{n}/comment?sticky=true`, whose
+   "Close pull request" button is `comment_and_close=1`, beside the form's token, `timestamp`, `timestamp_secret`, an
+   empty `required_field_<hex>`, `issue` and `comment[body]` (seen on an open PR's page signed in, 2026-10-22); its
+   reopen button on a closed PR is unseen.
 
 ## GET endpoints
 Returned 200 signed out (curl), keys confirmed:

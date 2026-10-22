@@ -112,6 +112,10 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
   'pr.setDraft': async ({ prId, draft }) => {
     await send(`${pullRequestFor(prId).path}/page_data/${draft ? 'convert_to_draft' : 'mark_ready_for_review'}`, 'POST');
   },
+  'pr.close': async ({ prId }) => {
+    // GitHub's own close, an empty POST through its verified fetch (its React bundle, 2026-10-22; docs/research/github-web-mutations.md).
+    await send(`${pullRequestFor(prId).path}/page_data/close_pull_request`, 'POST');
+  },
   'pr.revert': async ({ prId }) => {
     // GitHub's own Revert button: an empty POST that makes a branch undoing the merge, then redirects to the prefilled
     // "Open a pull request" page for it, where the revert pull request is created (GitHub's PR bundle, 2026-10-14).

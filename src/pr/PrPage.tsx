@@ -240,6 +240,10 @@ function PrView({
     });
   }
 
+  function closePullRequest() {
+    return mutate(STAGES_A_WRITE_CHANGES['pr.close'], () => source.close(pr.id), 'Could not close the pull request', { success: `Closed #${pr.number}` });
+  }
+
   function merge(method: MergeMethod) {
     return mutate(STAGES_A_WRITE_CHANGES['pr.merge'], () => source.merge(pr.id, method, pr.headOid), 'Could not merge', { success: `Merged #${pr.number}` });
   }
@@ -442,6 +446,7 @@ function PrView({
     onFinishReview: () => (review.open ? closeReview() : openReview(review.event)),
     onMenuOpenChange: setMenuOpen,
     onSetDraft: setDraft,
+    onClosePullRequest: closePullRequest,
     onCopied: () => showToast('Link copied'),
   };
 
@@ -783,6 +788,7 @@ function PrActions({
   menuOpen,
   onMenuOpenChange,
   onSetDraft,
+  onClosePullRequest,
   onCopied,
   inSidebar = false,
   mergeStack = null,
@@ -797,6 +803,7 @@ function PrActions({
   menuOpen: boolean;
   onMenuOpenChange: (open: boolean) => void;
   onSetDraft: (draft: boolean) => Promise<boolean>;
+  onClosePullRequest: () => Promise<boolean>;
   onCopied: () => void;
   inSidebar?: boolean;
   /** The header's "Merge N PRs", while the sidebar's next step is to merge the stack and the viewer may; it opens its dialog. */
@@ -853,6 +860,19 @@ function PrActions({
               >
                 <Icon name={pr.isDraft ? 'eye' : 'git-pull-request-draft'} size={14} />
                 {pr.isDraft ? 'Ready for review' : 'Convert to draft'}
+              </button>
+            )}
+            {/* As GitHub's "Close pull request": closed at once, without merging. */}
+            {pr.state === 'OPEN' && pr.viewerCanUpdate && (
+              <button
+                role="menuitem"
+                onClick={() => {
+                  onMenuOpenChange(false);
+                  void onClosePullRequest();
+                }}
+              >
+                <Icon name="git-pull-request-closed" size={14} />
+                Close pull request
               </button>
             )}
             <button

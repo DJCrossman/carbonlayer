@@ -61,6 +61,7 @@ export const STAGES_A_WRITE_CHANGES = {
   'pr.resolveThread': ['threads'],
   'pr.markFileViewed': ['files'],
   'pr.setDraft': ['header', 'activity', 'mergeBox'],
+  'pr.close': ['header', 'activity', 'mergeBox'],
   // The page moves on to GitHub's page for the revert pull request; nothing shown here changes.
   'pr.revert': [],
   // The merge box also says which PRs of a native stack auto-merge covers, which the stack card marks.
@@ -269,6 +270,8 @@ const RPC_SCHEMAS = {
   'pr.resolveThread': { args: z.object({ threadId: z.string(), resolved: z.boolean() }), result: z.undefined() },
   'pr.markFileViewed': { args: z.object({ prId: z.string(), path: z.string(), viewed: z.boolean() }), result: z.undefined() },
   'pr.setDraft': { args: z.object({ prId: z.string(), draft: z.boolean() }), result: z.undefined() },
+  /** Closes an open PR without merging it, as GitHub's "Close pull request" does. */
+  'pr.close': { args: z.object({ prId: z.string() }), result: z.undefined() },
   /** Reverts a merged PR the way GitHub's Revert button does: a branch undoing it, and where GitHub opens its pull request. */
   'pr.revert': { args: z.object({ prId: z.string() }), result: z.object({ url: z.string() }) },
   'pr.setAutoMerge': { args: z.object({ prId: z.string(), enabled: z.boolean(), method: mergeMethodSchema }), result: z.undefined() },

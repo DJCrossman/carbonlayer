@@ -142,12 +142,13 @@ describe('mutations', () => {
     ]);
   });
 
-  it('toggles viewed files, draft state and auto-merge', async () => {
+  it('toggles viewed files, draft state and auto-merge, and closes the PR', async () => {
     reads = { [`${P}/merge_box`]: { mergeRequirements: { commitMessageHeadline: 'T', commitMessageBody: 'B' } } };
     await mutations['pr.markFileViewed']({ prId: 'PR_1', path: 'a.ts', viewed: true });
     await mutations['pr.markFileViewed']({ prId: 'PR_1', path: 'a.ts', viewed: false });
     await mutations['pr.setDraft']({ prId: 'PR_1', draft: true });
     await mutations['pr.setDraft']({ prId: 'PR_1', draft: false });
+    await mutations['pr.close']({ prId: 'PR_1' });
     await mutations['pr.setAutoMerge']({ prId: 'PR_1', enabled: true, method: 'REBASE' });
     await mutations['pr.setAutoMerge']({ prId: 'PR_1', enabled: false, method: 'REBASE' });
     expect(sent.map(({ method, path, body }) => [method, path, body])).toEqual([
@@ -155,6 +156,7 @@ describe('mutations', () => {
       ['DELETE', '/o/r/pull/1/file_review', { path: 'a.ts', _method: 'delete' }],
       ['POST', `${P}/convert_to_draft`, undefined],
       ['POST', `${P}/mark_ready_for_review`, undefined],
+      ['POST', `${P}/close_pull_request`, undefined],
       ['POST', `${P}/enable_auto_merge`, { mergeMethod: 'REBASE', commitTitle: 'T', commitMessage: 'B' }],
       ['POST', `${P}/disable_auto_merge`, undefined],
     ]);
