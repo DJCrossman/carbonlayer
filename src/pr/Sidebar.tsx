@@ -1,5 +1,5 @@
-// The right sidebar: status (with Merge when ready), the one next step, checks, reviewers (Reviewers.tsx), labels
-// (Labels.tsx) and assignees (Assignees.tsx). Each card shows a skeleton until the stage it comes from arrives; cards with
+// The right sidebar: status (with Merge when ready), the one next step, checks, reviewers (Reviewers.tsx), assignees
+// (Assignees.tsx) and labels (Labels.tsx). Each card shows a skeleton until the stage it comes from arrives; cards with
 // nothing to show are left out, except an open PR's checks, which says why it has none, and the labels and assignees of a
 // PR the viewer can edit, which offer to add some.
 import { useEffect, useState, type ReactNode } from 'react';
@@ -133,16 +133,16 @@ export function Sidebar({
         onRetry={() => onRetry(['meta'])}
         skeleton={
           <>
-            <SideCardSkeleton title="Labels" rows={1} />
             <SideCardSkeleton title="Assignees" rows={1} />
+            <SideCardSkeleton title="Labels" rows={1} />
           </>
         }
       >
         {() => (
           <>
-            {labelsCard}
             {/* The inbox's row, which stands in for the stage until it answers, does not say who is assigned. */}
             {data.meta.status !== 'placeholder' && assigneesCard}
+            {labelsCard}
           </>
         )}
       </Staged>
