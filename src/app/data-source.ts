@@ -4,7 +4,7 @@
 import { browser } from 'wxt/browser';
 import { z } from 'zod/mini';
 import type { AssigneeCandidate, ChangedFileDiff, Emoji, LabelCandidate, Mention, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, StackEntry, TopRepository, View, ViewResult } from '../lib/model';
-import { rpc, type DiffEntryLine, type InboxRowToEnrich, type LineRange, type MergeCommit, type MergeMethod } from '../lib/rpc';
+import { rpc, type DiffEntryLine, type InboxRowToEnrich, type LineRange, type MergeCommit, type MergeMethod, type RpcMethods } from '../lib/rpc';
 import { getSettings, setSettings, watchSettings, type Settings, type SettingsStorage } from '../lib/settings';
 import { STACK_MERGES, stackMergesSchema, type StackMerge, type StackMergeRequest, type stackMergeMessage } from '../lib/stack-merges';
 import { resolveViewQuery } from '../lib/views';
@@ -62,8 +62,8 @@ export interface DataSource {
   resolveThread(threadId: string, resolved: boolean): Promise<void>;
   markFileViewed(prId: string, path: string, viewed: boolean): Promise<void>;
   setDraft(prId: string, draft: boolean): Promise<void>;
-  /** Closes an open PR without merging it. */
-  close(prId: string): Promise<void>;
+  /** Closes an open PR without merging it, then deletes its branch; resolves with what became of the branch. */
+  close(prId: string): Promise<RpcMethods['pr.close']['result']>;
   /** Reverts a merged PR; resolves with GitHub's page for the revert pull request. */
   revert(prId: string): Promise<{ url: string }>;
   setAutoMerge(prId: string, enabled: boolean, method: MergeMethod): Promise<void>;
@@ -381,7 +381,10 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     resolveThread: (...args) => log('resolveThread', ...args),
     markFileViewed: (...args) => log('markFileViewed', ...args),
     setDraft: (...args) => log('setDraft', ...args),
-    close: (...args) => log('close', ...args),
+    close: async (...args) => {
+      await log('close', ...args);
+      return { branch: { kind: 'deleted' } };
+    },
     revert: async (...args) => {
       await log('revert', ...args);
       return { url: 'https://github.com/acme/widgets/compare/main...revert-41-parcs-client?expand=1' };

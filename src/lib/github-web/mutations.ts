@@ -7,6 +7,7 @@ import type { PrDetail } from '../model';
 import type { MergeCommit, MergeMethod, RpcMethods } from '../rpc';
 import { getSettings } from '../settings';
 import { rerunWorkflowJobs } from './actions';
+import { searchPulls } from './inbox';
 import { assigneesMenu, labelsMenu } from './issue-sidebar';
 import { SIGNED_OUT, getJson, readAnswer, send, submitForm } from './session';
 
@@ -113,8 +114,25 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
     await send(`${pullRequestFor(prId).path}/page_data/${draft ? 'convert_to_draft' : 'mark_ready_for_review'}`, 'POST');
   },
   'pr.close': async ({ prId }) => {
+    const pull = pullRequestFor(prId);
     // GitHub's own close, an empty POST through its verified fetch (its React bundle, 2026-10-22; docs/research/github-web-mutations.md).
-    await send(`${pullRequestFor(prId).path}/page_data/close_pull_request`, 'POST');
+    await send(`${pull.path}/page_data/close_pull_request`, 'POST');
+    // Then its branch, as GitHub's "Delete branch" on a closed PR does, where the merge box says the viewer may. A branch an
+    // open PR is based on (one stacked above it) stays: deleting it would close that PR too. Closed already, a failure
+    // from here on is reported, not thrown.
+    try {
+      const { pullRequest } = await getJson(
+        `${pull.path}/page_data/merge_box`,
+        z.object({ pullRequest: z.object({ viewerCanDeleteHeadRef: z.nullish(z.boolean()), headRefName: z.nullish(z.string()) }) }),
+      );
+      if (!pullRequest.viewerCanDeleteHeadRef || !pullRequest.headRefName) return { branch: { kind: 'kept' } };
+      const { pulls } = await searchPulls(`repo:${pull.repoPath.slice(1)} is:pr is:open base:${pullRequest.headRefName}`);
+      if (pulls.length > 0) return { branch: { kind: 'based-on', numbers: pulls.map((based) => based.number) } };
+      await send(`${pull.path}/page_data/delete_head_ref`, 'POST');
+      return { branch: { kind: 'deleted' } };
+    } catch (error) {
+      return { branch: { kind: 'failed', reason: error instanceof Error ? error.message : String(error) } };
+    }
   },
   'pr.revert': async ({ prId }) => {
     // GitHub's own Revert button: an empty POST that makes a branch undoing the merge, then redirects to the prefilled

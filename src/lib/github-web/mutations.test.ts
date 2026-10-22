@@ -142,13 +142,12 @@ describe('mutations', () => {
     ]);
   });
 
-  it('toggles viewed files, draft state and auto-merge, and closes the PR', async () => {
+  it('toggles viewed files, draft state and auto-merge', async () => {
     reads = { [`${P}/merge_box`]: { mergeRequirements: { commitMessageHeadline: 'T', commitMessageBody: 'B' } } };
     await mutations['pr.markFileViewed']({ prId: 'PR_1', path: 'a.ts', viewed: true });
     await mutations['pr.markFileViewed']({ prId: 'PR_1', path: 'a.ts', viewed: false });
     await mutations['pr.setDraft']({ prId: 'PR_1', draft: true });
     await mutations['pr.setDraft']({ prId: 'PR_1', draft: false });
-    await mutations['pr.close']({ prId: 'PR_1' });
     await mutations['pr.setAutoMerge']({ prId: 'PR_1', enabled: true, method: 'REBASE' });
     await mutations['pr.setAutoMerge']({ prId: 'PR_1', enabled: false, method: 'REBASE' });
     expect(sent.map(({ method, path, body }) => [method, path, body])).toEqual([
@@ -156,10 +155,44 @@ describe('mutations', () => {
       ['DELETE', '/o/r/pull/1/file_review', { path: 'a.ts', _method: 'delete' }],
       ['POST', `${P}/convert_to_draft`, undefined],
       ['POST', `${P}/mark_ready_for_review`, undefined],
-      ['POST', `${P}/close_pull_request`, undefined],
       ['POST', `${P}/enable_auto_merge`, { mergeMethod: 'REBASE', commitTitle: 'T', commitMessage: 'B' }],
       ['POST', `${P}/disable_auto_merge`, undefined],
     ]);
+  });
+
+  it('closes a PR, then deletes its branch where GitHub lets the viewer and no open PR is based on it', async () => {
+    const branch = (viewerCanDeleteHeadRef: boolean, basedOn: number[]) => {
+      reads = {
+        [`${P}/merge_box`]: { pullRequest: { viewerCanDeleteHeadRef, headRefName: 'ana/feature' } },
+        '/pulls/search': {
+          payload: {
+            pullsDashboardSurfaceContentRoute: {
+              results: basedOn.map((number) => ({ id: `PR_${number}`, number, createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-01T00:00:00Z' })),
+              pageInfo: { totalCount: basedOn.length },
+            },
+          },
+        },
+      };
+    };
+    const writes = () => sent.splice(0).map(({ method, path }) => [method, path]);
+    const closing = ['POST', `${P}/close_pull_request`];
+
+    branch(true, []);
+    await expect(mutations['pr.close']({ prId: 'PR_1' })).resolves.toEqual({ branch: { kind: 'deleted' } });
+    expect(writes()).toEqual([closing, ['POST', `${P}/delete_head_ref`]]);
+
+    branch(true, [2]);
+    await expect(mutations['pr.close']({ prId: 'PR_1' })).resolves.toEqual({ branch: { kind: 'based-on', numbers: [2] } });
+    expect(writes()).toEqual([closing]);
+
+    branch(false, []);
+    await expect(mutations['pr.close']({ prId: 'PR_1' })).resolves.toEqual({ branch: { kind: 'kept' } });
+    expect(writes()).toEqual([closing]);
+
+    // Closed, a branch GitHub could not be asked about stays, and the page hears why.
+    reads = {};
+    await expect(mutations['pr.close']({ prId: 'PR_1' })).resolves.toEqual({ branch: { kind: 'failed', reason: 'GitHub answered 404 for /o/r/pull/1/page_data/merge_box' } });
+    expect(writes()).toEqual([closing]);
   });
 
   it('turns auto-merge on for a GitHub-native stack through the stack queue, and off as for a PR alone', async () => {

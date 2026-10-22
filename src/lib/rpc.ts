@@ -270,8 +270,22 @@ const RPC_SCHEMAS = {
   'pr.resolveThread': { args: z.object({ threadId: z.string(), resolved: z.boolean() }), result: z.undefined() },
   'pr.markFileViewed': { args: z.object({ prId: z.string(), path: z.string(), viewed: z.boolean() }), result: z.undefined() },
   'pr.setDraft': { args: z.object({ prId: z.string(), draft: z.boolean() }), result: z.undefined() },
-  /** Closes an open PR without merging it, as GitHub's "Close pull request" does. */
-  'pr.close': { args: z.object({ prId: z.string() }), result: z.undefined() },
+  /**
+   * Closes an open PR without merging it, as GitHub's "Close pull request" does, then deletes its branch. Said of the
+   * branch: deleted; kept because open PRs are based on it (their numbers); kept because GitHub does not let the viewer
+   * delete it; or not deleted, and why.
+   */
+  'pr.close': {
+    args: z.object({ prId: z.string() }),
+    result: z.object({
+      branch: z.discriminatedUnion('kind', [
+        z.object({ kind: z.literal('deleted') }),
+        z.object({ kind: z.literal('based-on'), numbers: z.array(z.number()) }),
+        z.object({ kind: z.literal('kept') }),
+        z.object({ kind: z.literal('failed'), reason: z.string() }),
+      ]),
+    }),
+  },
   /** Reverts a merged PR the way GitHub's Revert button does: a branch undoing it, and where GitHub opens its pull request. */
   'pr.revert': { args: z.object({ prId: z.string() }), result: z.object({ url: z.string() }) },
   'pr.setAutoMerge': { args: z.object({ prId: z.string(), enabled: z.boolean(), method: mergeMethodSchema }), result: z.undefined() },

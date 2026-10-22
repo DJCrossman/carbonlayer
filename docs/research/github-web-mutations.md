@@ -105,6 +105,17 @@ No Relay / persisted-query ids and, reactions aside, no `authenticity_token` are
    "Close pull request" button is `comment_and_close=1`, beside the form's token, `timestamp`, `timestamp_secret`, an
    empty `required_field_<hex>`, `issue` and `comment[body]` (seen on an open PR's page signed in, 2026-10-22); its
    reopen button on a closed PR is unseen.
+8. **Head branch** (GitHub's React route map, `uT` in `02j-f0dd7e9816aa464b.js`, 2026-10-22; none sent yet):
+   `closePullRequest: "close_pull_request"`, `reopenPullRequest: "reopen_pull_request"`,
+   `deleteHeadRef: "delete_head_ref"`, `restoreHeadRef: "restore_head_ref"`. The merge box's "Delete branch"
+   (`DeleteClosedHeadBranch` / `DeleteMergedHeadBranch`) and "Restore branch" send
+   `POST P/delete_head_ref` / `POST P/restore_head_ref` with `{ method: "POST", headers: { Accept: "application/json" } }`
+   through its verified fetch, no body. `merge_box`'s `pullRequest` says who may (VERIFIED with read-only GETs signed in,
+   2026-10-22): `viewerCanClose`, `viewerCanDeleteHeadRef` (true on a closed PR whose branch exists, and on an open one),
+   `viewerCanRestoreHeadRef` (true on a closed PR whose branch was deleted), `headRepository { ownerLogin, name, url }`.
+   The classic page's "Restore branch" is a form, `POST /{owner}/{repo}/pull/{n}/undo_cleanup` with its token.
+   CarbonLayer's Close deletes the branch after closing when `viewerCanDeleteHeadRef` and no open PR is based on it
+   (`is:pr is:open base:<head>`): deleting a branch an open PR is based on would close that PR too.
 
 ## GET endpoints
 Returned 200 signed out (curl), keys confirmed:

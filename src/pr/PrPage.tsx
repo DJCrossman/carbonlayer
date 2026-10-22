@@ -241,7 +241,20 @@ function PrView({
   }
 
   function closePullRequest() {
-    return mutate(STAGES_A_WRITE_CHANGES['pr.close'], () => source.close(pr.id), 'Could not close the pull request', { success: `Closed #${pr.number}` });
+    return mutate(
+      STAGES_A_WRITE_CHANGES['pr.close'],
+      async () => {
+        const { branch } = await source.close(pr.id);
+        // Closed: what became of its branch says the rest.
+        if (branch.kind === 'deleted') showToast(`Closed #${pr.number} and deleted ${pr.headRefName}`);
+        else if (branch.kind === 'based-on') {
+          const based = branch.numbers.map((number) => `#${number}`).join(', ');
+          showToast(`Closed #${pr.number}; kept ${pr.headRefName}, which ${based} ${branch.numbers.length === 1 ? 'is' : 'are'} based on`);
+        } else if (branch.kind === 'failed') showToast(`Closed #${pr.number}, but could not delete ${pr.headRefName}: ${branch.reason}`, 'danger');
+        else showToast(`Closed #${pr.number}`);
+      },
+      'Could not close the pull request',
+    );
   }
 
   function merge(method: MergeMethod) {
