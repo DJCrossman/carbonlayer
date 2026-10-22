@@ -1,15 +1,14 @@
-// The right sidebar: status (with Merge when ready), the one next step, checks, reviewers (Reviewers.tsx), labels and
-// assignees. Each card shows a skeleton until the stage it comes from arrives; cards with nothing to show are left out,
-// except an open PR's checks, which says why it has none.
+// The right sidebar: status (with Merge when ready), the one next step, checks, reviewers (Reviewers.tsx), labels
+// (Labels.tsx) and assignees (Assignees.tsx). Each card shows a skeleton until the stage it comes from arrives; cards with
+// nothing to show are left out, except an open PR's checks, which says why it has none, and the labels and assignees of a
+// PR the viewer can edit, which offer to add some.
 import { useEffect, useState, type ReactNode } from 'react';
 import type { MergeMethod } from '../lib/rpc';
 import { mergeMethodSchema, type PrDetail, type PrStage, type StackEntry } from '../lib/model';
 import { isUnderWay, type StackMerge } from '../lib/stack-merges';
-import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Icon } from '../ui/Icon';
-import { LabelChip } from '../ui/LabelChip';
 import { RelativeTime } from '../ui/RelativeTime';
 import { Skeleton } from '../ui/Skeleton';
 import type { CheckReruns } from './check-reruns';
@@ -35,6 +34,8 @@ export function Sidebar({
   onViewThreads,
   checkReruns,
   reviewersCard,
+  labelsCard,
+  assigneesCard,
   actions,
 }: {
   pr: PrDetail;
@@ -63,6 +64,10 @@ export function Sidebar({
   checkReruns: CheckReruns;
   /** The Reviewers card (Reviewers.tsx), wired to the page's data source. */
   reviewersCard: ReactNode;
+  /** The Labels card (Labels.tsx), wired to the page's data source. */
+  labelsCard: ReactNode;
+  /** The Assignees card (Assignees.tsx), wired to the page's data source. */
+  assigneesCard: ReactNode;
   /** The header's actions again, under the reviewers, while the header's are out of sight (PrPage's PrActions). */
   actions: ReactNode;
 }) {
@@ -136,29 +141,9 @@ export function Sidebar({
       >
         {() => (
           <>
-            {pr.labels.length > 0 && (
-              <Card className="side-card">
-                <h3 className="side-card-title">Labels</h3>
-                <div className="side-labels">
-                  {pr.labels.map((label) => (
-                    <LabelChip key={label.name} label={label} />
-                  ))}
-                </div>
-              </Card>
-            )}
-            {pr.assignees.length > 0 && (
-              <Card className="side-card">
-                <h3 className="side-card-title">Assignees</h3>
-                <ul className="side-list">
-                  {pr.assignees.map((user) => (
-                    <li key={user.login} className="side-person">
-                      <Avatar user={user} size={20} />
-                      <span className="side-person-name">{user.login}</span>
-                    </li>
-                  ))}
-                </ul>
-              </Card>
-            )}
+            {labelsCard}
+            {/* The inbox's row, which stands in for the stage until it answers, does not say who is assigned. */}
+            {data.meta.status !== 'placeholder' && assigneesCard}
           </>
         )}
       </Staged>

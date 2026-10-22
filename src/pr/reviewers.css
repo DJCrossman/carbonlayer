@@ -1,5 +1,6 @@
 /* Reviewers card: per-reviewer re-request / remove buttons and the reviewer picker, which opens inside the card
-   (the sidebar scrolls, so a floating popover would be clipped). */
+   (the sidebar scrolls, so a floating popover would be clipped). The label and assignee pickers (Labels.tsx,
+   Assignees.tsx) take the reviewer picker's look. */
 
 .reviewer-action {
   display: inline-grid;
@@ -82,4 +83,13 @@
   padding: 6px 8px;
   border-top: 1px solid var(--gg-border-muted);
   font-size: 12px;
+}
+
+/* A label's colour in the label picker, as GitHub's labels menu shows it; the ring keeps a dark or pale one visible. */
+.label-option-color {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px var(--gg-border);
 }

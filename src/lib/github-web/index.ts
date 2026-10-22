@@ -1,16 +1,17 @@
 // Answers the app's RPC requests with the user's github.com session: same-origin requests from the content
 // script to the endpoints GitHub's own React UI uses (docs/research/github-web-*.md). No token, no api.github.com.
-// The page's own cache (src/app/query-cache.tsx) decides when to ask again, so reads go to GitHub; only the reviewer
-// picker's, the comment boxes' people and teams and `pr.fetch`'s are kept briefly here, and pr-stages.ts shares a request
-// between the PR page's stages while it is on its way. Any successful write clears what is kept, and stops sharing the
-// requests made before it.
+// The page's own cache (src/app/query-cache.tsx) decides when to ask again, so reads go to GitHub; only the reviewer,
+// label and assignee pickers', the comment boxes' people and teams and `pr.fetch`'s are kept briefly here, and
+// pr-stages.ts shares a request between the PR page's stages while it is on its way. Any successful write clears what is
+// kept, and stops sharing the requests made before it.
 
 import { z } from 'zod/mini';
-import type { Mention, PrDetail } from '../model';
+import type { AssigneeCandidate, LabelCandidate, Mention, PrDetail } from '../model';
 import type { RpcMethod, RpcMethods, RpcRequest, RpcResponse } from '../rpc';
 import { getSettings } from '../settings';
 import { expandedDiffLines } from './files';
 import { branchesHeaderAnswer, branchesIn, enrichPull, fetchInbox, fetchViewPage } from './inbox';
+import { assigneesMenu, labelsMenu } from './issue-sidebar';
 import { mutations, proposedMergeCommit, pullRequestFor, rememberPullRequest } from './mutations';
 import { fetchFileDiffs, fetchPrStage, forgetPrAnswers } from './pr-stages';
 import { fetchPullRequestPage } from './pull-request';
@@ -18,7 +19,7 @@ import { listOrganizations } from './organizations';
 import { organizationPeople } from './people';
 import { pickableRepositories, topRepositories } from './repositories';
 import { availableReviewersAnswer, reviewerCandidatesFrom, suggestedReviewersAnswer } from './reviews';
-import { getJson, getPage, politely, render } from './session';
+import { getJson, getPage, githubUser, politely, render } from './session';
 import { stackReadiness } from './stack-readiness';
 
 export async function handleRpc<M extends RpcMethod>(request: RpcRequest<M>): Promise<RpcResponse> {
@@ -93,6 +94,19 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
     ]);
     return reviewerCandidatesFrom(available, suggested, q);
   },
+  'pr.labelCandidates': ({ prId }) => {
+    const pull = pullRequestFor(prId);
+    // The picker asks each time it opens; what it asked in the last minute is answered from memory.
+    return cached(kept.labelCandidates, pull.path, 60_000, false, async () =>
+      (await labelsMenu(pull)).labels.map(({ id, name, color, description }) => ({ id, name, color, description })),
+    );
+  },
+  'pr.assigneeCandidates': ({ prId }) => {
+    const pull = pullRequestFor(prId);
+    return cached(kept.assigneeCandidates, pull.path, 60_000, false, async () =>
+      (await assigneesMenu(pull)).map(({ login, name, avatar }) => ({ ...githubUser(login, avatar), name: name || null })),
+    );
+  },
   'pr.proposedMergeCommit': ({ prId, method }) => proposedMergeCommit(pullRequestFor(prId), method),
   'markdown.preview': async ({ text, prId }) => {
     // The fields GitHub's own comment box sends for a comment on a pull request (docs/research/github-web-mutations.md).
@@ -158,12 +172,14 @@ interface Kept<T> {
 }
 
 /**
- * What `cached` keeps, a map for each kind of answer: `pr.fetch`'s pull requests, the reviewer picker's two lists and
- * the people and teams the comment boxes suggest.
+ * What `cached` keeps, a map for each kind of answer: `pr.fetch`'s pull requests, the reviewer picker's two lists, the
+ * people and teams the comment boxes suggest, and the label and assignee pickers' lists.
  */
 const kept = {
   pullRequests: new Map<string, Kept<PrDetail>>(),
   availableReviewers: new Map<string, Kept<z.infer<typeof availableReviewersAnswer>>>(),
   suggestedReviewers: new Map<string, Kept<z.infer<typeof suggestedReviewersAnswer>>>(),
   mentions: new Map<string, Kept<Mention[]>>(),
+  labelCandidates: new Map<string, Kept<LabelCandidate[]>>(),
+  assigneeCandidates: new Map<string, Kept<AssigneeCandidate[]>>(),
 };

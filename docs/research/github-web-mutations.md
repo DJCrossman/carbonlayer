@@ -217,6 +217,51 @@ Where the current reactions are:
 - diff comments, in `page_data/threads`: each comment's `id` (`PRRC_…`) and `reactionGroups: [{ reaction: { content,
   viewerHasReacted }, reactors: [...], totalCount }]`, all eight contents listed, zero counts included.
 
+## Labels and assignees (classic sidebar forms; read from GitHub's page signed in, 2026-10-22, nothing sent)
+GitHub's own PR sidebar (`#partial-discussion-sidebar` on the classic conversation page) sets labels and assignees with
+classic Rails forms on the ISSUE path of the PR's number, `I = /{owner}/{repo}/issues/{n}`. Read on one PR's page with
+GETs only; no form was submitted.
+- **Assignees, the choices**: `GET I/show_partial?partial=issues%2Fsidebar%2Fassignees_menu_content` with `Accept:
+  application/json` and `X-Requested-With: XMLHttpRequest` answers 200 `application/json` `{ users: [{ id: <number>,
+  login, name, avatar, selected: <boolean>, class }] }` (15 users on that PR). `selected` marks the current assignees.
+  GitHub's menu filters the list in place ("substring-memory") and shows at most 30. Asked with `Accept: text/html`, the
+  same address answers the menu's HTML shell (a filter input and a `<template>` row), which holds no form or token.
+- **Assignees, the save**: the conversation page's sidebar carries `<form class="js-issue-sidebar-form" method="post"
+  action="I/assignees">` with `_method=put`, its own `authenticity_token`, `issue[user_assignee_ids][]` for each
+  assignee's numeric user id, and one empty hidden `issue[user_assignee_ids][]`, so that sending none clears them.
+  GitHub's "assign yourself" is a submit button in that form named `issue[user_assignee_ids][]`, valued with the viewer's
+  id.
+- **Labels, the choices and the save**: `GET I/show_partial?partial=issues%2Fsidebar%2Flabels_menu_content`
+  (`X-Requested-With: XMLHttpRequest`, `Accept: text/html`) answers 200 HTML of about 48 KB holding `<form method="post"
+  action="I/labels">` with `_method=put`, `authenticity_token`, one empty hidden `issue[labels][]` and a
+  `div.js-filterable-issue-labels` with one row per label of the repository (21 on that one). A row is `<label
+  class="select-menu-item label-select-menu-item text-normal js-filterable-label" role="menuitemcheckbox"
+  aria-checked="true|false" data-prio-filter-value="<name>">` holding `<input hidden type="checkbox"
+  data-label-name="<name>" value="<label id, 10 digits there>" name="issue[labels][]">`, a `div.js-label-color` with
+  `label-color="<hex>"`, and `span.name.js-label-name-html` (GitHub's rendering of the name, which may hold emoji HTML).
+  No description element was seen in a row. The partial's second form (`action="/{owner}/{repo}/labels"`) creates a
+  label.
+
+**In the app** (`src/lib/github-web/issue-sidebar.ts`, writes in `mutations.ts`): `pr.labelCandidates` reads the labels
+partial (its form, that form's token and each row: id, name, colour, a `.description` should a row have one, applied when
+`aria-checked="true"` or the box is `checked`), `pr.assigneeCandidates` the assignees JSON; each list is kept 60 s per PR,
+and any successful write clears it. `pr.modifyLabels { add, remove }` (label ids) reads the partial again and posts its
+form through `submitForm`: `_method=put`, that form's token, the empty `issue[labels][]`, then the id of every label on
+the PR and not removed, or added, in the menu's order. `pr.modifyAssignees { add, remove }` (logins) reads the
+assignees JSON for the ids and who is assigned, then posts to `I/assignees`: `_method=put`, the token of the form the
+header stage found posting there on the conversation page it fetches (`rememberPullRequest`'s `assigneesToken`; without
+one the write asks for a reload), the empty `issue[user_assignee_ids][]`, then the ids. "assign yourself" is
+`pr.modifyAssignees` adding the viewer's login. The page then loads the meta stage again (`page_data/labels`,
+`page_data/assignees`); GitHub's answer to the form is not read.
+- The menus go through `request()` (`session.ts`), which also sends `GitHub-Verified-Fetch: true`, `GitHub-Is-React:
+  true`, `X-Fetch-Nonce`, `X-GitHub-Client-Version` and, for the JSON one, `Content-Type: application/json`, as it does to
+  every JSON route and to the classic top-repositories fragment. Only `Accept` with `X-Requested-With` was verified on
+  these two; that GitHub answers them alike with the others is UNVERIFIED.
+- UNVERIFIED: neither form has been sent; GitHub's reply to either is unseen (presumably the sidebar's HTML); whether a
+  described label's row carries a description element, and which; whether the conversation page always renders the
+  assignees form inline rather than loading the sidebar later. The React bundle's `page_data/modify_labels` and
+  `modify_assignees` (github-web-reviewers.md) are not used.
+
 ## Where to re-check (all at https://github.githubassets.com/assets/<file>)
 | File | Matched string(s) |
 |---|---|

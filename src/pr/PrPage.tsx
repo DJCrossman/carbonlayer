@@ -21,11 +21,13 @@ import { RelativeTime } from '../ui/RelativeTime';
 import { Skeleton } from '../ui/Skeleton';
 import { showToast, ToastHost } from '../ui/Toast';
 import { Activity } from './Activity';
+import { AssigneesCard } from './Assignees';
 import { useCheckReruns } from './check-reruns';
 import { CopyLink, Markdown } from './Comment';
 import { CommentsDrawer } from './CommentsDrawer';
 import { FilesSection, useFileReview } from './Files';
 import { usePrKeybindings } from './keybindings';
+import { LabelsCard } from './Labels';
 import { MergeStackDialog } from './MergeStackDialog';
 import { nextActionFor, stackToMerge } from './next-action';
 import { followLink, goToPr, openOnGitHub } from './navigation';
@@ -560,6 +562,25 @@ function PrView({
                 mutate(STAGES_A_WRITE_CHANGES['pr.reRequestReview'], () => source.reRequestReview(pr.id, reviewer.id), 'Could not re-request the review', {
                   success: `Asked ${reviewer.user.login} to review again`,
                 })
+              }
+            />
+          }
+          labelsCard={
+            <LabelsCard
+              pr={pr}
+              listLabels={() => source.labelCandidates(pr.id)}
+              onModify={(add, remove) =>
+                mutate(STAGES_A_WRITE_CHANGES['pr.modifyLabels'], () => source.modifyLabels(pr.id, add, remove), 'Could not change the labels', { success: 'Labels updated' })
+              }
+            />
+          }
+          assigneesCard={
+            <AssigneesCard
+              pr={pr}
+              viewerLogin={header.viewerLogin}
+              listAssignees={() => source.assigneeCandidates(pr.id)}
+              onModify={(add, remove) =>
+                mutate(STAGES_A_WRITE_CHANGES['pr.modifyAssignees'], () => source.modifyAssignees(pr.id, add, remove), 'Could not change the assignees', { success: 'Assignees updated' })
               }
             />
           }

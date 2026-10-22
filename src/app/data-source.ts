@@ -3,7 +3,7 @@
 
 import { browser } from 'wxt/browser';
 import { z } from 'zod/mini';
-import type { ChangedFileDiff, Emoji, Mention, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, StackEntry, TopRepository, View, ViewResult } from '../lib/model';
+import type { AssigneeCandidate, ChangedFileDiff, Emoji, LabelCandidate, Mention, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, StackEntry, TopRepository, View, ViewResult } from '../lib/model';
 import { rpc, type DiffEntryLine, type InboxRowToEnrich, type LineRange, type MergeCommit, type MergeMethod } from '../lib/rpc';
 import { getSettings, setSettings, watchSettings, type Settings, type SettingsStorage } from '../lib/settings';
 import { STACK_MERGES, stackMergesSchema, type StackMerge, type StackMergeRequest, type stackMergeMessage } from '../lib/stack-merges';
@@ -79,6 +79,14 @@ export interface DataSource {
   reviewerCandidates(prId: string, query: string): Promise<{ suggested: ReviewerCandidate[]; reviewers: ReviewerCandidate[] }>;
   modifyReviewers(prId: string, add: ReviewerChange[], remove: ReviewerChange[]): Promise<void>;
   reRequestReview(prId: string, reviewerId: string): Promise<void>;
+  /** Every label of the PR's repository, in the order GitHub's labels menu lists them. */
+  labelCandidates(prId: string): Promise<LabelCandidate[]>;
+  /** Adds and removes labels in one go, by GitHub's numeric label id. */
+  modifyLabels(prId: string, add: string[], remove: string[]): Promise<void>;
+  /** Whom GitHub's assignees menu on the PR offers, in its order. */
+  assigneeCandidates(prId: string): Promise<AssigneeCandidate[]>;
+  /** Assigns and unassigns people in one go, by login. */
+  modifyAssignees(prId: string, add: string[], remove: string[]): Promise<void>;
   /** `offered: false` when GitHub has no such re-run for the workflow run. */
   rerunFailedJobs(prId: string, runId: string): Promise<{ offered: boolean }>;
   rerunAllJobs(prId: string, runId: string): Promise<{ offered: boolean }>;
@@ -152,6 +160,10 @@ export function createRpcDataSource(): DataSource {
     reviewerCandidates: (prId, query) => rpc('pr.reviewerCandidates', { prId, query }),
     modifyReviewers: (prId, add, remove) => rpc('pr.modifyReviewers', { prId, add, remove }),
     reRequestReview: (prId, reviewerId) => rpc('pr.reRequestReview', { prId, reviewerId }),
+    labelCandidates: (prId) => rpc('pr.labelCandidates', { prId }),
+    modifyLabels: (prId, add, remove) => rpc('pr.modifyLabels', { prId, add, remove }),
+    assigneeCandidates: (prId) => rpc('pr.assigneeCandidates', { prId }),
+    modifyAssignees: (prId, add, remove) => rpc('pr.modifyAssignees', { prId, add, remove }),
     rerunFailedJobs: (prId, runId) => rpc('pr.rerunFailedJobs', { prId, runId }),
     rerunAllJobs: (prId, runId) => rpc('pr.rerunAllJobs', { prId, runId }),
     react: (prId, subjectId, content, add) => rpc('pr.react', { prId, subjectId, content, add }),
@@ -208,6 +220,9 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
   const log = async (...args: unknown[]) => {
     console.info('[fixtures] mutation', ...args);
   };
+  // Each fixture PR's labels and assignees as the pickers last left them: what its meta stage answers, as GitHub would
+  // answer the reload that follows a write.
+  const labelsAndAssignees = new Map<string, PrStages['meta']>(fixtures.prs.map((pr) => [pr.id, { labels: pr.labels, assignees: pr.assignees }]));
   const fixturePr = (repo: RepoRef, number: number) => {
     const pr = fixtures.prs.find((p) => p.repo.owner === repo.owner && p.repo.name === repo.name && p.number === number) ?? fixtures.prs[0];
     if (!pr) throw new Error(`No fixture for ${repo.owner}/${repo.name}#${number}`);
@@ -327,7 +342,7 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
             ),
           },
         },
-        meta: { labels, assignees },
+        meta: labelsAndAssignees.get(pr.id) ?? { labels, assignees },
       };
       return stages[stage];
     },
@@ -400,6 +415,30 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     },
     modifyReviewers: (...args) => log('modifyReviewers', ...args),
     reRequestReview: (...args) => log('reRequestReview', ...args),
+    labelCandidates: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return FIXTURE_LABELS;
+    },
+    // The change made to the PR's labels in memory, in the menu's order, as GitHub sets them.
+    modifyLabels: async (prId, add, remove) => {
+      await log('modifyLabels', prId, add, remove);
+      const current = labelsAndAssignees.get(prId);
+      if (!current) throw new Error(`No fixture for ${prId}`);
+      const labels = FIXTURE_LABELS.filter((label) => (current.labels.some((applied) => applied.name === label.name) && !remove.includes(label.id)) || add.includes(label.id));
+      labelsAndAssignees.set(prId, { ...current, labels: labels.map(({ name, color }) => ({ name, color })) });
+    },
+    assigneeCandidates: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return FIXTURE_ASSIGNEES;
+    },
+    // The change made to the PR's assignees in memory, in the menu's order, as GitHub sets them.
+    modifyAssignees: async (prId, add, remove) => {
+      await log('modifyAssignees', prId, add, remove);
+      const current = labelsAndAssignees.get(prId);
+      if (!current) throw new Error(`No fixture for ${prId}`);
+      const assignees = FIXTURE_ASSIGNEES.filter((user) => (current.assignees.some((assigned) => assigned.login === user.login) && !remove.includes(user.login)) || add.includes(user.login));
+      labelsAndAssignees.set(prId, { ...current, assignees: assignees.map(({ login, avatarUrl, url }) => ({ login, avatarUrl, url })) });
+    },
     rerunFailedJobs: async (...args) => {
       await log('rerunFailedJobs', ...args);
       return { offered: true };
@@ -506,6 +545,23 @@ const FIXTURE_REVIEWER_CANDIDATES: ReviewerCandidate[] = [
   { id: '1003', login: 'nat', name: 'Nat Friedman', avatarUrl: 'https://github.com/identicons/nat.png', kind: 'user' },
   { id: '1004', login: 'priya', name: 'Priya Raman', avatarUrl: 'https://github.com/identicons/priya.png', kind: 'user' },
   { id: '7002', login: 'acme/platform-reviewers', name: 'Platform reviewers', avatarUrl: '', kind: 'team' },
+];
+
+/** The labels of the harness's repository, as GitHub's labels menu lists them: the fixture PRs' own and a few more, most described. */
+const FIXTURE_LABELS: LabelCandidate[] = [
+  { id: '5001', name: 'bug', color: 'd73a4a', description: 'Something is broken' },
+  { id: '5002', name: 'docs', color: '0075ca', description: 'Words, not code' },
+  { id: '5003', name: 'enhancement', color: 'a2eeef', description: 'A new feature or request' },
+  { id: '5004', name: 'needs-qa', color: 'fbca04', description: null },
+  { id: '5005', name: 'parcs', color: '1d76db', description: 'The PARCS adapter and its client' },
+];
+
+/** Whom the harness's assignees menu offers: the fixture PRs' assignee, the viewer and a few more, one without a name. */
+const FIXTURE_ASSIGNEES: AssigneeCandidate[] = [
+  { login: 'acme-deploy', name: null, avatarUrl: '', url: 'https://github.com/acme-deploy' },
+  { login: 'hubot', name: 'Hubot', avatarUrl: 'https://github.com/identicons/hubot.png', url: 'https://github.com/hubot' },
+  { login: 'mona', name: 'Mona Lisa Octocat', avatarUrl: 'https://github.com/identicons/mona.png', url: 'https://github.com/mona' },
+  { login: 'octocat', name: 'The Octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/583231?v=4', url: 'https://github.com/octocat' },
 ];
 
 /** The request that loads each stage of the PR page. */

@@ -269,6 +269,42 @@ describe('mutations', () => {
     ]);
   });
 
+  it("sets the labels with the labels menu's own form: its token, an empty field first, then every label the PR keeps or gains", async () => {
+    const menu = `<form method="post" action="/o/r/labels"><input type="hidden" name="authenticity_token" value="new-label-token"></form>
+      <form method="post" action="/o/r/issues/1/labels"><input type="hidden" name="_method" value="put"><input type="hidden" name="authenticity_token" value="labels-token">
+        <div class="js-filterable-issue-labels">
+          <label class="js-filterable-label" aria-checked="true"><input type="checkbox" name="issue[labels][]" value="11" data-label-name="area/api" checked></label>
+          <label class="js-filterable-label" aria-checked="false"><input type="checkbox" name="issue[labels][]" value="12" data-label-name="bug"></label>
+          <label class="js-filterable-label" aria-checked="true"><input type="checkbox" name="issue[labels][]" value="13" data-label-name="needs-qa" checked></label>
+        </div></form>`;
+    const fetch = vi.fn(async (_url: string, init: RequestInit = {}) => (init.method === 'POST' ? new Response('<div></div>') : new Response(menu)));
+    vi.stubGlobal('fetch', fetch);
+    await mutations['pr.modifyLabels']({ prId: 'PR_1', add: ['12'], remove: ['13'] });
+    await mutations['pr.modifyLabels']({ prId: 'PR_1', add: [], remove: ['11', '13'] });
+    const posts = fetch.mock.calls.filter(([, init]) => init?.method === 'POST');
+    expect(posts.map(([url, init]) => [new URL(url).pathname, [...new URLSearchParams(String(init?.body))]])).toEqual([
+      [
+        '/o/r/issues/1/labels',
+        [
+          ['_method', 'put'],
+          ['authenticity_token', 'labels-token'],
+          ['issue[labels][]', ''],
+          ['issue[labels][]', '11'],
+          ['issue[labels][]', '12'],
+        ],
+      ],
+      [
+        '/o/r/issues/1/labels',
+        [
+          ['_method', 'put'],
+          ['authenticity_token', 'labels-token'],
+          ['issue[labels][]', ''],
+        ],
+      ],
+    ]);
+    expect(fetch.mock.calls[0]?.[0]).toBe('/o/r/issues/1/show_partial?partial=issues%2Fsidebar%2Flabels_menu_content');
+  });
+
   it('asks for a reload to react while the PR page has given no token', async () => {
     await expect(mutations['pr.react']({ prId: 'PR_2', subjectId: 'PR_2', content: 'ROCKET', add: true })).rejects.toThrow('Reload the pull request to react');
   });

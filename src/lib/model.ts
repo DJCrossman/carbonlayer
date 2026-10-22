@@ -114,6 +114,21 @@ export const labelSummarySchema = z.object({ name: z.string(), color: z.string()
 
 export type LabelSummary = z.infer<typeof labelSummarySchema>;
 
+/** A label of the PR's repository, the way GitHub's labels menu on the PR lists it. */
+export const labelCandidateSchema = z.extend(labelSummarySchema, {
+  /** GitHub's numeric label id, which setting the PR's labels names. */
+  id: z.string(),
+  /** What the label is for, when GitHub's menu says. */
+  description: z.nullable(z.string()),
+});
+
+export type LabelCandidate = z.infer<typeof labelCandidateSchema>;
+
+/** Someone GitHub's assignees menu on the PR offers, with the name they gave GitHub, when they gave one. */
+export const assigneeCandidateSchema = z.extend(userRefSchema, { name: z.nullable(z.string()) });
+
+export type AssigneeCandidate = z.infer<typeof assigneeCandidateSchema>;
+
 /** One row in the inbox and one entry in a stack. */
 export const prSummarySchema = z.object({
   id: z.string(),

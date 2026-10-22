@@ -6,9 +6,11 @@
 
 import { z } from 'zod/mini';
 import {
+  assigneeCandidateSchema,
   changedFileDiffSchema,
   ciSummarySchema,
   emojiSchema,
+  labelCandidateSchema,
   mentionSchema,
   mergeMethodSchema,
   organizationSchema,
@@ -67,6 +69,8 @@ export const STAGES_A_WRITE_CHANGES = {
   'pr.rebaseStack': ['header', 'activity', 'mergeBox', 'checks', 'stack'],
   'pr.modifyReviewers': ['mergeBox'],
   'pr.reRequestReview': ['mergeBox'],
+  'pr.modifyLabels': ['meta'],
+  'pr.modifyAssignees': ['meta'],
   'pr.rerunFailedJobs': ['checks'],
   'pr.rerunAllJobs': ['checks'],
   // The page shows the reaction at once; nothing else changes.
@@ -291,6 +295,14 @@ const RPC_SCHEMAS = {
   /** Requests and withdraws reviews in one go, by GitHub's numeric user or team id. */
   'pr.modifyReviewers': { args: z.object({ prId: z.string(), add: z.array(reviewerChange), remove: z.array(reviewerChange) }), result: z.undefined() },
   'pr.reRequestReview': { args: z.object({ prId: z.string(), reviewerId: z.string() }), result: z.undefined() },
+  /** Every label of the PR's repository, in the order GitHub's labels menu on the PR lists them. */
+  'pr.labelCandidates': { args: z.object({ prId: z.string() }), result: z.array(labelCandidateSchema) },
+  /** Whom GitHub's assignees menu on the PR offers, in its order. */
+  'pr.assigneeCandidates': { args: z.object({ prId: z.string() }), result: z.array(assigneeCandidateSchema) },
+  /** Adds and removes labels in one go, by GitHub's numeric label id; GitHub is sent the PR's whole new set. */
+  'pr.modifyLabels': { args: z.object({ prId: z.string(), add: z.array(z.string()), remove: z.array(z.string()) }), result: z.undefined() },
+  /** Assigns and unassigns people in one go, by login; GitHub is sent the PR's whole new set. */
+  'pr.modifyAssignees': { args: z.object({ prId: z.string(), add: z.array(z.string()), remove: z.array(z.string()) }), result: z.undefined() },
   /** `offered: false` when GitHub has no such re-run for the run; its page on GitHub is then the way to do it. */
   'pr.rerunFailedJobs': { args: z.object({ prId: z.string(), runId: z.string() }), result: z.object({ offered: z.boolean() }) },
   'pr.rerunAllJobs': { args: z.object({ prId: z.string(), runId: z.string() }), result: z.object({ offered: z.boolean() }) },

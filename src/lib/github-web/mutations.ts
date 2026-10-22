@@ -7,9 +7,10 @@ import type { PrDetail } from '../model';
 import type { MergeCommit, MergeMethod, RpcMethods } from '../rpc';
 import { getSettings } from '../settings';
 import { rerunWorkflowJobs } from './actions';
+import { assigneesMenu, labelsMenu } from './issue-sidebar';
 import { SIGNED_OUT, getJson, readAnswer, send, submitForm } from './session';
 
-export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox.fetchMore' | 'inbox.enrich' | 'inbox.branches' | 'repos.search' | 'repos.top' | 'orgs.list' | 'orgs.people' | `pr.fetch${string}` | 'pr.reviewerCandidates' | 'pr.proposedMergeCommit' | 'markdown.preview' | 'markdown.emojis' | 'markdown.mentions'>]: (args: RpcMethods[M]['args']) => Promise<RpcMethods[M]['result']> } = {
+export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox.fetchMore' | 'inbox.enrich' | 'inbox.branches' | 'repos.search' | 'repos.top' | 'orgs.list' | 'orgs.people' | `pr.fetch${string}` | 'pr.reviewerCandidates' | 'pr.labelCandidates' | 'pr.assigneeCandidates' | 'pr.proposedMergeCommit' | 'markdown.preview' | 'markdown.emojis' | 'markdown.mentions'>]: (args: RpcMethods[M]['args']) => Promise<RpcMethods[M]['result']> } = {
   'pr.review': async ({ prId, event, body, threads }) => {
     const pull = pullRequestFor(prId);
     // Batched inline comments join the viewer's pending review; submitting the review publishes them.
@@ -144,6 +145,37 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
   'pr.reRequestReview': async ({ prId, reviewerId }) => {
     await send(`${pullRequestFor(prId).path}/page_data/re_request_review_from_user`, 'POST', { reviewerId: Number(reviewerId) });
   },
+  'pr.modifyLabels': async ({ prId, add, remove }) => {
+    // GitHub's labels menu posts the PR's whole set of labels, its form's fields in this order, an empty one first so that
+    // sending none clears them. The menu is read again first, for its form's own token and the labels on the PR now.
+    const pull = pullRequestFor(prId);
+    const menu = await labelsMenu(pull);
+    const missing = add.find((id) => !menu.labels.some((label) => label.id === id));
+    if (missing) throw new Error(`GitHub's labels menu no longer lists label ${missing}`);
+    const labels = menu.labels.filter((label) => (label.applied && !remove.includes(label.id)) || add.includes(label.id));
+    await submitForm(menu.action, [
+      ['_method', 'put'],
+      ['authenticity_token', menu.token],
+      ['issue[labels][]', ''],
+      ...labels.map((label): [string, string] => ['issue[labels][]', label.id]),
+    ]);
+  },
+  'pr.modifyAssignees': async ({ prId, add, remove }) => {
+    // The PR page's sidebar sets the assignees with a classic form posting their whole set by numeric user id, an empty one
+    // first so that sending none clears them. GitHub's assignees menu gives the ids, and who is assigned now.
+    const pull = pullRequestFor(prId);
+    if (!pull.assigneesToken) throw new Error('Reload the pull request to change its assignees');
+    const users = await assigneesMenu(pull);
+    const missing = add.find((login) => !users.some((user) => user.login === login));
+    if (missing) throw new Error(`GitHub does not offer ${missing} as an assignee`);
+    const assignees = users.filter((user) => (user.selected && !remove.includes(user.login)) || add.includes(user.login));
+    await submitForm(`${pull.repoPath}/issues/${pull.number}/assignees`, [
+      ['_method', 'put'],
+      ['authenticity_token', pull.assigneesToken],
+      ['issue[user_assignee_ids][]', ''],
+      ...assignees.map((user): [string, string] => ['issue[user_assignee_ids][]', String(user.id)]),
+    ]);
+  },
   'pr.rerunFailedJobs': ({ prId, runId }) => rerunWorkflowJobs(pullRequestFor(prId).repoPath, runId, 'failed'),
   'pr.rerunAllJobs': ({ prId, runId }) => rerunWorkflowJobs(pullRequestFor(prId).repoPath, runId, 'all'),
   'pr.react': async ({ prId, subjectId, content, add }) => {
@@ -162,11 +194,11 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
 /**
  * Remembers what later writes about a PR need, from whichever part of it has loaded: the page's id, head and stack, the
  * comparison's base, the threads (the PR page loads them in stages, pr-stages.ts), the database ids a preview names, and
- * the token GitHub's reaction forms carry.
+ * the tokens GitHub's reaction forms and its sidebar's assignees form carry.
  */
 export function rememberPullRequest(
   loaded: Pick<PrDetail, 'repo' | 'number'> &
-    Partial<Pick<PrDetail, 'id' | 'headOid' | 'baseOid' | 'nativeStack' | 'threads'>> & { databaseId?: number; repositoryDatabaseId?: number; reactionToken?: string },
+    Partial<Pick<PrDetail, 'id' | 'headOid' | 'baseOid' | 'nativeStack' | 'threads'>> & { databaseId?: number; repositoryDatabaseId?: number; reactionToken?: string; assigneesToken?: string },
 ): void {
   const path = `/${loaded.repo.owner}/${loaded.repo.name}/pull/${loaded.number}`;
   const known = pullRequests.get(path) ?? {
@@ -179,6 +211,7 @@ export function rememberPullRequest(
     databaseId: '',
     repositoryDatabaseId: '',
     reactionToken: '',
+    assigneesToken: '',
   };
   if (loaded.headOid !== undefined) known.headOid = loaded.headOid;
   if (loaded.baseOid !== undefined) known.baseOid = loaded.baseOid;
@@ -186,6 +219,7 @@ export function rememberPullRequest(
   if (loaded.databaseId !== undefined) known.databaseId = String(loaded.databaseId);
   if (loaded.repositoryDatabaseId !== undefined) known.repositoryDatabaseId = String(loaded.repositoryDatabaseId);
   if (loaded.reactionToken !== undefined) known.reactionToken = loaded.reactionToken;
+  if (loaded.assigneesToken !== undefined) known.assigneesToken = loaded.assigneesToken;
   pullRequests.set(path, known);
   if (loaded.id) pullPaths.set(loaded.id, path);
   for (const thread of loaded.threads ?? []) {
@@ -327,6 +361,8 @@ interface KnownPullRequest {
   repositoryDatabaseId: string;
   /** The `authenticity_token` of the PR page's reaction forms, one for every subject in the repository; empty until the header has loaded. */
   reactionToken: string;
+  /** The `authenticity_token` of the PR page's sidebar form that sets its assignees, that form's own; empty until the header has loaded. */
+  assigneesToken: string;
 }
 
 interface KnownThread {

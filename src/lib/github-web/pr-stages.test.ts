@@ -105,6 +105,24 @@ describe('the PR page in stages', () => {
     expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/\/o\/r\/reactions$/), expect.objectContaining({ body: expect.stringContaining('authenticity_token=reaction-token') }));
   });
 
+  it("assigns with the token of the sidebar's assignees form, by user id from GitHub's assignees menu, an empty field first", async () => {
+    await loadStage('header');
+    requests.length = 0;
+    await call('pr.modifyAssignees', { prId: 'PR_1', add: ['cy'], remove: ['bo'] });
+    expect(requests).toEqual(['issues/1/show_partial', 'POST issues/1/assignees']);
+    expect(fetch).toHaveBeenCalledWith('/o/r/issues/1/show_partial?partial=issues%2Fsidebar%2Fassignees_menu_content', expect.anything());
+    const [url, init] = vi.mocked(fetch).mock.calls.find(([, sent]) => sent?.method === 'POST') ?? [];
+    expect([new URL(String(url)).pathname, [...new URLSearchParams(String(init?.body))]]).toEqual([
+      '/o/r/issues/1/assignees',
+      [
+        ['_method', 'put'],
+        ['authenticity_token', 'assignees-token'],
+        ['issue[user_assignee_ids][]', ''],
+        ['issue[user_assignee_ids][]', '3'],
+      ],
+    ]);
+  });
+
   it('leaves a side card empty when GitHub has no such route, and fails its stage on anything else', async () => {
     vi.spyOn(console, 'debug').mockImplementation(() => {});
     requests = serveGitHub({ status_checks: 404 });
@@ -174,7 +192,8 @@ async function loadStage<S extends PrStage>(stage: S): Promise<PrStages[S]> {
 
 /**
  * github.com for PR o/r#1, recording each request as its page_data route (`page` for the page itself, `POST <route>`
- * for a write, `actions` for the branch's Actions list, `actions/runs/<id>` for a run's page, `reactions` for a reaction). `failing` answers a route
+ * for a write, `actions` for the branch's Actions list, `actions/runs/<id>` for a run's page, `reactions` for a reaction,
+ * `issues/1/<route>` for the PR's issue: its sidebar's menus and forms). `failing` answers a route
  * with that status instead, `answers` with that answer. Each call has a head commit of its own: what the Actions list
  * says about a commit is kept 5 minutes.
  */
@@ -191,6 +210,11 @@ function serveGitHub(failing: Record<string, number> = {}, viewer = 'ana', answe
       <form class="js-pick-reaction" action="/o/r/reactions" method="post"><input type="hidden" name="authenticity_token" value="reaction-token"><input type="hidden" name="input[subjectId]" value="PR_1">
         <button name="input[content]" value="HOORAY unreact" class="social-reaction-summary-item js-reaction-group-button"><g-emoji alias="tada">🎉</g-emoji> 3</button></form></div></div>
     <div id="pullrequestreview-9"><div class="TimelineItem"><div class="TimelineItem-body"><a class="author">cy</a> left a comment <relative-time datetime="2026-10-02T00:00:00Z"></relative-time></div></div></div>
+    <div id="partial-discussion-sidebar">
+      <form class="js-issue-sidebar-form" action="/o/r/issues/1/set_milestone" method="post"><input type="hidden" name="authenticity_token" value="milestone-token"></form>
+      <form class="js-issue-sidebar-form" action="/o/r/issues/1/assignees" method="post"><input type="hidden" name="_method" value="put"><input type="hidden" name="authenticity_token" value="assignees-token">
+        <input type="hidden" name="issue[user_assignee_ids][]" value=""><input type="hidden" name="issue[user_assignee_ids][]" value="2"></form>
+    </div>
   </body></html>`;
   const routes: Record<string, unknown> = {
     tab_counts: { filesChangedCount: 2, conversationCount: 3, unresolvedConversationCount: 1 },
@@ -213,6 +237,15 @@ function serveGitHub(failing: Record<string, number> = {}, viewer = 'ana', answe
     create_timeline_comment: {},
     resolve_thread: {},
     reactions: {},
+    // GitHub's assignees menu, asked for as JSON: bo is assigned.
+    'issues/1/show_partial': {
+      users: [
+        { id: 1, login: 'ana', name: 'Ana', avatar: '', selected: false, class: '' },
+        { id: 2, login: 'bo', name: '', avatar: '', selected: true, class: '' },
+        { id: 3, login: 'cy', name: 'Cy', avatar: '', selected: false, class: '' },
+      ],
+    },
+    'issues/1/assignees': {},
     // No runs of GitHub's own dynamic workflows on the branch.
     actions: '<ul></ul>',
     ...answers,
@@ -220,7 +253,7 @@ function serveGitHub(failing: Record<string, number> = {}, viewer = 'ana', answe
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init?: RequestInit) => {
-      const route = /\/o\/r\/(actions(?:\/runs\/\d+)?|reactions)/.exec(url)?.[1] ?? /\/o\/r\/pull\/1(?:\/page_data\/([a-z_]+))?/.exec(url)?.[1] ?? 'page';
+      const route = /\/o\/r\/(actions(?:\/runs\/\d+)?|reactions|issues\/1\/[a-z_]+)/.exec(url)?.[1] ?? /\/o\/r\/pull\/1(?:\/page_data\/([a-z_]+))?/.exec(url)?.[1] ?? 'page';
       asked.push(init?.method ? `${init.method} ${route}` : route);
       const status = failing[route];
       if (status) return Response.json({ error: 'Not Found' }, { status });
