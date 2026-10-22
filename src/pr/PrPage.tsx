@@ -862,19 +862,6 @@ function PrActions({
                 {pr.isDraft ? 'Ready for review' : 'Convert to draft'}
               </button>
             )}
-            {/* As GitHub's "Close pull request": closed at once, without merging. */}
-            {pr.state === 'OPEN' && pr.viewerCanUpdate && (
-              <button
-                role="menuitem"
-                onClick={() => {
-                  onMenuOpenChange(false);
-                  void onClosePullRequest();
-                }}
-              >
-                <Icon name="git-pull-request-closed" size={14} />
-                Close pull request
-              </button>
-            )}
             <button
               role="menuitem"
               onClick={() => {
@@ -885,6 +872,22 @@ function PrActions({
               <Icon name="link-external" size={14} />
               Copy link
             </button>
+            {/* As GitHub's "Close pull request": closed at once, without merging; last, apart from the rest. */}
+            {pr.state === 'OPEN' && pr.viewerCanUpdate && (
+              <>
+                <div role="separator" className="pr-menu-separator" />
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    onMenuOpenChange(false);
+                    void onClosePullRequest();
+                  }}
+                >
+                  <Icon name="git-pull-request-closed" size={14} />
+                  Close pull request
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
