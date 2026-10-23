@@ -132,6 +132,9 @@
 .markdown-body table { margin-bottom: 10px; }
 .markdown-body .highlight pre,
 .markdown-body pre { padding: 10px 12px; font-size: 12px; }
+/* A video attached to a body fits its column, as GitHub's own `width-fit` class keeps it (github-markdown-css caps only
+   images), keeping its shape. */
+.markdown-body video { max-width: 100%; height: auto; }
 
 /* A suggested change as GitHub renders it (```suggestion): a diff table whose look comes from GitHub's own blob styles,
    which the app doesn't load. As GitHub shows it: a muted heading, line numbers, a −/+ marker, red and green rows, and
