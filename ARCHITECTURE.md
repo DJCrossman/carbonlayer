@@ -370,18 +370,21 @@ Where GitHub refuses its stack auto-merge to the repository, in its words "Stack
 whatever the case; any other refusal is a toast, as ever), CarbonLayer merges the stack when it is ready itself
 (`mergeStackWhenReady` in `src/lib/stack-merges.ts`): a stack merge as above of the open PRs from the bottom through this
 one, from this one, marked `whenReady`, which the same background runner moves on by other rules. It goes by GitHub's own
-merge rules, so optional checks never hold it up, never rebases on its own (a rebase force-pushes every branch) and has no
-time cap. It waits through failing checks, missing reviews and new commits (it merges the heads it saw last, and a merge
-`pr.merge` refuses because the PR was pushed to since sends it back to looking), and through a stack GitHub says must be
-rebased ("Waiting for the stack to be rebased", the next step offering GitHub's Rebase stack); an out-of-date stack merges
-as it is, and PRs merged meanwhile are left out. Once every required check of the PRs still open has passed and GitHub
-says each can merge with those below it, it sends `pr.merge` with the switch's method and the commit GitHub proposes then,
-and follows it as above. Only a closed PR, conflicts (in GitHub's words) and a merge GitHub refused stop it. Since it may
-wait for days, it looks at the stack again after a quarter of the time the stack has waited for the same thing at the same
-heads, from every 30 s (checks that just started) up to every 5 minutes (a review that comes after a day merges within 5
-minutes), and a tab the worker opens to ask GitHub closes after each look, so an idle stack keeps none open; none comes to
-the front. While it is under way the switch is on, with "CarbonLayer will merge this stack when it's ready: GitHub's stack
-auto-merge isn't available for this repository." under it in place of GitHub's sentence, the rows of the open PRs it merges
+merge rules, so optional checks never hold it up, and has no time cap. It waits through failing checks, missing reviews
+and new commits (it merges the heads it saw last, and a merge `pr.merge` refuses because the PR was pushed to since sends
+it back to looking), and PRs merged meanwhile are left out. It rebases the stack itself, with GitHub's Rebase stack as
+above: at once when GitHub says it must be rebased, as it could never merge otherwise, and, when it is only behind its
+base, last, once every required check of the PRs still open has passed and GitHub says each can merge with those below
+it, so the checks run once more on what merges rather than each time the base moves while it waits. Then it waits again
+for the new heads (rebasing again if the base moved meanwhile), and once nothing stands in the way it sends `pr.merge`
+with the switch's method and the commit GitHub proposes then, and follows it as above. Only a closed PR, conflicts (in
+GitHub's words), and a rebase or merge GitHub refused or stopped (in its words, a rebase stopped on conflicts among them)
+stop it. Since it may wait for days, it looks at the stack again after a quarter of the time the stack has waited for the
+same thing at the same heads, from every 30 s (checks that just started) up to every 5 minutes (a review that comes after
+a day merges within 5 minutes), and a tab the worker opens to ask GitHub closes after each look, so an idle stack keeps
+none open; none comes to the front. While it is under way the switch is on, with "CarbonLayer will rebase and merge this
+stack when it's ready: GitHub's stack auto-merge isn't available for this repository." under it in place of GitHub's
+sentence (led by "Rebasing the stack…" while it rebases and "Merging…" while it merges), the rows of the open PRs it merges
 read "will merge when ready", and the next step shows as ever; the page of every PR it merges shows the same, read from
 `storage.local`. The switch turned off cancels it (nothing on GitHub to undo), another method merges the same PRs with it,
 and once it stopped the switch is off and the status card says why, with Dismiss. A PR alone, and a stack only Graphite's

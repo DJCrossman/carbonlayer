@@ -280,8 +280,8 @@ function StatusCard({
       {/* CarbonLayer's own, in place of GitHub's stack auto-merge: who merges the stack and why, and where it is. */}
       {armed && (
         <p className="pr-muted side-checks-empty side-merge-when-ready">
-          {armed.step.kind === 'merging' ? 'Merging… ' : armed.step.kind === 'waiting' && armed.step.for?.kind === 'stack-rebase' ? 'Waiting for the stack to be rebased. ' : ''}
-          CarbonLayer will merge this stack when it's ready: GitHub's stack auto-merge isn't available for this repository.
+          {armed.step.kind === 'merging' ? 'Merging… ' : armed.step.kind === 'rebasing' ? 'Rebasing the stack… ' : ''}
+          CarbonLayer will rebase and merge this stack when it's ready: GitHub's stack auto-merge isn't available for this repository.
         </p>
       )}
       {armed?.trouble && (
