@@ -222,6 +222,25 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
     );
     if (!answer.data) throw new Error(answer.errors?.[0]?.message ?? `GitHub did not ${add ? 'add' : 'remove'} the reaction`);
   },
+  // Edits go as GitHub's React page sends them (its bundle, 2026-10-27; docs/research/github-web-mutations.md).
+  'pr.editDescription': async ({ prId, body }) => {
+    await send(`${pullRequestFor(prId).path}/page_data/update_description`, 'PATCH', { body });
+  },
+  'pr.editComment': async ({ prId, commentId, version, body }) => {
+    const pull = pullRequestFor(prId);
+    // A conversation comment is the repository's issue comment, a review's summary the PR's review; each is sent as form
+    // fields, with the version the edit started from where the page gave one, which GitHub compares with the one it has.
+    const [, kind, id] = /^(issuecomment|pullrequestreview)-(\d+)$/.exec(commentId) ?? [];
+    if (!id) throw new Error(`There is no comment ${commentId} to edit`);
+    const fields = new FormData();
+    fields.set(kind === 'issuecomment' ? 'issue_comment[body]' : 'pull_request_review[body]', body);
+    if (version) fields.set('body_version', version);
+    await send(kind === 'issuecomment' ? `${pull.repoPath}/issue_comments/${id}` : `${pull.path}/reviews/${id}/update`, 'PUT', fields);
+  },
+  'pr.editThreadComment': async ({ prId, commentId, version, body }) => {
+    // GitHub's files view names the comment by its database id, as a string, and its version in the address.
+    await send(`${pullRequestFor(prId).path}/page_data/update_review_comment${version ? `?body_version=${encodeURIComponent(version)}` : ''}`, 'PUT', { body, commentId });
+  },
 };
 
 /**

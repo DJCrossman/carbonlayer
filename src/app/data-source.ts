@@ -94,6 +94,12 @@ export interface DataSource {
   rerunAllJobs(prId: string, runId: string): Promise<{ offered: boolean }>;
   /** Adds the viewer's reaction to a comment (by its node id; the PR's own for the description), or takes it back. */
   react(prId: string, subjectId: string, content: ReactionContent, add: boolean): Promise<void>;
+  /** Saves an edit of the PR's description. */
+  editDescription(prId: string, body: string): Promise<void>;
+  /** Saves an edit of a conversation comment or a review's summary (by its id in the activity), started on its `version`. */
+  editComment(prId: string, commentId: string, version: string | undefined, body: string): Promise<void>;
+  /** Saves an edit of a diff comment (by its id in its thread), started on its `version`. */
+  editThreadComment(prId: string, commentId: string, version: string | undefined, body: string): Promise<void>;
   /** A comment's Markdown the way GitHub renders it on the PR, in HTML: what a comment box's Preview tab shows. */
   previewMarkdown(text: string, prId: string): Promise<string>;
   /** The emoji a comment box suggests after a `:`, in GitHub's order. */
@@ -170,6 +176,9 @@ export function createRpcDataSource(): DataSource {
     rerunFailedJobs: (prId, runId) => rpc('pr.rerunFailedJobs', { prId, runId }),
     rerunAllJobs: (prId, runId) => rpc('pr.rerunAllJobs', { prId, runId }),
     react: (prId, subjectId, content, add) => rpc('pr.react', { prId, subjectId, content, add }),
+    editDescription: (prId, body) => rpc('pr.editDescription', { prId, body }),
+    editComment: (prId, commentId, version, body) => rpc('pr.editComment', { prId, commentId, version, body }),
+    editThreadComment: (prId, commentId, version, body) => rpc('pr.editThreadComment', { prId, commentId, version, body }),
     previewMarkdown: async (text, prId) => (await rpc('markdown.preview', { text, prId })).html,
     listEmojis: () => rpc('markdown.emojis', {}),
     listMentions: (prId) => rpc('markdown.mentions', { prId }),
@@ -226,6 +235,22 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
   // Each fixture PR's labels and assignees as the pickers last left them: what its meta stage answers, as GitHub would
   // answer the reload that follows a write.
   const labelsAndAssignees = new Map<string, PrStages['meta']>(fixtures.prs.map((pr) => [pr.id, { labels: pr.labels, assignees: pr.assignees }]));
+  // Each fixture comment's Markdown as the last edit left it, by its id on the page (the description's by its PR's id):
+  // what the stages answer from then on, as GitHub would answer the reload that follows an edit.
+  const edits = new Map<string, string>();
+  const edited = (pr: PrDetail): PrDetail => {
+    const edit = <C extends { bodyHtml: string; editableMarkdown?: string }>(comment: C, id: string): C => {
+      const markdown = edits.get(id);
+      return markdown === undefined ? comment : { ...comment, bodyHtml: renderedByGitHub(markdown), editableMarkdown: markdown };
+    };
+    const description = edits.get(pr.id);
+    return {
+      ...pr,
+      ...(description !== undefined && { bodyHtml: renderedByGitHub(description), editableDescription: description }),
+      timeline: pr.timeline.map((item) => (item.kind === 'comment' || item.kind === 'review' ? edit(item, item.id) : item)),
+      threads: pr.threads.map((thread) => ({ ...thread, comments: thread.comments.map((comment) => edit(comment, comment.id)) })),
+    };
+  };
   const fixturePr = (repo: RepoRef, number: number) => {
     const pr = fixtures.prs.find((p) => p.repo.owner === repo.owner && p.repo.name === repo.name && p.number === number) ?? fixtures.prs[0];
     if (!pr) throw new Error(`No fixture for ${repo.owner}/${repo.name}#${number}`);
@@ -318,7 +343,7 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     // Each stage of the fixture PR after a delay of its own, so the harness fills the page in the way GitHub does.
     // GitHub sends the first file's diff with the file list; the others follow a moment later.
     fetchPrStage: async (stage, repo, number) => {
-      const pr = fixturePr(repo, number);
+      const pr = edited(fixturePr(repo, number));
       await new Promise((resolve) => setTimeout(resolve, FIXTURE_STAGE_DELAYS[stage]));
       const { timeline, threads, unresolvedThreadCount, files, baseOid, stack, labels, assignees, ci, requiredCheckNames, unread, conversations, ...rest } = pr;
       const { mergeStatus, reviewers, reviewDecision, viewerCanMerge, viewerCanEnableAutoMerge, allowedMergeMethods, defaultMergeMethod, autoMerge, isInMergeQueue, stackSection, ...header } = rest;
@@ -455,14 +480,26 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
       return { offered: true };
     },
     react: (...args) => log('react', ...args),
-    // No GitHub to render it: each paragraph as it was typed, escaped, a moment later.
+    // Each edit kept, a moment later, as GitHub keeps it: the stages answer the edited comment from then on.
+    editDescription: async (prId, body) => {
+      await log('editDescription', prId, body);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      edits.set(prId, body);
+    },
+    editComment: async (prId, commentId, version, body) => {
+      await log('editComment', prId, commentId, version, body);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      edits.set(commentId, body);
+    },
+    editThreadComment: async (prId, commentId, version, body) => {
+      await log('editThreadComment', prId, commentId, version, body);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      edits.set(commentId, body);
+    },
+    // A moment later, rendered as the fixtures render Markdown.
     previewMarkdown: async (text) => {
       await new Promise((resolve) => setTimeout(resolve, 300));
-      return text
-        .split(/\n\s*\n/)
-        .filter((paragraph) => paragraph.trim() !== '')
-        .map((paragraph) => `<p>${paragraph.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('\n', '<br>')}</p>`)
-        .join('\n');
+      return renderedByGitHub(text);
     },
     // Some of GitHub's emoji, in its order, a moment later.
     listEmojis: async () => {
@@ -639,6 +676,15 @@ const FIXTURE_MENTIONS: Mention[] = [
   { kind: 'team', login: 'acme/parcs', description: 'Parking and curbside services' },
   { kind: 'team', login: 'acme/platform', description: '' },
 ];
+
+/** A comment's Markdown as the fixtures have GitHub render it, with no GitHub to render it: each paragraph as it was typed, escaped. */
+function renderedByGitHub(markdown: string): string {
+  return markdown
+    .split(/\n\s*\n/)
+    .filter((paragraph) => paragraph.trim() !== '')
+    .map((paragraph) => `<p>${paragraph.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('\n', '<br>')}</p>`)
+    .join('\n');
+}
 
 /**
  * What GitHub's diff_entry_lines answers for a fixture file (docs/research/github-web-endpoints.md): every line of its

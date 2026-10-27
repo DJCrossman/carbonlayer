@@ -123,6 +123,55 @@ describe('timelineFrom', () => {
   });
 });
 
+describe('timelineFrom, on comments the viewer may edit', () => {
+  // The shape of GitHub's conversation page (a public PR's, 2026-10-27, cut down): a comment's options menu holds its
+  // Copy link and Copy Markdown, and its Edit where the viewer may edit it; its `.js-comment` element holds its version.
+  const menu = (markdown: string, editable: boolean) => `<div class="timeline-comment-actions"><details><details-menu>
+      <clipboard-copy aria-label="Copy link" role="menuitem">Copy link</clipboard-copy>
+      <clipboard-copy role="menuitem" value="${markdown}">Copy Markdown</clipboard-copy>
+      ${editable ? '<button type="button" class="dropdown-item btn-link js-comment-edit-button" aria-label="Edit comment">Edit</button>' : ''}
+    </details-menu></details></div>`;
+  const page = new DOMParser().parseFromString(
+    `<div class="TimelineItem js-comment-container">
+      <div class="timeline-comment-group TimelineItem-body" id="issuecomment-11"><div class="timeline-comment js-comment" data-body-version="v-11">
+        <a class="author">ana</a> commented <relative-time datetime="2026-10-20T10:00:00Z"></relative-time>${menu('Ship it?\n\n```ts\nx()\n```', true)}
+        <div class="comment-body"><p>Ship it?</p><div class="zeroclipboard-container"><clipboard-copy aria-label="Copy" value="x()"></clipboard-copy></div></div></div></div>
+    </div>
+    <div class="TimelineItem js-comment-container">
+      <div class="timeline-comment-group TimelineItem-body" id="issuecomment-12"><div class="timeline-comment js-comment" data-body-version="v-12">
+        <a class="author">bo</a> commented <relative-time datetime="2026-10-20T11:00:00Z"></relative-time>${menu('Not yours', false)}
+        <div class="comment-body"><p>Not yours</p></div></div></div>
+    </div>
+    <div id="pullrequestreview-21" class="js-comment">
+      <div class="TimelineItem"><div class="TimelineItem-body"><a class="author">ana</a> left a comment <relative-time datetime="2026-10-21T09:00:00Z"></relative-time></div></div>
+      <div class="TimelineItem"><div class="TimelineItem-body"><div id="pullrequestreview-21" class="timeline-comment-group">${menu('Looks good', true)}
+        <div class="comment-body"><p>Looks good</p></div></div></div></div>
+    </div>
+    <div id="pullrequestreview-22" class="js-comment">
+      <div class="TimelineItem"><div class="TimelineItem-body"><a class="author">bo</a> left a comment <relative-time datetime="2026-10-21T10:00:00Z"></relative-time></div></div>
+      <div class="TimelineItem"><div class="TimelineItem-body"><div id="pullrequestreview-22" class="timeline-comment-group">${menu('By bo', false)}
+        <div class="comment-body"><p>By bo</p></div></div></div></div>
+      <div class="TimelineItem"><turbo-frame id="review-thread-or-comment-id-23">${menu('A diff comment', true)}<div class="comment-body"><p>A diff comment</p></div></turbo-frame></div>
+    </div>`,
+    'text/html',
+  );
+  const timeline = timelineFrom(page, { pageUrl: 'https://github.com/o/r/pull/1', threadIdsByReview: new Map(), commits: new Map() });
+
+  it("offers a comment's Markdown, from its menu's Copy Markdown, only where its menu offers Edit, with the comment's version", () => {
+    expect(timeline[0]).toMatchObject({ id: 'issuecomment-11', editableMarkdown: 'Ship it?\n\n```ts\nx()\n```', bodyVersion: 'v-11' });
+    expect(timeline[1]).toMatchObject({ id: 'issuecomment-12', bodyHtml: '<p>Not yours</p>' });
+    expect(timeline[1]).not.toHaveProperty('editableMarkdown');
+    expect(timeline[1]).not.toHaveProperty('bodyVersion');
+  });
+
+  it("offers a review's own Markdown where its own menu offers Edit, not that of a thread it opened, and no version where the page gives none", () => {
+    expect(timeline[2]).toMatchObject({ kind: 'review', id: 'pullrequestreview-21', editableMarkdown: 'Looks good' });
+    expect(timeline[2]).not.toHaveProperty('bodyVersion');
+    expect(timeline[3]).toMatchObject({ kind: 'review', id: 'pullrequestreview-22' });
+    expect(timeline[3]).not.toHaveProperty('editableMarkdown');
+  });
+});
+
 describe('descriptionPermalink', () => {
   it("is what GitHub's Copy link copies: the description header's link to #issue-<id>, not a link in its text", () => {
     // The shape of a public PR's description on github.com (2026-10-13), cut down.

@@ -72,6 +72,35 @@ describe('reviewThreads', () => {
   });
 });
 
+describe('reviewThreads, on diff comments the viewer may edit', () => {
+  it('offers the Markdown and version of each comment GitHub lets the viewer edit, and nothing of the others', () => {
+    const { threads } = reviewThreads(
+      threadsAnswer.parse({
+        threads: [
+          {
+            id: '3',
+            commentsData: {
+              comments: [
+                { databaseId: 601, author: { login: 'ana' }, body: 'Mine\r\nto fix', bodyHTML: '<p>Mine<br>to fix</p>', bodyVersion: 'v-601', viewerCanUpdate: true },
+                { databaseId: 602, author: { login: 'bo' }, body: 'Theirs', bodyHTML: '<p>Theirs</p>', bodyVersion: 'v-602', viewerCanUpdate: false },
+                { databaseId: 603, author: { login: 'ana' }, bodyHTML: '<p>No Markdown sent</p>', viewerCanUpdate: true },
+              ],
+            },
+          },
+        ],
+      }),
+      { diffSummaries: [] },
+      new DOMParser().parseFromString('<html><body></body></html>', 'text/html'),
+    );
+    const comments = threads[0]?.comments ?? [];
+    expect(comments[0]).toMatchObject({ id: '601', editableMarkdown: 'Mine\r\nto fix', bodyVersion: 'v-601' });
+    for (const comment of comments.slice(1)) {
+      expect(comment).not.toHaveProperty('editableMarkdown');
+      expect(comment).not.toHaveProperty('bodyVersion');
+    }
+  });
+});
+
 describe('conversationsIn', () => {
   it('counts the resolved threads of all', () => {
     expect(conversationsIn({ threads: [{ id: '1', isResolved: true }, { id: '2', isResolved: false }, { id: 3, isResolved: true }] })).toEqual({ resolved: 2, total: 3 });

@@ -21,12 +21,15 @@ export function Activity({
   onRetry,
   onRevealThread,
   onComment,
+  onEditComment,
 }: {
   pr: PrDetail;
   stage: StageState<PrStages['activity']>;
   onRetry: () => void;
   onRevealThread: (threadId: string) => void;
   onComment: (body: string) => Promise<boolean>;
+  /** Saves an edit of a comment or a review's summary, by its id, started on its version; true once GitHub has it. */
+  onEditComment: (commentId: string, version: string | undefined, body: string) => Promise<boolean>;
 }) {
   const entries: Array<Exclude<TimelineItem, CommitItem> | { kind: 'commits'; id: string; commits: CommitItem[] }> = [];
   for (const item of pr.timeline) {
@@ -53,6 +56,7 @@ export function Activity({
                         url={entry.url}
                         action={<span className="pr-muted">commented</span>}
                         footer={<Reactions subjectId={entry.subjectId} reactions={entry.reactions} />}
+                        edit={entry.editableMarkdown === undefined ? undefined : { markdown: entry.editableMarkdown, save: (body) => onEditComment(entry.id, entry.bodyVersion, body) }}
                       />
                     </li>
                   );
@@ -68,6 +72,7 @@ export function Activity({
                         url={entry.url}
                         action={<ReviewBadge state={entry.state} />}
                         footer={<Reactions subjectId={entry.subjectId} reactions={entry.reactions} />}
+                        edit={entry.editableMarkdown === undefined ? undefined : { markdown: entry.editableMarkdown, save: (body) => onEditComment(entry.id, entry.bodyVersion, body) }}
                       />
                       {firstThread && (
                         <button className="timeline-threads" onClick={() => onRevealThread(firstThread)}>

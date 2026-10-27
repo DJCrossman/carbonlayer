@@ -1,16 +1,25 @@
 // A GitHub comment as the PR page shows it (timeline comments, review bodies, thread comments), and the
 // Markdown HTML GitHub renders for it.
-import type { MouseEvent, ReactNode } from 'react';
+import { useRef, useState, type MouseEvent, type ReactNode, type Ref } from 'react';
 import type { UserRef } from '../lib/model';
 import { Avatar } from '../ui/Avatar';
+import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
+import { Kbd } from '../ui/Kbd';
 import { RelativeTime } from '../ui/RelativeTime';
 import { showToast } from '../ui/Toast';
 import { focusComment, followLink } from './navigation';
+import { CommentInput } from './primitives';
 import './comment.css';
 import './markdown.css';
 
-export function Comment({ author, createdAt, bodyHtml, url, action, footer, compact }: {
+/** What editing a comment needs: its Markdown, which the edit box starts from, and what saves an edit (true once saved). */
+export interface Editable {
+  markdown: string;
+  save: (body: string) => Promise<boolean>;
+}
+
+export function Comment({ author, createdAt, bodyHtml, url, action, footer, compact, edit }: {
   author: UserRef | null;
   createdAt: string;
   bodyHtml: string;
@@ -20,7 +29,11 @@ export function Comment({ author, createdAt, bodyHtml, url, action, footer, comp
   /** Shown under the body, e.g. its reactions. */
   footer?: ReactNode;
   compact?: boolean;
+  /** Where GitHub lets the viewer edit the comment: an Edit button in its header opens its edit box in place of its body. */
+  edit?: Editable;
 }) {
+  const [editing, setEditing] = useState(false);
+  const editButton = useRef<HTMLButtonElement | null>(null);
   return (
     <div className={`pr-comment ${compact ? 'is-compact' : ''}`}>
       <div className="pr-comment-header">
@@ -44,10 +57,24 @@ export function Comment({ author, createdAt, bodyHtml, url, action, footer, comp
         ) : (
           <RelativeTime date={createdAt} />
         )}
+        {edit && !editing && <EditButton ref={editButton} onClick={() => setEditing(true)} />}
         {url && <CopyLink url={url} />}
       </div>
-      {bodyHtml.trim() !== '' && <Markdown html={bodyHtml} />}
-      {footer}
+      {edit && editing ? (
+        <CommentEditor
+          edit={edit}
+          onClose={() => {
+            setEditing(false);
+            // Back on its Edit button, as GitHub's edit box gives the focus back.
+            requestAnimationFrame(() => editButton.current?.focus());
+          }}
+        />
+      ) : (
+        <>
+          {bodyHtml.trim() !== '' && <Markdown html={bodyHtml} />}
+          {footer}
+        </>
+      )}
     </div>
   );
 }
@@ -72,6 +99,45 @@ export function CopyLink({ url, subject = 'comment' }: { url: string; subject?: 
     >
       <Icon name="link" size={14} />
     </button>
+  );
+}
+
+/** Opens a comment's edit box, as GitHub's Edit does: a pencil beside its Copy link, seen as the Copy link is (comment.css). */
+export function EditButton({ subject = 'comment', onClick, ref }: { subject?: 'comment' | 'description'; onClick: () => void; ref?: Ref<HTMLButtonElement> }) {
+  return (
+    <button ref={ref} type="button" className="pr-comment-edit" aria-label={`Edit ${subject}`} title="Edit" onClick={onClick}>
+      <Icon name="pencil" size={14} />
+    </button>
+  );
+}
+
+/**
+ * A comment's edit box, as GitHub's: the comment box holding its Markdown, then Cancel and "Update comment". ⌘↵ saves, Esc
+ * cancels. It edits the comment as it was when the edit started, should the comment load again meanwhile. While GitHub
+ * saves the edit the box takes no input; once saved it closes, and a refused edit leaves its text in the box.
+ */
+export function CommentEditor({ edit, onClose }: { edit: Editable; onClose: () => void }) {
+  const [started] = useState(edit);
+  const [body, setBody] = useState(edit.markdown);
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    setSaving(true);
+    const saved = await started.save(body);
+    setSaving(false);
+    if (saved) onClose();
+  };
+  return (
+    <div className="pr-comment-editor">
+      <CommentInput value={body} onChange={setBody} onSubmit={save} onCancel={onClose} placeholder="Leave a comment" autoFocus disabled={saving} />
+      <div className="pr-comment-editor-actions">
+        <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
+          Cancel
+        </Button>
+        <Button variant="primary" size="sm" onClick={save} disabled={saving}>
+          Update comment <Kbd>⌘↵</Kbd>
+        </Button>
+      </div>
+    </div>
   );
 }
 

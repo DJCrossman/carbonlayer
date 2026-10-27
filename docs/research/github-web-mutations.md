@@ -1,7 +1,8 @@
 # GitHub React PR page: same-origin requests (from the public JS bundles, 2026-10-09; nothing was sent)
 
 Every PR action is a same-origin JSON `fetch` to `P = /{owner}/{repo}/pull/{n}/page_data/<route>`, except
-"viewed" which uses `/{owner}/{repo}/pull/{n}/file_review`, and reactions, still a classic form (see Reactions below).
+"viewed" which uses `/{owner}/{repo}/pull/{n}/file_review`, reactions, still a classic form (see Reactions below), and
+edits of a conversation comment or a review's summary, form fields to their own addresses (see Editing comments below).
 No Relay / persisted-query ids and, reactions aside, no `authenticity_token` are involved. Route names are plain strings in one enum (module `UT` in
 `4t-c2bbc4f2c8ef0b83.js`); chunk hashes change with every deploy, the route names are the contract.
 
@@ -30,7 +31,8 @@ No Relay / persisted-query ids and, reactions aside, no `authenticity_token` are
    - reply: `{ text, submitBatch, inReplyTo: <last comment databaseId>, path, comparisonStartOid, comparisonEndOid }`
    `submitBatch: false` = add to the pending review; `true` = post immediately. → `{ thread: { id, … }, comment: { databaseId, … } }`.
    Resolve: `POST P/resolve_thread` `{ threadId, resolution_reason? }`; unresolve: `POST P/unresolve_thread`
-   `{ threadId }` (`threadId` is the numeric string `threads[].id`). Edit: `PUT P/update_review_comment` `{ body, commentId }`.
+   `{ threadId }` (`threadId` is the numeric string `threads[].id`). Edit: `PUT P/update_review_comment` `{ body, commentId }`
+   (with its version, see Editing comments).
    Delete: `DELETE P/review_comments/{databaseId}`.
 4. **Merge**: `POST P/merge` `{ mergeMethod: "MERGE"|"SQUASH"|"REBASE", commitTitle, commitMessage,
    bypassBranchProtections: bool, authorEmail? }` (no head-SHA guard). Update branch: `POST
@@ -332,6 +334,69 @@ Where the current reactions are:
 - diff comments, in `page_data/threads`: each comment's `id` (`PRRC_…`) and `reactionGroups: [{ reaction: { content,
   viewerHasReacted }, reactors: [...], totalCount }]`, all eight contents listed, zero counts included.
 
+## Editing comments (read from GitHub's bundles and public PR pages signed out, 2026-10-27; nothing sent)
+**What CarbonLayer sends** is what GitHub's React PR UI sends for each surface: its files view for a diff comment, and
+its "Overview" (`OverviewTimelinePanel`, chunk `z0-aef251b5fbae1bb5.js`; the page_data/header `featureStates.overview` was
+`UNAVAILABLE` on public PRs signed out) for the description, a conversation comment and a review's summary. Its route map
+(`uT` in `7d-9de51296df3af678.js`) has `updateDescription: "update_description"` and `updateReviewComment:
+"update_review_comment"` (beside `updateTitle`, `hideComment`, `unhideComment`, `description`, `conversationComments`), and
+no route for an issue comment or a review: those go to their Rails addresses. All through GitHub's verified fetch
+(module `VY` in app-runtime: `DI` adds `GitHub-Verified-Fetch` and `kt()`'s `X-Requested-With`, `X-Fetch-Nonce`,
+`X-GitHub-Client-Version`; `QJ` adds `GitHub-Is-React`; `Sr`, used through `q$` of module `qIa`, also `Accept` and
+`Content-Type: application/json` and a JSON body). No `authenticity_token`.
+- **Description**: `PATCH P/update_description`, JSON `{ body }` (through `q$`). The answer is read as the description's
+  data, `page_data/description`'s shape. Failure: "Failed to update description"; success: "Pull request description updated
+  successfully." GitHub offers "Edit description" when `layoutCurrentUser.canEditTitle` (selector `eL` in module `jg`,
+  `10y-5e576a8f14f8ec33.js`), the header stage's `viewerCanUpdate`.
+- **Conversation comment**: `PUT /{owner}/{repo}/issue_comments/{databaseId}`, a `FormData` body `issue_comment[body]`,
+  `body_version` (the comment's `bodyVersion` when the edit started), `Accept: application/json`, through `QJ` (function `lz`).
+  Answer `{ source, body (HTML), newBodyVersion, lastUserContentEdit }`.
+- **Review summary**: `PUT /{owner}/{repo}/pull/{n}/reviews/{databaseId}/update`, `FormData` `pull_request_review[body]`,
+  `body_version`, the same way (function `oC`).
+- **Diff comment**: `PUT P/update_review_comment?body_version=<bodyVersion>` (no query without a version), JSON `{ body,
+  commentId: String(databaseId) }`, through `q$` (`1i-6d5de88b35e79530.js`). Answer `{ threadId, commentDatabaseId, body,
+  bodyHTML, bodyVersion, lastUserContentEdit }`; failure "Failed to update comment".
+- **Refusals** (module `qIa`, `md-6857b71962c0d6d9.js`): a non-2xx answer with `stale: true` (and `updated_markdown`,
+  `updated_html`, `version`) is an edit made over a newer one, "The content you are editing has changed. Please review the
+  latest changes and try again." (checked first for the two form edits); else GitHub's `{ error }`, or "Unknown error
+  occurred"; a 5xx "The server is currently unable to perform this operation. Please try again later." Edit shows only where
+  the comment's `viewerCanUpdate`.
+
+**The classic conversation page** edits the same addresses with its own forms: `form.js-comment-update`, `_method=put` and a
+token of its own, actions `/{owner}/{repo}/issues/{n}` (the description), `/{owner}/{repo}/issue_comments/{id}` and
+`/{owner}/{repo}/pull/{n}/reviews/{id}/update` (seen on public PRs). Its other fields load when Edit is clicked
+(`include-fragment.js-comment-edit-form-deferred-include-fragment`, `src="…/edit_form?textarea_id=…&comment_context="`; 404
+signed out). GitHub's remote-form posts it multipart with `Accept: application/json` and `X-Body-Version` from the
+`.js-comment`'s `data-body-version` when it has one (`yga-dd50cf95593467fe.js`), and reads `{ body, source, newBodyVersion,
+errors }`: a 422 with `errors` says "There was an error posting your comment: …", one with `stale` marks the comment stale.
+CarbonLayer sends the React requests instead, which need no form token.
+
+**Who may edit what, and from what Markdown** (public pages signed out; nodejs/node#62105, react/react#31000):
+- The conversation page (the content sits inside `turbo-frame#repo-content-turbo-frame`) renders each comment's, each review
+  summary's and the description's options menu inline (`.timeline-comment-actions details-menu`, `src=""`), holding "Copy
+  link" and "Copy Markdown": `<clipboard-copy role="menuitem" value="<the Markdown as GitHub keeps it>">`. A code block's own
+  copy button is a `clipboard-copy[value]` without the role. The value keeps GitHub's raw CRs (a body written in the web UI
+  ends its lines with CRLF), which an HTML parser turns into LF: the Markdown read may differ from GitHub's in line ends.
+  GitHub's classic JS handles `.js-comment-edit-button`, the menu's Edit; a signed-out page has none. CarbonLayer offers Edit
+  where that button is in the comment's own menu (a review's: outside its threads' `turbo-frame`s). UNVERIFIED signed in:
+  that the menu holds Edit exactly where the viewer may edit the comment, and nothing more.
+- A conversation comment's `.timeline-comment.js-comment` carries `data-body-version`, 64 hex digits: the SHA-256 of its
+  Markdown as GitHub keeps it (checked on 8 comments; `bodyVersion` against `body` likewise for 98 diff comments and 5
+  conversation_comments items). A review's `.js-comment` and the description carried none, so CarbonLayer sends a review's
+  edit without a version, as GitHub's classic page sends no `X-Body-Version` for it.
+- `page_data/description`: `{ body, bodyHtml, bodyVersion, editInformation: { lastUserContentEdit,
+  viewerCanReadUserContentEdits }, reactionGroups, viewerCanReact }`, no can-edit flag. CarbonLayer reads the description's
+  Markdown from its menu's Copy Markdown, or this `body` where the conversation renders no description.
+- `page_data/threads` comments carry `body`, `bodyHTML`, `bodyVersion`, `databaseId`, `viewerCanUpdate`, `viewerCanDelete`,
+  `viewerCanMinimize`, … (keys confirmed).
+- `page_data/conversation_comments` (what the Overview reads; 40 a page, `Link: <…?after=…>; rel="next"`, `?direction=desc`
+  newest first, one item at `…/conversation_comments/{type}/{id}`) lists `issue` and `review_summary` items with `id`
+  (database id), `relayId`, `body`, `bodyHTML`, `bodyVersion`, `viewerCanUpdate`, `viewerCanDelete`, …. CarbonLayer does not
+  ask for it: the conversation page it already reads has the menus.
+
+UNVERIFIED: none of these writes has been sent; GitHub's answers to them, and whether its Rails addresses take the React
+form edits from a viewer without the Overview, are read from the bundle only.
+
 ## Labels and assignees (classic sidebar forms; read from GitHub's page signed in, 2026-10-22, nothing sent)
 GitHub's own PR sidebar (`#partial-discussion-sidebar` on the classic conversation page) sets labels and assignees with
 classic Rails forms on the ISSUE path of the PR's number, `I = /{owner}/{repo}/issues/{n}`. Read on one PR's page with
@@ -395,6 +460,12 @@ one the write asks for a reload), the empty `issue[user_assignee_ids][]`, then t
 | `app-runtime-e674540d54849b57.js` | `"Can not make cross-origin requests from verifiedFetch"` (`DI`, module `Qh`) |
 | `hj-ece3bec966e8a2b6.js` | `"header-3":{prefix:"### "}` (markdown-toolbar-element's styles) |
 | `cqs-5eeaa26044996c16.js` | `mergeAction:"AUTO_MERGE"` (a stack's auto-merge); `StackRebaseOptional` (the stack's sections, module `MDN`); `expectedHeadOids:n` and `"DONE"===t.jobState` (Rebase stack, module `p0l`) |
+| `7d-9de51296df3af678.js` | `updateReviewComment:"update_review_comment"`, `updateDescription:"update_description"` (the route map `uT`) |
+| `z0-aef251b5fbae1bb5.js` | `` issue_comments/${t}` `` with `r.set("issue_comment[body]",n)`; `` /reviews/${t}/update` ``; `j.uT.updateDescription` with `method:"PATCH"`; `"Edit description"` |
+| `1i-6d5de88b35e79530.js` | `` ?body_version=${n} `` with `method:"PUT",body:{body:i,commentId:t}` |
+| `md-6857b71962c0d6d9.js` | `"The content you are editing has changed. Please review the latest changes and try again."` (module `qIa`: `q$`, `hp`, `R`, `C$`) |
+| `app-runtime-1a555c9bb4a1f269.js` | `QJ:()=>s` (`GitHub-Is-React` over `verifiedFetch`, module `VY`) |
+| `yga-dd50cf95593467fe.js` | `".js-comment .js-comment-update"`, `X-Body-Version` (the classic edit form) |
 
 Limits: no POST/PUT/DELETE was sent; bodies come from the code; the signed-out page loads 248 of 1,537
 chunks, but every action above is in those.

@@ -333,6 +333,43 @@ describe('mutations', () => {
     expect(fetch.mock.calls[0]?.[0]).toBe('/o/r/issues/1/show_partial?partial=issues%2Fsidebar%2Flabels_menu_content');
   });
 
+  it("saves edits as GitHub's own page does: the description as JSON, a comment and a review's summary as form fields with their version, a diff comment by its database id", async () => {
+    const writes: Array<{ method: string; url: string; contentType: string | null; accept: string | null; verified: string | null; body: unknown }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit = {}) => {
+        const headers = new Headers(init.headers);
+        const body = init.body instanceof FormData ? [...init.body.entries()] : JSON.parse(String(init.body));
+        writes.push({ method: init.method ?? 'GET', url, contentType: headers.get('Content-Type'), accept: headers.get('Accept'), verified: headers.get('GitHub-Verified-Fetch'), body });
+        return Response.json({});
+      }),
+    );
+    await mutations['pr.editDescription']({ prId: 'PR_1', body: 'The new description' });
+    await mutations['pr.editComment']({ prId: 'PR_1', commentId: 'issuecomment-11', version: 'v-11', body: 'Edited' });
+    await mutations['pr.editComment']({ prId: 'PR_1', commentId: 'pullrequestreview-21', body: 'Edited review' });
+    await mutations['pr.editThreadComment']({ prId: 'PR_1', commentId: '9001', version: 'v-9001', body: 'Edited diff comment' });
+    await mutations['pr.editThreadComment']({ prId: 'PR_1', commentId: '9002', body: 'No version' });
+    const verified = { accept: 'application/json', verified: 'true' };
+    expect(writes).toEqual([
+      { method: 'PATCH', url: `${P}/update_description`, contentType: 'application/json', ...verified, body: { body: 'The new description' } },
+      { method: 'PUT', url: '/o/r/issue_comments/11', contentType: null, ...verified, body: [['issue_comment[body]', 'Edited'], ['body_version', 'v-11']] },
+      { method: 'PUT', url: '/o/r/pull/1/reviews/21/update', contentType: null, ...verified, body: [['pull_request_review[body]', 'Edited review']] },
+      { method: 'PUT', url: `${P}/update_review_comment?body_version=v-9001`, contentType: 'application/json', ...verified, body: { body: 'Edited diff comment', commentId: '9001' } },
+      { method: 'PUT', url: `${P}/update_review_comment`, contentType: 'application/json', ...verified, body: { body: 'No version', commentId: '9002' } },
+    ]);
+  });
+
+  it("says in GitHub's words why it refused an edit: made over a newer one, or GitHub's own reason", async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ stale: true, updated_markdown: 'Theirs', version: 'v-2' }, { status: 422 })));
+    await expect(mutations['pr.editComment']({ prId: 'PR_1', commentId: 'issuecomment-11', version: 'v-1', body: 'Mine' })).rejects.toThrow(
+      'The content you are editing has changed. Please review the latest changes and try again.',
+    );
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'Body is too long (maximum is 65536 characters)' }, { status: 422 })));
+    await expect(mutations['pr.editThreadComment']({ prId: 'PR_1', commentId: '9001', version: 'v-9001', body: 'Long' })).rejects.toThrow('Body is too long (maximum is 65536 characters)');
+    await expect(mutations['pr.editComment']({ prId: 'PR_1', commentId: 'commit-1', body: 'x' })).rejects.toThrow('There is no comment commit-1 to edit');
+    await expect(mutations['pr.editDescription']({ prId: 'PR_unknown', body: 'x' })).rejects.toThrow('Open the pull request first');
+  });
+
   it('refuses to write to a pull request the app has not loaded', async () => {
     await expect(mutations['pr.comment']({ prId: 'PR_unknown', body: 'x' })).rejects.toThrow('Open the pull request first');
     await expect(mutations['pr.resolveThread']({ threadId: 'nope', resolved: true })).rejects.toThrow('Open the pull request first');

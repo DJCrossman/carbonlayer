@@ -248,6 +248,20 @@ const reactable = {
   reactions: z.array(reactionSchema),
 };
 
+/** What a comment the viewer may edit has. */
+const editable = {
+  /**
+   * The comment's Markdown as GitHub keeps it, which an edit starts from, where GitHub lets the viewer edit the comment;
+   * absent where it does not.
+   */
+  editableMarkdown: z.optional(z.string()),
+  /**
+   * The version of the comment GitHub's own page sends with an edit of it, by which GitHub refuses an edit made over a
+   * newer one; absent where the page does not give it, or the viewer may not edit the comment.
+   */
+  bodyVersion: z.optional(z.string()),
+};
+
 export const reviewThreadSchema = z.object({
   id: z.string(),
   path: z.string(),
@@ -258,13 +272,13 @@ export const reviewThreadSchema = z.object({
   isResolved: z.boolean(),
   isOutdated: z.boolean(),
   diffHunk: z.string(),
-  comments: z.array(z.object({ id: z.string(), author: userRefSchema, bodyHtml: z.string(), createdAt: z.string(), url: z.string(), ...reactable })),
+  comments: z.array(z.object({ id: z.string(), author: userRefSchema, bodyHtml: z.string(), createdAt: z.string(), url: z.string(), ...reactable, ...editable })),
 });
 
 export type ReviewThread = z.infer<typeof reviewThreadSchema>;
 
 export const timelineItemSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('comment'), id: z.string(), author: userRefSchema, bodyHtml: z.string(), createdAt: z.string(), url: z.string(), ...reactable }),
+  z.object({ kind: z.literal('comment'), id: z.string(), author: userRefSchema, bodyHtml: z.string(), createdAt: z.string(), url: z.string(), ...reactable, ...editable }),
   z.object({
     kind: z.literal('review'),
     id: z.string(),
@@ -276,6 +290,7 @@ export const timelineItemSchema = z.discriminatedUnion('kind', [
     /** Thread ids opened by this review, so the UI can link review → threads. */
     threadIds: z.array(z.string()),
     ...reactable,
+    ...editable,
   }),
   z.object({
     kind: z.literal('commit'),
@@ -323,6 +338,11 @@ export const prDetailSchema = z.extend(prSummarySchema, {
   descriptionReactions: z.array(reactionSchema),
   /** GitHub's permalink to the description (`…/pull/<n>#issue-<id>`); null when the conversation names none. */
   descriptionUrl: z.nullable(z.string()),
+  /**
+   * The description's Markdown as GitHub keeps it, which editing it starts from, where GitHub lets the viewer edit it (as
+   * it lets them edit the title, `viewerCanUpdate`); absent where it does not, or the page did not give it.
+   */
+  editableDescription: z.optional(z.string()),
   headOid: z.string(),
   baseOid: z.string(),
   assignees: z.array(userRefSchema),
@@ -394,6 +414,7 @@ export const prStagesSchema = z.object({
       bodyHtml: true,
       descriptionReactions: true,
       descriptionUrl: true,
+      editableDescription: true,
       headOid: true,
       viewerCanUpdate: true,
       viewerDidAuthor: true,

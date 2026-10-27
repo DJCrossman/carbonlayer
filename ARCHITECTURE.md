@@ -42,7 +42,11 @@ to (reverting a merged PR is an empty POST to `/pull/{n}/revert`, as GitHub's Re
 prefilled page for the revert pull request), except re-running checks: the PR page cannot, so `github-web/actions.ts` submits the classic form in the re-run dialog of
 GitHub's Actions run page. Reactions are a classic form too: `pr.react` posts the `form.js-pick-reaction` GitHub's
 conversation renders under each comment to `/{o}/{r}/reactions`, with the token the header stage read from one of those forms,
-while the page shows the reaction at once (`src/pr/Reactions.tsx`). A comment box's Preview tab is GitHub's own rendering: the multipart POST to
+while the page shows the reaction at once (`src/pr/Reactions.tsx`). An edited comment is saved as GitHub's React page saves
+it: the description as `page_data/update_description`, a diff comment as `page_data/update_review_comment`, and a
+conversation comment or a review's summary as form fields to its own address (`/issue_comments/{id}`,
+`/pull/{n}/reviews/{id}/update`), each with the comment's version when the edit started where the page gave one, so that
+GitHub refuses an edit made over a newer one. A comment box's Preview tab is GitHub's own rendering: the multipart POST to
 `/preview` GitHub's comment box sends for a comment on the PR (`markdown.preview`), which changes nothing. The comment
 boxes themselves (`CommentInput` in `src/pr/primitives.tsx`) work like GitHub's: its toolbar, shortcuts, lists that
 continue and links on paste, each a pure command in `src/pr/markdown-editing.ts`, and the emoji GitHub's box suggests
@@ -229,6 +233,17 @@ page does not show (hidden, or gone) leaves the page as it is, as does the reade
 A plain click on a comment's time, a link to its permalink as GitHub's is, does the same in place (`focusComment` in
 `src/pr/navigation.ts`): the top window moves to the permalink inside the app, a history entry, so the address bar holds
 the link to copy and Back takes the mark off; ⌘ / Ctrl / Shift / Alt clicks stay the browser's.
+
+Editing comments: where GitHub lets the viewer edit a comment, its header has an Edit (a pencil before its Copy link, seen
+as the Copy link is; the description's in its top corner), which puts GitHub's edit box in place of the comment: the comment
+box (`CommentInput`) holding its Markdown, then Cancel and "Update comment" (`CommentEditor` in `src/pr/Comment.tsx`). ⌘↵
+saves and Esc cancels; while GitHub saves the edit the box takes no input, then the stage the comment is in loads again
+(`STAGES_A_WRITE_CHANGES`) and the box closes on the new text; a refused edit keeps its text and says why in a toast. The
+conversation says who may edit what: a comment's or review's own options menu offers Edit only where the viewer may, its
+Copy Markdown holds the Markdown, and a comment's `data-body-version` its version (`editableMarkdown`, `bodyVersion` in
+`src/lib/github-web/timeline.ts`); a diff comment's come from `page_data/threads` (`viewerCanUpdate`, `body`, `bodyVersion`);
+the description is the viewer's to edit where the title is (`editableDescription`). See
+`docs/research/github-web-mutations.md`.
 
 File links: each file's header copies as Graphite's does (`FileCard` in `src/pr/Files.tsx`), each copy confirmed in a
 toast. A click on its path copies the path: `@pierre/diffs` draws the path in the diff's shadow root, so the card hears

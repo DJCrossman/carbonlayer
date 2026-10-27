@@ -1,7 +1,8 @@
 // The pull request page: header, stack, description, activity and every diff in one scroll, with status in
 // a sticky sidebar and Graphite's keybindings. Everything comes through `source`, in stages (page-data.ts): the
 // header first, then each part as its stage arrives, each with its own skeleton. Each mutation is shown optimistically
-// where that matters (viewed, resolved, draft, auto-merge, reactions) and then reloads the stages it changed.
+// where that matters (viewed, resolved, draft, auto-merge, reactions) and then reloads the stages it changed; an edited
+// comment keeps its edit box until GitHub has the edit and its stage has loaded again.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { postToParent } from '../app/bridge';
@@ -23,7 +24,7 @@ import { showToast, ToastHost } from '../ui/Toast';
 import { Activity } from './Activity';
 import { AssigneesCard } from './Assignees';
 import { useCheckReruns } from './check-reruns';
-import { CopyLink, Markdown } from './Comment';
+import { CommentEditor, CopyLink, EditButton, Markdown } from './Comment';
 import { CommentsDrawer } from './CommentsDrawer';
 import { FilesSection, useFileReview } from './Files';
 import { usePrKeybindings } from './keybindings';
@@ -128,6 +129,8 @@ function PrView({
   const [reviewerPickerOpen, setReviewerPickerOpen] = useState(false);
   const [stackCollapsed, setStackCollapsed] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
+  const [editingDescription, setEditingDescription] = useState(false);
+  const editDescriptionButton = useRef<HTMLButtonElement | null>(null);
   const [legendHidden, setLegendHidden] = useState(() => {
     try {
       return localStorage.getItem('gg:pr-legend-hidden') === '1';
@@ -359,6 +362,10 @@ function PrView({
       }),
     removePending: (index) => setBatch((current) => current.filter((_, at) => at !== index)),
     closeComposer: files.closeComposer,
+    editComment: (commentId, version, body) =>
+      mutate(STAGES_A_WRITE_CHANGES['pr.editThreadComment'], () => source.editThreadComment(pr.id, commentId, version, body), 'Could not update the comment', {
+        success: 'Comment updated',
+      }),
   };
 
   usePrKeybindings((action) => {
@@ -495,16 +502,38 @@ function PrView({
             </Staged>
           )}
           <section className="pr-description" id="pr-description" aria-label="Description">
-            {pr.descriptionUrl && <CopyLink url={pr.descriptionUrl} subject="description" />}
-            {/* The inbox's row has no description; the page's own header brings it. */}
-            {data.header.status === 'placeholder' ? (
-              <Skeleton width="100%" height={110} />
-            ) : pr.bodyHtml.trim() ? (
-              <Markdown html={pr.bodyHtml} />
+            {/* Where GitHub lets the viewer edit it, its Markdown in GitHub's edit box, in place of the description. */}
+            {pr.editableDescription !== undefined && editingDescription ? (
+              <CommentEditor
+                edit={{
+                  markdown: pr.editableDescription,
+                  save: (body) =>
+                    mutate(STAGES_A_WRITE_CHANGES['pr.editDescription'], () => source.editDescription(pr.id, body), 'Could not update the description', {
+                      success: 'Description updated',
+                    }),
+                }}
+                onClose={() => {
+                  setEditingDescription(false);
+                  requestAnimationFrame(() => editDescriptionButton.current?.focus());
+                }}
+              />
             ) : (
-              <p className="pr-muted pr-description-empty">No description provided.</p>
+              <>
+                {pr.editableDescription !== undefined && data.header.status !== 'placeholder' && (
+                  <EditButton ref={editDescriptionButton} subject="description" onClick={() => setEditingDescription(true)} />
+                )}
+                {pr.descriptionUrl && <CopyLink url={pr.descriptionUrl} subject="description" />}
+                {/* The inbox's row has no description; the page's own header brings it. */}
+                {data.header.status === 'placeholder' ? (
+                  <Skeleton width="100%" height={110} />
+                ) : pr.bodyHtml.trim() ? (
+                  <Markdown html={pr.bodyHtml} />
+                ) : (
+                  <p className="pr-muted pr-description-empty">No description provided.</p>
+                )}
+                <Reactions subjectId={pr.id} reactions={pr.descriptionReactions} />
+              </>
             )}
-            <Reactions subjectId={pr.id} reactions={pr.descriptionReactions} />
           </section>
           <Activity
             pr={pr}
@@ -512,6 +541,9 @@ function PrView({
             onRetry={() => retry(['activity'])}
             onRevealThread={files.revealThread}
             onComment={(body) => mutate(STAGES_A_WRITE_CHANGES['pr.comment'], () => source.comment(pr.id, body), 'Could not post the comment', { success: 'Comment posted' })}
+            onEditComment={(commentId, version, body) =>
+              mutate(STAGES_A_WRITE_CHANGES['pr.editComment'], () => source.editComment(pr.id, commentId, version, body), 'Could not update the comment', { success: 'Comment updated' })
+            }
           />
         </div>
         <Sidebar

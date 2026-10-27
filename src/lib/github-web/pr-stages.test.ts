@@ -159,6 +159,44 @@ describe('the PR page in stages', () => {
     await expect(failure).rejects.toThrow(issue);
   });
 
+  it("offers the description's Markdown, from its Copy Markdown, to a viewer GitHub lets edit the title, and to nobody else", async () => {
+    const answer = (canEditTitle: boolean) => async (url: string) => {
+      if (url.endsWith('/tab_counts') || url.endsWith('/diffstat')) return Response.json({});
+      const layout = { pullRequest: { id: 1, relayId: 'PR_1', number: 1, title: 'T', state: 'OPEN', baseBranch: 'main', headBranch: 'fix', headSha: 'h', createdTime: '2026-10-01T00:00:00Z' }, user: { canEditTitle } };
+      return new Response(
+        `<html><head><meta name="user-login" content="ana"></head><body>
+          <script type="application/json" data-target="react-app.embeddedData">${JSON.stringify({ payload: { pullRequestsLayoutRoute: layout } })}</script>
+          <div class="TimelineItem"><div id="pullrequest-1" class="timeline-comment js-comment">
+            <div class="timeline-comment-actions"><clipboard-copy role="menuitem" value="The **description**">Copy Markdown</clipboard-copy></div>
+            <div class="comment-body"><p>The <strong>description</strong></p></div></div></div>
+        </body></html>`,
+        { headers: { 'content-type': 'text/html' } },
+      );
+    };
+    vi.stubGlobal('fetch', vi.fn(answer(true)));
+    expect(await loadStage('header')).toMatchObject({ viewerCanUpdate: true, bodyHtml: '<p>The <strong>description</strong></p>', editableDescription: 'The **description**' });
+    vi.stubGlobal('fetch', vi.fn(answer(false)));
+    const header = await loadStage('header');
+    expect(header.viewerCanUpdate).toBe(false);
+    expect(header).not.toHaveProperty('editableDescription');
+  });
+
+  it("offers page_data/description's Markdown where the conversation renders no description", async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.endsWith('/page_data/description')) return Response.json({ bodyHtml: '<p>From the route</p>', body: 'From the route' });
+        if (url.endsWith('/tab_counts') || url.endsWith('/diffstat')) return Response.json({});
+        const layout = { pullRequest: { id: 1, relayId: 'PR_1', number: 1, title: 'T', state: 'OPEN', baseBranch: 'main', headBranch: 'fix', headSha: 'h', createdTime: '2026-10-01T00:00:00Z' }, user: { canEditTitle: true } };
+        return new Response(
+          `<html><head><meta name="user-login" content="ana"></head><body><script type="application/json" data-target="react-app.embeddedData">${JSON.stringify({ payload: { pullRequestsLayoutRoute: layout } })}</script></body></html>`,
+          { headers: { 'content-type': 'text/html' } },
+        );
+      }),
+    );
+    expect(await loadStage('header')).toMatchObject({ bodyHtml: '<p>From the route</p>', editableDescription: 'From the route' });
+  });
+
   it('asks a signed-out viewer to sign in from the header', async () => {
     requests = serveGitHub({}, '');
     await expect(loadStage('header')).rejects.toThrow(SIGNED_OUT);

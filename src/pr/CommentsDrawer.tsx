@@ -1,7 +1,7 @@
 // Graphite's comments drawer: every review conversation and every comment batched for the review, each with the code it
 // sits on, filtered by reviewer and status and sorted by file or by age (comments-drawer.ts picks them). It sits to the
 // right of the page, which makes room for it. A conversation's header jumps to it in the diff; there, as in the diff,
-// it resolves or reopens, takes a reply and reactions.
+// it resolves or reopens, takes a reply and reactions, and edits a comment where GitHub lets the viewer.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ReviewThreadDraft } from '../app/data-source';
 import { githubUser } from '../lib/github-web/session';
@@ -272,6 +272,7 @@ function Conversation({
               url={comment.url}
               footer={<Reactions subjectId={comment.subjectId} reactions={comment.reactions} />}
               compact
+              edit={comment.editableMarkdown === undefined ? undefined : { markdown: comment.editableMarkdown, save: (body) => actions.editComment(comment.id, comment.bodyVersion, body) }}
             />
           ))
         ) : (

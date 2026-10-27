@@ -53,6 +53,10 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
     const updatedAt = times.filter((time): time is string => !!time && !Number.isNaN(Date.parse(time))).sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? pr.createdTime;
     // The description as the conversation renders it, so it comes with the page; page_data/description when it does not.
     const description = page.querySelector('[id^="pullrequest-"] .comment-body');
+    const described = description ? null : await github.description();
+    // GitHub's own page lets whoever may edit the title edit the description. Its Markdown is what the description's Copy
+    // Markdown copies, or page_data/description's `body`.
+    const markdown = description ? page.querySelector('[id^="pullrequest-"] .timeline-comment-actions clipboard-copy[role="menuitem"][value]')?.getAttribute('value') : described?.body;
     const header: PrStages['header'] = {
       id: pr.relayId,
       repo: pull.repo,
@@ -72,10 +76,11 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
       changedFiles: tabCounts.filesChangedCount ?? 0,
       commentCount: tabCounts.conversationCount ?? 0,
       nativeStack: nativeStack && { position: nativeStack.position, size: nativeStack.size },
-      bodyHtml: description ? description.innerHTML.trim() : ((await github.description())?.bodyHtml ?? ''),
+      bodyHtml: description ? description.innerHTML.trim() : (described?.bodyHtml ?? ''),
       // The conversation's reaction form that names the PR itself is the description's.
       descriptionReactions: [...page.querySelectorAll('form.js-pick-reaction')].map((form) => reactionsIn(form)).find(({ subjectId }) => subjectId === pr.relayId)?.reactions ?? [],
       descriptionUrl: descriptionPermalink(page, `https://github.com${pull.path}`),
+      ...(layout.user?.canEditTitle && typeof markdown === 'string' && { editableDescription: markdown }),
       headOid: pr.headSha,
       viewerCanUpdate: layout.user?.canEditTitle ?? false,
       viewerDidAuthor: viewerLogin === author.login,
@@ -160,7 +165,7 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
     const [header, page] = await Promise.all([stages.header(github, pull), github.page()]);
     const { stack } = layoutOf(page, pull);
     // The page puts everything it knows about this PR in its own entry; the header is what the stack itself needs.
-    const { bodyHtml, descriptionReactions, descriptionUrl, headOid, viewerCanUpdate, viewerDidAuthor, viewerLogin, stackSource, ...summary } = header;
+    const { bodyHtml, descriptionReactions, descriptionUrl, editableDescription, headOid, viewerCanUpdate, viewerDidAuthor, viewerLogin, stackSource, ...summary } = header;
     const current: PrSummary = {
       ...summary,
       reviewDecision: 'NONE',
@@ -290,7 +295,7 @@ const tabCountsAnswer = z.object({ filesChangedCount: z.nullish(z.number()), con
 const diffstatAnswer = z.object({ diffstat: z.nullish(z.object({ linesAdded: z.nullish(z.number()), linesDeleted: z.nullish(z.number()) })) });
 
 /** page_data/description (the fields read here), for a PR whose conversation renders no description. */
-const descriptionAnswer = z.object({ bodyHtml: z.nullish(z.string()) });
+const descriptionAnswer = z.object({ bodyHtml: z.nullish(z.string()), body: z.nullish(z.string()) });
 
 /** page_data/labels (the fields read here). */
 const labelsAnswer = z.object({ labels: z.nullish(z.array(z.object({ name: z.string(), color: z.string() }))) });

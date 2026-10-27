@@ -184,6 +184,11 @@
 .pr-description > .pr-comment-link { position: absolute; top: 6px; right: 6px; background: var(--gg-bg); }
 .pr-description > .pr-comment-link:hover { background: var(--gg-bg-hover); }
 .pr-description:hover > .pr-comment-link { opacity: 1; }
+/* Its Edit, where the viewer may edit it, sits to the left of the Copy link, or in the corner without one. */
+.pr-description > .pr-comment-edit { position: absolute; top: 6px; right: 28px; background: var(--gg-bg); }
+.pr-description > .pr-comment-edit:not(:has(+ .pr-comment-link)) { right: 6px; }
+.pr-description > .pr-comment-edit:hover { background: var(--gg-bg-hover); }
+.pr-description:hover > .pr-comment-edit { opacity: 1; }
 /* Opened from a link to it (PrPage's useLinkedComment), as GitHub marks the comment a link names. */
 .pr-description.is-linked { border-color: var(--gg-accent); box-shadow: 0 0 0 1px var(--gg-accent); }
 .pr-description-empty { margin: 0; font-style: italic; }

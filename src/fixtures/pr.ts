@@ -1,6 +1,7 @@
 // PR page fixtures for the dev harness (`app.html?fixtures=1#/pr/acme/widgets/42`): a three-PR stack in
 // acme/widgets. #41 (bottom) is approved and green, #42 (middle) has review feedback and a failing check, both
-// mona's; #43 (top) is jlord's draft. Patches are written as line arrays so blank context lines keep their
+// mona's; #43 (top) is jlord's draft. The viewer, octocat, may edit #41's and #42's descriptions and some of #42's
+// comments, those with `editableMarkdown` (GitHub lets a repository's writers edit others' comments). Patches are written as line arrays so blank context lines keep their
 // leading space; every hunk header's counts match its body (the diff parser validates them).
 
 import type { PrDetail, PrSummary, ReviewThread, UserRef } from '../lib/model';
@@ -164,6 +165,7 @@ const threads42: ReviewThread[] = [
         url: 'https://github.com/acme/widgets/pull/42#discussion_r2',
         subjectId: 'PRRC_fixture2',
         reactions: [{ content: 'THUMBS_UP', count: 2, viewerHasReacted: true }],
+        editableMarkdown: '`listZones` already throws on transport errors, so `null` only ever means "unknown". I can add that to the doc comment.',
       },
     ],
   },
@@ -242,6 +244,7 @@ const threads42: ReviewThread[] = [
         url: 'https://github.com/acme/widgets/pull/42#discussion_r6',
         subjectId: 'PRRC_fixture6',
         reactions: [],
+        editableMarkdown: 'Passing `now` in instead of `new Date()` would let the tests pin the clock.',
       },
     ],
   },
@@ -448,6 +451,23 @@ const detail42: PrDetail = {
     { content: 'ROCKET', count: 1, viewerHasReacted: true },
   ],
   descriptionUrl: 'https://github.com/acme/widgets/pull/42#issue-4200',
+  editableDescription: [
+    'Lets the adapter move a facility between PARCS zones, refusing zones that are closed.',
+    '',
+    '## Changes',
+    '',
+    '- `zones.ts`: zone model, `findZone`, `isOpen` and `switchZone`',
+    '- `ParcsAdapter.changeZone` replaces `setZone`',
+    '- Drops the v1 `legacy.ts` toggle',
+    '',
+    '## Testing',
+    '',
+    '```ts',
+    "await adapter.changeZone('north' as ZoneId);",
+    '```',
+    '',
+    'Stacked on #41; the console change is #43.',
+  ].join('\n'),
   headOid: 'c0ffee42c0ffee42c0ffee42c0ffee42c0ffee42',
   baseOid: 'bead4141bead4141bead4141bead4141bead4141',
   assignees: [mona],
@@ -488,6 +508,7 @@ const detail42: PrDetail = {
         { content: 'THUMBS_UP', count: 2, viewerHasReacted: true },
         { content: 'EYES', count: 1, viewerHasReacted: false },
       ],
+      editableMarkdown: 'Does this also cover the overnight zones? Their `closesAt` is before `opensAt`.',
     },
     {
       kind: 'review',
@@ -512,6 +533,7 @@ const detail42: PrDetail = {
       threadIds: ['PRRT_fixture1', 'PRRT_fixture2'],
       subjectId: 'PRR_fixture2',
       reactions: [],
+      editableMarkdown: 'Two things before this goes in, see inline.',
     },
     {
       kind: 'force-push',
@@ -681,6 +703,7 @@ const detail41: PrDetail = {
   descriptionReactions: [],
   // A conversation that names no permalink for its description: nothing to copy.
   descriptionUrl: null,
+  editableDescription: 'A small typed wrapper around the PARCS REST API, so the adapter stops hand-rolling `fetch` calls.',
   headOid: 'bead4141bead4141bead4141bead4141bead4141',
   baseOid: '0000aaaa0000aaaa0000aaaa0000aaaa0000aaaa',
   assignees: [mona],

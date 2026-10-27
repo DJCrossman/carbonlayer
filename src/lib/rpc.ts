@@ -76,6 +76,10 @@ export const STAGES_A_WRITE_CHANGES = {
   'pr.rerunAllJobs': ['checks'],
   // The page shows the reaction at once; nothing else changes.
   'pr.react': [],
+  // The description is the conversation's first comment, which the header reads.
+  'pr.editDescription': ['header'],
+  'pr.editComment': ['activity'],
+  'pr.editThreadComment': ['threads'],
 } as const satisfies { [M in RpcMethod]?: readonly PrStage[] };
 
 export interface RpcRequest<M extends RpcMethod = RpcMethod> {
@@ -325,6 +329,16 @@ const RPC_SCHEMAS = {
   'pr.rerunAllJobs': { args: z.object({ prId: z.string(), runId: z.string() }), result: z.object({ offered: z.boolean() }) },
   /** Adds the viewer's reaction to a comment, or takes it back; `subjectId` is the comment's node id (or the PR's, for its description). */
   'pr.react': { args: z.object({ prId: z.string(), subjectId: z.string(), content: z.enum(REACTION_CONTENTS), add: z.boolean() }), result: z.undefined() },
+  /** Saves the PR's description as `body`, as GitHub's own page saves an edit of it. */
+  'pr.editDescription': { args: z.object({ prId: z.string(), body: z.string() }), result: z.undefined() },
+  /**
+   * Saves a conversation comment or a review's summary, by its id in the activity (`issuecomment-<n>`,
+   * `pullrequestreview-<n>`), as `body`. `version` is the comment's version when the edit started (`bodyVersion`), when the
+   * page had it: GitHub refuses an edit made over a newer one.
+   */
+  'pr.editComment': { args: z.object({ prId: z.string(), commentId: z.string(), version: z.optional(z.string()), body: z.string() }), result: z.undefined() },
+  /** Saves a diff comment, by its id in its thread, as `body`, with its version as `pr.editComment` takes it. */
+  'pr.editThreadComment': { args: z.object({ prId: z.string(), commentId: z.string(), version: z.optional(z.string()), body: z.string() }), result: z.undefined() },
 };
 
 /** An answer the content script posted; `rpc` reads its result by the schema of the method it answers. */

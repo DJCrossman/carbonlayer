@@ -56,6 +56,8 @@ export function reviewThreads(answer: ThreadsAnswer, comparison: BaseComparison,
             const viewerHasReacted = !!reaction?.viewerHasReacted;
             return content && (count > 0 || viewerHasReacted) ? [{ content, count, viewerHasReacted }] : [];
           }),
+          // GitHub says whether the viewer may edit it, and has its Markdown and the version an edit names.
+          ...(comment.viewerCanUpdate && typeof comment.body === 'string' && { editableMarkdown: comment.body, ...(comment.bodyVersion && { bodyVersion: comment.bodyVersion }) }),
         })),
       },
     ];
@@ -117,6 +119,9 @@ export const threadsAnswer = z.object({
                   reviewId: z.nullish(z.union([z.number(), z.string()])),
                   author: z.nullish(z.object({ login: z.nullish(z.string()), avatarUrl: z.nullish(z.string()) })),
                   bodyHTML: z.nullish(z.string()),
+                  body: z.nullish(z.string()),
+                  bodyVersion: z.nullish(z.string()),
+                  viewerCanUpdate: z.nullish(z.boolean()),
                   createdAt: z.nullish(z.string()),
                   publishedAt: z.nullish(z.string()),
                   url: z.nullish(z.string()),

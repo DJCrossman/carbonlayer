@@ -55,6 +55,8 @@ export interface NoteActions {
   commentNow(draft: ReviewThreadDraft): Promise<boolean>;
   removePending(index: number): void;
   closeComposer(): void;
+  /** Saves an edit of a diff comment, by its id, started on its version. */
+  editComment(commentId: string, version: string | undefined, body: string): Promise<boolean>;
 }
 
 function ThreadNote({ thread, current, actions }: { thread: ReviewThread; current: boolean; actions: NoteActions }) {
@@ -111,6 +113,7 @@ function ThreadNote({ thread, current, actions }: { thread: ReviewThread; curren
           url={comment.url}
           footer={<Reactions subjectId={comment.subjectId} reactions={comment.reactions} />}
           compact
+          edit={comment.editableMarkdown === undefined ? undefined : { markdown: comment.editableMarkdown, save: (body) => actions.editComment(comment.id, comment.bodyVersion, body) }}
         />
       ))}
       <div className="diff-note-reply">

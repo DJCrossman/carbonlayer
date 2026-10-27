@@ -56,11 +56,12 @@ export async function request(path: string, accept: 'application/json' | 'text/h
 }
 
 /**
- * A write, sent the way GitHub's React UI sends it: JSON body, its verified-fetch headers, and the page's fetch
- * nonce (refreshed from every response). GitHub's own `{ error }` message is passed on verbatim. The answer is unread
- * here: the one write that reads it gives it to `readAnswer` with the fields it reads.
+ * A write, sent the way GitHub's React UI sends it: JSON body (or the form fields GitHub's UI sends as a form, multipart),
+ * its verified-fetch headers, and the page's fetch nonce (refreshed from every response). GitHub's own `{ error }` message
+ * is passed on verbatim, and an edit GitHub refuses as made over a newer one (`{ stale: true }`) says so in GitHub's words.
+ * The answer is unread here: the one write that reads it gives it to `readAnswer` with the fields it reads.
  */
-export async function send(path: string, method: 'POST' | 'PUT' | 'DELETE', body?: unknown): Promise<unknown> {
+export async function send(path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown): Promise<unknown> {
   const nonce = document.querySelector('meta[name="fetch-nonce"]');
   let response: Response;
   try {
@@ -69,14 +70,15 @@ export async function send(path: string, method: 'POST' | 'PUT' | 'DELETE', body
       credentials: 'same-origin',
       headers: {
         Accept: 'application/json',
-        'Content-Type': 'application/json',
+        // Form fields carry the type the browser gives them, with its boundary.
+        ...(!(body instanceof FormData) && { 'Content-Type': 'application/json' }),
         'GitHub-Verified-Fetch': 'true',
         'GitHub-Is-React': 'true',
         'X-Requested-With': 'XMLHttpRequest',
         'X-Fetch-Nonce': nonce?.getAttribute('content') ?? '',
         'X-GitHub-Client-Version': document.querySelector('meta[name="release"]')?.getAttribute('content') ?? '',
       },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body instanceof FormData ? body : body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
     throw new Error('Could not reach GitHub (network error)');
@@ -86,6 +88,7 @@ export async function send(path: string, method: 'POST' | 'PUT' | 'DELETE', body
   if (response.redirected && new URL(response.url).pathname === '/login') throw new Error(SIGNED_OUT);
   const answer: unknown = await response.json().catch(() => null);
   if (!response.ok) {
+    if (z.object({ stale: z.literal(true) }).safeParse(answer).success) throw new Error('The content you are editing has changed. Please review the latest changes and try again.');
     const refused = z.object({ error: z.string().check(z.minLength(1)) }).safeParse(answer);
     throw new Error(refused.success ? refused.data.error : `GitHub answered ${response.status} to ${method} ${path.split('?')[0]}`);
   }

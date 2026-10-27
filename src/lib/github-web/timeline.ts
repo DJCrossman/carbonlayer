@@ -37,6 +37,7 @@ export function timelineFrom(
       // The review's own body and reaction form, not those of the threads it opened.
       const body = [...review.querySelectorAll('.comment-body')].find((element) => !element.closest('turbo-frame'));
       const reactionForm = [...review.querySelectorAll('form.js-pick-reaction')].find((form) => !form.closest('turbo-frame'));
+      const actions = [...review.querySelectorAll('.timeline-comment-actions')].find((menu) => !menu.closest('turbo-frame'));
       items.push({
         kind: 'review',
         id: review.id,
@@ -53,6 +54,7 @@ export function timelineFrom(
         url: `${context.pageUrl}#${review.id}`,
         threadIds: context.threadIdsByReview.get(review.id.replace('pullrequestreview-', '')) ?? [],
         ...reactionsIn(reactionForm),
+        ...editingIn(actions, review),
       });
       continue;
     }
@@ -73,6 +75,7 @@ export function timelineFrom(
           createdAt,
           url: `${context.pageUrl}#${comment.id}`,
           ...reactionsIn(comment.querySelector('form.js-pick-reaction')),
+          ...editingIn(comment.querySelector('.timeline-comment-actions'), comment.querySelector('.js-comment')),
         });
       }
       continue;
@@ -149,4 +152,17 @@ export function reactionsIn(form: Element | null | undefined): { subjectId: stri
     return content && (count > 0 || viewerHasReacted) ? [{ content, count, viewerHasReacted }] : [];
   });
   return { subjectId: form.querySelector('input[name="input[subjectId]"]')?.getAttribute('value') || null, reactions };
+}
+
+/**
+ * What editing a comment starts from, as its options menu (`.timeline-comment-actions`) and its `.js-comment` element have
+ * it: GitHub offers the viewer Edit in the menu (`.js-comment-edit-button`) only on a comment they may edit, the menu's
+ * Copy Markdown holds the comment's Markdown, and the element its version (`data-body-version`), which GitHub's page
+ * sends with an edit. Nothing where the menu offers no Edit, or no Markdown to start from.
+ */
+function editingIn(actions: Element | null | undefined, comment: Element | null): { editableMarkdown?: string; bodyVersion?: string } {
+  const markdown = actions?.querySelector('.js-comment-edit-button') ? actions.querySelector('clipboard-copy[role="menuitem"][value]')?.getAttribute('value') : null;
+  if (markdown === null || markdown === undefined) return {};
+  const version = comment?.getAttribute('data-body-version');
+  return { editableMarkdown: markdown, ...(version && { bodyVersion: version }) };
 }
