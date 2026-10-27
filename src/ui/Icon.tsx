@@ -1,7 +1,7 @@
 // Octicons (MIT, github.com/primer/octicons) as inline 16px paths, scaled by `size`, coloured by `currentColor`, and
 // CarbonLayer's mark (`logo`, assets/logo.svg) on its own 28px grid, the octocat knocked out as a hole in the path.
 // `person-check`, Graphite's "approved", is octicons' person at three quarters beside a check (octicons has none);
-// `hubot` stands for a bot without an avatar.
+// `hubot` stands for a bot without an avatar; `code-square` is octicons' two paths (the brackets, the square) in one.
 import './ui.css';
 
 export type IconName = keyof typeof PATHS;
@@ -45,6 +45,8 @@ const PATHS = {
   clock:
     'M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm7-3.25v2.992l2.028.812a.75.75 0 0 1-.557 1.392l-2.5-1A.751.751 0 0 1 7 8.25v-3.5a.75.75 0 0 1 1.5 0Z',
   code: 'm11.28 3.22 4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.749.749 0 0 1-1.275-.326.749.749 0 0 1 .215-.734L13.94 8l-3.72-3.72a.749.749 0 0 1 .326-1.275.749.749 0 0 1 .734.215Zm-6.56 0a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042L2.06 8l3.72 3.72a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L.47 8.53a.75.75 0 0 1 0-1.06Z',
+  'code-square':
+    'M5.97 5.72a.75.75 0 1 1 1.06 1.06L5.81 8l1.22 1.22a.75.75 0 1 1-1.06 1.06L4.22 8.53a.75.75 0 0 1 0-1.06zm3 0a.75.75 0 0 1 1.06 0l1.75 1.75a.75.75 0 0 1 0 1.06l-1.75 1.75a.75.75 0 1 1-1.06-1.06L10.19 8 8.97 6.78a.75.75 0 0 1 0-1.06M13.25 1c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0 1 13.25 15H2.75A1.75 1.75 0 0 1 1 13.25V2.75C1 1.784 1.784 1 2.75 1zM2.75 2.5a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25V2.75a.25.25 0 0 0-.25-.25z',
   comment:
     'M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h4.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z',
   'comment-discussion':

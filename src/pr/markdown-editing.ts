@@ -2,7 +2,8 @@
 // toolbar's styles are GitHub's markdown-toolbar-element (MIT, github.com/github/markdown-toolbar-element, the copy
 // GitHub's PR page loads), a URL pasted over text is GitHub's paste-markdown, a suggestion is what its "Add a
 // suggestion" button inserts, and an emoji after a `:` is what its emoji suggestions offer and insert, as a mention after
-// an `@` is what its mention suggestions insert. Pure: a draft in, the draft after the command out.
+// an `@` is what its mention suggestions insert, and a command after a `/` at the start of a line is what its slash
+// commands offer and put in. Pure: a draft in, the draft after the command out.
 
 import type { Emoji, Mention } from '../lib/model';
 
@@ -12,6 +13,68 @@ export interface Draft {
   selectionStart: number;
   selectionEnd: number;
 }
+
+/**
+ * A row of the list a `/` at the start of a line opens, or of a step one of its commands opens: choosing it puts its
+ * Markdown in place of the `/` and what follows it (`choose` acts on the draft), or shows the next step's rows instead.
+ */
+export interface SlashChoice {
+  label: string;
+  /** The line under a command's name. */
+  description?: string;
+  choose: ((draft: Draft) => Draft | null) | SlashStep;
+}
+
+/** A step a command opens: its rows, and the names the list's header shows after "Slash" (`Table / Columns`). */
+export interface SlashStep {
+  trail: string[];
+  choices: SlashChoice[];
+}
+
+/**
+ * The slash commands GitHub's comment box offers on a pull request that need nothing from GitHub, named and described as
+ * its list has them, in its order; its Saved replies (the viewer's) and Templates (the repository's) are left out.
+ * GitHub's server draws the list and answers each command with its Markdown (docs/research/github-web-mutations.md,
+ * "Slash commands"); the steps and the Markdown are read from GitHub's own recording of them, Alerts' from a screenshot.
+ */
+export const SLASH_COMMANDS: SlashChoice[] = [
+  {
+    label: 'Alerts',
+    description: 'Add a markdown alert to emphasize important information',
+    // GitHub's five alerts, in the order its docs list them.
+    choose: { trail: ['Alerts'], choices: ['Note', 'Tip', 'Important', 'Warning', 'Caution'].map((kind) => ({ label: kind, choose: (draft: Draft) => insertAlert(draft, kind) })) },
+  },
+  {
+    label: 'Code block',
+    description: 'Insert a code block formatted for a chosen syntax',
+    choose: {
+      trail: ['Code block'],
+      // No Syntax, then Linguist's popular languages (github-linguist/linguist, lib/linguist/popular.yml), each fenced as
+      // Linguist's default alias for it: its name in lower case.
+      choices: [
+        { label: 'No Syntax', choose: (draft: Draft) => insertCodeBlock(draft, '') },
+        ...['C', 'C#', 'C++', 'CoffeeScript', 'CSS', 'Dart', 'DM', 'Elixir', 'Go', 'Groovy', 'HTML', 'Java', 'JavaScript', 'Kotlin', 'Objective-C', 'Perl', 'PHP', 'PowerShell', 'Python', 'Ruby', 'Rust', 'Scala', 'Shell', 'Swift', 'TypeScript'].map(
+          (language) => ({ label: language, choose: (draft: Draft) => insertCodeBlock(draft, language.toLowerCase()) }),
+        ),
+      ],
+    },
+  },
+  { label: 'Details', description: 'Add a details tag to hide content behind a visible heading', choose: insertDetails },
+  {
+    label: 'Table',
+    description: 'Add markdown table',
+    choose: {
+      trail: ['Table', 'Columns'],
+      choices: [1, 2, 3, 4, 5].map((columns) => ({
+        label: `${columns} ${columns === 1 ? 'column' : 'columns'}`,
+        choose: {
+          trail: ['Table', 'Columns', 'Rows'],
+          choices: [1, 2, 3, 4, 5].map((rows) => ({ label: `${rows} ${rows === 1 ? 'row' : 'rows'}`, choose: (draft: Draft) => insertTable(draft, columns, rows) })),
+        },
+      })),
+    },
+  },
+];
 
 /** `### ` before the word at the caret, or the selection; off again when the selection already starts with it. */
 export function insertHeading(draft: Draft): Draft {
@@ -184,6 +247,59 @@ export function insertMention(draft: Draft, mention: Mention): Draft | null {
   const typed = `@${mention.login} `;
   const caret = asked.at + typed.length;
   return { value: draft.value.slice(0, asked.at) + typed + draft.value.slice(draft.selectionEnd), selectionStart: caret, selectionEnd: caret };
+}
+
+/**
+ * The command the text asks for at the caret, as GitHub's comment box reads it (its `slash-command-expander`, `/` its
+ * one key): the last `/` before the caret, at the start of the text or of a line, then what was typed after it up to the
+ * caret, with no space, line break or other `/` in it (`query`, empty right after the `/`); `at` is where the `/` is.
+ * Null with text selected, and where no such `/` comes before the caret: one after anything else on its line (`a/b`, a
+ * URL, `see /code`, an indented `/`), or a space typed since.
+ */
+export function slashCommandQueryAt({ value, selectionStart, selectionEnd }: Draft): { at: number; query: string } | null {
+  if (selectionStart !== selectionEnd) return null;
+  const query = /(?:^|\n)\/([^ \n/]*)$/.exec(value.slice(0, selectionStart))?.[1];
+  return query === undefined ? null : { at: selectionStart - query.length - 1, query };
+}
+
+/**
+ * The commands a comment box lists for `query`, as GitHub's filters them by their names: all of them, in their order,
+ * with nothing typed after the `/`; else those whose name has the typed characters in order, case aside, the best scored
+ * first (fuzzyScore), equals by name.
+ */
+export function slashCommandsFor(query: string): SlashChoice[] {
+  const typed = query.trim().toLowerCase();
+  if (typed === '') return SLASH_COMMANDS;
+  return SLASH_COMMANDS.map((command) => {
+    const name = command.label.toLowerCase();
+    return { command, name, score: fuzzyScore(name, typed) };
+  })
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .map(({ command }) => command);
+}
+
+/** A fenced code block in `language` (none for No Syntax), the caret on the empty line inside it. */
+export function insertCodeBlock(draft: Draft, language: string): Draft | null {
+  return fillSlashCommand(draft, `\`\`\`${language}\n%cursor%\n\`\`\``);
+}
+
+/** A section folded under the heading "Details", the caret on the empty line in its paragraph. */
+export function insertDetails(draft: Draft): Draft | null {
+  return fillSlashCommand(draft, '<details><summary>Details</summary>\n<p>\n\n%cursor%\n\n</p>\n</details>');
+}
+
+/** A table of `columns` × `rows`: "Header" over each column, the dashes under them, "Cell" in each cell; the caret after it. */
+export function insertTable(draft: Draft, columns: number, rows: number): Draft | null {
+  return fillSlashCommand(
+    draft,
+    [`|${' Header |'.repeat(columns)}`, `|${'--------|'.repeat(columns)}`, ...Array.from({ length: rows }, () => `|${' Cell |'.repeat(columns)}`)].join('\n'),
+  );
+}
+
+/** An alert of `kind` (Note, Tip, Important, Warning or Caution) saying "Some alert message", the caret after it. */
+export function insertAlert(draft: Draft, kind: string): Draft | null {
+  return fillSlashCommand(draft, `> [!${kind.toUpperCase()}]\n> Some alert message`);
 }
 
 /** One of markdown-toolbar-element's styles. */
@@ -365,4 +481,47 @@ function paragraphBreaks(field: Draft): { before: string; after: string } {
     before: /\S/.test(before) && breaksBefore < 2 ? '\n'.repeat(2 - breaksBefore) : '',
     after: /\S/.test(after) && breaksAfter < 2 ? '\n'.repeat(2 - breaksAfter) : '',
   };
+}
+
+/**
+ * How well `query` matches `text`, both in lower case, as GitHub's fuzzy filter scores a slash command's name: 0 unless
+ * each character of the query is found in the text after the one before it; each one found counts 0.2, and 0.8 more when
+ * it comes right after the one before (or starts the text) and when it starts a word (after a space, `-` or `_`); their
+ * average is weighed by how much of the text the query covers, with 0.1 more when the text starts with the query's first
+ * character; the whole text scores 1. GitHub adds the score of the name after its last `/` too, which for these names
+ * only doubles it.
+ */
+function fuzzyScore(text: string, query: string): number {
+  if (text === query) return 1;
+  let rest = text;
+  let points = 0;
+  let startsText = false;
+  for (const [index, character] of [...query].entries()) {
+    const found = rest.indexOf(character);
+    if (found === -1) return 0;
+    points += 0.2;
+    if (found === 0) {
+      points += 0.8;
+      if (index === 0) startsText = true;
+    }
+    if ([' ', '-', '_'].includes(rest.charAt(found - 1))) points += 0.8;
+    rest = rest.slice(found + 1);
+  }
+  const average = points / query.length;
+  const score = ((query.length / text.length) * average + average) / 2;
+  return startsText && score + 0.1 < 1 ? score + 0.1 : score;
+}
+
+/**
+ * `markdown` in place of the `/` and what was typed after it (slashCommandQueryAt), as GitHub's comment box puts in the
+ * Markdown a command answers with: a space after it, the caret where its `%cursor%` mark was, else after the space (a
+ * mark at its very start counts as none there too). Null where the text asks for no command at the caret.
+ */
+function fillSlashCommand(draft: Draft, markdown: string): Draft | null {
+  const asked = slashCommandQueryAt(draft);
+  if (!asked) return null;
+  const cursor = markdown.indexOf('%cursor%');
+  const typed = `${markdown.replaceAll('%cursor%', '')} `;
+  const caret = asked.at + (cursor > 0 ? cursor : typed.length);
+  return { value: draft.value.slice(0, asked.at) + typed + draft.value.slice(draft.selectionEnd), selectionStart: caret, selectionEnd: caret };
 }

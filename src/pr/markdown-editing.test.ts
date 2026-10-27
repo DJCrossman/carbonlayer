@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { Emoji, Mention } from '../lib/model';
 import {
   continueList,
+  insertAlert,
+  insertCodeBlock,
+  insertDetails,
+  insertTable,
   emojiQueryAt,
   emojiSuggestionsFor,
   insertEmoji,
@@ -12,6 +16,9 @@ import {
   linkPastedUrl,
   mentionQueryAt,
   mentionSuggestionsFor,
+  SLASH_COMMANDS,
+  slashCommandQueryAt,
+  slashCommandsFor,
   toggleBold,
   toggleCode,
   toggleItalic,
@@ -20,6 +27,8 @@ import {
   toggleTaskList,
   toggleUnorderedList,
   type Draft,
+  type SlashChoice,
+  type SlashStep,
 } from './markdown-editing';
 
 // Drafts are written with the selection marked: 'a |b|' selects "b", 'a|b' is the caret alone.
@@ -333,5 +342,140 @@ describe('insertMention', () => {
 
   it('does nothing where the text asks for nobody', () => {
     expect(insertMention(draft('a@b|'), { kind: 'user', login: 'mona', name: 'Mona Lisa', participant: true })).toBeNull();
+  });
+});
+
+describe('slashCommandQueryAt', () => {
+  it('reads what was typed after a `/` that starts the text or a line, up to the caret', () => {
+    expect(slashCommandQueryAt(draft('/|'))).toEqual({ at: 0, query: '' });
+    expect(slashCommandQueryAt(draft('/co|'))).toEqual({ at: 0, query: 'co' });
+    expect(slashCommandQueryAt(draft('Looks good\n/ta|ble'))).toEqual({ at: 11, query: 'ta' });
+  });
+
+  it('asks for nothing after a `/` with anything before it on its line, once a space or another `/` is typed, or over a selection', () => {
+    expect(slashCommandQueryAt(draft('a/b|'))).toBeNull();
+    expect(slashCommandQueryAt(draft('see /code|'))).toBeNull();
+    expect(slashCommandQueryAt(draft('  /code|'))).toBeNull();
+    expect(slashCommandQueryAt(draft('https://example.com|'))).toBeNull();
+    expect(slashCommandQueryAt(draft('/code |'))).toBeNull();
+    expect(slashCommandQueryAt(draft('/usr/bin|'))).toBeNull();
+    expect(slashCommandQueryAt(draft('|/code|'))).toBeNull();
+  });
+});
+
+describe('slashCommandsFor', () => {
+  const names = (query: string) => slashCommandsFor(query).map((command) => command.label);
+
+  it('lists every command, in GitHub\'s order, for a bare `/`', () => {
+    expect(names('')).toEqual(['Alerts', 'Code block', 'Details', 'Table']);
+  });
+
+  it('keeps the commands whose name has the typed characters in order, case aside, the best scored first', () => {
+    expect(names('d')).toEqual(['Details', 'Code block']);
+    expect(names('e')).toEqual(['Table', 'Alerts', 'Details', 'Code block']);
+    expect(names('cb')).toEqual(['Code block']);
+    expect(names('TAB')).toEqual(['Table']);
+    expect(names('code')).toEqual(['Code block']);
+  });
+
+  it('lists nothing for what no name has', () => {
+    expect(names('saved-replies')).toEqual([]);
+    expect(names('xyz')).toEqual([]);
+  });
+});
+
+describe('the slash commands', () => {
+  const command = (label: string): SlashChoice => {
+    const found = SLASH_COMMANDS.find((candidate) => candidate.label === label);
+    if (!found) throw new Error(`no command ${label}`);
+    return found;
+  };
+  const step = (choice: SlashChoice): SlashStep => {
+    if (typeof choice.choose === 'function') throw new Error(`${choice.label} opens no step`);
+    return choice.choose;
+  };
+  const choice = (from: SlashStep, label: string): SlashChoice => {
+    const found = from.choices.find((candidate) => candidate.label === label);
+    if (!found) throw new Error(`no choice ${label}`);
+    return found;
+  };
+  const chosen = (row: SlashChoice, on: Draft): Draft | null => {
+    if (typeof row.choose !== 'function') throw new Error(`${row.label} opens a step`);
+    return row.choose(on);
+  };
+
+  it('describes each command as GitHub\'s list does', () => {
+    expect(SLASH_COMMANDS.map(({ label, description }) => [label, description])).toEqual([
+      ['Alerts', 'Add a markdown alert to emphasize important information'],
+      ['Code block', 'Insert a code block formatted for a chosen syntax'],
+      ['Details', 'Add a details tag to hide content behind a visible heading'],
+      ['Table', 'Add markdown table'],
+    ]);
+  });
+
+  it("offers a code block's syntaxes: No Syntax, then Linguist's popular languages", () => {
+    const languages = step(command('Code block'));
+    expect(languages.trail).toEqual(['Code block']);
+    expect(languages.choices.map(({ label }) => label)).toEqual([
+      'No Syntax', 'C', 'C#', 'C++', 'CoffeeScript', 'CSS', 'Dart', 'DM', 'Elixir', 'Go', 'Groovy', 'HTML', 'Java', 'JavaScript', 'Kotlin',
+      'Objective-C', 'Perl', 'PHP', 'PowerShell', 'Python', 'Ruby', 'Rust', 'Scala', 'Shell', 'Swift', 'TypeScript',
+    ]);
+    expect(marked(chosen(choice(languages, 'C#'), draft('/code|')))).toBe('```c#\n|\n``` ');
+  });
+
+  it('asks for a table\'s columns, then its rows', () => {
+    const columns = step(command('Table'));
+    expect([columns.trail, columns.choices.map(({ label }) => label)]).toEqual([['Table', 'Columns'], ['1 column', '2 columns', '3 columns', '4 columns', '5 columns']]);
+    const rows = step(choice(columns, '2 columns'));
+    expect([rows.trail, rows.choices.map(({ label }) => label)]).toEqual([['Table', 'Columns', 'Rows'], ['1 row', '2 rows', '3 rows', '4 rows', '5 rows']]);
+    expect(chosen(choice(rows, '1 row'), { value: '/table', selectionStart: 6, selectionEnd: 6 })?.value).toBe('| Header | Header |\n|--------|--------|\n| Cell | Cell | ');
+  });
+
+  it("offers GitHub's five alerts", () => {
+    const kinds = step(command('Alerts'));
+    expect([kinds.trail, kinds.choices.map(({ label }) => label)]).toEqual([['Alerts'], ['Note', 'Tip', 'Important', 'Warning', 'Caution']]);
+    expect(marked(chosen(choice(kinds, 'Tip'), draft('/al|')))).toBe('> [!TIP]\n> Some alert message |');
+  });
+
+  it('puts in Details at once', () => {
+    expect(marked(chosen(command('Details'), draft('/d|')))).toBe('<details><summary>Details</summary>\n<p>\n\n|\n\n</p>\n</details> ');
+  });
+});
+
+describe('insertCodeBlock', () => {
+  it('puts a fenced block and a space in place of the `/` and what follows it, the caret on the empty line inside', () => {
+    expect(marked(insertCodeBlock(draft('/code|'), 'java'))).toBe('```java\n|\n``` ');
+    expect(marked(insertCodeBlock(draft('Before\n/co|\nafter'), ''))).toBe('Before\n```\n|\n``` \nafter');
+  });
+
+  it('does nothing where the text asks for no command', () => {
+    expect(insertCodeBlock(draft('a /code|'), 'java')).toBeNull();
+  });
+});
+
+describe('insertDetails', () => {
+  it("puts GitHub's folded section in place of the `/` and what follows it, the caret in its paragraph", () => {
+    expect(marked(insertDetails(draft('Logs:\n/det|')))).toBe('Logs:\n<details><summary>Details</summary>\n<p>\n\n|\n\n</p>\n</details> ');
+  });
+});
+
+describe('insertTable', () => {
+  it('puts a row of headers, the dashes under them and the rows of cells in place of the `/` and what follows it, the caret after them', () => {
+    const value = '| Header | Header | Header |\n|--------|--------|--------|\n| Cell | Cell | Cell |\n| Cell | Cell | Cell |\n| Cell | Cell | Cell | ';
+    expect(insertTable({ value: '/tab', selectionStart: 4, selectionEnd: 4 }, 3, 3)).toEqual({ value, selectionStart: value.length, selectionEnd: value.length });
+  });
+
+  it('keeps the text after the caret after the table', () => {
+    expect(insertTable({ value: 'Sizes:\n/table\nThanks', selectionStart: 13, selectionEnd: 13 }, 1, 1)).toEqual({
+      value: 'Sizes:\n| Header |\n|--------|\n| Cell | \nThanks',
+      selectionStart: 38,
+      selectionEnd: 38,
+    });
+  });
+});
+
+describe('insertAlert', () => {
+  it('puts an alert of the kind chosen in place of the `/` and what follows it, the caret after its message', () => {
+    expect(marked(insertAlert(draft('/alerts|'), 'Warning'))).toBe('> [!WARNING]\n> Some alert message |');
   });
 });

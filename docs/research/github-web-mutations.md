@@ -210,6 +210,91 @@ is `@github/markdown-toolbar-element` (chunk `hj-ece3bec966e8a2b6.js`), its shor
 ⌘⇧L, toggle preview ⌘⇧P) and the docs' "Keyboard shortcuts → Comments" (which also lists ⌘⇧8 for a bulleted list
 and ⌘G for a suggestion).
 
+## Slash commands (the comment box's `/` list; read from the bundle 2026-10-27, nothing sent)
+**Where GitHub offers them.** The React `CommentBox` (`42g-ca4daad95973f750.js`) wraps its editor in
+`SlashCommandsProvider` only when its subject's `repository.slashCommandsEnabled` is true; on a PR that is the route's
+`baseRepository.slashCommandsEnabled` (`10y-5e576a8f14f8ec33.js`), and every box on the page passes a subject (module `fYM`
+in `1i-6d5de88b35e79530.js`: surface `review` → type `pull_request`, `issue_comment` → `pull_request_comment`,
+`description` → `pull_request_body`; diff comments and replies are `review`). The provider renders GitHub's classic
+`<slash-command-expander keys="/" data-slash-command-url="/{owner}/{repo}/slash_apps?surface=<type>&subject_gid=<PR node
+id>">` around the textarea, and adds a last toolbar button, "Slash commands" (`DiffIgnoredIcon`), that only types `/` at
+the caret. Signed out, the page's `slashCommandsEnabled` is false and `slash_apps` answers 404.
+
+**When the list opens** (`findMatch`, module `N15` in `chunk-lazy-element-slash-command-expander-fb44fde27f4a8d71.js`):
+the last `/` before the caret (`selectionEnd`), when nothing or a `\n` comes before it and no space or `\n` after it. So a
+`/` at the start of the text or of a line, followed by no space, line break or other `/`; not `a/b`, a URL, `see /code`
+or an indented `/`. It waits 250 ms after typing (`appropriateDelay`) and ignores the input of a paste.
+
+**The list** (`onChange`, module `JBZ` in `chunk-fq-43d52ee315d5dd1e.js`): a loading clone first, then `GET` of
+`data-slash-command-url` (once per page, memoized) as an HTML fragment (`fetchSafeDocumentFragment`: the `X-HTML-Safe`
+nonce is checked); its rows are `.js-slash-command-menu-items li[data-text]`, grouped after `.js-group-divider[data-group-id]`.
+With nothing typed, the server's order; else what was typed, lowercased and trimmed, keeps the rows whose `data-text`
+scores above 0 on GitHub's fuzzy score (`dt` in module `Pk`: each character found after the one before, 0.2 each, 0.8 more
+when consecutive or first and when after a space, `-` or `_`, averaged and weighed by the share of the text, +0.1 when the
+first character starts the text, 1 for the whole text; plus the same score of the part after the last `/`), best first,
+then by text (`UD`), back under their dividers. No row left closes it. Keys are `@github/combobox-nav` with
+`tabInsertsSuggestions: false`: Enter or a click chooses, Tab does not; the first row is reached at once; ↓ past the last
+(or ↑ before the first) reaches none rather than wrapping; Ctrl+N / Ctrl+P on a Mac; Esc closes it (`deactivate`).
+
+**Choosing** (`onValue`) PATCHes the row's `data-url` with its `.js-slash-command-suggestion-form` (`Accept: text/html`,
+`Scoped-CSRF-Token` from its `.js-data-url-csrf`). The answer's first element says what follows by `data-component-type`:
+`fill` puts its text (its HTML when it holds tags) in place of the `/` and what was typed, through `insertText`, with a
+space after it and the caret at its `%cursor%` mark, else after the space (a mark at index 0 counts as none);
+`data-submit-form` then submits the comment. `menu` / `error` show a new list in place of the old, the typed text kept
+(typing again goes back to the commands); `action` closes it; `embedded_form`, `dialog_form` and `modal_form` show a form
+whose submit PATCHes its `action` and is answered the same way.
+
+**What the server answers** is not in the bundle. Read from GitHub's own recording of the feature (the video in the
+changelog "Introducing the GitHub Markdown Helpers Public Beta", 2023-03-15) and a recent screenshot of the list on an
+issue: the header (code-square icon, "Slash commands", then "Beta" and "Give feedback" in 2023, "Preview" now), the group
+"Markdown", each row a bold name over a description, alphabetical: Alerts "Add a markdown alert to emphasize important
+information" (not in 2023), Code block "Insert a code block formatted for a chosen syntax", Details "Add a details tag to
+hide content behind a visible heading", Saved replies "Insert one of your saved replies", Table "Add markdown table",
+Templates "Insert one of your issue templates" (and, on an issue in 2023, Tasklist "Add a Tasklist block"). `data-text` is
+the name: on screen `/d` lists Details, Code block, Saved replies and `/s` Saved replies, Details, Tasklist, Templates, as
+the score orders the names.
+- Code block: a list headed "Slash / Code block": No Syntax, then Linguist's popular languages (`lib/linguist/popular.yml`,
+  C … TypeScript, 25); Java fills `` ```java\n%cursor%\n``` ``.
+- Details: fills at once `<details><summary>Details</summary>\n<p>\n\n%cursor%\n\n</p>\n</details>` (the docs' "you
+  choose the title and content" is not what the recording shows).
+- Table: "Slash / Table / Columns" (1 column … 5 columns), then "Slash / Table / Columns / Rows" (1 row … 5 rows); 3 × 3
+  fills `| Header | Header | Header |`, `|--------|--------|--------|` and three `| Cell | Cell | Cell |`, no mark.
+- Saved replies: "Slash / Saved replies", each reply's title over its body cut short; fills the body.
+- Alerts: only its row, and `> [!WARNING]` / `> Some alert message` in the box above the list, are seen.
+
+**What CarbonLayer does** (`SLASH_COMMANDS`, `slashCommandQueryAt`, `slashCommandsFor`, `insertAlert`, `insertCodeBlock`,
+`insertDetails`, `insertTable` in `src/pr/markdown-editing.ts`; the list in `CommentInput`): the commands that need nothing
+from GitHub (Alerts, Code block, Details, Table) in every comment box, whatever `slashCommandsEnabled` says, with the
+Markdown above built in rather than asked for, the same trigger and score (without the second score of the part after a
+`/`, which only doubles these names'), and the space and `%cursor%` caret of `fill`. Its keys are its other lists' (Tab
+chooses, ↑ / ↓ wrap), it opens at once and after a paste too, and it has no "Preview" label, feedback link or toolbar
+button. INFERRED: Alerts' second step (GitHub's five kinds, in the docs' order) and "Some alert message" as GitHub's text
+rather than the user's; every language's fence but `java` (Linguist's default alias, the name in lower case: `c#`,
+`objective-c`); No Syntax as a bare fence; whether Templates is offered on a PR comment.
+
+**Saved replies, for later** (not built). The editor's own toolbar menu (⌘. / Ctrl+., the `SavedRepliesButton` in `42g`)
+loads the list with `GET /settings/replies?context=pull_request` (function `$`; `context` is the subject's type mapped to
+`issue` or `pull_request`, and all three PR types map to `pull_request`), once per box with its mentions and references, on
+its first focus. It goes through `verifiedFetchJSON` (`lS` in module `VY`, `app-runtime-1a555c9bb4a1f269.js`): `Accept:
+application/json`, `Content-Type: application/json`, `GitHub-Verified-Fetch: true` and the usual `X-Requested-With`,
+`X-Fetch-Nonce`, `X-GitHub-Client-Version`, no `GitHub-Is-React`. The answer is a JSON array whose `title` and `body` are
+read (`{ name: title, content: body }`); any failure means no replies. The menu filters by name (contains, case aside;
+"Search saved replies"), shows the body under each name, picks the first nine with Ctrl+1…9 and links "Create new" to
+`/settings/replies`; choosing one puts its body over the selection, in the next frame, through Primer's
+`useSyntheticChange` (`insertText`, the caret after it), with no `%cursor%` handling. The `/saved-replies` command goes
+through `slash_apps` instead (a `menu` of the replies, then a `fill` of the body: `%cursor%` honoured, a space after).
+UNVERIFIED: the JSON's other fields, and an answer to CarbonLayer's request.
+
+| File | Matched string(s) |
+|---|---|
+| `42g-ca4daad95973f750.js` | `SlashCommandsProvider`; `` `/${w.repository.nwo}/slash_apps?surface=` ``; `"Slash commands"` (toolbar button); `` `/settings/replies${e?`?context=${e}`:""}` ``; `SavedRepliesButton` |
+| `1i-6d5de88b35e79530.js` | `case"issue_comment":return"pull_request_comment"`; `slashCommandsEnabled:h` |
+| `chunk-lazy-element-slash-command-expander-fb44fde27f4a8d71.js` | `slash-command-expander`; `appropriateDelay(){return 250}`; `%cursor%` |
+| `chunk-fq-43d52ee315d5dd1e.js` | `js-slash-command-menu-items li`; `data-component-type`; `"Scoped-CSRF-Token"` |
+
+A lazy chunk's file is `chunk-<name>-<hash>.js`, both from the maps in the runtime's `n.u` (`wp-runtime-324664e7bd39619e.js`;
+`0vz` is the expander, `fq` its provider).
+
 ## Reactions
 **What CarbonLayer sends (since 2026-10-22).** A diff comment (`PRRC_…`) as GitHub's files view reacts to one:
 `POST P/add_comment_reaction` or `POST P/remove_comment_reaction`, JSON `{ reaction: "THUMBS_UP", commentId: <the review

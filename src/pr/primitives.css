@@ -128,6 +128,35 @@
 /* A person's row: their avatar, login and name; a team's: its icon, `org/slug` and description, cut short when long. */
 .pr-mention-suggestion-team { flex: none; color: var(--gg-fg-muted); }
 .pr-mention-suggestion-about { overflow: hidden; text-overflow: ellipsis; color: var(--gg-fg-muted); }
+/* GitHub's slash commands: its header ("Slash commands", or the steps taken) over the group "Markdown", each command's
+   name over the line that describes it, wrapped; a step's rows one line each, as many as fit before the list scrolls. */
+.pr-slash-commands { width: 300px; }
+.pr-slash-commands-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 -4px 4px;
+  padding: 2px 12px 6px;
+  border-bottom: 1px solid var(--gg-border);
+  color: var(--gg-fg-muted);
+  font-size: 12px;
+}
+.pr-slash-commands-header strong { color: var(--gg-fg); font-weight: 600; }
+.pr-slash-commands-group { padding: 2px 8px 4px; color: var(--gg-fg-muted); font-size: 12px; font-weight: 600; }
+.pr-slash-commands .pr-emoji-suggestions-list { position: relative; max-height: 232px; overflow-y: auto; }
+.pr-slash-command {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+  box-sizing: border-box;
+  height: auto;
+  min-height: 28px;
+  padding: 4px 8px;
+  white-space: normal;
+}
+.pr-slash-command strong { font-weight: 600; }
+.pr-slash-command-about { color: var(--gg-fg-muted); font-size: 12px; line-height: 1.35; }
 
 /* A stage of the page's data that failed to load: one line where its part would be, with a retry. */
 .pr-stage-error {
