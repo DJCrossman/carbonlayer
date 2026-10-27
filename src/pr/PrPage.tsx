@@ -33,7 +33,7 @@ import { MergeStackDialog } from './MergeStackDialog';
 import { nextActionFor, stackToMerge } from './next-action';
 import { followLink, goToPr, openOnGitHub } from './navigation';
 import { prDetailFrom, usePrPageData, type PrPageData } from './page-data';
-import { MarkdownPreview, MentionList, StageError, Staged, StatePill } from './primitives';
+import { MarkdownPreview, MentionList, SavedReplyList, StageError, Staged, StatePill } from './primitives';
 import { PrReactions, Reactions, type ChangedReactions } from './Reactions';
 import { QuickApproveDialog, ReviewComposer, type ReviewEvent } from './ReviewComposer';
 import { ReviewersCard } from './Reviewers';
@@ -59,8 +59,8 @@ function PrStagesView({ source, route, settings }: { source: DataSource; route: 
   const { data, reload } = usePrPageData(source, route.repo, route.number);
   const header = data.header;
   const prId = header.value?.id;
-  // Every comment box on the page previews its Markdown the way GitHub renders it on this PR, and suggests its people and
-  // teams after an `@`.
+  // Every comment box on the page previews its Markdown the way GitHub renders it on this PR, suggests its people and
+  // teams after an `@`, and offers the viewer's saved replies.
   const previewMarkdown = useCallback((text: string) => source.previewMarkdown(text, prId ?? ''), [source, prId]);
   const mentionList = useMemo(() => ({ prId: prId ?? '', load: () => source.listMentions(prId ?? '') }), [source, prId]);
   const title = header.value ? `${header.value.title} · #${header.value.number}` : `#${route.number}`;
@@ -78,7 +78,9 @@ function PrStagesView({ source, route, settings }: { source: DataSource; route: 
   return (
     <MarkdownPreview value={previewMarkdown}>
       <MentionList value={mentionList}>
-        <PrView header={header.value} data={data} reload={reload} settings={settings} source={source} section={route.section} comment={route.comment} file={route.file} />
+        <SavedReplyList value={source.listSavedReplies}>
+          <PrView header={header.value} data={data} reload={reload} settings={settings} source={source} section={route.section} comment={route.comment} file={route.file} />
+        </SavedReplyList>
       </MentionList>
     </MarkdownPreview>
   );

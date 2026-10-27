@@ -22,6 +22,7 @@ import {
   repoCandidateSchema,
   repoRefSchema,
   reviewerCandidateSchema,
+  savedReplySchema,
   stackBranchesSchema,
   stackEntrySchema,
   stackReadinessSchema,
@@ -255,6 +256,8 @@ const RPC_SCHEMAS = {
   'markdown.emojis': { args: z.object({}), result: z.array(emojiSchema) },
   /** The people and teams a comment box on the PR suggests after an `@`, in GitHub's order: the list GitHub's own comment box loads. */
   'markdown.mentions': { args: z.object({ prId: z.string() }), result: z.array(mentionSchema) },
+  /** The viewer's saved replies, which a comment box on a PR offers under its slash command Saved replies: the list GitHub's own comment box loads. */
+  'markdown.savedReplies': { args: z.object({}), result: z.array(savedReplySchema) },
   'pr.review': {
     args: z.object({
       prId: z.string(),

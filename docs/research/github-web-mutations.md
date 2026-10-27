@@ -265,16 +265,17 @@ the score orders the names.
 - Alerts: only its row, and `> [!WARNING]` / `> Some alert message` in the box above the list, are seen.
 
 **What CarbonLayer does** (`SLASH_COMMANDS`, `slashCommandQueryAt`, `slashCommandsFor`, `insertAlert`, `insertCodeBlock`,
-`insertDetails`, `insertTable` in `src/pr/markdown-editing.ts`; the list in `CommentInput`): the commands that need nothing
-from GitHub (Alerts, Code block, Details, Table) in every comment box, whatever `slashCommandsEnabled` says, with the
-Markdown above built in rather than asked for, the same trigger and score (without the second score of the part after a
+`insertDetails`, `insertTable`, `savedReplyChoices` in `src/pr/markdown-editing.ts`; the list in
+`CommentInput`): Alerts, Code block, Details, Saved replies and Table in every comment box, whatever
+`slashCommandsEnabled` says, with the Markdown above built in rather than asked for (Saved replies' rows are the viewer's
+replies, below), the same trigger and score (without the second score of the part after a
 `/`, which only doubles these names'), and the space and `%cursor%` caret of `fill`. Its keys are its other lists' (Tab
 chooses, ↑ / ↓ wrap), it opens at once and after a paste too, and it has no "Preview" label, feedback link or toolbar
 button. INFERRED: Alerts' second step (GitHub's five kinds, in the docs' order) and "Some alert message" as GitHub's text
 rather than the user's; every language's fence but `java` (Linguist's default alias, the name in lower case: `c#`,
 `objective-c`); No Syntax as a bare fence; whether Templates is offered on a PR comment.
 
-**Saved replies, for later** (not built). The editor's own toolbar menu (⌘. / Ctrl+., the `SavedRepliesButton` in `42g`)
+**Saved replies.** The editor's own toolbar menu (⌘. / Ctrl+., the `SavedRepliesButton` in `42g`)
 loads the list with `GET /settings/replies?context=pull_request` (function `$`; `context` is the subject's type mapped to
 `issue` or `pull_request`, and all three PR types map to `pull_request`), once per box with its mentions and references, on
 its first focus. It goes through `verifiedFetchJSON` (`lS` in module `VY`, `app-runtime-1a555c9bb4a1f269.js`): `Accept:
@@ -285,7 +286,15 @@ read (`{ name: title, content: body }`); any failure means no replies. The menu 
 `/settings/replies`; choosing one puts its body over the selection, in the next frame, through Primer's
 `useSyntheticChange` (`insertText`, the caret after it), with no `%cursor%` handling. The `/saved-replies` command goes
 through `slash_apps` instead (a `menu` of the replies, then a `fill` of the body: `%cursor%` honoured, a space after).
-UNVERIFIED: the JSON's other fields, and an answer to CarbonLayer's request.
+Signed out (curl, 2026-10-27), the GET with those headers answers 404 `{"error":"Couldn’t authenticate you"}` (without
+them, a redirect to `/login`). CarbonLayer (since 2026-10-27) sends that GET with those headers (`markdown.savedReplies`
+in `src/lib/github-web/index.ts`, `request(…, { react: false })`) the first time a box opens Saved replies' step, keeps
+the answer five minutes for every box (and in the page's memory only, never on the device), reads each reply's `title`
+and `body` (another shape is refused) and lists them as the slash command's step: the title over the body, cut to a line,
+choosing one putting the body in as `fill` does. With none, or when the load fails, the step says "You don't have any
+saved replies yet." (CarbonLayer's words: GitHub's empty state is server-rendered and unseen); under the step, "Create
+new" (the toolbar menu's label) opens `https://github.com/settings/replies` in a new tab. No toolbar menu. UNVERIFIED: the
+JSON's other fields and its order, and an answer to CarbonLayer's request signed in.
 
 | File | Matched string(s) |
 |---|---|

@@ -4,7 +4,7 @@ import { skipToken, useQuery } from '@tanstack/react-query';
 import { createContext, Fragment, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { githubUser } from '../lib/github-web/session';
-import type { Emoji, Mention, PrSummary } from '../lib/model';
+import type { Emoji, Mention, PrSummary, SavedReply } from '../lib/model';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
 import { Icon, type IconName } from '../ui/Icon';
@@ -22,6 +22,7 @@ import {
   linkPastedUrl,
   mentionQueryAt,
   mentionSuggestionsFor,
+  savedReplyChoices,
   slashCommandQueryAt,
   slashCommandsFor,
   toggleBold,
@@ -35,6 +36,7 @@ import {
   type SlashChoice,
   type SlashStep,
 } from './markdown-editing';
+import { openInNewTab } from './navigation';
 import type { StageState } from './page-data';
 import './primitives.css';
 
@@ -50,11 +52,11 @@ export function StatePill({ pr }: { pr: Pick<PrSummary, 'state' | 'isDraft'> }) 
  * The comment box every composer on the page uses, like GitHub's: Write and Preview tabs, GitHub's formatting toolbar and
  * the shortcuts GitHub documents for comments, lists that carry on with Enter, a URL pasted over text linking it,
  * GitHub's emoji suggested after a `:`, the PR's people and teams after an `@`, and GitHub's slash commands (Alerts, Code
- * block, Details, Table) after a `/` at the start of a line (markdown-editing.ts says what each does to the text).
- * ⌘↵ / Ctrl+↵ submits, Esc cancels, and it grows with its content. While a list shows, ↑ / ↓ move through it, Enter or
- * Tab (or a click) puts the one reached in, and Esc closes only the list; a command with a second step (an alert's kind,
- * a code block's language, a table's columns then rows) shows that step's list instead, its Markdown going in once the
- * last is chosen.
+ * block, Details, Saved replies, Table) after a `/` at the start of a line (markdown-editing.ts says what each does to the
+ * text). ⌘↵ / Ctrl+↵ submits, Esc cancels, and it grows with its content. While a list shows, ↑ / ↓ move through it,
+ * Enter or Tab (or a click) puts the one reached in, and Esc closes only the list; a command with a second step (an
+ * alert's kind, a code block's language, one of the viewer's saved replies, a table's columns then rows) shows that
+ * step's list instead, its Markdown going in once the last is chosen.
  */
 export function CommentInput({
   value,
@@ -91,7 +93,8 @@ export function CommentInput({
   // the text it was typed in, the step a chosen command opened (null for the commands themselves), and which suggestion
   // ↑ / ↓ reached; null once Esc closed the list or the text lost focus. GitHub's emoji are asked for the first time a box
   // asks for one, then kept by the page's cache: they rarely change. The PR's people and teams are asked for the first
-  // time a box asks for one of them, then kept for five minutes. The commands need nothing from GitHub.
+  // time a box asks for one of them, then kept for five minutes, as are the viewer's saved replies, asked for the first
+  // time a box shows them (a failed load shows none). The other commands need nothing from GitHub.
   const [ask, setAsk] = useState<{ value: string; at: number; query: string; step: SlashStep | null; active: number } | null>(null);
   const asked = ask && ask.value === value && !previewing && !disabled ? ask : null;
   // The character the query follows says which list it asks for.
@@ -101,15 +104,23 @@ export function CommentInput({
   const emojis = useQuery({ queryKey: ['emojis'], queryFn: asked && !mentioning && !commanding && loadEmojis ? loadEmojis : skipToken, staleTime: Infinity });
   const mentionList = useContext(MentionList);
   const mentions = useQuery({ queryKey: ['mentions', mentionList?.prId], queryFn: mentioning && mentionList ? mentionList.load : skipToken, staleTime: 5 * 60_000 });
+  const loadSavedReplies = useContext(SavedReplyList);
+  const pickingReply = asked?.step?.choices === 'saved replies';
+  const savedReplies = useQuery({ queryKey: ['saved-replies'], queryFn: pickingReply && loadSavedReplies ? loadSavedReplies : skipToken, staleTime: 5 * 60_000 });
   const listed = mentioning ? mentions : emojis;
   const suggestions: Array<Emoji | Mention | SlashChoice> = !asked
     ? []
     : commanding
-      ? (asked.step?.choices ?? slashCommandsFor(asked.query))
+      ? !asked.step
+        ? slashCommandsFor(asked.query)
+        : asked.step.choices === 'saved replies'
+          ? savedReplyChoices(savedReplies.data ?? [])
+          : asked.step.choices
       : mentioning
         ? mentionSuggestionsFor(asked.query, mentions.data ?? [])
         : emojiSuggestionsFor(asked.query, emojis.data ?? []);
-  const listShown = suggestions.length > 0 || (asked !== null && !commanding && listed.isLoading);
+  // Saved replies' step shows even with none: an empty state, and the link to create one.
+  const listShown = suggestions.length > 0 || pickingReply || (asked !== null && !commanding && listed.isLoading);
   const listId = useId();
   const isMac = navigator.userAgent.includes('Mac');
   const tools: Array<[Tool, ...Tool[]]> = suggestion
@@ -326,9 +337,9 @@ export function CommentInput({
           textarea={ref}
           at={asked.at}
           trigger={commanding ? '/' : mentioning ? '@' : ':'}
-          trail={asked.step?.trail ?? []}
+          step={asked.step}
           id={listId}
-          suggestions={commanding || listed.data ? suggestions : null}
+          suggestions={pickingReply ? (savedReplies.isLoading ? null : suggestions) : commanding || listed.data ? suggestions : null}
           active={asked.active}
           onReach={(index) => setAsk({ ...asked, active: index })}
           onChoose={choose}
@@ -349,6 +360,9 @@ export const EmojiList = createContext<(() => Promise<Emoji[]>) | null>(null);
  * nobody is suggested without it.
  */
 export const MentionList = createContext<{ prId: string; load: () => Promise<Mention[]> } | null>(null);
+
+/** Loads the viewer's saved replies, which every comment box inside it offers under the slash command Saved replies; none without it. */
+export const SavedReplyList = createContext<(() => Promise<SavedReply[]>) | null>(null);
 
 /**
  * A part of the page fed by one stage of its data: its skeleton until the stage first arrives, then what `children`
@@ -469,15 +483,16 @@ const TOOLBAR: Array<[Tool, ...Tool[]]> = [
  * (GitHub's slash commands, or the rows of a step one opened), as GitHub's list: under the text typed (above it when there
  * is no room below), in the page's body, so no part of the page that scrolls (a diff, the drawer) clips it. The commands
  * come under GitHub's header, "Slash commands" with its group "Markdown", each with the line that describes it; a step's
- * header says where it is ("Slash / Table / Columns"). A click leaves the focus in the text, and never reaches the page
- * beneath, whose popovers would take it for one outside them. A list longer than it shows (a code block's languages)
- * scrolls to keep the one reached in sight.
+ * header says where it is ("Slash / Table / Columns"); Saved replies' says when the viewer has none, and links to
+ * GitHub's page that creates one, in a new tab. A click leaves the focus in the text, and never reaches the page beneath,
+ * whose popovers would take it for one outside them. A list longer than it shows (a code block's languages) scrolls to
+ * keep the one reached in sight.
  */
 function Suggestions({
   textarea,
   at,
   trigger,
-  trail,
+  step,
   id,
   suggestions,
   active,
@@ -488,10 +503,10 @@ function Suggestions({
   /** Where the `:`, the `@` or the `/` is in the text: the list starts under what was typed after it. */
   at: number;
   trigger: ':' | '@' | '/';
-  /** For a command's step, the names its header shows after "Slash"; none for the commands themselves. */
-  trail: string[];
+  /** The step a command opened, whose names the header shows after "Slash"; null for the commands themselves. */
+  step: SlashStep | null;
   id: string;
-  /** Null while GitHub's emoji, or the PR's people and teams, are on their way. */
+  /** Null while GitHub's emoji, the PR's people and teams, or the viewer's saved replies are on their way. */
   suggestions: Array<Emoji | Mention | SlashChoice> | null;
   active: number;
   onReach: (index: number) => void;
@@ -529,7 +544,7 @@ function Suggestions({
   return createPortal(
     <div
       ref={box}
-      className={trigger === '/' ? 'pr-emoji-suggestions pr-slash-commands' : 'pr-emoji-suggestions'}
+      className={trigger !== '/' ? 'pr-emoji-suggestions' : step ? 'pr-emoji-suggestions pr-slash-commands is-step' : 'pr-emoji-suggestions pr-slash-commands'}
       // Measured where it is first drawn, unseen, then placed before the frame is painted.
       style={place ?? { visibility: 'hidden' }}
       onMouseDown={(event) => event.preventDefault()}
@@ -538,26 +553,31 @@ function Suggestions({
       {trigger === '/' && (
         <div className="pr-slash-commands-header">
           <Icon name="code-square" />
-          {trail.length === 0 ? (
-            'Slash commands'
-          ) : (
+          {step ? (
             <span>
-              Slash <strong>/ {trail.join(' / ')}</strong>
+              Slash <strong>/ {step.trail.join(' / ')}</strong>
             </span>
+          ) : (
+            'Slash commands'
           )}
         </div>
       )}
-      {trigger === '/' && trail.length === 0 && <div className="pr-slash-commands-group">Markdown</div>}
-      {suggestions ? (
+      {trigger === '/' && !step && <div className="pr-slash-commands-group">Markdown</div>}
+      {suggestions?.length === 0 && step?.choices === 'saved replies' ? (
+        <div role="status" className="pr-slash-commands-empty">
+          You don't have any saved replies yet.
+        </div>
+      ) : suggestions ? (
         <ul
           id={id}
           role="listbox"
-          aria-label={trigger === '/' ? (trail.length === 0 ? 'Slash commands' : trail.join(' / ')) : trigger === '@' ? 'People and teams' : 'Emoji'}
+          aria-label={trigger === '/' ? (step ? step.trail.join(' / ') : 'Slash commands') : trigger === '@' ? 'People and teams' : 'Emoji'}
           className="pr-emoji-suggestions-list"
         >
           {suggestions.map((suggestion, index) => (
             <li
-              key={'kind' in suggestion ? suggestion.login : 'choose' in suggestion ? suggestion.label : suggestion.name}
+              // Two saved replies may share a title.
+              key={'kind' in suggestion ? suggestion.login : 'choose' in suggestion ? `${index}:${suggestion.label}` : suggestion.name}
               id={`${id}-${index}`}
               role="option"
               aria-selected={index === active}
@@ -591,8 +611,21 @@ function Suggestions({
         </ul>
       ) : (
         <div role="status" className="pr-emoji-suggestions-loading">
-          {trigger === '@' ? 'Loading people…' : 'Loading emoji…'}
+          {trigger === '/' ? 'Loading saved replies…' : trigger === '@' ? 'Loading people…' : 'Loading emoji…'}
         </div>
+      )}
+      {step?.choices === 'saved replies' && (
+        <a
+          className="pr-slash-commands-create"
+          href="https://github.com/settings/replies"
+          onClick={(event) => {
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            openInNewTab(event.currentTarget.href);
+          }}
+        >
+          Create new
+        </a>
       )}
     </div>,
     document.body,

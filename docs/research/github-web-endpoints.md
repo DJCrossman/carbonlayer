@@ -303,6 +303,16 @@ path of a deleted file, which the head commit no longer has, is sent as it is).
   query. `markdown.mentions` reads the list (`src/lib/github-web/index.ts`, kept five minutes per PR for every box on the
   page), and `mentionQueryAt`, `mentionSuggestionsFor` and `insertMention` in `src/pr/markdown-editing.ts` do the rest.
 
+## The viewer's saved replies (`/settings/replies`) — JSON (read from the bundle 2026-10-27; signed in UNVERIFIED)
+- GitHub's React comment box on a PR loads them with `GET /settings/replies?context=pull_request` through its
+  `verifiedFetchJSON`: `Accept` and `Content-Type: application/json`, `GitHub-Verified-Fetch`, `X-Requested-With`,
+  `X-Fetch-Nonce`, `X-GitHub-Client-Version`, and no `GitHub-Is-React` (`github-web-mutations.md`, "Slash commands").
+  It reads a JSON array of `{ title, body }`; signed out it answers 404 `{"error":"Couldn’t authenticate you"}`.
+- `markdown.savedReplies` sends exactly that (`src/lib/github-web/index.ts`, `request(…, { react: false })`), reads each
+  reply's `title` and `body` (other fields left unread, another shape refused), and keeps the list five minutes for every
+  box on the page. `savedReplyChoices` in `src/pr/markdown-editing.ts` lists them under the slash command Saved replies,
+  choosing one putting it in with the caret at its `%cursor%`.
+
 ## Writes
 Review submit, comment, inline comment, resolve, merge, auto-merge, viewed and draft: see
 `github-web-mutations.md` (read from GitHub's bundles; none sent yet).

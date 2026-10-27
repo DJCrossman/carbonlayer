@@ -81,9 +81,11 @@ export function keptOnDevice(owner: CacheOwner, storage: AsyncStorage<string> = 
       shouldDehydrateQuery: ({ queryKey, state }) =>
         state.status === 'success' &&
         Date.now() - state.dataUpdatedAt < KEPT_FOR_MS &&
-        // The diffs, the file list GitHub sends some of them with, the review threads and the timeline stay in memory,
-        // asked of GitHub on every page load. chrome.storage keeps the settings.
+        // The diffs, the file list GitHub sends some of them with, the review threads, the timeline and the viewer's saved
+        // replies (comments they have yet to write) stay in memory, asked of GitHub on every page load. chrome.storage
+        // keeps the settings.
         queryKey[0] !== 'pr-diff' &&
+        queryKey[0] !== 'saved-replies' &&
         queryKey[0] !== 'settings' &&
         (queryKey[0] !== 'pr' || KEPT_STAGES.some((stage) => stage === queryKey[4])),
     },

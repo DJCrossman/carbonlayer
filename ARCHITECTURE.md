@@ -57,7 +57,11 @@ page's cache (`['emojis']`, on the device too, for its 24 hours). A typed `:+1:`
 the same way suggests the PR's people and teams from the list GitHub's box loads for it (`markdown.mentions`:
 `GET /suggestions/pull_request/<id>`), ranked CarbonLayer's way (`mentionSuggestionsFor`) and put in as `@login` or
 `@org/slug` (`insertMention`), asked the first time a box asks for one and kept per PR (`['mentions', prId]`, fresh for
-five minutes). See
+five minutes). A `/` at the start of a line lists GitHub's slash commands (`SLASH_COMMANDS`, `slashCommandsFor`), filtered
+by GitHub's fuzzy score, each putting in the Markdown GitHub's server answers it with, after a second step for most;
+Saved replies' step lists the viewer's saved replies from the list GitHub's box loads (`markdown.savedReplies`:
+`GET /settings/replies?context=pull_request`, without `GitHub-Is-React`), asked the first time a box opens it and kept
+in memory only (`['saved-replies']`, fresh for five minutes). See
 `docs/research/github-web-endpoints.md`, `github-web-mutations.md` and `github-web-reviewers.md`. No api.github.com, no token. The background service worker brokers the one-click copy from Graphite (below), and runs
 stack merges, whose requests go through a github.com tab's content script all the same (below).
 

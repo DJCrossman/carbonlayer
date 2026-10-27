@@ -158,6 +158,21 @@ describe('handleRpc', () => {
     fetch.mockImplementation(async () => Response.json([{ type: 'user', id: 1, login: 'mona' }]));
     expect(await call('markdown.mentions', { prId: 'PR_8' })).toMatchObject({ ok: false, error: expect.stringMatching(/^\/suggestions\/pull_request\/800 did not match: /) });
   });
+
+  it("lists the viewer's saved replies as GitHub's comment box on a PR asks for them, once for every box, and refuses a list of another shape", async () => {
+    const fetch = vi.fn(async (_path: string, _init: RequestInit) => Response.json([{ id: 5, title: 'Thanks', body: 'Thanks for %cursor%!' }]));
+    vi.stubGlobal('fetch', fetch);
+    fetch.mockImplementationOnce(async () => Response.json([{ id: 5, name: 'Thanks' }]));
+    expect(await call('markdown.savedReplies', {})).toMatchObject({ ok: false, error: expect.stringMatching(/^\/settings\/replies did not match: /) });
+    expect(await call('markdown.savedReplies', {})).toMatchObject({ ok: true, result: [{ title: 'Thanks', body: 'Thanks for %cursor%!' }] });
+    const [first] = fetch.mock.calls;
+    assert.isDefined(first);
+    expect(first[0]).toBe('/settings/replies?context=pull_request');
+    expect(first[1].headers).toMatchObject({ Accept: 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'GitHub-Verified-Fetch': 'true' });
+    expect(first[1].headers).not.toHaveProperty('GitHub-Is-React');
+    await call('markdown.savedReplies', {});
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
 });
 
 /** A request answered the way the content script answers the app's: read by its method's schemas, then handled. */

@@ -16,6 +16,7 @@ import {
   linkPastedUrl,
   mentionQueryAt,
   mentionSuggestionsFor,
+  savedReplyChoices,
   SLASH_COMMANDS,
   slashCommandQueryAt,
   slashCommandsFor,
@@ -367,12 +368,13 @@ describe('slashCommandsFor', () => {
   const names = (query: string) => slashCommandsFor(query).map((command) => command.label);
 
   it('lists every command, in GitHub\'s order, for a bare `/`', () => {
-    expect(names('')).toEqual(['Alerts', 'Code block', 'Details', 'Table']);
+    expect(names('')).toEqual(['Alerts', 'Code block', 'Details', 'Saved replies', 'Table']);
   });
 
   it('keeps the commands whose name has the typed characters in order, case aside, the best scored first', () => {
-    expect(names('d')).toEqual(['Details', 'Code block']);
-    expect(names('e')).toEqual(['Table', 'Alerts', 'Details', 'Code block']);
+    expect(names('d')).toEqual(['Details', 'Code block', 'Saved replies']);
+    expect(names('e')).toEqual(['Table', 'Alerts', 'Details', 'Code block', 'Saved replies']);
+    expect(names('sav')).toEqual(['Saved replies']);
     expect(names('cb')).toEqual(['Code block']);
     expect(names('TAB')).toEqual(['Table']);
     expect(names('code')).toEqual(['Code block']);
@@ -390,11 +392,13 @@ describe('the slash commands', () => {
     if (!found) throw new Error(`no command ${label}`);
     return found;
   };
-  const step = (choice: SlashChoice): SlashStep => {
+  const step = (choice: SlashChoice): { trail: string[]; choices: SlashChoice[] } => {
     if (typeof choice.choose === 'function') throw new Error(`${choice.label} opens no step`);
-    return choice.choose;
+    const { trail, choices } = choice.choose;
+    if (choices === 'saved replies') throw new Error(`${choice.label} lists the viewer's saved replies`);
+    return { trail, choices };
   };
-  const choice = (from: SlashStep, label: string): SlashChoice => {
+  const choice = (from: { choices: SlashChoice[] }, label: string): SlashChoice => {
     const found = from.choices.find((candidate) => candidate.label === label);
     if (!found) throw new Error(`no choice ${label}`);
     return found;
@@ -409,6 +413,7 @@ describe('the slash commands', () => {
       ['Alerts', 'Add a markdown alert to emphasize important information'],
       ['Code block', 'Insert a code block formatted for a chosen syntax'],
       ['Details', 'Add a details tag to hide content behind a visible heading'],
+      ['Saved replies', 'Insert one of your saved replies'],
       ['Table', 'Add markdown table'],
     ]);
   });
@@ -439,6 +444,44 @@ describe('the slash commands', () => {
 
   it('puts in Details at once', () => {
     expect(marked(chosen(command('Details'), draft('/d|')))).toBe('<details><summary>Details</summary>\n<p>\n\n|\n\n</p>\n</details> ');
+  });
+
+  it("opens a step of the viewer's saved replies", () => {
+    const expected: SlashStep = { trail: ['Saved replies'], choices: 'saved replies' };
+    expect(command('Saved replies').choose).toEqual(expected);
+  });
+});
+
+describe('savedReplyChoices', () => {
+  // What choosing a reply of this Markdown does to the draft.
+  const putIn = (body: string, on: Draft): Draft | null => {
+    const [row] = savedReplyChoices([{ title: 'Reply', body }]);
+    if (typeof row?.choose !== 'function') throw new Error('a saved reply opens no step');
+    return row.choose(on);
+  };
+
+  it("lists each reply in GitHub's order, its title over its Markdown", () => {
+    const rows = savedReplyChoices([
+      { title: 'Thanks', body: 'Thanks for the pull request!' },
+      { title: 'Needs a test', body: 'Could you add a test for %cursor% first?' },
+    ]);
+    expect(rows.map(({ label, description }) => [label, description])).toEqual([
+      ['Thanks', 'Thanks for the pull request!'],
+      ['Needs a test', 'Could you add a test for %cursor% first?'],
+    ]);
+  });
+
+  it('puts the reply and a space in place of the `/` and what follows it, the caret after the space', () => {
+    expect(marked(putIn('Thanks for the pull request!', draft('/saved|\nmore')))).toBe('Thanks for the pull request! |\nmore');
+  });
+
+  it('leaves the caret where its `%cursor%` was, taking every mark out', () => {
+    expect(marked(putIn('Could you add a test for %cursor% first?', draft('LGTM\n/sav|')))).toBe('LGTM\nCould you add a test for | first? ');
+    expect(marked(putIn('Hi %cursor%,\n\nThanks!%cursor%', draft('/s|')))).toBe('Hi |,\n\nThanks! ');
+  });
+
+  it('does nothing where the text asks for no command', () => {
+    expect(putIn('Thanks', draft('a /saved|'))).toBeNull();
   });
 });
 

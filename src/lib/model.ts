@@ -515,6 +515,11 @@ export const mentionSchema = z.discriminatedUnion('kind', [
 
 export type Mention = z.infer<typeof mentionSchema>;
 
+/** One of the viewer's saved replies, as GitHub lists them for a comment box: its title, and the Markdown it puts in. */
+export const savedReplySchema = z.object({ title: z.string(), body: z.string() });
+
+export type SavedReply = z.infer<typeof savedReplySchema>;
+
 /**
  * What merging a GitHub-native stack waits on (src/lib/stack-merges.ts), as the PR page's own readers find it: for each PR
  * the merge merges, bottom first, its state, head commit, checks (and which are required), and GitHub's verdict on

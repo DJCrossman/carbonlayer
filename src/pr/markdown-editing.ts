@@ -5,7 +5,7 @@
 // an `@` is what its mention suggestions insert, and a command after a `/` at the start of a line is what its slash
 // commands offer and put in. Pure: a draft in, the draft after the command out.
 
-import type { Emoji, Mention } from '../lib/model';
+import type { Emoji, Mention, SavedReply } from '../lib/model';
 
 /** A comment box's text and its selection (start === end: only the caret), as a textarea has them. */
 export interface Draft {
@@ -25,17 +25,20 @@ export interface SlashChoice {
   choose: ((draft: Draft) => Draft | null) | SlashStep;
 }
 
-/** A step a command opens: its rows, and the names the list's header shows after "Slash" (`Table / Columns`). */
+/**
+ * A step a command opens: its rows, and the names the list's header shows after "Slash" (`Table / Columns`). Saved
+ * replies' rows are the viewer's saved replies (savedReplyChoices), which the comment box loads when the step opens.
+ */
 export interface SlashStep {
   trail: string[];
-  choices: SlashChoice[];
+  choices: SlashChoice[] | 'saved replies';
 }
 
 /**
- * The slash commands GitHub's comment box offers on a pull request that need nothing from GitHub, named and described as
- * its list has them, in its order; its Saved replies (the viewer's) and Templates (the repository's) are left out.
- * GitHub's server draws the list and answers each command with its Markdown (docs/research/github-web-mutations.md,
- * "Slash commands"); the steps and the Markdown are read from GitHub's own recording of them, Alerts' from a screenshot.
+ * The slash commands GitHub's comment box offers on a pull request, named and described as its list has them, in its
+ * order; its Templates (the repository's) are left out. GitHub's server draws the list and answers each command with its
+ * Markdown (docs/research/github-web-mutations.md, "Slash commands"); the steps and the Markdown are read from GitHub's own
+ * recording of them, Alerts' from a screenshot.
  */
 export const SLASH_COMMANDS: SlashChoice[] = [
   {
@@ -60,6 +63,7 @@ export const SLASH_COMMANDS: SlashChoice[] = [
     },
   },
   { label: 'Details', description: 'Add a details tag to hide content behind a visible heading', choose: insertDetails },
+  { label: 'Saved replies', description: 'Insert one of your saved replies', choose: { trail: ['Saved replies'], choices: 'saved replies' } },
   {
     label: 'Table',
     description: 'Add markdown table',
@@ -300,6 +304,14 @@ export function insertTable(draft: Draft, columns: number, rows: number): Draft 
 /** An alert of `kind` (Note, Tip, Important, Warning or Caution) saying "Some alert message", the caret after it. */
 export function insertAlert(draft: Draft, kind: string): Draft | null {
   return fillSlashCommand(draft, `> [!${kind.toUpperCase()}]\n> Some alert message`);
+}
+
+/**
+ * The rows of Saved replies' step, in the order GitHub lists `replies`: each one's title over its Markdown, which choosing
+ * it puts in as GitHub's slash command does, the caret where its `%cursor%` was, else after it.
+ */
+export function savedReplyChoices(replies: SavedReply[]): SlashChoice[] {
+  return replies.map((reply) => ({ label: reply.title, description: reply.body, choose: (draft: Draft) => fillSlashCommand(draft, reply.body) }));
 }
 
 /** One of markdown-toolbar-element's styles. */

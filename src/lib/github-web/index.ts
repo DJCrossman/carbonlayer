@@ -1,12 +1,12 @@
 // Answers the app's RPC requests with the user's github.com session: same-origin requests from the content
 // script to the endpoints GitHub's own React UI uses (docs/research/github-web-*.md). No token, no api.github.com.
 // The page's own cache (src/app/query-cache.tsx) decides when to ask again, so reads go to GitHub; only the reviewer,
-// label and assignee pickers', the comment boxes' people and teams and `pr.fetch`'s are kept briefly here, and
-// pr-stages.ts shares a request between the PR page's stages while it is on its way. Any successful write clears what is
-// kept, and stops sharing the requests made before it.
+// label and assignee pickers', the comment boxes' people and teams and saved replies, and `pr.fetch`'s are kept briefly
+// here, and pr-stages.ts shares a request between the PR page's stages while it is on its way. Any successful write
+// clears what is kept, and stops sharing the requests made before it.
 
 import { z } from 'zod/mini';
-import type { AssigneeCandidate, LabelCandidate, Mention, PrDetail } from '../model';
+import { savedReplySchema, type AssigneeCandidate, type LabelCandidate, type Mention, type PrDetail, type SavedReply } from '../model';
 import type { RpcMethod, RpcMethods, RpcRequest, RpcResponse } from '../rpc';
 import { getSettings } from '../settings';
 import { expandedDiffLines } from './files';
@@ -19,7 +19,7 @@ import { listOrganizations } from './organizations';
 import { organizationPeople } from './people';
 import { pickableRepositories, topRepositories } from './repositories';
 import { availableReviewersAnswer, reviewerCandidatesFrom, suggestedReviewersAnswer } from './reviews';
-import { getJson, getPage, githubUser, politely, render } from './session';
+import { getJson, getPage, githubUser, politely, readAnswer, render, request } from './session';
 import { stackReadiness } from './stack-readiness';
 
 export async function handleRpc<M extends RpcMethod>(request: RpcRequest<M>): Promise<RpcResponse> {
@@ -150,6 +150,13 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
       );
     });
   },
+  'markdown.savedReplies': () =>
+    // The viewer's saved replies as GitHub's comment box on a pull request asks for them, through its verifiedFetchJSON,
+    // which sends no `GitHub-Is-React` (docs/research/github-web-mutations.md, "Slash commands"): the same for every box and
+    // PR. GitHub reads each one's title and body; any other field is left unread.
+    cached(kept.savedReplies, 'pull_request', 5 * 60_000, false, async () =>
+      readAnswer('/settings/replies', z.array(savedReplySchema), await (await request('/settings/replies?context=pull_request', 'application/json', { react: false })).json()),
+    ),
   ...mutations,
 };
 
@@ -173,13 +180,15 @@ interface Kept<T> {
 
 /**
  * What `cached` keeps, a map for each kind of answer: `pr.fetch`'s pull requests, the reviewer picker's two lists, the
- * people and teams the comment boxes suggest, and the label and assignee pickers' lists.
+ * people and teams the comment boxes suggest and the viewer's saved replies they offer, and the label and assignee
+ * pickers' lists.
  */
 const kept = {
   pullRequests: new Map<string, Kept<PrDetail>>(),
   availableReviewers: new Map<string, Kept<z.infer<typeof availableReviewersAnswer>>>(),
   suggestedReviewers: new Map<string, Kept<z.infer<typeof suggestedReviewersAnswer>>>(),
   mentions: new Map<string, Kept<Mention[]>>(),
+  savedReplies: new Map<string, Kept<SavedReply[]>>(),
   labelCandidates: new Map<string, Kept<LabelCandidate[]>>(),
   assigneeCandidates: new Map<string, Kept<AssigneeCandidate[]>>(),
 };

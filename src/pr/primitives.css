@@ -157,6 +157,21 @@
 }
 .pr-slash-command strong { font-weight: 600; }
 .pr-slash-command-about { color: var(--gg-fg-muted); font-size: 12px; line-height: 1.35; }
+/* A saved reply's row: its title over its Markdown, each cut short to a line. Without any, an empty state; under
+   them, the link to GitHub's page that creates one. */
+.pr-slash-commands.is-step .pr-slash-command { align-items: stretch; }
+.pr-slash-commands.is-step .pr-slash-command > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-slash-commands-empty { padding: 4px 8px; color: var(--gg-fg-muted); font-size: 12px; }
+.pr-slash-commands-create {
+  display: block;
+  margin: 4px -4px -4px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--gg-border);
+  color: var(--gg-accent);
+  font-size: 12px;
+  text-decoration: none;
+}
+.pr-slash-commands-create:hover { text-decoration: underline; }
 
 /* A stage of the page's data that failed to load: one line where its part would be, with a retry. */
 .pr-stage-error {

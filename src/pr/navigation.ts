@@ -25,6 +25,12 @@ export function followLink(url: string): void {
   else postToParent({ type: 'gg:navigate', url, newTab: !url.startsWith('https://github.com/') });
 }
 
+/** Opens a page in a new tab, leaving this one as it is, so a comment being written keeps its text (GitHub's settings). */
+export function openInNewTab(url: string): void {
+  if (window.parent === window) window.open(url, '_blank', 'noopener');
+  else postToParent({ type: 'gg:navigate', url, newTab: true });
+}
+
 /**
  * Focuses a comment on this page, as a click on its time does on GitHub: the top window moves to its permalink without
  * loading (a history entry, so Back leaves it again) and the page marks it; the harness changes its route.

@@ -11,9 +11,10 @@ export const SIGNED_OUT = 'Sign in to github.com in this tab, then reload.';
 /**
  * The one place a read leaves for GitHub: sends only the headers GitHub's UI sends, and turns a
  * signed-out answer or any other failure into a message the UI can show as is. `xhr` marks it as one of GitHub's own
- * scripts' requests, as its JSON routes and the HTML partials its classic pages load into dialogs are.
+ * scripts' requests, as its JSON routes and the HTML partials its classic pages load into dialogs are; `react: false`
+ * leaves out `GitHub-Is-React`, as GitHub's `verifiedFetchJSON` does (its comment box's saved replies).
  */
-export async function request(path: string, accept: 'application/json' | 'text/html', { xhr = accept === 'application/json' } = {}): Promise<Response> {
+export async function request(path: string, accept: 'application/json' | 'text/html', { xhr = accept === 'application/json', react = true } = {}): Promise<Response> {
   // JSON routes get the headers GitHub's React page sends with its own page_data reads, Content-Type included on a GET
   // (the nonce and client version come from the page's metas when the content script has a page, so a read made while
   // GitHub's <head> is still being parsed waits for them); without them some routes answer 404.
@@ -26,7 +27,7 @@ export async function request(path: string, accept: 'application/json' | 'text/h
         ...(accept === 'application/json' && { 'Content-Type': 'application/json' }),
         'X-Requested-With': 'XMLHttpRequest',
         'GitHub-Verified-Fetch': 'true',
-        'GitHub-Is-React': 'true',
+        ...(react && { 'GitHub-Is-React': 'true' }),
         ...(nonce && { 'X-Fetch-Nonce': nonce }),
         ...(release && { 'X-GitHub-Client-Version': release }),
       }

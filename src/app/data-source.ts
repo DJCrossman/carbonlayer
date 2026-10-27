@@ -3,7 +3,7 @@
 
 import { browser } from 'wxt/browser';
 import { z } from 'zod/mini';
-import type { AssigneeCandidate, ChangedFileDiff, Emoji, LabelCandidate, Mention, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, StackBranches, StackEntry, TopRepository, View, ViewResult } from '../lib/model';
+import type { AssigneeCandidate, ChangedFileDiff, Emoji, LabelCandidate, Mention, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, SavedReply, StackBranches, StackEntry, TopRepository, View, ViewResult } from '../lib/model';
 import { rpc, type DiffEntryLine, type InboxRowToEnrich, type LineRange, type MergeCommit, type MergeMethod, type RpcMethods } from '../lib/rpc';
 import { getSettings, setSettings, watchSettings, type Settings, type SettingsStorage } from '../lib/settings';
 import { STACK_MERGES, stackMergesSchema, type StackMerge, type StackMergeRequest, type stackMergeMessage } from '../lib/stack-merges';
@@ -106,6 +106,8 @@ export interface DataSource {
   listEmojis(): Promise<Emoji[]>;
   /** The people and teams a comment box on the PR suggests after an `@`, in GitHub's order. */
   listMentions(prId: string): Promise<Mention[]>;
+  /** The viewer's saved replies, which a comment box on a PR offers under its slash command Saved replies, in GitHub's order. */
+  listSavedReplies(): Promise<SavedReply[]>;
   getSettings(): Promise<Settings>;
   setSettings(patch: Partial<Settings>): Promise<Settings>;
   watchSettings(onChange: (settings: Settings) => void): () => void;
@@ -182,6 +184,7 @@ export function createRpcDataSource(): DataSource {
     previewMarkdown: async (text, prId) => (await rpc('markdown.preview', { text, prId })).html,
     listEmojis: () => rpc('markdown.emojis', {}),
     listMentions: (prId) => rpc('markdown.mentions', { prId }),
+    listSavedReplies: () => rpc('markdown.savedReplies', {}),
     getSettings,
     setSettings,
     watchSettings,
@@ -511,6 +514,11 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
       await new Promise((resolve) => setTimeout(resolve, 500));
       return FIXTURE_MENTIONS;
     },
+    // The harness viewer's saved replies, a moment later.
+    listSavedReplies: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      return FIXTURE_SAVED_REPLIES;
+    },
     getSettings: () => getSettings(memory),
     setSettings: async (patch) => {
       const saved = await setSettings(patch, memory);
@@ -675,6 +683,12 @@ const FIXTURE_MENTIONS: Mention[] = [
   { kind: 'user', login: 'mack', name: 'Mack Stone', participant: false },
   { kind: 'team', login: 'acme/parcs', description: 'Parking and curbside services' },
   { kind: 'team', login: 'acme/platform', description: '' },
+];
+
+/** The harness viewer's saved replies, in GitHub's order: one put in as it is, one leaving the caret at its `%cursor%`. */
+const FIXTURE_SAVED_REPLIES: SavedReply[] = [
+  { title: 'Thanks', body: 'Thanks for the pull request! I will take a look shortly.' },
+  { title: 'Needs a test', body: 'Could you add a test for %cursor% before we merge this?' },
 ];
 
 /** A comment's Markdown as the fixtures have GitHub render it, with no GitHub to render it: each paragraph as it was typed, escaped. */
