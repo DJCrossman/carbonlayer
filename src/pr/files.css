@@ -219,14 +219,27 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 40px;
-  padding: 0 12px;
+  box-sizing: border-box;
+  height: 44px;
+  padding: 0 16px;
   border-bottom: 1px solid var(--gg-border-muted);
-  background: var(--gg-bg-subtle);
   border-radius: var(--gg-radius) var(--gg-radius) 0 0;
+  white-space: nowrap;
 }
+/* Only the paths give way to a narrow card. */
+.file-stub-header > :not(.file-stub-name, .file-stub-prev-name, .files-toolbar-spacer) { flex: none; }
+/* A file's change, coloured as a diff's header colours it: its themes' git colours (github-light, github-dark-default). */
+.file-change-icon { color: #005cc5; }
+.file-change-icon.is-added { color: #28a745; }
+.file-change-icon.is-removed { color: #d73a49; }
+:root[data-theme='dark'] .file-change-icon { color: #d29922; }
+:root[data-theme='dark'] .file-change-icon.is-added { color: #3fb950; }
+:root[data-theme='dark'] .file-change-icon.is-removed { color: #f85149; }
+/* Long paths shorten from their start, keeping the file's name, as in a diff's header (`direction: rtl` over a `bdi`). */
+.file-stub-name,
+.file-stub-prev-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; direction: rtl; }
 /* The path copies itself when clicked (Files.tsx), as in a diff's header: shown on hover, without moving. */
-.file-stub-name { margin: -2px -4px; padding: 2px 4px; border-radius: 4px; font: 600 12.5px var(--gg-font); cursor: pointer; }
+.file-stub-name { margin: -2px -4px; padding: 2px 4px; border-radius: 4px; font: 12px var(--gg-font); cursor: pointer; }
 .file-stub-name:hover { background: var(--gg-bg-hover); }
 .file-stub-body {
   padding: 18px 12px;
@@ -234,7 +247,7 @@
   text-align: center;
 }
 /* A renamed file's previous path, dimmed as in a diff's header. */
-.file-stub-prev-name { color: var(--gg-fg-muted); font: 12.5px var(--gg-font); }
+.file-stub-prev-name { opacity: 0.7; font: 12px var(--gg-font); }
 /* The line counts, as a diff's header shows them. */
 .file-stub-counts { display: inline-flex; gap: 6px; font: 12px var(--gg-font-mono); }
 /* GitHub calls the file generated (a lockfile, or one marked linguist-generated). */

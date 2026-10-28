@@ -13,7 +13,7 @@ import type { DataSource, ReviewThreadDraft } from '../app/data-source';
 import { fileAnchor } from '../app/routes';
 import type { ChangedFile, PrDetail, PrStages, ReviewThread } from '../lib/model';
 import { Button } from '../ui/Button';
-import { Icon } from '../ui/Icon';
+import { Icon, type IconName } from '../ui/Icon';
 import { Skeleton } from '../ui/Skeleton';
 import { showToast } from '../ui/Toast';
 import { composerAnchorFor, currentLinesOf, fileNotes, filesInTreeOrder, fileTree, hiddenLines, renderableDiff, takesComments, type ComposerAnchor, type DiffNote, type FileTreeNode } from './diff';
@@ -514,8 +514,10 @@ function FileCard({
     return (
       <div className={`file-card is-stub ${current ? 'is-current' : ''}`} id={`gg-file:${file.path}`} ref={card} aria-busy={missingDiff === 'loading'} onClick={onClick}>
         <div className="file-stub-header">
-          <span className={`file-status is-${file.status}`}>{STATUS_LETTERS[file.status]}</span>
-          <span className="file-stub-name">{file.path}</span>
+          <Icon name={CHANGE_ICONS[file.status]} className={`file-change-icon is-${file.status}`} />
+          <span className="file-stub-name">
+            <bdi>{file.path}</bdi>
+          </span>
           <span className="files-toolbar-spacer" />
           {viewedToggle}
           <FileMenu path={file.path} prUrl={pr.url} />
@@ -562,9 +564,18 @@ function FileCard({
       >
         <div className="file-stub-header">
           {collapseToggle}
-          <span className={`file-status is-${file.status}`}>{STATUS_LETTERS[file.status]}</span>
-          {file.previousPath && <span className="file-stub-prev-name">{file.previousPath} →</span>}
-          <span className="file-stub-name">{file.path}</span>
+          <Icon name={CHANGE_ICONS[file.status]} className={`file-change-icon is-${file.status}`} />
+          {file.previousPath && (
+            <>
+              <span className="file-stub-prev-name">
+                <bdi>{file.previousPath}</bdi>
+              </span>
+              <Icon name="arrow-right-short" />
+            </>
+          )}
+          <span className="file-stub-name">
+            <bdi>{file.path}</bdi>
+          </span>
           {generatedTag}
           <span className="files-toolbar-spacer" />
           {/* As the diff's header counts them: removed lines when there are any or nothing was added, and the other way round. */}
@@ -825,6 +836,16 @@ const DIFF_LINE_HEIGHT = 20;
  * draw (its first, a switch of layout or theme): a quarter of a second for 1,000 rows (measured on 4,002: over a second).
  */
 const VIRTUALIZED_FROM_ROWS = 1_000;
+
+/** A file's change as a diff's header draws it, for a header without a diff: its icon (`file-change-icon` colours it). */
+const CHANGE_ICONS: Record<ChangedFile['status'], IconName> = {
+  added: 'symbol-added',
+  removed: 'symbol-deleted',
+  modified: 'symbol-modified',
+  renamed: 'symbol-moved',
+  copied: 'symbol-modified',
+  changed: 'symbol-modified',
+};
 
 /** Git's one-letter status codes. */
 const STATUS_LETTERS: Record<ChangedFile['status'], string> = {
