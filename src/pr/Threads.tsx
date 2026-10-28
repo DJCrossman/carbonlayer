@@ -1,5 +1,6 @@
-// What renders inside a diff annotation: a review thread, a comment batched for the pending review, or
-// the inline composer opened from the gutter "+".
+// What renders inside a diff annotation, or under the header of a file without a diff for the notes on the whole file: a
+// review thread, a comment batched for the pending review, or the inline composer opened from the gutter "+" or from the
+// file header's "Comment on this file".
 import { useEffect, useState } from 'react';
 import type { ReviewThreadDraft } from '../app/data-source';
 import type { ReviewThread } from '../lib/model';
@@ -101,7 +102,7 @@ function ThreadNote({ thread, current, actions }: { thread: ReviewThread; curren
       {thread.isOutdated && (
         <div className="diff-note-outdated">
           <span className="diff-note-tag">Outdated</span>
-          <pre>{thread.diffHunk}</pre>
+          {thread.diffHunk !== '' && <pre>{thread.diffHunk}</pre>}
         </div>
       )}
       {thread.comments.map((comment) => (
@@ -141,13 +142,16 @@ function ThreadNote({ thread, current, actions }: { thread: ReviewThread; curren
 function InlineComposer({ anchor, suggestion, actions }: { anchor: ComposerAnchor; suggestion: string | null; actions: NoteActions }) {
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
-  const draft: ReviewThreadDraft = {
-    path: anchor.path,
-    line: anchor.line,
-    side: anchor.side === 'deletions' ? 'LEFT' : 'RIGHT',
-    ...(anchor.startLine !== undefined && { startLine: anchor.startLine, startSide: anchor.startSide === 'deletions' ? 'LEFT' : 'RIGHT' }),
-    body,
-  };
+  const draft: ReviewThreadDraft =
+    'subjectType' in anchor
+      ? { subjectType: 'file', path: anchor.path, body }
+      : {
+          path: anchor.path,
+          line: anchor.line,
+          side: anchor.side === 'deletions' ? 'LEFT' : 'RIGHT',
+          ...(anchor.startLine !== undefined && { startLine: anchor.startLine, startSide: anchor.startSide === 'deletions' ? 'LEFT' : 'RIGHT' }),
+          body,
+        };
   const commentNow = async () => {
     setBusy(true);
     const ok = await actions.commentNow(draft);
@@ -162,9 +166,11 @@ function InlineComposer({ anchor, suggestion, actions }: { anchor: ComposerAncho
         onSubmit={commentNow}
         onCancel={actions.closeComposer}
         placeholder={
-          draft.startLine === undefined
-            ? `Comment on line ${draft.side === 'LEFT' ? 'L' : 'R'}${draft.line}`
-            : `Comment on lines ${draft.startSide === 'LEFT' ? 'L' : 'R'}${draft.startLine}–${draft.side === 'LEFT' ? 'L' : 'R'}${draft.line}`
+          'subjectType' in draft
+            ? 'Comment on this file'
+            : draft.startLine === undefined
+              ? `Comment on line ${draft.side === 'LEFT' ? 'L' : 'R'}${draft.line}`
+              : `Comment on lines ${draft.startSide === 'LEFT' ? 'L' : 'R'}${draft.startLine}–${draft.side === 'LEFT' ? 'L' : 'R'}${draft.line}`
         }
         autoFocus
         disabled={busy}

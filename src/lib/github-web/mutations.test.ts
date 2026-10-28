@@ -108,6 +108,17 @@ describe('mutations', () => {
     ]);
   });
 
+  it("sends a comment on a whole file in the form of GitHub's file comment, with no line, posted now or batched into a review", async () => {
+    const file = { subjectType: 'file', path: 'docs/zones.png', body: 'Compress this' } as const;
+    await mutations['pr.addThread']({ prId: 'PR_1', ...file });
+    await mutations['pr.review']({ prId: 'PR_1', event: 'COMMENT', body: '', threads: [file] });
+    const body = { text: 'Compress this', comparisonStartOid: 'base', comparisonEndOid: 'head', subjectType: 'file', path: 'docs/zones.png' };
+    expect(sent.slice(0, 2)).toEqual([
+      { method: 'POST', path: `${P}/create_review_comment`, body: { ...body, submitBatch: true } },
+      { method: 'POST', path: `${P}/create_review_comment`, body: { ...body, submitBatch: false } },
+    ]);
+  });
+
   it('merges with the commit message GitHub proposes, but not after new pushes', async () => {
     reads = {
       [`${P}/header`]: { pullRequest: { headSha: 'head' } },

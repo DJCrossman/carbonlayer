@@ -413,26 +413,29 @@ function FileCard({
   const shownNotes = useRef<Array<string | ReviewThreadDraft>>([]);
   const notes = useMemo(() => {
     // A thread is known by its id, a pending comment by its draft, the composer as itself.
-    const found = fileNotes(file.path, pr.threads, batch, composer).map((note) => {
+    const found = fileNotes(file.path, pr.threads, batch, composer, removed ? 'deletions' : 'additions').map((note) => {
       const { metadata } = note;
       return { note, id: metadata.kind === 'thread' ? metadata.thread.id : metadata.kind === 'pending' ? metadata.draft : metadata.kind };
     });
     const ids = found.map(({ id }) => id);
     shownNotes.current = [...shownNotes.current.filter((id) => ids.includes(id)), ...ids.filter((id) => !shownNotes.current.includes(id))];
     return found.toSorted((a, b) => shownNotes.current.indexOf(a.id) - shownNotes.current.indexOf(b.id)).map(({ note }) => note);
-  }, [file.path, pr.threads, batch, composer]);
-  // GitHub offers "Add a suggestion" on the new file's lines only.
+  }, [file.path, pr.threads, batch, composer, removed]);
+  // GitHub offers "Add a suggestion" on the new file's lines only, and none for a comment on the whole file.
   const suggestion =
-    composer && patch !== null && composer.side === 'additions' && (composer.startSide ?? 'additions') === 'additions'
+    composer && !('subjectType' in composer) && patch !== null && composer.side === 'additions' && (composer.startSide ?? 'additions') === 'additions'
       ? currentLinesOf(patch, composer.startLine ?? composer.line, composer.line)
       : null;
   // Lines being selected, until the pointer is released and the composer opens for them.
   const [selecting, setSelecting] = useState<SelectedLineRange | null>(null);
-  // The commented lines stay highlighted while the composer is open, and only then; a selection shows as it grows.
+  // The commented lines stay highlighted while the composer is open, and only then (a comment on the whole file has none);
+  // a selection shows as it grows.
   const selectedLines = useMemo(
     () =>
       selecting ??
-      (composer ? { start: composer.startLine ?? composer.line, side: composer.startSide ?? composer.side, end: composer.line, endSide: composer.side } : null),
+      (composer && !('subjectType' in composer)
+        ? { start: composer.startLine ?? composer.line, side: composer.startSide ?? composer.side, end: composer.line, endSide: composer.side }
+        : null),
     [selecting, composer],
   );
   const viewed = file.viewerViewedState === 'VIEWED';
@@ -496,6 +499,27 @@ function FileCard({
       Viewed
     </label>
   );
+  // GitHub's "Comment on this file": the composer opens at the top of the file, which expands first, and the page goes back
+  // there from a header stuck under the toolbar (a long diff draws its top only once it is near). Pressed again while it is
+  // open, the composer keeps what it holds and takes the focus.
+  const commentOnFile = (
+    <Button
+      variant="ghost"
+      size="sm"
+      icon="comment"
+      aria-label="Comment on this file"
+      title="Comment on this file"
+      aria-expanded={composer !== null && 'subjectType' in composer}
+      onClick={() => {
+        if (collapsed) setCollapsed(file.path, false);
+        else if (card.current && card.current.getBoundingClientRect().top < STICKY_TOP) card.current.scrollIntoView({ block: 'start' });
+        if (composer && 'subjectType' in composer) {
+          const input = card.current?.querySelector('.diff-note.is-composer textarea');
+          if (input instanceof HTMLElement) input.focus();
+        } else review.openComposer({ subjectType: 'file', path: file.path });
+      }}
+    />
+  );
 
   // The path, the library's in a diff's header (in its shadow root) or a stub's own, copies itself when clicked, as
   // Graphite's does.
@@ -520,6 +544,7 @@ function FileCard({
           </span>
           <span className="files-toolbar-spacer" />
           {viewedToggle}
+          {commentOnFile}
           <FileMenu path={file.path} prUrl={pr.url} />
         </div>
         {/* A collapsed file (one already viewed) shows its header alone, as it will once its diff is in. */}
@@ -584,8 +609,28 @@ function FileCard({
             {(file.additions > 0 || file.deletions === 0) && <span className="pr-fg-success">+{file.additions}</span>}
           </span>
           {viewedToggle}
+          {commentOnFile}
           <FileMenu path={file.path} prUrl={pr.url} />
         </div>
+        {/* Its notes on the whole file (the threads GitHub places on no line, the comments batched for it, the composer), as
+            a diff shows them above its first hunk; these while its lines are on their way, and its line threads, wait for
+            the diff. */}
+        {body !== null && body !== 'loading' && notes.some((note) => note.lineNumber === 0) && (
+          <div className="file-stub-notes">
+            {notes
+              .filter((note) => note.lineNumber === 0)
+              .map(({ metadata }) => (
+                <DiffNoteView
+                  key={metadata.kind === 'thread' ? metadata.thread.id : metadata.kind === 'pending' ? `pending:${metadata.index}` : metadata.kind}
+                  note={metadata}
+                  anchor={composer}
+                  suggestion={null}
+                  current={metadata.kind === 'thread' && metadata.thread.id === review.currentThreadId}
+                  actions={noteActions}
+                />
+              ))}
+          </div>
+        )}
         {body === 'moved' && <div className="file-stub-body">File renamed without changes.</div>}
         {body === 'binary' && <div className="file-stub-body">Binary file not shown</div>}
         {body === 'deleted' && (
@@ -640,6 +685,7 @@ function FileCard({
             </span>
           )}
           {viewedToggle}
+          {commentOnFile}
           <FileMenu path={file.path} prUrl={pr.url} />
         </div>
       )}
@@ -768,7 +814,7 @@ function scrollTowardLine(thread: ReviewThread) {
     .map((cell) => ({ line: Number(cell.getAttribute('data-column-number')), top: cell.getBoundingClientRect().top }));
   const first = drawn[0];
   const last = drawn.at(-1);
-  // An outdated thread sits above the file's first line.
+  // An outdated thread, and one on the whole file, sits above the file's first line.
   const line = thread.line ?? 0;
   if (!first || !last) fileCard.scrollIntoView({ block: 'start' });
   else if (line < first.line) window.scrollBy({ top: first.top - (first.line - line) * DIFF_LINE_HEIGHT - innerHeight / 2, behavior: 'instant' });

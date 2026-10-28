@@ -191,6 +191,9 @@ const lineComment = {
   body: z.string(),
 };
 
+/** A comment on a whole file, which names no line. */
+const fileComment = { subjectType: z.literal('file'), path: z.string(), body: z.string() };
+
 /** A reviewer requested or withdrawn, by GitHub's numeric user or team id. */
 const reviewerChange = z.object({ id: z.string(), isTeam: z.boolean() });
 
@@ -263,16 +266,16 @@ const RPC_SCHEMAS = {
       prId: z.string(),
       event: z.enum(['APPROVE', 'REQUEST_CHANGES', 'COMMENT']),
       body: z.string(),
-      /** Inline comments batched into this review (Graphite's "Add to review"). */
-      threads: z.optional(z.array(z.object(lineComment))),
+      /** Inline comments batched into this review (Graphite's "Add to review"), on lines or on whole files. */
+      threads: z.optional(z.array(z.union([z.object(fileComment), z.object(lineComment)]))),
     }),
     result: z.undefined(),
   },
   'pr.comment': { args: z.object({ prId: z.string(), body: z.string() }), result: z.undefined() },
   /** `commit` is the merge commit the viewer wrote; without it the PR merges with GitHub's proposal (`pr.proposedMergeCommit`). */
   'pr.merge': { args: z.object({ prId: z.string(), method: mergeMethodSchema, expectedHeadOid: z.string(), commit: z.optional(mergeCommit) }), result: z.undefined() },
-  /** `startLine` on `startSide` to `line` on `side` for a comment on several lines. */
-  'pr.addThread': { args: z.object({ prId: z.string(), ...lineComment }), result: z.undefined() },
+  /** `startLine` on `startSide` to `line` on `side` for a comment on several lines; a comment on a whole file names no line. */
+  'pr.addThread': { args: z.union([z.object({ prId: z.string(), ...fileComment }), z.object({ prId: z.string(), ...lineComment })]), result: z.undefined() },
   'pr.replyThread': { args: z.object({ threadId: z.string(), body: z.string() }), result: z.undefined() },
   'pr.resolveThread': { args: z.object({ threadId: z.string(), resolved: z.boolean() }), result: z.undefined() },
   'pr.markFileViewed': { args: z.object({ prId: z.string(), path: z.string(), viewed: z.boolean() }), result: z.undefined() },

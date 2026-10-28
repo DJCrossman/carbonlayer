@@ -3,21 +3,24 @@
 
 import { browser } from 'wxt/browser';
 import { z } from 'zod/mini';
-import type { AssigneeCandidate, ChangedFileDiff, Emoji, LabelCandidate, Mention, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, SavedReply, StackBranches, StackEntry, TopRepository, View, ViewResult } from '../lib/model';
+import type { AssigneeCandidate, ChangedFileDiff, Emoji, LabelCandidate, Mention, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, ReviewThread, SavedReply, StackBranches, StackEntry, TopRepository, View, ViewResult } from '../lib/model';
 import { rpc, type DiffEntryLine, type InboxRowToEnrich, type LineRange, type MergeCommit, type MergeMethod, type RpcMethods } from '../lib/rpc';
 import { getSettings, setSettings, watchSettings, type Settings, type SettingsStorage } from '../lib/settings';
 import { STACK_MERGES, stackMergesSchema, type StackMerge, type StackMergeRequest, type stackMergeMessage } from '../lib/stack-merges';
 import { resolveViewQuery } from '../lib/views';
 
-export interface ReviewThreadDraft {
-  path: string;
-  line: number;
-  side: 'LEFT' | 'RIGHT';
-  /** A multi-line comment's first line, possibly on the other side; both absent for one line. */
-  startLine?: number;
-  startSide?: 'LEFT' | 'RIGHT';
-  body: string;
-}
+/** A comment on the diff not yet posted: on a whole file, which names no line, or on a line or several. */
+export type ReviewThreadDraft =
+  | { subjectType: 'file'; path: string; body: string }
+  | {
+      path: string;
+      line: number;
+      side: 'LEFT' | 'RIGHT';
+      /** A multi-line comment's first line, possibly on the other side; both absent for one line. */
+      startLine?: number;
+      startSide?: 'LEFT' | 'RIGHT';
+      body: string;
+    };
 
 /** A user or team whose review request is added or withdrawn, by GitHub's numeric id. */
 export interface ReviewerChange {
@@ -238,6 +241,41 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
   // Each fixture PR's labels and assignees as the pickers last left them: what its meta stage answers, as GitHub would
   // answer the reload that follows a write.
   const labelsAndAssignees = new Map<string, PrStages['meta']>(fixtures.prs.map((pr) => [pr.id, { labels: pr.labels, assignees: pr.assignees }]));
+  // The comments posted on each fixture PR's diff, at once or with a review, by the PR's id: threads of the viewer's own
+  // after the PR's, which the threads stage answers from then on, as GitHub would answer the reload that follows the post.
+  const posted = new Map<string, ReviewThread[]>();
+  const post = (prId: string, drafts: ReviewThreadDraft[]) => {
+    const pr = fixtures.prs.find((candidate) => candidate.id === prId);
+    if (!pr) throw new Error(`No fixture for ${prId}`);
+    const earlier = posted.get(prId) ?? [];
+    posted.set(prId, [
+      ...earlier,
+      ...drafts.map((draft, index): ReviewThread => {
+        const id = String(9001 + earlier.length + index);
+        return {
+          id: `PRRT_${id}`,
+          path: draft.path,
+          // A comment on the whole file has no line; GitHub places it at the file's top.
+          ...('subjectType' in draft ? { line: null, startLine: null, side: 'RIGHT' } : { line: draft.line, startLine: draft.startLine ?? null, side: draft.side }),
+          isResolved: false,
+          isOutdated: false,
+          diffHunk: '',
+          comments: [
+            {
+              id,
+              author: { login: 'octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/583231?v=4', url: 'https://github.com/octocat' },
+              bodyHtml: renderedByGitHub(draft.body),
+              createdAt: new Date().toISOString(),
+              url: `${pr.url}#discussion_r${id}`,
+              subjectId: `PRRC_${id}`,
+              reactions: [],
+              editableMarkdown: draft.body,
+            },
+          ],
+        };
+      }),
+    ]);
+  };
   // Each fixture comment's Markdown as the last edit left it, by its id on the page (the description's by its PR's id):
   // what the stages answer from then on, as GitHub would answer the reload that follows an edit.
   const edits = new Map<string, string>();
@@ -358,7 +396,7 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
           files: files.map(({ patch, previousPath, withheld, generated, ...summary }) => summary),
           diffs: Object.fromEntries(files.slice(0, 1).map(({ path, patch, previousPath, withheld, generated }) => [path, { patch, previousPath, withheld, generated }])),
         },
-        threads: { threads, unresolvedThreadCount },
+        threads: { threads: [...threads, ...(posted.get(pr.id) ?? [])], unresolvedThreadCount: unresolvedThreadCount + (posted.get(pr.id)?.length ?? 0) },
         mergeBox: { mergeStatus, reviewers, reviewDecision, viewerCanMerge, viewerCanEnableAutoMerge, allowedMergeMethods, defaultMergeMethod, autoMerge, isInMergeQueue, stackSection },
         checks: { ci, requiredCheckNames, emptyReason: null },
         // The other entries the way GitHub's stack listing names them, without a verdict, checks or mergeability: those
@@ -391,7 +429,10 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
       if (!patch || (ranges.length > 0 && contents === undefined)) throw new Error(`GitHub answered 404 for /${repo.owner}/${repo.name}/pull/${number}/page_data/diff_entry_lines`);
       return fixtureDiffEntryLines(patch, contents ?? '', ranges);
     },
-    review: (...args) => log('review', ...args),
+    review: async (prId, event, body, threads) => {
+      await log('review', prId, event, body, threads);
+      post(prId, threads ?? []);
+    },
     comment: (...args) => log('comment', ...args),
     merge: (...args) => log('merge', ...args),
     // What GitHub's merge box proposes, a moment later: a merge commit names the PR and its branch, its title below; a
@@ -404,7 +445,10 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
         ? { commitTitle: `Merge pull request #${pr.number} from ${pr.repo.owner}/${pr.headRefName}`, commitMessage: pr.title }
         : { commitTitle: `${pr.title} (#${pr.number})`, commitMessage: '' };
     },
-    addThread: (...args) => log('addThread', ...args),
+    addThread: async (prId, thread) => {
+      await log('addThread', prId, thread);
+      post(prId, [thread]);
+    },
     replyThread: (...args) => log('replyThread', ...args),
     resolveThread: (...args) => log('resolveThread', ...args),
     markFileViewed: (...args) => log('markFileViewed', ...args),

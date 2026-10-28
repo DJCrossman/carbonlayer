@@ -72,6 +72,22 @@ describe('reviewThreads', () => {
   });
 });
 
+describe('reviewThreads, on a comment on the whole file', () => {
+  it('places a thread under the `FILE` marker on its file, with no line, and not outdated', () => {
+    // The conversation names the file but shows no diff excerpt for it.
+    const page = new DOMParser().parseFromString(
+      '<html><body><turbo-frame id="review-thread-or-comment-id-2967545223"><a class="text-mono">docs/zones.png</a></turbo-frame></body></html>',
+      'text/html',
+    );
+    const { threads } = reviewThreads(
+      threadsAnswer.parse({ threads: [{ id: 2967545223, isResolved: false, commentsData: { comments: [{ databaseId: 701, author: { login: 'ana' }, bodyHTML: '<p>Compress this</p>' }] } }] }),
+      { diffSummaries: [{ path: 'docs/zones.png', markersMap: { FILE: { threads: [{ id: 2967545223 }] } } }] },
+      page,
+    );
+    expect(threads[0]).toMatchObject({ id: '2967545223', path: 'docs/zones.png', line: null, startLine: null, isOutdated: false, diffHunk: '' });
+  });
+});
+
 describe('reviewThreads, on diff comments the viewer may edit', () => {
   it('offers the Markdown and version of each comment GitHub lets the viewer edit, and nothing of the others', () => {
     const { threads } = reviewThreads(

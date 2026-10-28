@@ -14,15 +14,20 @@ export type DiffNote =
   | { kind: 'pending'; draft: ReviewThreadDraft; index: number }
   | { kind: 'composer' };
 
-/** Where the inline comment composer is open: under a line, or the last line of a range, on one side of one file. */
-export interface ComposerAnchor {
-  path: string;
-  line: number;
-  side: 'deletions' | 'additions';
-  /** A range's first line, possibly on the other side; both absent for one line. */
-  startLine?: number;
-  startSide?: 'deletions' | 'additions';
-}
+/**
+ * Where the inline comment composer is open: at the top of a file, for a comment on the whole file, or under a line, or
+ * the last line of a range, on one side of one file.
+ */
+export type ComposerAnchor =
+  | { subjectType: 'file'; path: string }
+  | {
+      path: string;
+      line: number;
+      side: 'deletions' | 'additions';
+      /** A range's first line, possibly on the other side; both absent for one line. */
+      startLine?: number;
+      startSide?: 'deletions' | 'additions';
+    };
 
 /**
  * The diff the library can render for a changed file, or null when GitHub sent no patch (binary or
@@ -51,24 +56,38 @@ export function renderableDiff(file: ChangedFile): FileDiffMetadata | null {
  * The notes that sit on one file's diff: its review threads, the comments batched for the pending
  * review, and the open composer. GitHub's RIGHT side is the library's `additions`, LEFT is
  * `deletions`. A thread GitHub can no longer place (outdated, `line === null`) becomes a file-level
- * note (`lineNumber: 0`), which the library renders above the first hunk.
+ * note (`lineNumber: 0`), which the library renders above the first hunk. So does a comment on the whole file, posted,
+ * batched or being written, in that order, on `fileSide`: a side the diff has, the old file's for a deleted file (the
+ * library draws no file-level note on the new file's side of a deleted file, nor on the old file's of an added one).
  */
 export function fileNotes(
   path: string,
   threads: ReviewThread[],
   batch: ReviewThreadDraft[],
   composer: ComposerAnchor | null,
+  fileSide: 'deletions' | 'additions' = 'additions',
 ): DiffLineAnnotation<DiffNote>[] {
   const notes: DiffLineAnnotation<DiffNote>[] = [];
   for (const thread of threads) {
     if (thread.path !== path) continue;
-    notes.push({ side: thread.side === 'LEFT' ? 'deletions' : 'additions', lineNumber: thread.line ?? 0, metadata: { kind: 'thread', thread } });
+    // A thread on the whole file is one with no line that is not outdated; an outdated one keeps its side.
+    notes.push({
+      side: thread.line === null && !thread.isOutdated ? fileSide : thread.side === 'LEFT' ? 'deletions' : 'additions',
+      lineNumber: thread.line ?? 0,
+      metadata: { kind: 'thread', thread },
+    });
   }
   batch.forEach((draft, index) => {
     if (draft.path !== path) return;
-    notes.push({ side: draft.side === 'LEFT' ? 'deletions' : 'additions', lineNumber: draft.line, metadata: { kind: 'pending', draft, index } });
+    notes.push(
+      'subjectType' in draft
+        ? { side: fileSide, lineNumber: 0, metadata: { kind: 'pending', draft, index } }
+        : { side: draft.side === 'LEFT' ? 'deletions' : 'additions', lineNumber: draft.line, metadata: { kind: 'pending', draft, index } },
+    );
   });
-  if (composer?.path === path) notes.push({ side: composer.side, lineNumber: composer.line, metadata: { kind: 'composer' } });
+  if (composer?.path === path) {
+    notes.push('subjectType' in composer ? { side: fileSide, lineNumber: 0, metadata: { kind: 'composer' } } : { side: composer.side, lineNumber: composer.line, metadata: { kind: 'composer' } });
+  }
   return notes;
 }
 

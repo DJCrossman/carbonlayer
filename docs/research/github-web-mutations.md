@@ -27,7 +27,12 @@ No Relay / persisted-query ids and, reactions aside, no `authenticity_token` are
    - multi-line: `{ subjectType: "multiline", path, line: <end>, side: <endSide>, startLine, startSide,
      positioning: { type: "multiline", baseCommitOid, headCommitOid, startPath, startLine, startCommitOid,
      endPath, endLine, endCommitOid } }`
-   - file: `{ subjectType: "file", path }`
+   - file: `{ subjectType: "file", path }` and nothing more: no `positioning`, `side`, `line`, `startLine` or `startSide`;
+     the OIDs are the PR's base and head, as for a line (read from GitHub's bundle 2026-10-28, nothing sent: module `Nd`'s
+     `fileRequestData(){return{...this.#y(),path:this.#g,subjectType:i.Wr.File}}` with
+     `#y(){return{comparisonEndOid,comparisonStartOid,text,submitBatch}}` in `1i-da73f88b8a5166ba.js`, and
+     `Wr:{Line:"line",Multiline:"multiline",File:"file"}` in `10y-c6fbe13d7c809b39.js`). `pr.addThread` and `pr.review`
+     send it for a comment on a whole file. A reply in a file's thread is an ordinary reply, below.
    - reply: `{ text, submitBatch, inReplyTo: <last comment databaseId>, path, comparisonStartOid, comparisonEndOid }`
    `submitBatch: false` = add to the pending review; `true` = post immediately. → `{ thread: { id, … }, comment: { databaseId, … } }`.
    Resolve: `POST P/resolve_thread` `{ threadId, resolution_reason? }`; unresolve: `POST P/unresolve_thread`
@@ -125,7 +130,11 @@ Returned 200 signed out (curl), keys confirmed:
 - `threads[?after=cursor]`: `{ threads: [{ id, subjectType, isResolved, resolvedBy, resolutionReason,
   viewerCanReply, commentsData: { comments: [{ databaseId, id, body, bodyHTML, bodyVersion, reviewId, state, … }] },
   pullRequestReviewId }], aliveChannel }`. **Positions are not here**; they are in
-  `base_comparison_info.markers.threads`.
+  `base_comparison_info.markers.threads`. `subjectType` is `"LINE"`, or `"FILE"` for a comment on a whole file, which
+  has no path and no positioning here; `base_comparison_info`'s `diffSummaries[i].markersMap` lists it under the literal
+  key `"FILE"` of its file, with no `start` (`"markersMap":{"FILE":{"threads":[{"id":2967545223}],"annotations":[]}}`;
+  public PRs, 2026-10-28). One whose file left the diff is in no `markersMap`; the conversation page still names its
+  path (`a.text-mono`) without a `table.diff-table`.
 - `codeowners`: `{ isEnabled, ownershipByPath: { path: { owners, ruleUrl, … } } }`.
 - `file_tree`: `{ baseRefOid, commits[], diffs[], pathName, … }`.
 - `base_comparison_info?range=…`: `{ comparison: { fullDiff: { baseOid, headOid } }, diffSummaries,
@@ -457,6 +466,8 @@ one the write asks for a reload), the empty `issue[user_assignee_ids][]`, then t
 | `4t-c2bbc4f2c8ef0b83.js` | `resolveThread:"resolve_thread"` (full route enum) |
 | `ii-669a199209c0df60.js` | `uT.submitReview` / `body:{body:t,event:n,headSha:i}`; `abandonReview`; `` `${e}/file_review` ``; `submitPullRequestTimelineComment`; `baseComparisonInfo` |
 | `2q-d4efe397e01acfb1.js` | `createReviewComment`; `lineRequestData(e)`; `multilineRequestData`; `resolution_reason:n`; `unresolveThread` |
+| `1i-da73f88b8a5166ba.js` | `fileRequestData(){return{...this.#y(),path:this.#g,subjectType:i.Wr.File}}` (module `Nd`) |
+| `10y-c6fbe13d7c809b39.js` | `Wr:{Line:"line",Multiline:"multiline",File:"file"}` |
 | `w6-0a51a23c74142f8b.js` | `uT.merge`; `bypassBranchProtections`; `enableAutoMerge`; `enqueueStack`; `mergeRequestStatus`; `convertToDraft`; `markReadyForReview`; `expectedHeadOid` |
 | `vs-a6c1f1d1c661ee6b.js` | `d.append("range",n.headOid)` (diffEntries); `pendingWorkflowApprovalRollup` |
 | `dkz-d9892ae5beeced6a.js` | `` `${e}/page_data/${t}` `` |

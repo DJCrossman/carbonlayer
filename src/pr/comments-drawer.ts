@@ -37,13 +37,14 @@ export function drawerContents(
       }),
     // The batch itself or nothing, so a draft's position here is its index in the batch.
     ...(status === 'all' || status === 'pending' ? reviewersBatch : []).map((draft, index) => {
-      const lines = { first: { side: draft.startSide ?? draft.side, line: draft.startLine ?? draft.line }, last: { side: draft.side, line: draft.line } };
+      const lines = 'subjectType' in draft ? null : { first: { side: draft.startSide ?? draft.side, line: draft.startLine ?? draft.line }, last: { side: draft.side, line: draft.line } };
       return { kind: 'pending' as const, draft, index, path: draft.path, lines, code: codeAt(draft.path, lines) };
     }),
   ];
 
   if (filters.order === 'file') {
-    // As the diff shows them: by file, then by first line, a thread GitHub can no longer place at the file's top.
+    // As the diff shows them: by file, then by first line, a thread GitHub can no longer place, and a comment on the whole
+    // file, at the file's top.
     const fileIndex = new Map(files.map((file, index) => [file.path, index]));
     const place = (entry: DrawerEntry) => fileIndex.get(entry.path) ?? files.length;
     shown.sort((a, b) => place(a) - place(b) || a.path.localeCompare(b.path) || (a.lines?.first.line ?? 0) - (b.lines?.first.line ?? 0));
@@ -90,7 +91,7 @@ export interface DrawerFilters {
 /** A conversation in the drawer: a review thread, or a comment batched for the review, with the code it sits on. */
 export type DrawerEntry = ({ kind: 'thread'; thread: ReviewThread } | { kind: 'pending'; draft: ReviewThreadDraft; index: number }) & {
   path: string;
-  /** Its first and last commented line; null for a thread GitHub can no longer place (outdated). */
+  /** Its first and last commented line; null for a thread GitHub can no longer place (outdated), and for a comment on the whole file. */
   lines: { first: DiffLineRef; last: DiffLineRef } | null;
   /** Those lines as the file's patch shows them; null when the patch does not reach them or has not arrived. */
   code: CommentedRow[] | null;

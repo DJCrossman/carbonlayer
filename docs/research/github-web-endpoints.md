@@ -154,7 +154,9 @@ Data endpoints (all `page_data/*` need a session; `tab_counts`, `diffstat` and `
   isOutdated }, commentsData: { comments: [{ id: 'PRRC_…', databaseId, author: { login, avatarUrl, isAgent },
   authorAssociation, body, bodyHTML, createdAt, publishedAt, currentDiffResourcePath, isHidden,
   minimizedReason, reactionGroups, reference: { number, author }, repository }] } }`. Stored per file as
-  `markers[pathDigest]['R5' | 'L12'] = { threads: [...], annotations: [...] }`.
+  `markers[pathDigest]['R5' | 'L12'] = { threads: [...], annotations: [...] }`. A comment on a whole file has
+  `subjectType: 'FILE'`, no path and no positioning; its file's `markersMap` lists it under the literal key `'FILE'`, with
+  no `start` (`{ FILE: { threads: [{ id }], annotations: [] } }`; public PRs, 2026-10-28).
 - `GET …/page_data/codeowners`.
 
 ### Changes page (`/{owner}/{repo}/pull/{n}/changes`; `/files` redirects here)

@@ -260,6 +260,17 @@ hashes to it (`useLinkedFile` in `src/pr/PrPage.tsx`) the page keeps that file's
 keeps the files there for a link to them. An anchor no file has leaves the page at the files, and the reader scrolling,
 typing or clicking before the file is found leaves it where they are.
 
+Comments on a file: besides a line comment (the gutter's "+" or selected lines), every file's header, a diff's or one
+without lines, has GitHub's "Comment on this file" (a comment icon between Viewed and the ⋯), which opens the line
+comment's composer (`InlineComposer`: Cancel, "Add to review", "Comment now", no suggestion, no lines highlighted) at the
+top of the file, expanding a collapsed file and going back to the file's top from a header stuck further down; pressed
+again it keeps what was typed. A diff shows it, and the file's threads and batched comments on the whole file, as
+file-level notes above the first hunk (`lineNumber: 0`, where outdated threads sit, on a side the diff has: `fileNotes`
+in `src/pr/diff.ts`); a file without lines shows them under its header. Such a comment is a draft with `subjectType:
+'file'` and no line (`ReviewThreadDraft`), which `pr.addThread` and `pr.review` send as GitHub's file comment (the file and
+the comparison only); GitHub lists its thread under its file's `FILE` marker, read as a thread with no line that is not
+outdated (`reviewThreads` in `src/lib/github-web/threads.ts`).
+
 Unchanged lines: between a diff's hunks, above the first and below the last, the library's separators ("29 unmodified
 lines") expand the unchanged lines the diff leaves out, as GitHub's and Graphite's do: 20 lines a click up or down, a gap
 of 20 or fewer at once, or all of it (`expansionLineCount` in `FileCard`). `@pierre/diffs` expands lines only once it has
@@ -289,7 +300,7 @@ drawn, so the files below stay where they will be and are near only once the rea
 file reads "This file was deleted." with a quiet "Load diff", which loads it the same way, only when clicked; a file renamed
 without changes reads "File renamed without changes." and asks nothing; a binary file reads "Binary file not shown"; and
 a file with no lines at all, "No lines changed". Each keeps the header a diff has: the path (the old one → the new for a
-rename), the line counts, Viewed and the ⋯ menu.
+rename), the line counts, Viewed, "Comment on this file" and the ⋯ menu.
 
 Long diffs: a diff whose hunks have more than 1,000 rows (in the unified layout, whichever shows; `VIRTUALIZED_FROM_ROWS`
 in `src/pr/Files.tsx`) draws only the rows near the viewport, with `@pierre/diffs`' own virtualization. `FilesSection`

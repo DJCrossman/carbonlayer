@@ -91,6 +91,28 @@ describe('fileNotes', () => {
     expect(fileNotes('a.ts', [outdated], [], null)).toEqual([{ side: 'additions', lineNumber: 0, metadata: { kind: 'thread', thread: outdated } }]);
   });
 
+  it('puts a thread on the whole file, then the comments batched for it, then its composer, at file level', () => {
+    const onFile = thread({ id: 'f', line: null });
+    const batch = [{ subjectType: 'file' as const, path: 'a.ts', body: 'pending' }];
+    expect(fileNotes('a.ts', [onFile], batch, { subjectType: 'file', path: 'a.ts' })).toEqual([
+      { side: 'additions', lineNumber: 0, metadata: { kind: 'thread', thread: onFile } },
+      { side: 'additions', lineNumber: 0, metadata: { kind: 'pending', draft: batch[0], index: 0 } },
+      { side: 'additions', lineNumber: 0, metadata: { kind: 'composer' } },
+    ]);
+  });
+
+  it("puts the notes on the whole file on the side the diff has, a deleted file's old one, an outdated thread keeping its own", () => {
+    const outdated = thread({ id: 'o', line: null, isOutdated: true });
+    const onFile = thread({ id: 'f', line: null });
+    const notes = fileNotes('a.ts', [outdated, onFile], [{ subjectType: 'file', path: 'a.ts', body: 'pending' }], { subjectType: 'file', path: 'a.ts' }, 'deletions');
+    expect(notes.map(({ side, lineNumber, metadata }) => [metadata.kind, side, lineNumber])).toEqual([
+      ['thread', 'additions', 0],
+      ['thread', 'deletions', 0],
+      ['pending', 'deletions', 0],
+      ['composer', 'deletions', 0],
+    ]);
+  });
+
   it("only returns this file's threads, batched comments and composer", () => {
     const batch = [
       { path: 'b.ts', line: 1, side: 'RIGHT' as const, body: 'elsewhere' },

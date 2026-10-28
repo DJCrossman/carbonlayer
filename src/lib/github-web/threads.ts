@@ -11,12 +11,18 @@ import { githubUser } from './session';
 export function reviewThreads(answer: ThreadsAnswer, comparison: BaseComparison, page: Document): { threads: ReviewThread[]; threadIdsByReview: Map<string, string[]> } {
   const list = answer.threads ?? [];
 
-  const anchors = new Map<string, { path: string; side: 'LEFT' | 'RIGHT'; line: number; startLine: number | null }>();
+  const anchors = new Map<string, { path: string; side: 'LEFT' | 'RIGHT'; line: number | null; startLine: number | null }>();
   for (const summary of comparison.diffSummaries) {
     for (const [key, marker] of Object.entries(summary.markersMap ?? {})) {
       for (const { id, start } of marker.threads ?? []) {
-        // Keys are `R<line>` / `L<line>` (right = new file, left = old file); `start` marks a multi-line range.
-        anchors.set(String(id), { path: summary.path, side: key.startsWith('L') ? 'LEFT' : 'RIGHT', line: Number(key.slice(1)), startLine: start ? Number(start.slice(1)) : null });
+        // Keys are `R<line>` / `L<line>` (right = new file, left = old file); `start` marks a multi-line range. A comment on
+        // the whole file sits under `FILE`, with no line.
+        anchors.set(
+          String(id),
+          key === 'FILE'
+            ? { path: summary.path, side: 'RIGHT', line: null, startLine: null }
+            : { path: summary.path, side: key.startsWith('L') ? 'LEFT' : 'RIGHT', line: Number(key.slice(1)), startLine: start ? Number(start.slice(1)) : null },
+        );
       }
     }
   }
@@ -29,12 +35,13 @@ export function reviewThreads(answer: ThreadsAnswer, comparison: BaseComparison,
     if (reviewId != null) threadIdsByReview.set(String(reviewId), [...(threadIdsByReview.get(String(reviewId)) ?? []), id]);
     const anchor = anchors.get(id);
     const rendered = threadAsRendered(page, id);
-    const isOutdated = rendered?.isOutdated ?? !anchor;
+    // A comment on the whole file is never outdated while the diff has the file, and has no line.
+    const isOutdated = anchor?.line !== null && (rendered?.isOutdated ?? !anchor);
     return [
       {
         id,
         path: anchor?.path ?? rendered?.path ?? '',
-        line: isOutdated ? null : (anchor?.line ?? rendered?.line ?? null),
+        line: isOutdated ? null : anchor ? anchor.line : (rendered?.line ?? null),
         startLine: isOutdated || anchor?.startLine === anchor?.line ? null : (anchor?.startLine ?? null),
         side: anchor?.side ?? rendered?.side ?? 'RIGHT',
         isResolved: !!thread.isResolved,

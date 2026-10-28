@@ -246,6 +246,8 @@
   color: var(--gg-fg-muted);
   text-align: center;
 }
+/* A file without a diff: its notes on the whole file, under the header as a diff shows them above its first hunk. */
+.file-stub-notes { padding: 4px 0; }
 /* A renamed file's previous path, dimmed as in a diff's header. */
 .file-stub-prev-name { opacity: 0.7; font: 12px var(--gg-font); }
 /* The line counts, as a diff's header shows them. */

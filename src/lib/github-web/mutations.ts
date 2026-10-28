@@ -15,7 +15,9 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
   'pr.review': async ({ prId, event, body, threads }) => {
     const pull = pullRequestFor(prId);
     // Batched inline comments join the viewer's pending review; submitting the review publishes them.
-    for (const thread of threads ?? []) await send(`${pull.path}/page_data/create_review_comment`, 'POST', lineComment(pull, thread, false));
+    for (const thread of threads ?? []) {
+      await send(`${pull.path}/page_data/create_review_comment`, 'POST', 'subjectType' in thread ? fileComment(pull, thread, false) : lineComment(pull, thread, false));
+    }
     const githubEvent = event === 'APPROVE' ? 'approve' : event === 'REQUEST_CHANGES' ? 'request changes' : 'comment';
     await send(`${pull.path}/page_data/submit_review`, 'PUT', { body, event: githubEvent, headSha: pull.headOid });
   },
@@ -24,7 +26,7 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
   },
   'pr.addThread': async ({ prId, ...comment }) => {
     const pull = pullRequestFor(prId);
-    await send(`${pull.path}/page_data/create_review_comment`, 'POST', lineComment(pull, comment, true));
+    await send(`${pull.path}/page_data/create_review_comment`, 'POST', 'subjectType' in comment ? fileComment(pull, comment, true) : lineComment(pull, comment, true));
   },
   'pr.replyThread': async ({ threadId, body }) => {
     const thread = threadFor(threadId);
@@ -430,3 +432,8 @@ const pullPaths = new Map<string, string>();
 const threads = new Map<string, KnownThread>();
 /** The diff comments of the loaded PRs' threads by their node id (`PRRC_…`), which a reaction names: their PR's path and database id. */
 const diffComments = new Map<string, { pullPath: string; databaseId: string }>();
+
+/** GitHub's request body for a comment on a whole file, which names no line, only the file and the comparison. */
+function fileComment(pull: KnownPullRequest, comment: { path: string; body: string }, submitBatch: boolean) {
+  return { text: comment.body, submitBatch, comparisonStartOid: pull.baseOid, comparisonEndOid: pull.headOid, subjectType: 'file', path: comment.path };
+}
