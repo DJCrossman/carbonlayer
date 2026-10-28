@@ -34,10 +34,11 @@ export function timelineFrom(
       if (seenReviews.has(review)) continue;
       seenReviews.add(review);
       const header = (row.querySelector('.TimelineItem-body')?.textContent ?? '').replace(/\s+/g, ' ');
-      // The review's own body and reaction form, not those of the threads it opened.
-      const body = [...review.querySelectorAll('.comment-body')].find((element) => !element.closest('turbo-frame'));
-      const reactionForm = [...review.querySelectorAll('form.js-pick-reaction')].find((form) => !form.closest('turbo-frame'));
-      const actions = [...review.querySelectorAll('.timeline-comment-actions')].find((menu) => !menu.closest('turbo-frame'));
+      // The review's own body and reaction form, not those of the threads it opened: each thread is a turbo-frame inside
+      // the review, while the frame GitHub wraps the whole page in (`repo-content-turbo-frame`) holds the review itself.
+      const body = [...review.querySelectorAll('.comment-body')].find((element) => !review.contains(element.closest('turbo-frame')));
+      const reactionForm = [...review.querySelectorAll('form.js-pick-reaction')].find((form) => !review.contains(form.closest('turbo-frame')));
+      const actions = [...review.querySelectorAll('.timeline-comment-actions')].find((menu) => !review.contains(menu.closest('turbo-frame')));
       items.push({
         kind: 'review',
         id: review.id,

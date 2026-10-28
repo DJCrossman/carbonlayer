@@ -121,6 +121,32 @@ describe('timelineFrom', () => {
     const [item] = timelineFrom(new DOMParser().parseFromString(review, 'text/html'), { pageUrl: '', threadIdsByReview: new Map(), commits: new Map() });
     expect(item).toMatchObject({ kind: 'review', subjectId: null, reactions: [] });
   });
+
+  it("reads a review's own body, reactions and menu inside the frame GitHub wraps the whole page in, still not its threads'", () => {
+    // GitHub's full conversation page (nodejs/node#62105, 2026-10-28) puts everything in `repo-content-turbo-frame`.
+    const review = `<turbo-frame id="repo-content-turbo-frame" target="_top"><div id="pullrequestreview-97" class="js-comment">
+      <div class="TimelineItem"><div class="TimelineItem-body"><a class="author">cy</a> approved these changes <relative-time datetime="2026-09-03T09:00:00Z"></relative-time></div></div>
+      <div class="TimelineItem"><div class="TimelineItem-body"><div id="pullrequestreview-97" class="timeline-comment-group">
+        <div class="timeline-comment-actions"><details><details-menu>
+          <clipboard-copy role="menuitem" value="Ship it">Copy Markdown</clipboard-copy>
+          <button type="button" class="dropdown-item btn-link js-comment-edit-button" aria-label="Edit comment">Edit</button>
+        </details-menu></details></div>
+        <div class="comment-body"><p>Ship it</p></div>
+        <form class="js-pick-reaction"><input type="hidden" name="input[subjectId]" value="PRR_97">
+          <button name="input[content]" value="HOORAY react" class="social-reaction-summary-item js-reaction-group-button"><g-emoji alias="tada">🎉</g-emoji> 1</button>
+        </form></div></div></div>
+      <div class="TimelineItem"><turbo-frame id="review-thread-or-comment-id-7"><div class="comment-body"><p>nit</p></div>
+        <form class="js-pick-reaction"><input type="hidden" name="input[subjectId]" value="PRRC_7"></form></turbo-frame></div>
+    </div></turbo-frame>`;
+    const [item] = timelineFrom(new DOMParser().parseFromString(review, 'text/html'), { pageUrl: '', threadIdsByReview: new Map(), commits: new Map() });
+    expect(item).toMatchObject({
+      kind: 'review',
+      bodyHtml: '<p>Ship it</p>',
+      subjectId: 'PRR_97',
+      reactions: [{ content: 'HOORAY', count: 1, viewerHasReacted: false }],
+      editableMarkdown: 'Ship it',
+    });
+  });
 });
 
 describe('timelineFrom, on comments the viewer may edit', () => {
