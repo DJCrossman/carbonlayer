@@ -154,7 +154,7 @@ const threads42: ReviewThread[] = [
         createdAt: '2026-10-08T10:14:00Z',
         url: 'https://github.com/acme/widgets/pull/42#discussion_r1',
         subjectId: 'PRRC_fixture1',
-        reactions: [{ content: 'EYES', count: 1, viewerHasReacted: false }],
+        reactions: [{ content: 'EYES', count: 1, viewerHasReacted: false, reactors: ['mona'] }],
       },
       {
         id: 'PRRC_fixture2',
@@ -164,7 +164,7 @@ const threads42: ReviewThread[] = [
         createdAt: '2026-10-08T11:02:00Z',
         url: 'https://github.com/acme/widgets/pull/42#discussion_r2',
         subjectId: 'PRRC_fixture2',
-        reactions: [{ content: 'THUMBS_UP', count: 2, viewerHasReacted: true }],
+        reactions: [{ content: 'THUMBS_UP', count: 2, viewerHasReacted: true, reactors: ['jlord'] }],
         editableMarkdown: '`listZones` already throws on transport errors, so `null` only ever means "unknown". I can add that to the doc comment.',
       },
     ],
@@ -447,8 +447,8 @@ const detail42: PrDetail = {
     '<p>Stacked on <a href="https://github.com/acme/widgets/pull/41">#41</a>; the console change is <a href="https://github.com/acme/widgets/pull/43">#43</a>.</p>',
   ].join('\n'),
   descriptionReactions: [
-    { content: 'HOORAY', count: 2, viewerHasReacted: false },
-    { content: 'ROCKET', count: 1, viewerHasReacted: true },
+    { content: 'HOORAY', count: 2, viewerHasReacted: false, reactors: ['jlord', 'hubot'] },
+    { content: 'ROCKET', count: 1, viewerHasReacted: true, reactors: [] },
   ],
   descriptionUrl: 'https://github.com/acme/widgets/pull/42#issue-4200',
   editableDescription: [
@@ -506,8 +506,8 @@ const detail42: PrDetail = {
       url: 'https://github.com/acme/widgets/pull/42#issuecomment-1',
       subjectId: 'IC_fixture1',
       reactions: [
-        { content: 'THUMBS_UP', count: 2, viewerHasReacted: true },
-        { content: 'EYES', count: 1, viewerHasReacted: false },
+        { content: 'THUMBS_UP', count: 2, viewerHasReacted: true, reactors: ['mona'] },
+        { content: 'EYES', count: 1, viewerHasReacted: false, reactors: ['hubot'] },
       ],
       editableMarkdown: 'Does this also cover the overnight zones? Their `closesAt` is before `opensAt`.',
     },
@@ -521,7 +521,7 @@ const detail42: PrDetail = {
       url: 'https://github.com/acme/widgets/pull/42#pullrequestreview-1',
       threadIds: ['PRRT_fixture3'],
       subjectId: 'PRR_fixture1',
-      reactions: [{ content: 'HOORAY', count: 1, viewerHasReacted: false }],
+      reactions: [{ content: 'HOORAY', count: 1, viewerHasReacted: false, reactors: ['mona'] }],
     },
     {
       kind: 'review',

@@ -1,6 +1,6 @@
 // GitHub's reactions under a comment or the description: a pill for each reaction given (its emoji and count, the
-// viewer's own in the accent tone), which gives or takes back the viewer's, and a smiley opening GitHub's eight as its
-// picker offers them. The PR page (PrReactions) sends each change and has every row show it at once.
+// viewer's own in the accent tone, its tooltip naming who gave it as GitHub's does), which gives or takes back the
+// viewer's, and a smiley opening GitHub's eight as its picker offers them. The PR page (PrReactions) sends each change and has every row show it at once.
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { REACTION_CONTENTS, type Reaction, type ReactionContent } from '../lib/model';
 import { Icon } from '../ui/Icon';
@@ -44,21 +44,28 @@ export function Reactions({
   if (reactions.length === 0 && !react) return null;
   return (
     <div className={`reactions ${reactions.length === 0 ? 'is-empty' : ''}`}>
-      {reactions.map(({ content, count, viewerHasReacted }) => (
-        <button
-          key={content}
-          type="button"
-          className={`reaction-pill ${viewerHasReacted ? 'is-mine' : ''}`}
-          aria-pressed={viewerHasReacted}
-          aria-label={`${REACTIONS[content].name}: ${count}`}
-          title={`${count} ${REACTIONS[content].name}${viewerHasReacted ? ', yours among them' : ''}`}
-          disabled={!react}
-          onClick={() => react?.(content, !viewerHasReacted)}
-        >
-          <span className="reaction-emoji">{REACTIONS[content].emoji}</span>
-          {count}
-        </button>
-      ))}
+      {reactions.map(({ content, count, viewerHasReacted, reactors }) => {
+        // GitHub's tooltip, "You, ana, and 3 more reacted with thumbs up emoji": the viewer first, then everyone GitHub
+        // names, then how many it leaves unnamed.
+        const named = [...(viewerHasReacted ? ['You'] : []), ...reactors];
+        const unnamed = count - named.length;
+        const people = unnamed > 0 ? [...named, `${unnamed} ${named.length > 0 ? 'more' : unnamed === 1 ? 'person' : 'people'}`] : named;
+        return (
+          <button
+            key={content}
+            type="button"
+            className={`reaction-pill ${viewerHasReacted ? 'is-mine' : ''}`}
+            aria-pressed={viewerHasReacted}
+            aria-label={`${REACTIONS[content].name}: ${count}`}
+            title={`${new Intl.ListFormat('en').format(people)} reacted with ${REACTIONS[content].name} emoji`}
+            disabled={!react}
+            onClick={() => react?.(content, !viewerHasReacted)}
+          >
+            <span className="reaction-emoji">{REACTIONS[content].emoji}</span>
+            {count}
+          </button>
+        );
+      })}
       {react && (
         <div className="reaction-picker-anchor" ref={anchor}>
           <button
@@ -137,6 +144,6 @@ function reactionsAfter(reactions: Reaction[], changed: Partial<Record<ReactionC
     const reaction = reactions.find((candidate) => candidate.content === content);
     if (!pending.includes(content)) return reaction ? [reaction] : [];
     const count = (reaction?.count ?? 0) + (changed[content] ? 1 : -1);
-    return count > 0 ? [{ content, count, viewerHasReacted: !!changed[content] }] : [];
+    return count > 0 ? [{ content, count, viewerHasReacted: !!changed[content], reactors: reaction?.reactors ?? [] }] : [];
   });
 }

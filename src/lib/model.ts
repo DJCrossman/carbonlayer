@@ -235,8 +235,11 @@ export const REACTION_CONTENTS = ['THUMBS_UP', 'THUMBS_DOWN', 'LAUGH', 'HOORAY',
 
 export type ReactionContent = (typeof REACTION_CONTENTS)[number];
 
-/** One of the reactions a comment has: how many gave it, and whether the viewer is one of them. */
-export const reactionSchema = z.object({ content: z.enum(REACTION_CONTENTS), count: z.number(), viewerHasReacted: z.boolean() });
+/**
+ * One of the reactions a comment has: how many gave it, whether the viewer is one of them, and the others who did by
+ * login, in GitHub's order, as many as GitHub names (ten at most on its conversation page, the rest only counted).
+ */
+export const reactionSchema = z.object({ content: z.enum(REACTION_CONTENTS), count: z.number(), viewerHasReacted: z.boolean(), reactors: z.array(z.string()) });
 
 export type Reaction = z.infer<typeof reactionSchema>;
 

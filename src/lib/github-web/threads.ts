@@ -10,6 +10,7 @@ import { githubUser } from './session';
 /** The threads, and which review opened which threads (by numeric review id). */
 export function reviewThreads(answer: ThreadsAnswer, comparison: BaseComparison, page: Document): { threads: ReviewThread[]; threadIdsByReview: Map<string, string[]> } {
   const list = answer.threads ?? [];
+  const viewerLogin = page.querySelector('meta[name="user-login"]')?.getAttribute('content');
 
   const anchors = new Map<string, { path: string; side: 'LEFT' | 'RIGHT'; line: number | null; startLine: number | null }>();
   for (const summary of comparison.diffSummaries) {
@@ -56,12 +57,14 @@ export function reviewThreads(answer: ThreadsAnswer, comparison: BaseComparison,
           url: comment.url ?? `https://github.com${comment.currentDiffResourcePath ?? ''}`,
           // The node id (`PRRC_…`) is what a reaction names.
           subjectId: comment.id ?? null,
-          // GitHub lists all eight reactions, given or not.
+          // GitHub lists all eight reactions, given or not, each with who gave it: the viewer among them by login, and
+          // anyone of the type `Other`, whom GitHub's own reaction button leaves unnamed.
           reactions: (comment.reactionGroups ?? []).flatMap(({ reaction, reactors, totalCount }): Reaction[] => {
             const content = REACTION_CONTENTS.find((known) => known === reaction?.content);
             const count = totalCount ?? reactors?.length ?? 0;
             const viewerHasReacted = !!reaction?.viewerHasReacted;
-            return content && (count > 0 || viewerHasReacted) ? [{ content, count, viewerHasReacted }] : [];
+            const others = (reactors ?? []).flatMap(({ login, typeName }) => (login && typeName !== 'Other' && login !== viewerLogin ? [login] : []));
+            return content && (count > 0 || viewerHasReacted) ? [{ content, count, viewerHasReacted, reactors: others }] : [];
           }),
           // GitHub says whether the viewer may edit it, and has its Markdown and the version an edit names.
           ...(comment.viewerCanUpdate && typeof comment.body === 'string' && { editableMarkdown: comment.body, ...(comment.bodyVersion && { bodyVersion: comment.bodyVersion }) }),
@@ -137,7 +140,7 @@ export const threadsAnswer = z.object({
                     z.array(
                       z.object({
                         reaction: z.nullish(z.object({ content: z.nullish(z.string()), viewerHasReacted: z.nullish(z.boolean()) })),
-                        reactors: z.nullish(z.array(z.unknown())),
+                        reactors: z.nullish(z.array(z.object({ login: z.nullish(z.string()), typeName: z.nullish(z.string()) }))),
                         totalCount: z.nullish(z.number()),
                       }),
                     ),

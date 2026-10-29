@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { descriptionPermalink, timelineFrom } from './timeline';
+import { descriptionPermalink, reactionsIn, timelineFrom } from './timeline';
 
 // A conversation the way GitHub renders it, cut down to the elements the parser reads (shapes from cli/cli#14320).
 const conversation = `
@@ -195,6 +195,31 @@ describe('timelineFrom, on comments the viewer may edit', () => {
     expect(timeline[2]).not.toHaveProperty('bodyVersion');
     expect(timeline[3]).toMatchObject({ kind: 'review', id: 'pullrequestreview-22' });
     expect(timeline[3]).not.toHaveProperty('editableMarkdown');
+  });
+});
+
+describe('reactionsIn', () => {
+  it("names who gave each reaction from its tooltip, neither the viewer, by login or as You, nor the ones GitHub only counts", () => {
+    const page = new DOMParser().parseFromString(
+      `<html><head><meta name="user-login" content="octocat"></head><body><form class="js-pick-reaction">
+        <input type="hidden" name="input[subjectId]" value="IC_9">
+        <button id="reactions--reaction_button_component-1" name="input[content]" value="THUMBS_UP unreact" class="social-reaction-summary-item"><g-emoji alias="+1">👍</g-emoji>
+          <span class="js-discussion-reaction-group-count">14</span></button>
+        <tool-tip for="reactions--reaction_button_component-1" popover="manual">ana, octocat, bo, and 11 more reacted with thumbs up emoji</tool-tip>
+        <button id="reactions--reaction_button_component-2" name="input[content]" value="HEART react" class="social-reaction-summary-item"><g-emoji alias="heart">❤️</g-emoji> 2</button>
+        <tool-tip for="reactions--reaction_button_component-2" popover="manual">cy and dee reacted with heart emoji</tool-tip>
+        <button id="reactions--reaction_button_component-3" name="input[content]" value="ROCKET unreact" class="social-reaction-summary-item"><g-emoji alias="rocket">🚀</g-emoji> 2</button>
+        <tool-tip for="reactions--reaction_button_component-3" popover="manual">You and ana reacted with rocket emoji</tool-tip>
+        <button id="reactions--reaction_button_component-4" name="input[content]" value="EYES react" class="social-reaction-summary-item"><g-emoji alias="eyes">👀</g-emoji> 1</button>
+      </form></body></html>`,
+      'text/html',
+    );
+    expect(reactionsIn(page.querySelector('form')).reactions).toEqual([
+      { content: 'THUMBS_UP', count: 14, viewerHasReacted: true, reactors: ['ana', 'bo'] },
+      { content: 'HEART', count: 2, viewerHasReacted: false, reactors: ['cy', 'dee'] },
+      { content: 'ROCKET', count: 2, viewerHasReacted: true, reactors: ['ana'] },
+      { content: 'EYES', count: 1, viewerHasReacted: false, reactors: [] },
+    ]);
   });
 });
 

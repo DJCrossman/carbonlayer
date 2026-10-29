@@ -140,17 +140,25 @@ export function descriptionPermalink(page: Document, pageUrl: string): string | 
 
 /**
  * What a comment's reaction form (`form.js-pick-reaction`) says: the subject a reaction names, and a button for each
- * reaction given, valued `<CONTENT> react`, or `<CONTENT> unreact` once the viewer gave it, reading its emoji and count.
+ * reaction given, valued `<CONTENT> react`, or `<CONTENT> unreact` once the viewer gave it, reading its emoji and count,
+ * with the tooltip (`<tool-tip for>` the button) naming who gave it: "ana, bo, and 3 more reacted with thumbs up emoji".
  * Without a form there is nothing to react with.
  */
 export function reactionsIn(form: Element | null | undefined): { subjectId: string | null; reactions: Reaction[] } {
   if (!form) return { subjectId: null, reactions: [] };
+  const viewerLogin = form.ownerDocument.querySelector('meta[name="user-login"]')?.getAttribute('content');
+  const tooltips = [...form.querySelectorAll('tool-tip')];
   const reactions = [...form.querySelectorAll('button.social-reaction-summary-item')].flatMap((button): Reaction[] => {
     const [, value = '', un] = /^([A-Z_]+) (un)?react$/.exec(button.getAttribute('value')?.trim() ?? '') ?? [];
     const content = REACTION_CONTENTS.find((known) => known === value);
     const count = Number(/(\d+)\s*$/.exec(button.textContent ?? '')?.[1] ?? 0);
     const viewerHasReacted = un === 'un';
-    return content && (count > 0 || viewerHasReacted) ? [{ content, count, viewerHasReacted }] : [];
+    const tooltip = tooltips.find((candidate) => button.id && candidate.getAttribute('for') === button.id)?.textContent?.trim() ?? '';
+    // The names before "reacted with", but the "N more" GitHub leaves unnamed, and the viewer, by login or as "You".
+    const reactors = (/^(.+?) reacted with /.exec(tooltip)?.[1] ?? '')
+      .split(/, and |, | and /)
+      .filter((name) => name && !/^\d+ more$/.test(name) && name !== viewerLogin && !(viewerHasReacted && name === 'You'));
+    return content && (count > 0 || viewerHasReacted) ? [{ content, count, viewerHasReacted, reactors }] : [];
   });
   return { subjectId: form.querySelector('input[name="input[subjectId]"]')?.getAttribute('value') || null, reactions };
 }

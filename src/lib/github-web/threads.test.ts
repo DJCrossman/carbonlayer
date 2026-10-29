@@ -63,8 +63,8 @@ describe('reviewThreads', () => {
       url: 'https://github.com/o/r/pull/1#discussion_r501',
       subjectId: 'PRRC_501',
       reactions: [
-        { content: 'THUMBS_UP', count: 2, viewerHasReacted: true },
-        { content: 'EYES', count: 1, viewerHasReacted: false },
+        { content: 'THUMBS_UP', count: 2, viewerHasReacted: true, reactors: [] },
+        { content: 'EYES', count: 1, viewerHasReacted: false, reactors: [] },
       ],
     });
     expect(threads[1]?.comments[0]?.url).toBe('https://github.com/o/r/pull/1/files#r502');
@@ -85,6 +85,44 @@ describe('reviewThreads, on a comment on the whole file', () => {
       page,
     );
     expect(threads[0]).toMatchObject({ id: '2967545223', path: 'docs/zones.png', line: null, startLine: null, isOutdated: false, diffHunk: '' });
+  });
+});
+
+describe('reviewThreads, on who reacted', () => {
+  it("names who gave each reaction by login in GitHub's order, never the viewer, nor anyone GitHub's own button leaves unnamed", () => {
+    const { threads } = reviewThreads(
+      threadsAnswer.parse({
+        threads: [
+          {
+            id: '4',
+            commentsData: {
+              comments: [
+                {
+                  databaseId: 801,
+                  author: { login: 'bo' },
+                  bodyHTML: '<p>Ship it</p>',
+                  reactionGroups: [
+                    {
+                      reaction: { content: 'THUMBS_UP', viewerHasReacted: true },
+                      reactors: [
+                        { login: 'ana', typeName: 'User' },
+                        { login: 'octocat', typeName: 'User' },
+                        { login: 'someone', typeName: 'Other' },
+                        { login: 'dependabot', typeName: 'Bot' },
+                      ],
+                      totalCount: 4,
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      }),
+      { diffSummaries: [] },
+      new DOMParser().parseFromString('<html><head><meta name="user-login" content="octocat"></head><body></body></html>', 'text/html'),
+    );
+    expect(threads[0]?.comments[0]?.reactions).toEqual([{ content: 'THUMBS_UP', count: 4, viewerHasReacted: true, reactors: ['ana', 'dependabot'] }]);
   });
 });
 
