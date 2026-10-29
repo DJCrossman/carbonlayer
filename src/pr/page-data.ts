@@ -301,6 +301,7 @@ export function stagesStandingIn(queryClient: QueryClient, repo: RepoRef, number
         descriptionUrl: null,
         descriptionReactions: [],
         headOid: '',
+        headRepository: null,
         viewerCanUpdate: false,
         viewerDidAuthor: false,
         viewerLogin: '',

@@ -137,7 +137,8 @@
   background: var(--gg-bg);
   box-shadow: var(--gg-shadow-overlay);
 }
-.pr-menu-list button {
+.pr-menu-list button,
+.pr-menu-list a {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -150,10 +151,15 @@
   color: var(--gg-fg);
   font: inherit;
   text-align: left;
+  text-decoration: none;
   cursor: pointer;
 }
-.pr-menu-list button:hover { background: var(--gg-bg-hover); }
+.pr-menu-list button:hover,
+.pr-menu-list a:hover { background: var(--gg-bg-hover); }
 .pr-menu-list .gg-icon { color: var(--gg-fg-muted); }
+/* An item that destroys something (a file's Delete file), red as GitHub's. */
+.pr-menu-list .is-danger,
+.pr-menu-list .is-danger .gg-icon { color: var(--gg-danger); }
 .pr-menu-separator { height: 1px; margin: 4px -4px; background: var(--gg-border-muted); }
 
 /* The header's actions again, under the assignees: one row across the sidebar, Finish review taking what the other two

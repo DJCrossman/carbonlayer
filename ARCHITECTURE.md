@@ -253,7 +253,13 @@ File links: each file's header copies as Graphite's does (`FileCard` in `src/pr/
 toast. A click on its path copies the path: `@pierre/diffs` draws the path in the diff's shadow root, so the card hears
 the click and finds the path in the click's composed path, and the library's `unsafeCSS` marks it on hover. The ⋯ at the
 header's end offers Copy file name, the same, and Copy link, the link GitHub's files view gives the file,
-`…/pull/<n>/files#diff-<the SHA-256 of its path, in hex>` (`fileAnchor` in `src/app/routes.ts`). Opening such a link,
+`…/pull/<n>/files#diff-<the SHA-256 of its path, in hex>` (`fileAnchor` in `src/app/routes.ts`). Below them are GitHub's
+own file menu's links, built as its files view builds them: View file (`…/blob/<head commit>/<path>`, a deleted file's at
+the base commit), and Edit file (`…/edit/<head branch>/<path>?pr=/<owner>/<repo>/pull/<n>`, which comes back to the PR)
+and Delete file (`…/delete/<head branch>/<path>`) in the head branch's repository (`headRepository`, a fork's for a PR
+from one, from the PR page's `headRepositoryOwnerLogin` and `headRepositoryName`). GitHub offers those two to everyone and
+its pages decide (offering a fork to whoever may not push); a deleted file, not on the branch, offers neither. They move
+the top page, as GitHub's do. Opening such a link,
 on `/files` or `/changes`, opens the page at the file: the content script carries the anchor in the app's route
 (`?section=files&file=diff-<hash>`, `file` in `src/app/routes.ts`), and once the file list has the file whose path
 hashes to it (`useLinkedFile` in `src/pr/PrPage.tsx`) the page keeps that file's card at the top while it grows, as it

@@ -17,6 +17,7 @@ import { Icon, type IconName } from '../ui/Icon';
 import { Skeleton } from '../ui/Skeleton';
 import { showToast } from '../ui/Toast';
 import { composerAnchorFor, currentLinesOf, fileNotes, filesInTreeOrder, fileTree, hiddenLines, renderableDiff, takesComments, type ComposerAnchor, type DiffNote, type FileTreeNode } from './diff';
+import { followLink } from './navigation';
 import { prFileContentsQuery, prHeldBackDiffQuery, type StageState } from './page-data';
 import { StageError } from './primitives';
 import { DiffNoteView, type NoteActions } from './Threads';
@@ -545,7 +546,7 @@ function FileCard({
           <span className="files-toolbar-spacer" />
           {viewedToggle}
           {commentOnFile}
-          <FileMenu path={file.path} prUrl={pr.url} />
+          <FileMenu file={file} pr={pr} />
         </div>
         {/* A collapsed file (one already viewed) shows its header alone, as it will once its diff is in. */}
         {collapsed ? null : missingDiff === 'failed' ? (
@@ -610,7 +611,7 @@ function FileCard({
           </span>
           {viewedToggle}
           {commentOnFile}
-          <FileMenu path={file.path} prUrl={pr.url} />
+          <FileMenu file={file} pr={pr} />
         </div>
         {/* Its notes on the whole file (the threads GitHub places on no line, the comments batched for it, the composer), as
             a diff shows them above its first hunk; these while its lines are on their way, and its line threads, wait for
@@ -686,7 +687,7 @@ function FileCard({
           )}
           {viewedToggle}
           {commentOnFile}
-          <FileMenu path={file.path} prUrl={pr.url} />
+          <FileMenu file={file} pr={pr} />
         </div>
       )}
     />
@@ -720,10 +721,27 @@ function copyFileName(path: string) {
 /**
  * The ⋯ at the end of a file's header, with the items of Graphite's that copy: the file's path, and the link to it in
  * the PR's files on GitHub, the one GitHub's own files view gives it (`fileAnchor`), which opens this page at the file.
+ * Then GitHub's own file menu's: View file, at the head commit (a deleted file at the base's), and Edit file and Delete
+ * file on the PR's head branch, where GitHub's pages take them on (whoever may not push there is offered a fork). A deleted
+ * file is not on the branch to edit.
  */
-function FileMenu({ path, prUrl }: { path: string; prUrl: string }) {
+function FileMenu({ file, pr }: { file: ChangedFile; pr: Pick<PrDetail, 'url' | 'headRepository' | 'headRefName'> }) {
+  const { path } = file;
   const [open, setOpen] = useState(false);
   const menu = useRef<HTMLDivElement | null>(null);
+  // As GitHub builds them, each part of the branch and the path escaped and the slashes between them kept; an edit then
+  // comes back to the PR (`?pr=`).
+  const onBranch =
+    pr.headRepository && pr.headRefName && file.status !== 'removed'
+      ? { repo: `https://github.com/${pr.headRepository.owner}/${pr.headRepository.name}`, file: `${pr.headRefName}/${path}`.split('/').map(encodeURIComponent).join('/') }
+      : null;
+  // The pages open in this tab, as GitHub's menu opens them; ⌘, Ctrl, Shift or Alt leave it to the browser.
+  const leaveFor = (event: MouseEvent<HTMLAnchorElement>) => {
+    setOpen(false);
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    followLink(event.currentTarget.href);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -767,7 +785,7 @@ function FileMenu({ path, prUrl }: { path: string; prUrl: string }) {
             onClick={() => {
               setOpen(false);
               void fileAnchor(path)
-                .then((anchor) => navigator.clipboard.writeText(`${prUrl}/files#${anchor}`))
+                .then((anchor) => navigator.clipboard.writeText(`${pr.url}/files#${anchor}`))
                 .then(
                   () => showToast('Copied link to file'),
                   (reason: unknown) => showToast(`Could not copy link to file: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger'),
@@ -777,6 +795,23 @@ function FileMenu({ path, prUrl }: { path: string; prUrl: string }) {
             <Icon name="link" size={14} />
             Copy link
           </button>
+          <div role="separator" className="pr-menu-separator" />
+          <a role="menuitem" href={file.blobUrl} onClick={leaveFor}>
+            <Icon name="eye" size={14} />
+            View file
+          </a>
+          {onBranch && (
+            <>
+              <a role="menuitem" href={`${onBranch.repo}/edit/${onBranch.file}?pr=${encodeURI(new URL(pr.url).pathname)}`} onClick={leaveFor}>
+                <Icon name="pencil" size={14} />
+                Edit file
+              </a>
+              <a role="menuitem" className="is-danger" href={`${onBranch.repo}/delete/${onBranch.file}`} onClick={leaveFor}>
+                <Icon name="trash" size={14} />
+                Delete file
+              </a>
+            </>
+          )}
         </div>
       )}
     </div>

@@ -578,6 +578,7 @@ function header(changes: Partial<PrStages['header']> = {}): PrStages['header'] {
     descriptionReactions: [],
     descriptionUrl: null,
     headOid: 'h42',
+    headRepository: REPO,
     viewerCanUpdate: true,
     viewerDidAuthor: true,
     viewerLogin: 'mona',

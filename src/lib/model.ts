@@ -345,6 +345,8 @@ export const prDetailSchema = z.extend(prSummarySchema, {
   editableDescription: z.optional(z.string()),
   headOid: z.string(),
   baseOid: z.string(),
+  /** The repository the head branch is in (a fork's, for a PR from one); null where GitHub does not name it (a deleted fork). */
+  headRepository: z.nullable(repoRefSchema),
   assignees: z.array(userRefSchema),
   viewerCanUpdate: z.boolean(),
   viewerDidAuthor: z.boolean(),
@@ -416,6 +418,7 @@ export const prStagesSchema = z.object({
       descriptionUrl: true,
       editableDescription: true,
       headOid: true,
+      headRepository: true,
       viewerCanUpdate: true,
       viewerDidAuthor: true,
     }),

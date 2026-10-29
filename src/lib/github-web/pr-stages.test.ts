@@ -197,6 +197,21 @@ describe('the PR page in stages', () => {
     expect(await loadStage('header')).toMatchObject({ bodyHtml: '<p>From the route</p>', editableDescription: 'From the route' });
   });
 
+  it("names the repository the head branch is in, a fork's for a PR from one, and none where GitHub names none", async () => {
+    const answer = (head: object) => async (url: string) => {
+      if (url.endsWith('/tab_counts') || url.endsWith('/diffstat') || url.endsWith('/page_data/description')) return Response.json({});
+      const layout = { pullRequest: { id: 1, relayId: 'PR_1', number: 1, title: 'T', state: 'OPEN', baseBranch: 'main', headBranch: 'fix', headSha: 'h', createdTime: '2026-10-01T00:00:00Z', ...head }, user: {} };
+      return new Response(
+        `<html><head><meta name="user-login" content="ana"></head><body><script type="application/json" data-target="react-app.embeddedData">${JSON.stringify({ payload: { pullRequestsLayoutRoute: layout } })}</script></body></html>`,
+        { headers: { 'content-type': 'text/html' } },
+      );
+    };
+    vi.stubGlobal('fetch', vi.fn(answer({ headRepositoryOwnerLogin: 'ana', headRepositoryName: 'r-fork' })));
+    expect((await loadStage('header')).headRepository).toEqual({ owner: 'ana', name: 'r-fork' });
+    vi.stubGlobal('fetch', vi.fn(answer({ headRepositoryOwnerLogin: null, headRepositoryName: null })));
+    expect((await loadStage('header')).headRepository).toBeNull();
+  });
+
   it('asks a signed-out viewer to sign in from the header', async () => {
     requests = serveGitHub({}, '');
     await expect(loadStage('header')).rejects.toThrow(SIGNED_OUT);
