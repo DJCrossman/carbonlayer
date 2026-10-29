@@ -60,6 +60,7 @@ export function Sidebar({
   onDropBackgroundMerge: (id: string) => Promise<boolean>;
   /** Rebases the PR's native stack onto its base branch, as GitHub's "Rebase stack" does; resolves false when it did not. */
   onRebaseStack: () => Promise<boolean>;
+  /** Opens the comments drawer, which shows the unresolved threads first, as Graphite's "View comments" opens its comments. */
   onViewThreads: () => void;
   checkReruns: CheckReruns;
   /** The Reviewers card (Reviewers.tsx), wired to the page's data source. */
@@ -380,7 +381,7 @@ function ActionCard({
       )}
       {action.kind === 'stack-rebase' && pr.stackSection?.viewerCanRebase && <RebaseStack onRebaseStack={onRebaseStack} />}
       {action.kind === 'unresolved' && (
-        <Button className="side-action-button" onClick={onViewThreads} title="Next unresolved thread (n)">
+        <Button className="side-action-button" onClick={onViewThreads} title="Comments (C)">
           View comments
         </Button>
       )}

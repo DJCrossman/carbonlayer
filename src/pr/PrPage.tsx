@@ -599,7 +599,7 @@ function PrView({
             if (rebased) showToast(complete ? 'Rebasing complete' : 'Rebasing stack…');
             return rebased;
           }}
-          onViewThreads={() => files.stepThread(1)}
+          onViewThreads={() => setCommentsOpen(true)}
           checkReruns={checkReruns}
           reviewersCard={
             <ReviewersCard
