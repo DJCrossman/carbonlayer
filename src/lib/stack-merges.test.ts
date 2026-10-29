@@ -17,7 +17,7 @@ import {
 const HOUR = 60 * 60_000;
 
 describe('whatTheStackWaitsFor', () => {
-  const waitsFor = (readiness: StackReadiness, options: Partial<{ heads: Record<string, string>; ignoreOptionalChecks: boolean; rebase: boolean; whenReady: boolean }> = {}) =>
+  const waitsFor = (readiness: StackReadiness, options: Partial<{ heads: Record<string, string>; ignoreOptionalChecks: boolean; rebase: boolean; whenReady: boolean; notStarted: Record<string, string[]> }> = {}) =>
     whatTheStackWaitsFor(readiness, { heads: { '41': 'h41', '42': 'h42' }, ignoreOptionalChecks: true, rebase: false, whenReady: false, ...options });
 
   it('merges once every required check has passed and GitHub says each PR can merge with those below it', () => {
@@ -82,6 +82,20 @@ describe('whatTheStackWaitsFor', () => {
     it('merges once every required check of the open PRs has passed and GitHub says each can merge, optional checks aside', () => {
       expect(waitsFor(stack(), whenReady)).toEqual({ kind: 'merge' });
       expect(waitsFor(stack({ 42: [check('build', 'SUCCESS'), check('test', 'SUCCESS'), check('deploy-preview', 'FAILURE')] }), whenReady)).toEqual({ kind: 'merge' });
+    });
+
+    it('waits for optional checks still running too, though one that failed does not hold it', () => {
+      expect(waitsFor(stack({ 42: [check('build', 'SUCCESS'), check('test', 'SUCCESS'), check('Analyze', 'PENDING')] }), whenReady)).toEqual({
+        kind: 'checks',
+        requiredPassed: 4,
+        required: 4,
+        optionalRunning: 1,
+      });
+      expect(waitsFor(stack({ 42: [check('build', 'SUCCESS'), check('test', 'SUCCESS'), check('Analyze', 'FAILURE')] }), whenReady)).toEqual({ kind: 'merge' });
+    });
+
+    it('waits for the checks the heads before had to show up, counting them', () => {
+      expect(waitsFor(stack(), { ...whenReady, notStarted: { '41': [], '42': ['Analyze', 'e2e'] } })).toEqual({ kind: 'checks', requiredPassed: 4, required: 4, optionalRunning: 0, notStarted: 2 });
     });
 
     it('keeps waiting through a failing or cancelled required check, counting it as not passed', () => {
@@ -324,6 +338,39 @@ describe('advanceStackMerge', () => {
         ['pr.rebaseStack', { prId: 'PR_42' }],
         ['pr.merge', { prId: 'PR_42', method: 'SQUASH', expectedHeadOid: 'h42-rebased' }],
       ]);
+    });
+
+    it("after its rebase, waits for the checks the heads before had to show up on the new heads and finish, then merges", async () => {
+      const withAnalyze = (head: string, analyze: CheckRunSummary[]): StackReadiness => {
+        const checks = stack({ 42: [check('build', 'SUCCESS'), check('test', 'SUCCESS'), ...analyze] });
+        return { ...checks, prs: checks.prs.map((pr) => ({ ...pr, headOid: `${pr.headOid}${head}` })) };
+      };
+      let readiness: StackReadiness = { ...withAnalyze('', [check('Analyze', 'SUCCESS')]), stackSection: { kind: 'rebase-optional', baseRefName: 'main', viewerCanRebase: true } };
+      const github = gitHub({ 'pr.fetchStackReadiness': () => readiness, 'pr.fetchHeader': () => header({ headOid: 'h42-rebased' }), 'pr.rebaseStack': () => ({ complete: true }) });
+      const rebasing = await advanceStackMerge(merge({ whenReady: true, rebaseFirst: false, step: { kind: 'waiting', for: null } }), github, START);
+      const rebased = await advanceStackMerge(rebasing, github, START);
+      // The pipeline that runs Analyze has not heard of the new heads yet.
+      readiness = withAnalyze('-rebased', []);
+      const starting = await advanceStackMerge(rebased, github, START + 30_000);
+      expect(starting.step).toMatchObject({ kind: 'waiting', for: { kind: 'checks', requiredPassed: 4, required: 4, optionalRunning: 0, notStarted: 1 } });
+      readiness = withAnalyze('-rebased', [check('Analyze', 'PENDING')]);
+      const running = await advanceStackMerge(starting, github, START + 60_000);
+      expect(running.step).toMatchObject({ kind: 'waiting', for: { kind: 'checks', requiredPassed: 4, required: 4, optionalRunning: 1 } });
+      readiness = withAnalyze('-rebased', [check('Analyze', 'SUCCESS')]);
+      expect((await advanceStackMerge(running, github, START + 90_000)).step).toEqual({ kind: 'merging', sentAt: null });
+    });
+
+    it('gives up on a check the head before had after 10 minutes, as a workflow that skips the new head never shows up', async () => {
+      let readiness: StackReadiness = stack({ 42: [check('build', 'SUCCESS'), check('test', 'SUCCESS'), check('e2e (portal)', 'SUCCESS')] }, { 42: { status: 'NOT_READY', mergeState: 'BLOCKED' } });
+      const github = gitHub({ 'pr.fetchStackReadiness': () => readiness });
+      const blocked = await advanceStackMerge(merge({ whenReady: true, rebaseFirst: false, step: { kind: 'waiting', for: null } }), github, START);
+      // Pushed to: the new head of #42 runs no e2e.
+      const pushed = stack();
+      readiness = { ...pushed, prs: pushed.prs.map((pr) => (pr.number === 42 ? { ...pr, headOid: 'h42-pushed' } : pr)) };
+      const waiting = await advanceStackMerge(blocked, github, START + 5 * 60_000);
+      expect(waiting.step).toMatchObject({ kind: 'waiting', for: { kind: 'checks', notStarted: 1 } });
+      expect((await advanceStackMerge(waiting, github, START + 14 * 60_000)).step).toMatchObject({ kind: 'waiting', for: { kind: 'checks', notStarted: 1 } });
+      expect((await advanceStackMerge(waiting, github, START + 15 * 60_000)).step).toEqual({ kind: 'merging', sentAt: null });
     });
 
     it('rebases, at its next look, a stack an earlier build left waiting to be rebased', async () => {

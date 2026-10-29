@@ -37,20 +37,40 @@ export async function advanceStackMerge(merge: StackMerge, github: GitHubThrough
   const decide = (readiness: StackReadiness, rebase: boolean): StackMerge => {
     const seen = Object.fromEntries(readiness.prs.map((pr) => [String(pr.number), pr.headOid]));
     const heads = merge.whenReady ? seen : (merge.heads ?? seen);
-    const waitsFor = whatTheStackWaitsFor(readiness, { heads, ignoreOptionalChecks: merge.ignoreOptionalChecks, rebase, whenReady: merge.whenReady });
+    // Merging when ready, the checks each open PR's head has, and on a head new since the last look (a push, or its own
+    // rebase) those the head before had, which it waits to see on the new one for 10 minutes at most: a workflow that
+    // skips the new head never shows up.
+    const headChecks = merge.whenReady
+      ? Object.fromEntries(
+          readiness.prs
+            .filter((pr) => pr.state === 'OPEN')
+            .map((pr): [string, HeadChecks] => {
+              const names = pr.ci.checks.map((check) => check.name);
+              const before = merge.headChecks?.[String(pr.number)];
+              if (!before) return [String(pr.number), { headOid: pr.headOid, names, expected: [], since: now }];
+              if (before.headOid === pr.headOid) return [String(pr.number), { ...before, names }];
+              const stillExpected = now - before.since < 10 * 60_000 ? before.expected : [];
+              return [String(pr.number), { headOid: pr.headOid, names, expected: [...new Set([...before.names, ...stillExpected])], since: now }];
+            }),
+        )
+      : undefined;
+    const notStarted = Object.fromEntries(
+      Object.entries(headChecks ?? {}).map(([number, { names, expected, since }]) => [number, now - since < 10 * 60_000 ? expected.filter((name) => !names.includes(name)) : []]),
+    );
+    const waitsFor = whatTheStackWaitsFor(readiness, { heads, ignoreOptionalChecks: merge.ignoreOptionalChecks, rebase, whenReady: merge.whenReady, notStarted });
     switch (waitsFor.kind) {
       case 'stop':
         return stop(waitsFor.reason);
       case 'rebase':
-        return { ...merge, trouble: null, step: { kind: 'rebasing', sent: false } };
+        return { ...merge, ...(headChecks && { headChecks }), trouble: null, step: { kind: 'rebasing', sent: false } };
       case 'merge':
-        return { ...merge, heads, trouble: null, step: { kind: 'merging', sentAt: null } };
+        return { ...merge, heads, ...(headChecks && { headChecks }), trouble: null, step: { kind: 'merging', sentAt: null } };
       default: {
         if (!merge.whenReady) return { ...merge, heads, trouble: null, step: { kind: 'waiting', for: waitsFor } };
         // Since when the stack has waited for the same thing at the same heads, which paces the next look (below).
         const unchangedSince =
           step.kind === 'waiting' && JSON.stringify(step.for) === JSON.stringify(waitsFor) && JSON.stringify(merge.heads) === JSON.stringify(heads) ? step.unchangedSince : undefined;
-        return { ...merge, heads, trouble: null, step: { kind: 'waiting', for: waitsFor, lookedAt: now, unchangedSince: unchangedSince ?? now } };
+        return { ...merge, heads, ...(headChecks && { headChecks }), trouble: null, step: { kind: 'waiting', for: waitsFor, lookedAt: now, unchangedSince: unchangedSince ?? now } };
       }
     }
   };
@@ -131,14 +151,22 @@ export async function advanceStackMerge(merge: StackMerge, github: GitHubThrough
  * neutral or skipped); a failure stops the merge. Last, GitHub must say each PR can merge with those below it (its
  * verdict READY, its merge requirements MERGEABLE). Nothing in the way: merge.
  * Merging when ready (`whenReady`) waits through what the stack's author can still fix: a failing check (until it passes,
- * run again or after a push) and new commits. It rebases a stack GitHub says must be rebased at once, as it could never
- * merge otherwise, and one behind its base last, where it would merge, so the checks run once more on what merges rather
- * than each time the base moves while it waits. It merges the PRs still open, whichever merged meanwhile, and only a
- * closed PR and conflicts stop it.
+ * run again or after a push) and new commits. It also waits for every optional check to finish, though one that fails
+ * does not hold it, and for the checks a PR's head before had to show up on a new head (`notStarted`, by PR number): a
+ * pipeline GitHub starts through a webhook reports a moment after the push. It rebases a stack GitHub says must be
+ * rebased at once, as it could never merge otherwise, and one behind its base last, where it would merge, so the checks
+ * run once more on what merges rather than each time the base moves while it waits. It merges the PRs still open,
+ * whichever merged meanwhile, and only a closed PR and conflicts stop it.
  */
 export function whatTheStackWaitsFor(
   readiness: StackReadiness,
-  { heads, ignoreOptionalChecks, rebase, whenReady }: { heads: Record<string, string>; ignoreOptionalChecks: boolean; rebase: boolean; whenReady: boolean },
+  {
+    heads,
+    ignoreOptionalChecks,
+    rebase,
+    whenReady,
+    notStarted = {},
+  }: { heads: Record<string, string>; ignoreOptionalChecks: boolean; rebase: boolean; whenReady: boolean; notStarted?: Record<string, string[]> },
 ): StackWait | { kind: 'merge' } | { kind: 'rebase' } | { kind: 'stop'; reason: string } {
   const prs = whenReady ? readiness.prs.filter((pr) => pr.state !== 'MERGED') : readiness.prs;
   const gone = prs.find((pr) => pr.state !== 'OPEN');
@@ -167,12 +195,15 @@ export function whatTheStackWaitsFor(
       if (isRequired) {
         required += 1;
         if (succeeded) requiredPassed += 1;
-      } else if (!succeeded && !failed && !ignoreOptionalChecks) {
+      } else if (!succeeded && !failed && (whenReady || !ignoreOptionalChecks)) {
         optionalRunning += 1;
       }
     }
   }
-  if (requiredPassed < required || optionalRunning > 0) return { kind: 'checks', requiredPassed, required, optionalRunning };
+  const missing = prs.reduce((count, pr) => count + (notStarted[String(pr.number)]?.length ?? 0), 0);
+  if (requiredPassed < required || optionalRunning > 0 || missing > 0) {
+    return { kind: 'checks', requiredPassed, required, optionalRunning, ...(missing > 0 && { notStarted: missing }) };
+  }
   const notReady = prs.find(({ verdict }) => verdict.status !== 'READY' || (verdict.mergeState !== null && verdict.mergeState !== 'MERGEABLE'));
   if (notReady) return { kind: 'github', number: notReady.number, status: notReady.verdict.status };
   return whenReady && section === 'rebase-optional' ? { kind: 'rebase' } : { kind: 'merge' };
@@ -187,9 +218,10 @@ export function isUnderWay(merge: StackMerge): boolean {
  * Turns "Merge when ready" on for a PR of a GitHub-native stack, merging `stack` (its open PRs from the bottom through
  * this one): GitHub's own stack auto-merge first (`pr.setAutoMerge`). Where GitHub refuses it because the repository does
  * not have it ("Stack auto-merge is not enabled.", whatever the case), CarbonLayer merges the stack when it is ready
- * instead, in the background: a stack merge `whenReady`, which goes by GitHub's own merge rules, so optional checks never
- * hold it up, rebases the stack before it merges where GitHub says it must be rebased or is behind its base
- * (whatTheStackWaitsFor), and merges with the commit GitHub proposes then. Any other refusal is GitHub's, for the page to
+ * instead, in the background: a stack merge `whenReady`, which goes by GitHub's own merge rules and also waits for every
+ * optional check to finish (one that fails does not hold it, as on GitHub), rebases the stack before it merges where
+ * GitHub says it must be rebased or is behind its base (whatTheStackWaitsFor), and merges with the commit GitHub proposes
+ * then. Any other refusal is GitHub's, for the page to
  * show as it does. Resolves with who will merge it.
  */
 export async function mergeStackWhenReady(
@@ -233,12 +265,21 @@ export class UnansweredRequest extends Error {
  * forgotten whole (readStackMerges in entrypoints/background.ts).
  */
 const stackWaitSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('checks'), requiredPassed: z.number(), required: z.number(), optionalRunning: z.number() }),
+  /** `notStarted`: merging when ready, the checks the PRs' heads before had that their new heads do not show yet. */
+  z.object({ kind: z.literal('checks'), requiredPassed: z.number(), required: z.number(), optionalRunning: z.number(), notStarted: z.optional(z.number()) }),
   z.object({ kind: z.literal('github'), number: z.number(), status: z.nullable(z.string()) }),
   z.object({ kind: z.literal('stack-rebase') }),
 ]);
 
 export type StackWait = z.infer<typeof stackWaitSchema>;
+
+/**
+ * What merging when ready knows of a PR's checks: its head as it last looked and the names of the checks on it; on a head
+ * new since a look before, `expected` names the checks the head before had, and `since` is when it first saw this head.
+ */
+const headChecksSchema = z.object({ headOid: z.string(), names: z.array(z.string()), expected: z.array(z.string()), since: z.number() });
+
+type HeadChecks = z.infer<typeof headChecksSchema>;
 
 /** What the stack merge dialog (src/pr/MergeStackDialog.tsx) asks for. */
 export const stackMergeRequestSchema = z.object({
@@ -262,9 +303,9 @@ export const stackMergeRequestSchema = z.object({
   rebaseFirst: z.boolean(),
   /**
    * Armed by "Merge when ready" where GitHub has no stack auto-merge for the repository (mergeStackWhenReady), rather than
-   * started from the merge dialog: it waits with no time cap through failing checks, missing reviews and new commits,
-   * rebases the stack itself where it must be rebased or is behind its base, and stops only on a closed PR, conflicts, or
-   * a rebase or merge GitHub refused.
+   * started from the merge dialog: it waits with no time cap through failing checks, missing reviews and new commits, and
+   * for every check to finish, optional ones too whatever `ignoreOptionalChecks` says, rebases the stack itself where it
+   * must be rebased or is behind its base, and stops only on a closed PR, conflicts, or a rebase or merge GitHub refused.
    */
   whenReady: z.boolean(),
 });
@@ -278,6 +319,8 @@ export const stackMergeSchema = z.extend(stackMergeRequestSchema, {
   startedAt: z.number(),
   /** Each PR's head commit as the merge first saw it (and again after its own rebase), by number; null until then. */
   heads: z.nullable(z.record(z.string(), z.string())),
+  /** Merging when ready, what it knows of each open PR's checks, by number (HeadChecks); absent until it looked. */
+  headChecks: z.optional(z.record(z.string(), headChecksSchema)),
   step: z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('starting') }),
     /** `sent` once GitHub has been asked to rebase (or may have been). */

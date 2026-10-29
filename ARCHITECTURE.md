@@ -406,7 +406,12 @@ Where GitHub refuses its stack auto-merge to the repository, in its words "Stack
 whatever the case; any other refusal is a toast, as ever), CarbonLayer merges the stack when it is ready itself
 (`mergeStackWhenReady` in `src/lib/stack-merges.ts`): a stack merge as above of the open PRs from the bottom through this
 one, from this one, marked `whenReady`, which the same background runner moves on by other rules. It goes by GitHub's own
-merge rules, so optional checks never hold it up, and has no time cap. It waits through failing checks, missing reviews
+merge rules and has no time cap, and it also waits for every optional check to finish (one that fails does not hold it, as
+on GitHub; a stack's optional CodeQL run had still been going when one merged). On a head new since it last looked (a
+push, or its own rebase) it waits, too, for the checks the head before had to show up, since a pipeline GitHub starts
+through a webhook reports a moment later: for 10 minutes at most, as a workflow that skips the new head never does
+(`headChecks` on the merge, `notStarted` in `whatTheStackWaitsFor`). A PR alone keeps GitHub's auto-merge, which waits for
+required checks only. It waits through failing checks, missing reviews
 and new commits (it merges the heads it saw last, and a merge `pr.merge` refuses because the PR was pushed to since sends
 it back to looking), and PRs merged meanwhile are left out. It rebases the stack itself, with GitHub's Rebase stack as
 above: at once when GitHub says it must be rebased, as it could never merge otherwise, and, when it is only behind its
