@@ -42,9 +42,10 @@ to (reverting a merged PR is an empty POST to `/pull/{n}/revert`, as GitHub's Re
 prefilled page for the revert pull request), except re-running checks: the PR page cannot, so `github-web/actions.ts` submits the classic form in the re-run dialog of
 GitHub's Actions run page. Reactions are a classic form too: `pr.react` posts the `form.js-pick-reaction` GitHub's
 conversation renders under each comment to `/{o}/{r}/reactions`, with the token the header stage read from one of those forms,
-while the page shows the reaction at once (`src/pr/Reactions.tsx`). A reaction's tooltip names who gave it as GitHub's does, from
-a diff comment's `reactors` in `page_data/threads` and from the `<tool-tip>` GitHub's conversation renders for each reaction
-button (ten names at most, the rest counted), the viewer first as You. An edited comment is saved as GitHub's React page saves
+while the page shows the reaction at once (`src/pr/Reactions.tsx`). Pointed at, a reaction opens GitHub's card of who gave it,
+each by avatar and login, the viewer first, then how many more, from a diff comment's `reactors` in `page_data/threads` and
+from the `<tool-tip>` GitHub's conversation renders for each reaction button (ten names at most, the rest counted); the
+tooltip's sentence, the viewer first as You, is the pill's description, and its tooltip where GitHub names nobody. An edited comment is saved as GitHub's React page saves
 it: the description as `page_data/update_description`, a diff comment as `page_data/update_review_comment`, and a
 conversation comment or a review's summary as form fields to its own address (`/issue_comments/{id}`,
 `/pull/{n}/reviews/{id}/update`), each with the comment's version when the edit started where the page gave one, so that

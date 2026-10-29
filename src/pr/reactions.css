@@ -1,5 +1,5 @@
-/* Reactions under a comment, as GitHub's: rounded pills, emoji then count, the viewer's own in the accent tone, and a
-   smiley opening the picker of eight. */
+/* Reactions under a comment, as GitHub's: rounded pills, emoji then count, the viewer's own in the accent tone, a card
+   of who gave one over it while it is pointed at, and a smiley opening the picker of eight. */
 
 .reactions {
   display: flex;
@@ -42,6 +42,40 @@
 }
 .reaction-pill:disabled { cursor: default; }
 .reaction-emoji { font-size: 13px; }
+
+/* GitHub's card of who gave a reaction: each person by avatar and login, then how many more. Fixed in the body, over
+   the drawer, where ReactionPill places it. */
+.reaction-reactors {
+  position: fixed;
+  z-index: 45;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--gg-border);
+  border-radius: 8px;
+  background: var(--gg-bg);
+  box-shadow: var(--gg-shadow-overlay);
+  font-size: 12px;
+}
+.reaction-reactors ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.reaction-reactors li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--gg-fg);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.reaction-reactors-more {
+  margin-top: 6px;
+  color: var(--gg-fg-muted);
+}
 
 .reaction-picker-anchor {
   position: relative;

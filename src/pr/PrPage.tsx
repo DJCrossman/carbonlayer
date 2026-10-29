@@ -473,7 +473,7 @@ function PrView({
   };
 
   return (
-    <PrReactions value={{ changed: edits.reactions, react }}>
+    <PrReactions value={{ changed: edits.reactions, react, viewerLogin: header.viewerLogin }}>
       <div className={`pr-page ${legendHidden ? '' : 'has-legend'} ${commentsOpen ? 'has-comments-drawer' : ''}`}>
         <div className="pr-conversation">
           <PrHeader
