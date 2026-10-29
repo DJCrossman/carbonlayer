@@ -81,6 +81,8 @@ export const STAGES_A_WRITE_CHANGES = {
   'pr.editDescription': ['header'],
   'pr.editComment': ['activity'],
   'pr.editThreadComment': ['threads'],
+  'pr.deleteComment': ['activity'],
+  'pr.deleteThreadComment': ['threads'],
 } as const satisfies { [M in RpcMethod]?: readonly PrStage[] };
 
 export interface RpcRequest<M extends RpcMethod = RpcMethod> {
@@ -345,6 +347,10 @@ const RPC_SCHEMAS = {
   'pr.editComment': { args: z.object({ prId: z.string(), commentId: z.string(), version: z.optional(z.string()), body: z.string() }), result: z.undefined() },
   /** Saves a diff comment, by its id in its thread, as `body`, with its version as `pr.editComment` takes it. */
   'pr.editThreadComment': { args: z.object({ prId: z.string(), commentId: z.string(), version: z.optional(z.string()), body: z.string() }), result: z.undefined() },
+  /** Deletes a conversation comment, by its id in the activity (`issuecomment-<n>`). */
+  'pr.deleteComment': { args: z.object({ prId: z.string(), commentId: z.string() }), result: z.undefined() },
+  /** Deletes a diff comment, by its id in its thread; GitHub drops a thread left without comments. */
+  'pr.deleteThreadComment': { args: z.object({ prId: z.string(), commentId: z.string() }), result: z.undefined() },
 };
 
 /** An answer the content script posted; `rpc` reads its result by the schema of the method it answers. */

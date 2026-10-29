@@ -18,6 +18,7 @@ export function timelineFrom(
 ): TimelineItem[] {
   const items: TimelineItem[] = [];
   const seenReviews: Set<Element> = new Set();
+  const viewerLogin = page.querySelector('meta[name="user-login"]')?.getAttribute('content');
   // Commit rows have no time of their own; they follow the "added N commits" row that has one.
   let lastTime = '';
 
@@ -77,6 +78,8 @@ export function timelineFrom(
           url: `${context.pageUrl}#${comment.id}`,
           ...reactionsIn(comment.querySelector('form.js-pick-reaction')),
           ...editingIn(comment.querySelector('.timeline-comment-actions'), comment.querySelector('.js-comment')),
+          // The viewer's own, where its menu offers GitHub's Delete (`form.js-comment-delete`); GitHub deletes no review.
+          ...(viewerLogin && actorLogin === viewerLogin && comment.querySelector('.timeline-comment-actions .js-comment-delete') && { deletable: true }),
         });
       }
       continue;

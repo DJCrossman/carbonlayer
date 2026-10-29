@@ -381,6 +381,29 @@ describe('mutations', () => {
     await expect(mutations['pr.editDescription']({ prId: 'PR_unknown', body: 'x' })).rejects.toThrow('Open the pull request first');
   });
 
+  it("deletes as GitHub's own page does: a conversation comment at its repository's address, a diff comment by its database id, with no body", async () => {
+    const writes: Array<{ method: string; url: string; verified: string | null; body: unknown }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit = {}) => {
+        writes.push({ method: init.method ?? 'GET', url, verified: new Headers(init.headers).get('GitHub-Verified-Fetch'), body: init.body ?? null });
+        return new Response(null, { status: 204 });
+      }),
+    );
+    await mutations['pr.deleteComment']({ prId: 'PR_1', commentId: 'issuecomment-11' });
+    await mutations['pr.deleteThreadComment']({ prId: 'PR_1', commentId: '9001' });
+    expect(writes).toEqual([
+      { method: 'DELETE', url: '/o/r/issue_comments/11', verified: 'true', body: null },
+      { method: 'DELETE', url: `${P}/review_comments/9001`, verified: 'true', body: null },
+    ]);
+  });
+
+  it("says in GitHub's words why it refused a delete, and deletes no review", async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'Comment could not be deleted' }, { status: 422 })));
+    await expect(mutations['pr.deleteThreadComment']({ prId: 'PR_1', commentId: '9001' })).rejects.toThrow('Comment could not be deleted');
+    await expect(mutations['pr.deleteComment']({ prId: 'PR_1', commentId: 'pullrequestreview-21' })).rejects.toThrow('There is no comment pullrequestreview-21 to delete');
+  });
+
   it('refuses to write to a pull request the app has not loaded', async () => {
     await expect(mutations['pr.comment']({ prId: 'PR_unknown', body: 'x' })).rejects.toThrow('Open the pull request first');
     await expect(mutations['pr.resolveThread']({ threadId: 'nope', resolved: true })).rejects.toThrow('Open the pull request first');

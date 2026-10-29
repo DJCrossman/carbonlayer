@@ -243,6 +243,15 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
     // GitHub's files view names the comment by its database id, as a string, and its version in the address.
     await send(`${pullRequestFor(prId).path}/page_data/update_review_comment${version ? `?body_version=${encodeURIComponent(version)}` : ''}`, 'PUT', { body, commentId });
   },
+  // Deletes go as GitHub's React page sends them (its bundle, 2026-10-29; docs/research/github-web-mutations.md).
+  'pr.deleteComment': async ({ prId, commentId }) => {
+    const id = /^issuecomment-(\d+)$/.exec(commentId)?.[1];
+    if (!id) throw new Error(`There is no comment ${commentId} to delete`);
+    await send(`${pullRequestFor(prId).repoPath}/issue_comments/${id}`, 'DELETE');
+  },
+  'pr.deleteThreadComment': async ({ prId, commentId }) => {
+    await send(`${pullRequestFor(prId).path}/page_data/review_comments/${commentId}`, 'DELETE');
+  },
 };
 
 /**

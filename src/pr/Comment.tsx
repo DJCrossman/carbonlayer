@@ -1,6 +1,6 @@
 // A GitHub comment as the PR page shows it (timeline comments, review bodies, thread comments), and the
 // Markdown HTML GitHub renders for it.
-import { useRef, useState, type MouseEvent, type ReactNode, type Ref } from 'react';
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode, type Ref } from 'react';
 import type { UserRef } from '../lib/model';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
@@ -19,7 +19,7 @@ export interface Editable {
   save: (body: string) => Promise<boolean>;
 }
 
-export function Comment({ author, createdAt, bodyHtml, url, action, footer, compact, edit }: {
+export function Comment({ author, createdAt, bodyHtml, url, action, footer, compact, edit, onDelete }: {
   author: UserRef | null;
   createdAt: string;
   bodyHtml: string;
@@ -31,11 +31,17 @@ export function Comment({ author, createdAt, bodyHtml, url, action, footer, comp
   compact?: boolean;
   /** Where GitHub lets the viewer edit the comment: an Edit button in its header opens its edit box in place of its body. */
   edit?: Editable;
+  /**
+   * Where the comment is the viewer's own and GitHub lets them delete it: what deletes it (true once deleted), which the
+   * ⋯ at the end of its header offers as GitHub's comment menu does.
+   */
+  onDelete?: () => Promise<boolean>;
 }) {
   const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const editButton = useRef<HTMLButtonElement | null>(null);
   return (
-    <div className={`pr-comment ${compact ? 'is-compact' : ''}`}>
+    <div className={`pr-comment ${compact ? 'is-compact' : ''} ${deleting ? 'is-deleting' : ''}`} aria-busy={deleting || undefined}>
       <div className="pr-comment-header">
         {author && <Avatar user={author} size={compact ? 18 : 20} />}
         <strong>{author?.login ?? 'ghost'}</strong>
@@ -59,6 +65,18 @@ export function Comment({ author, createdAt, bodyHtml, url, action, footer, comp
         )}
         {edit && !editing && <EditButton ref={editButton} onClick={() => setEditing(true)} />}
         {url && <CopyLink url={url} />}
+        {onDelete && !editing && (
+          <CommentMenu
+            disabled={deleting}
+            onDelete={async () => {
+              // GitHub's own question before it deletes a comment.
+              if (!window.confirm('Are you sure you want to delete this?')) return;
+              // Faded while GitHub deletes it, until the page loads again without it; back as it was should GitHub refuse.
+              setDeleting(true);
+              if (!(await onDelete())) setDeleting(false);
+            }}
+          />
+        )}
       </div>
       {edit && editing ? (
         <CommentEditor
@@ -108,6 +126,71 @@ export function EditButton({ subject = 'comment', onClick, ref }: { subject?: 'c
     <button ref={ref} type="button" className="pr-comment-edit" aria-label={`Edit ${subject}`} title="Edit" onClick={onClick}>
       <Icon name="pencil" size={14} />
     </button>
+  );
+}
+
+/**
+ * The ⋯ at the end of a comment's header, as GitHub's comment menu, seen as the Copy link is (comment.css): Delete, in
+ * red, as GitHub's menu ends. Esc closes it and gives the focus back to the ⋯.
+ */
+function CommentMenu({ disabled, onDelete }: { disabled: boolean; onDelete: () => void }) {
+  const [open, setOpen] = useState(false);
+  const menu = useRef<HTMLDivElement | null>(null);
+  const button = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Node) || !menu.current?.contains(event.target)) setOpen(false);
+    };
+    // Ahead of the page's own Esc (keybindings.ts), which would close other things too, such as the comments drawer.
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setOpen(false);
+      button.current?.focus();
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown, true);
+    };
+  }, [open]);
+
+  return (
+    <div className="pr-menu pr-comment-menu" ref={menu}>
+      <button
+        ref={button}
+        type="button"
+        className="pr-comment-more"
+        aria-label="More comment actions"
+        title="More actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <Icon name="kebab-horizontal" size={14} />
+      </button>
+      {open && (
+        <div className="pr-menu-list" role="menu">
+          <button
+            type="button"
+            role="menuitem"
+            className="is-danger"
+            autoFocus
+            onClick={() => {
+              setOpen(false);
+              onDelete();
+            }}
+          >
+            <Icon name="trash" size={14} />
+            Delete
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

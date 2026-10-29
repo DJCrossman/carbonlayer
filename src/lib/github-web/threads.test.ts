@@ -155,6 +155,34 @@ describe('reviewThreads, on diff comments the viewer may edit', () => {
   });
 });
 
+describe('reviewThreads, on diff comments the viewer may delete', () => {
+  it("offers to delete only the viewer's own comments GitHub lets them delete, not another's GitHub would let them delete", () => {
+    const { threads } = reviewThreads(
+      threadsAnswer.parse({
+        threads: [
+          {
+            id: '5',
+            commentsData: {
+              comments: [
+                { databaseId: 901, author: { login: 'octocat' }, bodyHTML: '<p>Mine</p>', viewerCanDelete: true },
+                { databaseId: 902, author: { login: 'ana' }, bodyHTML: '<p>Theirs, the viewer an admin</p>', viewerCanDelete: true },
+                { databaseId: 903, author: { login: 'octocat' }, bodyHTML: '<p>Mine, GitHub says no</p>', viewerCanDelete: false },
+              ],
+            },
+          },
+        ],
+      }),
+      { diffSummaries: [] },
+      new DOMParser().parseFromString('<html><head><meta name="user-login" content="octocat"></head><body></body></html>', 'text/html'),
+    );
+    expect(threads[0]?.comments.map(({ id, deletable }) => ({ id, deletable }))).toEqual([
+      { id: '901', deletable: true },
+      { id: '902', deletable: undefined },
+      { id: '903', deletable: undefined },
+    ]);
+  });
+});
+
 describe('conversationsIn', () => {
   it('counts the resolved threads of all', () => {
     expect(conversationsIn({ threads: [{ id: '1', isResolved: true }, { id: '2', isResolved: false }, { id: 3, isResolved: true }] })).toEqual({ resolved: 2, total: 3 });

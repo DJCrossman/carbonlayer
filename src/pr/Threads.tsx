@@ -58,6 +58,8 @@ export interface NoteActions {
   closeComposer(): void;
   /** Saves an edit of a diff comment, by its id, started on its version. */
   editComment(commentId: string, version: string | undefined, body: string): Promise<boolean>;
+  /** Deletes a diff comment of the viewer's, by its id; true once GitHub has. */
+  deleteComment(commentId: string): Promise<boolean>;
 }
 
 function ThreadNote({ thread, current, actions }: { thread: ReviewThread; current: boolean; actions: NoteActions }) {
@@ -115,6 +117,7 @@ function ThreadNote({ thread, current, actions }: { thread: ReviewThread; curren
           footer={<Reactions subjectId={comment.subjectId} reactions={comment.reactions} />}
           compact
           edit={comment.editableMarkdown === undefined ? undefined : { markdown: comment.editableMarkdown, save: (body) => actions.editComment(comment.id, comment.bodyVersion, body) }}
+          onDelete={comment.deletable ? () => actions.deleteComment(comment.id) : undefined}
         />
       ))}
       <div className="diff-note-reply">

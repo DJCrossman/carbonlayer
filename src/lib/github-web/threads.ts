@@ -68,6 +68,8 @@ export function reviewThreads(answer: ThreadsAnswer, comparison: BaseComparison,
           }),
           // GitHub says whether the viewer may edit it, and has its Markdown and the version an edit names.
           ...(comment.viewerCanUpdate && typeof comment.body === 'string' && { editableMarkdown: comment.body, ...(comment.bodyVersion && { bodyVersion: comment.bodyVersion }) }),
+          // And whether they may delete it, which only their own offers.
+          ...(comment.viewerCanDelete && viewerLogin && comment.author?.login === viewerLogin && { deletable: true }),
         })),
       },
     ];
@@ -132,6 +134,7 @@ export const threadsAnswer = z.object({
                   body: z.nullish(z.string()),
                   bodyVersion: z.nullish(z.string()),
                   viewerCanUpdate: z.nullish(z.boolean()),
+                  viewerCanDelete: z.nullish(z.boolean()),
                   createdAt: z.nullish(z.string()),
                   publishedAt: z.nullish(z.string()),
                   url: z.nullish(z.string()),

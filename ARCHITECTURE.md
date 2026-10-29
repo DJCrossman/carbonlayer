@@ -49,7 +49,10 @@ tooltip's sentence, the viewer first as You, is the pill's description, and its 
 it: the description as `page_data/update_description`, a diff comment as `page_data/update_review_comment`, and a
 conversation comment or a review's summary as form fields to its own address (`/issue_comments/{id}`,
 `/pull/{n}/reviews/{id}/update`), each with the comment's version when the edit started where the page gave one, so that
-GitHub refuses an edit made over a newer one. A comment box's Preview tab is GitHub's own rendering: the multipart POST to
+GitHub refuses an edit made over a newer one. The viewer's own comments, where GitHub lets them delete them, offer Delete in a
+⋯ menu at the end of the header, asked first as GitHub asks: a diff comment goes as GitHub's files view deletes it,
+`DELETE page_data/review_comments/{id}`, and a conversation comment as its Overview does, `DELETE /issue_comments/{id}`;
+another's comment offers none, even to a repository's admin, and no review can be deleted. A comment box's Preview tab is GitHub's own rendering: the multipart POST to
 `/preview` GitHub's comment box sends for a comment on the PR (`markdown.preview`), which changes nothing. The comment
 boxes themselves (`CommentInput` in `src/pr/primitives.tsx`) work like GitHub's: its toolbar, shortcuts, lists that
 continue and links on paste, each a pure command in `src/pr/markdown-editing.ts`, and the emoji GitHub's box suggests

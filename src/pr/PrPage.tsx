@@ -368,6 +368,10 @@ function PrView({
       mutate(STAGES_A_WRITE_CHANGES['pr.editThreadComment'], () => source.editThreadComment(pr.id, commentId, version, body), 'Could not update the comment', {
         success: 'Comment updated',
       }),
+    deleteComment: (commentId) =>
+      mutate(STAGES_A_WRITE_CHANGES['pr.deleteThreadComment'], () => source.deleteThreadComment(pr.id, commentId), 'Could not delete the comment', {
+        success: 'Comment deleted',
+      }),
   };
 
   usePrKeybindings((action) => {
@@ -545,6 +549,9 @@ function PrView({
             onComment={(body) => mutate(STAGES_A_WRITE_CHANGES['pr.comment'], () => source.comment(pr.id, body), 'Could not post the comment', { success: 'Comment posted' })}
             onEditComment={(commentId, version, body) =>
               mutate(STAGES_A_WRITE_CHANGES['pr.editComment'], () => source.editComment(pr.id, commentId, version, body), 'Could not update the comment', { success: 'Comment updated' })
+            }
+            onDeleteComment={(commentId) =>
+              mutate(STAGES_A_WRITE_CHANGES['pr.deleteComment'], () => source.deleteComment(pr.id, commentId), 'Could not delete the comment', { success: 'Comment deleted' })
             }
           />
         </div>

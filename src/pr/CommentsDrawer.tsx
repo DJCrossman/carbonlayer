@@ -273,6 +273,7 @@ function Conversation({
               footer={<Reactions subjectId={comment.subjectId} reactions={comment.reactions} />}
               compact
               edit={comment.editableMarkdown === undefined ? undefined : { markdown: comment.editableMarkdown, save: (body) => actions.editComment(comment.id, comment.bodyVersion, body) }}
+              onDelete={comment.deletable ? () => actions.deleteComment(comment.id) : undefined}
             />
           ))
         ) : (

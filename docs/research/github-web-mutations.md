@@ -415,6 +415,22 @@ CarbonLayer sends the React requests instead, which need no form token.
 UNVERIFIED: none of these writes has been sent; GitHub's answers to them, and whether its Rails addresses take the React
 form edits from a viewer without the Overview, are read from the bundle only.
 
+## Deleting comments (read from GitHub's bundles, 2026-10-29; nothing sent)
+**What CarbonLayer sends**, as GitHub's React PR UI sends it, through its verified fetch, with no body:
+- **Diff comment**: `DELETE P/review_comments/{databaseId}` through `q$` (the files view's delete in `1i-da73f88b8a5166ba.js`:
+  ``let r=`${d}/page_data/review_comments/${i.databaseId}`,a=await (0,w.q$)(`${r}`,{method:"DELETE"})``), a 204 or 200 being
+  success, anything else read for GitHub's error as an edit's is. GitHub drops a thread left without comments.
+- **Conversation comment**: `DELETE /{owner}/{repo}/issue_comments/{databaseId}` with `Accept: application/json`, through
+  `QJ` (the Overview's in `le-5d7c26ddb3970d6b.js`, beside its edit of the same address).
+- **Review**: neither UI deletes a submitted review; there is no route for it.
+
+**Who may delete what.** `page_data/threads` comments carry `viewerCanDelete`. On the classic conversation page GitHub's
+own JS deletes a comment through a remote form, `.js-comment .js-comment-delete` (`yga-dd50cf95593467fe.js`: it sends the
+comment's `X-Body-Version` and removes the `.js-comment` once answered), which sits in the comment's menu where the viewer
+may delete it; a signed-out page has none. CarbonLayer offers Delete only on the viewer's own comments, by login: a diff
+comment with `viewerCanDelete`, a conversation comment whose menu holds `.js-comment-delete`, never another's, though
+GitHub lets a repository's admin delete anyone's. UNVERIFIED signed in: the classic menu's delete form, as for its Edit.
+
 ## Labels and assignees (classic sidebar forms; read from GitHub's page signed in, 2026-10-22, nothing sent)
 GitHub's own PR sidebar (`#partial-discussion-sidebar` on the classic conversation page) sets labels and assignees with
 classic Rails forms on the ISSUE path of the PR's number, `I = /{owner}/{repo}/issues/{n}`. Read on one PR's page with

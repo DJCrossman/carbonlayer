@@ -198,6 +198,40 @@ describe('timelineFrom, on comments the viewer may edit', () => {
   });
 });
 
+describe('timelineFrom, on comments the viewer may delete', () => {
+  // GitHub's Delete, a form in a comment's menu wherever the viewer may delete the comment: their own, and anyone's where
+  // they are the repository's admin.
+  const menu = (deletable: boolean) => `<div class="timeline-comment-actions"><details><details-menu>
+      <clipboard-copy aria-label="Copy link" role="menuitem">Copy link</clipboard-copy>
+      ${deletable ? '<form class="js-comment-delete" action="/o/r/issue_comments/0" method="post"><input type="hidden" name="_method" value="delete"><button type="submit" class="dropdown-item btn-link menu-item-danger" aria-label="Delete comment" data-confirm="Are you sure you want to delete this?">Delete</button></form>' : ''}
+    </details-menu></details></div>`;
+  const comment = (id: number, author: string, deletable: boolean) => `<div class="TimelineItem js-comment-container">
+      <div class="timeline-comment-group TimelineItem-body" id="issuecomment-${id}"><div class="timeline-comment js-comment">
+        <a class="author">${author}</a> commented <relative-time datetime="2026-10-20T10:00:00Z"></relative-time>${menu(deletable)}
+        <div class="comment-body"><p>By ${author}</p></div></div></div>
+    </div>`;
+  const page = new DOMParser().parseFromString(
+    `<html><head><meta name="user-login" content="octocat"></head><body>
+    ${comment(11, 'octocat', true)}${comment(12, 'ana', true)}${comment(13, 'octocat', false)}
+    <div id="pullrequestreview-21" class="js-comment">
+      <div class="TimelineItem"><div class="TimelineItem-body"><a class="author">octocat</a> left a comment <relative-time datetime="2026-10-21T09:00:00Z"></relative-time></div></div>
+      <div class="TimelineItem"><div class="TimelineItem-body"><div id="pullrequestreview-21" class="timeline-comment-group">${menu(true)}
+        <div class="comment-body"><p>Looks good</p></div></div></div></div>
+    </div></body></html>`,
+    'text/html',
+  );
+  const timeline = timelineFrom(page, { pageUrl: 'https://github.com/o/r/pull/1', threadIdsByReview: new Map(), commits: new Map() });
+
+  it("offers to delete only the viewer's own comments whose menus offer GitHub's Delete, not another's, nor a review", () => {
+    expect(timeline.map((item) => ({ id: item.id, deletable: 'deletable' in item ? item.deletable : undefined }))).toEqual([
+      { id: 'issuecomment-11', deletable: true },
+      { id: 'issuecomment-12', deletable: undefined },
+      { id: 'issuecomment-13', deletable: undefined },
+      { id: 'pullrequestreview-21', deletable: undefined },
+    ]);
+  });
+});
+
 describe('reactionsIn', () => {
   it("names who gave each reaction from its tooltip, neither the viewer, by login or as You, nor the ones GitHub only counts", () => {
     const page = new DOMParser().parseFromString(

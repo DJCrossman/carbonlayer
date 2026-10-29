@@ -22,6 +22,7 @@ export function Activity({
   onRevealThread,
   onComment,
   onEditComment,
+  onDeleteComment,
 }: {
   pr: PrDetail;
   stage: StageState<PrStages['activity']>;
@@ -30,6 +31,8 @@ export function Activity({
   onComment: (body: string) => Promise<boolean>;
   /** Saves an edit of a comment or a review's summary, by its id, started on its version; true once GitHub has it. */
   onEditComment: (commentId: string, version: string | undefined, body: string) => Promise<boolean>;
+  /** Deletes a comment of the viewer's, by its id; true once GitHub has. */
+  onDeleteComment: (commentId: string) => Promise<boolean>;
 }) {
   const entries: Array<Exclude<TimelineItem, CommitItem> | { kind: 'commits'; id: string; commits: CommitItem[] }> = [];
   for (const item of pr.timeline) {
@@ -57,6 +60,7 @@ export function Activity({
                         action={<span className="pr-muted">commented</span>}
                         footer={<Reactions subjectId={entry.subjectId} reactions={entry.reactions} />}
                         edit={entry.editableMarkdown === undefined ? undefined : { markdown: entry.editableMarkdown, save: (body) => onEditComment(entry.id, entry.bodyVersion, body) }}
+                        onDelete={entry.deletable ? () => onDeleteComment(entry.id) : undefined}
                       />
                     </li>
                   );

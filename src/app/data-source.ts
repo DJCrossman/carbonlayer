@@ -103,6 +103,10 @@ export interface DataSource {
   editComment(prId: string, commentId: string, version: string | undefined, body: string): Promise<void>;
   /** Saves an edit of a diff comment (by its id in its thread), started on its `version`. */
   editThreadComment(prId: string, commentId: string, version: string | undefined, body: string): Promise<void>;
+  /** Deletes a conversation comment (by its id in the activity). */
+  deleteComment(prId: string, commentId: string): Promise<void>;
+  /** Deletes a diff comment (by its id in its thread). */
+  deleteThreadComment(prId: string, commentId: string): Promise<void>;
   /** A comment's Markdown the way GitHub renders it on the PR, in HTML: what a comment box's Preview tab shows. */
   previewMarkdown(text: string, prId: string): Promise<string>;
   /** The emoji a comment box suggests after a `:`, in GitHub's order. */
@@ -184,6 +188,8 @@ export function createRpcDataSource(): DataSource {
     editDescription: (prId, body) => rpc('pr.editDescription', { prId, body }),
     editComment: (prId, commentId, version, body) => rpc('pr.editComment', { prId, commentId, version, body }),
     editThreadComment: (prId, commentId, version, body) => rpc('pr.editThreadComment', { prId, commentId, version, body }),
+    deleteComment: (prId, commentId) => rpc('pr.deleteComment', { prId, commentId }),
+    deleteThreadComment: (prId, commentId) => rpc('pr.deleteThreadComment', { prId, commentId }),
     previewMarkdown: async (text, prId) => (await rpc('markdown.preview', { text, prId })).html,
     listEmojis: () => rpc('markdown.emojis', {}),
     listMentions: (prId) => rpc('markdown.mentions', { prId }),
@@ -270,6 +276,7 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
               subjectId: `PRRC_${id}`,
               reactions: [],
               editableMarkdown: draft.body,
+              deletable: true,
             },
           ],
         };
@@ -542,6 +549,14 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
       await log('editThreadComment', prId, commentId, version, body);
       await new Promise((resolve) => setTimeout(resolve, 300));
       edits.set(commentId, body);
+    },
+    // The fixtures' own comments are others'; only those the viewer posted here are theirs to delete, each its own thread,
+    // which goes with it.
+    deleteComment: (...args) => log('deleteComment', ...args),
+    deleteThreadComment: async (prId, commentId) => {
+      await log('deleteThreadComment', prId, commentId);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      posted.set(prId, (posted.get(prId) ?? []).filter((thread) => !thread.comments.some((comment) => comment.id === commentId)));
     },
     // A moment later, rendered as the fixtures render Markdown.
     previewMarkdown: async (text) => {

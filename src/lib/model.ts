@@ -251,7 +251,7 @@ const reactable = {
   reactions: z.array(reactionSchema),
 };
 
-/** What a comment the viewer may edit has. */
+/** What a comment the viewer may edit or delete has. */
 const editable = {
   /**
    * The comment's Markdown as GitHub keeps it, which an edit starts from, where GitHub lets the viewer edit the comment;
@@ -263,6 +263,11 @@ const editable = {
    * newer one; absent where the page does not give it, or the viewer may not edit the comment.
    */
   bodyVersion: z.optional(z.string()),
+  /**
+   * The viewer's own comment, which GitHub lets them delete; absent on anyone else's, even where GitHub would let the
+   * viewer delete it as the repository's admin.
+   */
+  deletable: z.optional(z.boolean()),
 };
 
 export const reviewThreadSchema = z.object({
