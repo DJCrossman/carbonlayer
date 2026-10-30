@@ -3,7 +3,7 @@
 // dense row per PR in fixed columns so the status icons line up (skeleton rows while loading). Every icon in a row says
 // what it means on hover.
 import { useEffect, useEffectEvent, useRef, type MouseEvent } from 'react';
-import type { PrEnrichment, PrSummary, ReviewerSummary, View, ViewResult } from '../lib/model';
+import type { GraphiteStackPlace, PrEnrichment, PrSummary, ReviewerSummary, View, ViewResult } from '../lib/model';
 import { sectionCount } from '../lib/views';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
@@ -26,6 +26,7 @@ export function InboxSection({
   enrichmentOf,
   stackedPrIds,
   stackPlaces,
+  graphiteStackPlaces,
   awaitingStacks,
   more,
   onSort,
@@ -54,6 +55,8 @@ export function InboxSection({
   stackedPrIds?: ReadonlySet<string>;
   /** Where each row the inbox knows sits in its stack, by PR id (`stackPlaces`), for the chip of a stack GitHub doesn't track. */
   stackPlaces: ReadonlyMap<string, StackPlace>;
+  /** Where Graphite's stack comment on each row's page places it, by PR id, for the chip of a stack Graphite manages. */
+  graphiteStackPlaces: ReadonlyMap<string, GraphiteStackPlace>;
   /** Grouped by stack, the rows wait for their stacks to be known: skeleton rows show in their place. */
   awaitingStacks?: boolean;
   /** Whether GitHub has rows beyond those shown ("Load more"), and whether they are on their way. */
@@ -143,6 +146,7 @@ export function InboxSection({
                 selected={pr.id === selectedPrId}
                 stacked={stackedPrIds?.has(pr.id) === true}
                 stackPlace={stackPlaces.get(pr.id)}
+                graphiteStackPlace={graphiteStackPlaces.get(pr.id)}
                 overdueAfterHours={overdueAfterHours}
                 onShown={onRowShown}
                 onIntent={onRowIntent}
@@ -200,6 +204,7 @@ function PrRow({
   selected,
   stacked,
   stackPlace,
+  graphiteStackPlace,
   overdueAfterHours,
   onShown,
   onIntent,
@@ -214,6 +219,8 @@ function PrRow({
   stacked: boolean;
   /** Where it sits in its stack among the rows the inbox knows; undefined while it stands alone. */
   stackPlace: StackPlace | undefined;
+  /** Where Graphite's stack comment on its page places it; undefined while unknown, or where it places none. */
+  graphiteStackPlace: GraphiteStackPlace | undefined;
   overdueAfterHours: number | undefined;
   onShown: (pr: PrSummary) => void;
   onIntent: (pr: PrSummary) => void;
@@ -310,8 +317,15 @@ function PrRow({
             {pr.nativeStack.position}/{pr.nativeStack.size}
           </span>
         )}
-        {/* A stack GitHub doesn't track is known only from branch names, counted among the PRs the inbox has. */}
-        {stackPlace?.untracked && (
+        {/* A stack GitHub doesn't track, as Graphite's comment on the PR's page lists it, every entry counted. */}
+        {!pr.nativeStack && graphiteStackPlace && (
+          <span className="gg-row__chip" title={`Stacked: ${graphiteStackPlace.position} of ${graphiteStackPlace.size} (from Graphite's stack comment)`}>
+            <Icon name="stack" size={12} />
+            {graphiteStackPlace.position}/{graphiteStackPlace.size}
+          </span>
+        )}
+        {/* Without that comment, a stack GitHub doesn't track is known only from branch names, counted among the PRs the inbox has. */}
+        {stackPlace?.untracked && !graphiteStackPlace && (
           <span
             className="gg-row__chip gg-row__chip--attention"
             title={`${stackPlace.position} of ${stackPlace.size} in a stack GitHub doesn't track (worked out from branch names)`}

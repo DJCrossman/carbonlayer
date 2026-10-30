@@ -197,6 +197,14 @@ export const stackBranchesSchema = z.object({ baseRefName: z.string(), headRefNa
 export type StackBranches = z.infer<typeof stackBranchesSchema>;
 
 /**
+ * Where a PR sits in the stack Graphite's comment on its page lists, the way Graphite's inbox counts it: `position` from
+ * the bottom (1 is closest to trunk) among every entry, merged and closed ones too, of `size` entries.
+ */
+export const graphiteStackPlaceSchema = z.object({ position: z.number(), size: z.number() });
+
+export type GraphiteStackPlace = z.infer<typeof graphiteStackPlaceSchema>;
+
+/**
  * One PR in a stack. Its author is null where GitHub did not say who opened it: an entry the stack's own listing names
  * (which names nobody) whose page header GitHub did not answer.
  */

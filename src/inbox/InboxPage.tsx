@@ -14,7 +14,7 @@ import type { DataSource } from '../app/data-source';
 import { SaveCacheNow } from '../app/query-cache';
 import { toGitHubUrl, type AppRoute } from '../app/routes';
 import { useSettings } from '../app/use-settings';
-import { viewResultSchema, type Organization, type PrSummary, type RepoRef, type StackBranches, type TopRepository, type View, type ViewResult } from '../lib/model';
+import { viewResultSchema, type GraphiteStackPlace, type Organization, type PrSummary, type RepoRef, type StackBranches, type TopRepository, type View, type ViewResult } from '../lib/model';
 import type { Settings } from '../lib/settings';
 import { encodeViewsShareLink, sectionCount } from '../lib/views';
 import { createChordReader } from '../pr/keybindings';
@@ -53,6 +53,8 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   // rollup, which the enriched checks replace on screen, so the row is asked again when the rollup moves on and not before.
   const dashboardRows = new Map(dashboard.flatMap(({ result, added }) => [...result.prs, ...added].map((pr) => [pr.id, pr] as const)));
   const enrichment = useRowEnrichment(source, [...dashboardRows.values()], settings?.mergeMethod ?? 'MERGE');
+  // Where Graphite's stack comment places each row shown, merged and closed ones too, for the chip of a stack Graphite manages.
+  const graphiteStacks = useGraphiteStacks(source, [...dashboardRows.values()]);
   const loadAhead = useLoadAhead(source);
   const saveCacheNow = useContext(SaveCacheNow);
   const viewerLogin = organizations.list?.find((candidate) => candidate.isViewer)?.login ?? null;
@@ -429,11 +431,15 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
                     enrichmentOf={(pr) => enrichment.found.get(pr.id)?.enrichment}
                     stackedPrIds={stackedByView.get(view.id)}
                     stackPlaces={places}
+                    graphiteStackPlaces={graphiteStacks.found}
                     // Until its open rows' branches are known, a section shows skeleton rows, so it appears already grouped.
                     awaitingStacks={stackBranches.awaiting(view.id)}
                     more={more}
                     onSort={(by) => sortSection(view.id, by)}
-                    onRowShown={(pr) => enrichment.want(dashboardRows.get(pr.id) ?? pr)}
+                    onRowShown={(pr) => {
+                      enrichment.want(dashboardRows.get(pr.id) ?? pr);
+                      graphiteStacks.want(dashboardRows.get(pr.id) ?? pr);
+                    }}
                     onRowIntent={loadAhead}
                     onLoadMore={() => void moreRows.loadMore(view, settings.inboxScope, result?.prs ?? [])}
                     onToggleCollapsed={() => toggleCollapsed(view.id)}
@@ -688,6 +694,48 @@ function useStackBranches(source: DataSource, enabled: boolean, sections: Array<
     branchesOf: (prId: string) => found.get(prId) ?? undefined,
     awaiting: (viewId: string) => enabled && !shown.has(viewId) && sections.some((section) => section.viewId === viewId && !section.openRows.every((pr) => found.has(pr.id))),
   };
+}
+
+/**
+ * Where Graphite's stack comment on each row's page places it, by PR id, for the chip of a stack Graphite manages: a query
+ * a PR, asked once the row comes within 200px of view, open, merged and closed rows alike (Graphite's inbox gives each its
+ * chip), except a row in one of GitHub's own stacks, whose chip GitHub's place gives. Rows that come into view together
+ * share a request, 10 rows a request and one request at a time, the content script reading three of their pages at once.
+ * A PR's stack seldom changes, so what its page said, a place or none, is asked again only once the row has been updated
+ * since, and is kept until the cache lets it go (a day); a page GitHub did not answer is asked again the next time the
+ * row shows.
+ */
+function useGraphiteStacks(source: DataSource, rows: PrSummary[]) {
+  // The rows shown so far, as they were when shown (by id and when GitHub last updated them).
+  const [shown, setShown] = useState<ReadonlySet<string>>(new Set());
+  const askForPlace = useMemo(
+    () => askedTogether((prs: PrSummary[]) => source.graphiteStacksOf(prs.map(({ repo, number }) => ({ repo, number }))), { perRequest: 10, atOnce: 1, gatherMs: 50 }),
+    [source],
+  );
+  const found = useQueries({
+    queries: rows.map((pr) => ({
+      queryKey: ['graphite-stack', pr.repo.owner, pr.repo.name, pr.number],
+      queryFn: () => askForPlace(pr),
+      // What was found before the row's latest update, or not answered, is asked again; the place found meanwhile stays on the row.
+      staleTime: (query: Query<{ place: GraphiteStackPlace | null } | null>) => (query.state.data && query.state.dataUpdatedAt >= Date.parse(pr.updatedAt) ? Infinity : 0),
+      refetchOnWindowFocus: false,
+      enabled: pr.nativeStack === null && shown.has(`${pr.id} ${pr.updatedAt}`),
+    })),
+    combine: (results) =>
+      new Map(
+        rows.flatMap((pr, index) => {
+          const place = results[index]?.data?.place;
+          return place ? [[pr.id, place] as const] : [];
+        }),
+      ),
+  });
+
+  function want(pr: PrSummary) {
+    const version = `${pr.id} ${pr.updatedAt}`;
+    if (!shown.has(version)) setShown((current) => new Set(current).add(version));
+  }
+
+  return { found, want };
 }
 
 /**

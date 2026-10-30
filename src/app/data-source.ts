@@ -3,7 +3,7 @@
 
 import { browser } from 'wxt/browser';
 import { z } from 'zod/mini';
-import type { AssigneeCandidate, ChangedFileDiff, Emoji, LabelCandidate, Mention, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, ReviewThread, SavedReply, StackBranches, StackEntry, TopRepository, View, ViewResult } from '../lib/model';
+import type { AssigneeCandidate, ChangedFileDiff, Emoji, GraphiteStackPlace, LabelCandidate, Mention, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, ReviewThread, SavedReply, StackBranches, StackEntry, TopRepository, View, ViewResult } from '../lib/model';
 import { rpc, type DiffEntryLine, type InboxRowToEnrich, type LineRange, type MergeCommit, type MergeMethod, type RpcMethods } from '../lib/rpc';
 import { getSettings, setSettings, watchSettings, type Settings, type SettingsStorage } from '../lib/settings';
 import { STACK_MERGES, stackMergesSchema, type StackMerge, type StackMergeRequest, type stackMergeMessage } from '../lib/stack-merges';
@@ -37,6 +37,8 @@ export interface DataSource {
   enrichInbox(prs: InboxRowToEnrich[]): Promise<PrEnrichment[]>;
   /** The branches of these pull requests, in the same order, by which "Group by stack" chains them; null where GitHub did not say. */
   branchesOf(prs: Array<{ repo: RepoRef; number: number }>): Promise<Array<StackBranches | null>>;
+  /** Where Graphite's stack comment on each of these pull requests' pages places it, in the same order: `place` null where it places none; the entry null where GitHub did not answer. */
+  graphiteStacksOf(prs: Array<{ repo: RepoRef; number: number }>): Promise<Array<{ place: GraphiteStackPlace | null } | null>>;
   /** The repositories GitHub's repository picker offers for what the user typed (nothing: its first list), only `owner`'s when given. */
   searchRepos(query: string, owner?: Organization | null): Promise<RepoCandidate[]>;
   /** The organizations the viewer belongs to, then their own account: whose pull requests the inbox can show. */
@@ -126,6 +128,7 @@ export function createRpcDataSource(): DataSource {
     fetchInboxPage: (view, page) => rpc('inbox.fetchMore', { view, page }),
     enrichInbox: (prs) => rpc('inbox.enrich', { prs }),
     branchesOf: (prs) => rpc('inbox.branches', { prs }),
+    graphiteStacksOf: (prs) => rpc('inbox.graphiteStacks', { prs }),
     searchRepos: (query, owner) => rpc('repos.search', { query, owner: owner && { login: owner.login, isViewer: owner.isViewer } }),
     listOrgs: () => rpc('orgs.list', {}),
     listOrgPeople: (org) => rpc('orgs.people', { org: { login: org.login, isViewer: org.isViewer } }),
@@ -211,8 +214,11 @@ export interface Fixtures {
   heldBackPatches: Record<string, string>;
 }
 
-/** An inbox row with its check list and what only its enrichment says: which checks are required, why it is blocked. */
-export type InboxFixtureRow = PrSummary & Pick<PrEnrichment, 'requiredCheckNames' | 'mergeBlockedReason'>;
+/**
+ * An inbox row with its check list and what only its enrichment says: which checks are required, why it is blocked; and,
+ * for a row in a stack Graphite manages, where Graphite's comment on its page places it.
+ */
+export type InboxFixtureRow = PrSummary & Pick<PrEnrichment, 'requiredCheckNames' | 'mergeBlockedReason'> & { graphiteStackPlace?: GraphiteStackPlace };
 
 /** Serves fixture data as octocat, a member of acme and globex, and logs mutations; settings live in memory. */
 export function createFixtureDataSource(fixtures: Fixtures): DataSource {
@@ -370,6 +376,12 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
         const pr = rows.find((row) => row.repo.owner === repo.owner && row.repo.name === repo.name && row.number === number);
         return pr?.baseRefName ? { baseRefName: pr.baseRefName, headRefName: pr.headRefName || null } : null;
       });
+    },
+    // Where Graphite's comment places each fixture row, a moment later, as its page would show it.
+    graphiteStacksOf: async (prs) => {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      const rows = [...fixtures.inbox.flatMap((result) => result.prs), ...Object.values(fixtures.inboxPages).flat(2)];
+      return prs.map(({ repo, number }) => ({ place: rows.find((row) => row.repo.owner === repo.owner && row.repo.name === repo.name && row.number === number)?.graphiteStackPlace ?? null }));
     },
     searchRepos: async (query, owner) => {
       const needle = query.trim().toLowerCase();

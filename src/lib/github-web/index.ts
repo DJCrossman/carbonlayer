@@ -20,6 +20,7 @@ import { organizationPeople } from './people';
 import { pickableRepositories, topRepositories } from './repositories';
 import { availableReviewersAnswer, reviewerCandidatesFrom, suggestedReviewersAnswer } from './reviews';
 import { getJson, getPage, githubUser, politely, readAnswer, render, request } from './session';
+import { graphiteStackComment, graphiteStackPlace } from './stack';
 import { stackReadiness } from './stack-readiness';
 
 export async function handleRpc<M extends RpcMethod>(request: RpcRequest<M>): Promise<RpcResponse> {
@@ -55,6 +56,17 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
         .then((header) => branchesIn(header, repo))
         .catch((error: unknown) => {
           console.debug('[gg]', `page_data/header for ${repo.owner}/${repo.name}#${number} failed; the row waits for its merge box to name its branches:`, error instanceof Error ? error.message : error);
+          return null;
+        }),
+    ),
+  'inbox.graphiteStacks': ({ prs }) =>
+    // Three pull requests at a time, each its whole page (Graphite's comment is in the conversation): a page read gives
+    // the place or none; one GitHub does not answer gives null, which the inbox asks about again.
+    politely(prs, 3, ({ repo, number }) =>
+      getPage(`/${repo.owner}/${repo.name}/pull/${number}`)
+        .then((page) => ({ place: graphiteStackPlace(graphiteStackComment(page)?.entries ?? [], number) }))
+        .catch((error: unknown) => {
+          console.debug('[gg]', `the page of ${repo.owner}/${repo.name}#${number} failed; the row shows no place in Graphite's stack:`, error instanceof Error ? error.message : error);
           return null;
         }),
     ),

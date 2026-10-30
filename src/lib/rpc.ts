@@ -10,6 +10,7 @@ import {
   changedFileDiffSchema,
   ciSummarySchema,
   emojiSchema,
+  graphiteStackPlaceSchema,
   labelCandidateSchema,
   mentionSchema,
   mergeMethodSchema,
@@ -215,6 +216,8 @@ const RPC_SCHEMAS = {
   'inbox.enrich': { args: z.object({ prs: z.array(inboxRowToEnrichSchema) }), result: z.array(prEnrichmentSchema) },
   /** The branches of these pull requests, in the same order, by which "Group by stack" chains them; null where GitHub did not say. */
   'inbox.branches': { args: z.object({ prs: z.array(z.object({ repo: repoRefSchema, number: z.number() })) }), result: z.array(z.nullable(stackBranchesSchema)) },
+  /** Where Graphite's stack comment on each of these pull requests' pages places it, in the same order: `place` null where the page has no such comment or it does not name the PR; the whole entry null where GitHub did not answer. */
+  'inbox.graphiteStacks': { args: z.object({ prs: z.array(z.object({ repo: repoRefSchema, number: z.number() })) }), result: z.array(z.nullable(z.object({ place: z.nullable(graphiteStackPlaceSchema) }))) },
   /**
    * The repositories GitHub's repository picker offers for `query` (what the user typed; empty for its first list), only
    * `owner`'s when given.

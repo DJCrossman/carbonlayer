@@ -6,7 +6,8 @@
 // the dashboard's rollup at first, the list (with the required ones) when enriching an open row. The rows in "Needs
 // anyone's review" have no line counts and no merge state. The stacks' rows chain by branch, which the fixture source
 // names when asked for branches ("Group by stack"): octocat's is one of GitHub's own, across sections, nat's in "Needs
-// your review" a Graphite stack GitHub doesn't track.
+// your review" a Graphite stack GitHub doesn't track. Graphite's stack comment places #410 third of three (its bottom PR,
+// merged, is in no section) and merged #395 first of three; #409's page has none, so its chip is worked out from branches.
 import type { Fixtures, InboxFixtureRow } from '../app/data-source';
 import type { CheckRunSummary, CheckState, CiSummary, UserRef } from '../lib/model';
 import { DEFAULT_VIEWS } from '../lib/views';
@@ -163,6 +164,7 @@ function prsFor(viewId: string): InboxFixtureRow[] {
           updated: 3 * DAY,
           headRefName: 'nat/booking-date-picker',
           baseRefName: 'nat/extract-date-picker',
+          graphiteStackPlace: { position: 3, size: 3 },
           reviewers: [{ kind: 'user', user: octocat, state: 'PENDING' }],
           ci: ci({ passed: 9, skipped: ['deploy-preview'] }),
           additions: 88,
@@ -416,6 +418,7 @@ function prsFor(viewId: string): InboxFixtureRow[] {
           updated: 1 * DAY,
           state: 'MERGED',
           mergedAt: new Date(NOW - DAY).toISOString(),
+          graphiteStackPlace: { position: 1, size: 3 },
           reviewDecision: 'APPROVED',
           reviewers: [{ kind: 'user', user: nat, state: 'APPROVED' }],
           ci: ci({ passed: 10 }),

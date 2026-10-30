@@ -149,7 +149,8 @@ and branches) each still has a query of its own, and what the queries ask for in
 
 The inbox's queries: each section (`['inbox', org, scope, view id, query, limit]`, 30 s), each "Load more" page
 (`['inbox-page', org, scope, query, limit, page]`), each row's details (`['inbox-row', id, updatedAt, state, draft, CI
-rollup, merge method]`, 2 minutes, which the PR page's stack card asks too), each open PR's branches (`['stack-branches', owner, repo, number]`), the
+rollup, merge method]`, 2 minutes, which the PR page's stack card asks too), each open PR's branches (`['stack-branches', owner, repo, number]`),
+each shown PR's place in Graphite's stack (`['graphite-stack', owner, repo, number]`, until the row is updated), the
 organizations (`['orgs']`), an organization's people (`['org-people', org]`) and the top repositories
 (`['top-repositories']`, pages of one infinite query), 10 minutes each, and the repository picker's searches (`['repos',
 org, text]`, a minute). All of them are kept on the device.
@@ -552,7 +553,12 @@ Rows follow Graphite's columns (`src/inbox/InboxSection.tsx`): unread dot, avata
 stacked reviewer avatars (three, then `+N`; a bot without an avatar gets its GitHub App's, else a bot glyph; the tooltip
 names each reviewer with their state, "jlord · approved"), a labels chip, Graphite's conversation counter (review threads
 resolved of all, "2/3", hidden without any; the PR page's stack card shows it on each entry too), the stack chip (GitHub's
-own stack's position, grey; for a stack GitHub doesn't track, found from branch names as "Group by stack" finds it, the
+own stack's position, grey; else, as Graphite's inbox shows it, the place Graphite's stack comment on the PR's page gives
+it among every entry, merged and closed ones too, grey as well, for open, merged and closed rows alike (`inbox.graphiteStacks`:
+the page's HTML read by `graphiteStackComment` and `graphiteStackPlace` in `src/lib/github-web/stack.ts`, three PRs at a
+time, asked as a row not in GitHub's own stack comes within 200px of view, 10 rows a request and one request at a time,
+and again only once the row has been updated since; `useGraphiteStacks` in `src/inbox/InboxPage.tsx`); else, for a stack
+GitHub doesn't track, found from branch names as "Group by stack" finds it, the
 row's place counted up from the bottom-most PR the inbox knows, of its own line (a fork's other branches left out), amber, grouped or not; `stackPlaces` in
 `src/inbox/stacks.ts`), then
 fixed Review, CI and Merge icon columns, line counts and age, under a header row whose Title, Changes and Updated sort

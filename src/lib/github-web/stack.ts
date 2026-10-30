@@ -2,7 +2,7 @@
 // stack Graphite lists in its PR comment, else the PR alone.
 
 import { z } from 'zod/mini';
-import type { PrSummary, Stack, StackEntry, UserRef } from '../model';
+import type { GraphiteStackPlace, PrSummary, Stack, StackEntry, UserRef } from '../model';
 import { githubUser, politely } from './session';
 
 export async function resolveStack(
@@ -97,6 +97,16 @@ export function graphiteStackComment(page: Document): { entries: GraphiteEntry[]
     }
   }
   return entries.length > 0 ? { entries: entries.reverse(), trunk } : null;
+}
+
+/**
+ * Where the PR numbered `number` sits in the stack Graphite's comment lists (`entries`, bottom first), as Graphite's
+ * inbox chip counts it: its place among every entry, merged and closed ones too, of how many there are. Null when the
+ * comment does not name the PR, or lists it alone.
+ */
+export function graphiteStackPlace(entries: GraphiteEntry[], number: number): GraphiteStackPlace | null {
+  const index = entries.findIndex((entry) => entry.number === number);
+  return index >= 0 && entries.length > 1 ? { position: index + 1, size: entries.length } : null;
 }
 
 /**

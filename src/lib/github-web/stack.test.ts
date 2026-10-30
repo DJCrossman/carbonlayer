@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PrSummary } from '../model';
 import { githubUser } from './session';
-import { authorHeaderAnswer, authorIn, graphiteStackComment, resolveStack, stackMergeabilityAnswer } from './stack';
+import { authorHeaderAnswer, authorIn, graphiteStackComment, graphiteStackPlace, resolveStack, stackMergeabilityAnswer } from './stack';
 
 const noLookups = { mergeability: async () => null, authorsOpenPulls: async () => [], conversations: async () => null, author: async () => null };
 
@@ -235,6 +235,30 @@ describe("Graphite's stack comment", () => {
     expect(stack.entries[2]).toEqual(fromSearch);
     expect(stack.entries[0]).toMatchObject({ number: 22, title: 'Layer 1', state: 'MERGED', author: { login: 'riley' } });
     expect(asked).toEqual([22]);
+  });
+});
+
+describe("a PR's place in Graphite's stack", () => {
+  // Bottom first, as Graphite's comment is read.
+  const entries: Parameters<typeof graphiteStackPlace>[0] = [
+    { number: 22, title: 'Layer 1', url: 'https://github.com/o/r/pull/22', state: 'MERGED', isDraft: false },
+    { number: 24, title: 'Layer 2', url: 'https://github.com/o/r/pull/24', state: 'CLOSED', isDraft: false },
+    { number: 26, title: 'Layer 3', url: 'https://github.com/o/r/pull/26', state: 'OPEN', isDraft: false },
+    { number: 29, title: 'Layer 4', url: 'https://github.com/o/r/pull/29', state: 'OPEN', isDraft: true },
+  ];
+
+  it('counts it from the bottom among every entry the comment lists, merged and closed ones too', () => {
+    expect(graphiteStackPlace(entries, 26)).toEqual({ position: 3, size: 4 });
+    expect(graphiteStackPlace(entries, 22)).toEqual({ position: 1, size: 4 });
+  });
+
+  it('gives none where the comment does not name the PR', () => {
+    expect(graphiteStackPlace(entries, 31)).toBeNull();
+    expect(graphiteStackPlace([], 31)).toBeNull();
+  });
+
+  it('gives none where the comment lists the PR alone', () => {
+    expect(graphiteStackPlace([{ number: 31, title: 'Alone', url: 'https://github.com/o/r/pull/31', state: 'OPEN', isDraft: false }], 31)).toBeNull();
   });
 });
 
