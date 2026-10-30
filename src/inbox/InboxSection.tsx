@@ -298,9 +298,9 @@ function PrRow({
           </span>
         )}
       </span>
-      {/* Graphite's conversation counter, resolved of all; it comes with the row's details, and a PR with none shows nothing. */}
+      {/* Graphite's conversation counter, resolved of all, while one is still open; it comes with the row's details, and a PR with none, or with every one resolved, shows nothing. */}
       <span className="gg-row__conversations">
-        {pr.conversations && pr.conversations.total > 0 && (
+        {pr.conversations && pr.conversations.resolved < pr.conversations.total && (
           <span
             className="gg-row__chip"
             title={`${pr.conversations.resolved} of ${pr.conversations.total} ${pr.conversations.total === 1 ? 'conversation' : 'conversations'} resolved`}

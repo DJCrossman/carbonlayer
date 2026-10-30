@@ -552,7 +552,7 @@ from the top bar's toggle.
 Rows follow Graphite's columns (`src/inbox/InboxSection.tsx`): unread dot, avatar, title with `author · owner/repo #N`,
 stacked reviewer avatars (three, then `+N`; a bot without an avatar gets its GitHub App's, else a bot glyph; the tooltip
 names each reviewer with their state, "jlord · approved"), a labels chip, Graphite's conversation counter (review threads
-resolved of all, "2/3", hidden without any; the PR page's stack card shows it on each entry too), the stack chip (GitHub's
+resolved of all, "2/3", hidden without any and once every one is resolved; the PR page's stack card shows it on each entry, "3/3" too), the stack chip (GitHub's
 own stack's position, grey; else, as Graphite's inbox shows it, the place Graphite's stack comment on the PR's page gives
 it among every entry, merged and closed ones too, grey as well, for open, merged and closed rows alike (`inbox.graphiteStacks`:
 the page's HTML read by `graphiteStackComment` and `graphiteStackPlace` in `src/lib/github-web/stack.ts`, three PRs at a
