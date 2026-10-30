@@ -7,7 +7,7 @@ import type { IconName } from './Icon';
  * Where the reviews stand, from the viewer's side: changes requested by anyone first, then the viewer's own approval,
  * then others' reviews (approvals and comments), then requests nobody has answered, then none at all. `reviewers` is
  * null while GitHub has not said who reviews (the row is not enriched yet, or GitHub named nobody); the dashboard's
- * review decision speaks until then. `viewerLogin` keeps the viewer out of "Reviewed by".
+ * review decision speaks until then. `viewerLogin` keeps the viewer out of "Approved by others".
  */
 export function reviewStatusIcon(
   pr: { isDraft: boolean; reviewDecision: ReviewDecision; reviewers: ReviewerSummary[] | null; viewerReview?: ReviewerSummary['state'] | null },
@@ -23,7 +23,7 @@ export function reviewStatusIcon(
       case 'REVIEW_REQUIRED':
         return { icon: 'clock', tone: 'severe', tooltip: 'Waiting for review' };
       case 'NONE':
-        return { icon: 'dash', tone: 'subtle', tooltip: 'No review required' };
+        return { icon: 'dash', tone: 'subtle', tooltip: 'No opinionated reviews' };
     }
   }
   const { reviewers } = pr;
@@ -35,14 +35,7 @@ export function reviewStatusIcon(
     .join(', ');
   // As in Graphite, a review is an approval or a request for changes; a comment-only review (Copilot's, a drive-by)
   // leaves the column empty and is only named on hover.
-  const reviewedBy = reviewers
-    .filter((reviewer) => reviewer.state === 'APPROVED' && !isViewer(reviewer))
-    .map((reviewer) => reviewer.user.login)
-    .join(', ');
-  const commentedBy = reviewers
-    .filter((reviewer) => reviewer.state === 'COMMENTED')
-    .map((reviewer) => (isViewer(reviewer) ? 'you' : reviewer.user.login))
-    .join(', ');
+  const approvedByOthers = reviewers.some((reviewer) => reviewer.state === 'APPROVED' && !isViewer(reviewer));
   const waitingFor = reviewers
     .filter((reviewer) => reviewer.state === 'PENDING')
     .map((reviewer) => (isViewer(reviewer) ? 'you' : reviewer.user.login))
@@ -51,10 +44,9 @@ export function reviewStatusIcon(
 
   if (changesRequestedBy) return { icon: 'pencil', tone: 'severe', tooltip: `Changes requested by ${changesRequestedBy}` };
   if (viewerReview === 'APPROVED') return { icon: 'check-circle-fill', tone: 'success', tooltip: 'Approved by you' };
-  if (reviewedBy) return { icon: 'person-check', tone: 'success', tooltip: `Reviewed by ${reviewedBy}${waitingFor ? `; waiting for ${waitingFor}` : ''}` };
+  if (approvedByOthers) return { icon: 'person-check', tone: 'success', tooltip: `Approved by others${waitingFor ? `; waiting for ${waitingFor}` : ''}` };
   if (waitingFor) return { icon: 'clock', tone: 'severe', tooltip: `Waiting for ${waitingFor}` };
-  if (reviewers.length === 0) return { icon: 'dash', tone: 'subtle', tooltip: 'No reviewers requested' };
-  return { icon: 'dash', tone: 'subtle', tooltip: commentedBy ? `No reviews yet (${commentedBy} commented)` : 'No reviews yet' };
+  return { icon: 'dash', tone: 'subtle', tooltip: 'No opinionated reviews' };
 }
 
 /**
@@ -70,11 +62,11 @@ export function ciStatusIcon(ci: CiSummary, requiredCheckNames: string[] | null)
   if (total === 0) return { icon: 'dash', tone: 'subtle', tooltip: 'No checks' };
   switch (ci.state) {
     case 'SUCCESS':
-      return { icon: 'check-circle-fill', tone: 'success', tooltip: 'All checks passed' };
+      return { icon: 'check-circle-fill', tone: 'success', tooltip: 'All CI passing' };
     case 'PENDING': {
       const running = ci.checks.length > 0 ? ci.checks.filter((check) => check.state === 'PENDING').length : pending;
       const failing = ci.checks.filter((check) => check.state === 'FAILURE').map((check) => check.name);
-      return { icon: 'clock', tone: 'severe', tooltip: `Checks running (${total - running}/${total})${failing.length > 0 ? `; failing so far: ${failing.join(', ')}` : ''}` };
+      return { icon: 'clock', tone: 'subtle', tooltip: `CI running (${total - running}/${total})${failing.length > 0 ? `; failing so far: ${failing.join(', ')}` : ''}` };
     }
     case 'FAILURE':
     case 'CANCELLED': {
@@ -82,16 +74,17 @@ export function ciStatusIcon(ci: CiSummary, requiredCheckNames: string[] | null)
       // Cancelled checks alone are no failure: the checks pass if any passed.
       if (ci.checks.length > 0 && failing.length === 0) {
         return ci.checks.some((check) => check.state === 'SUCCESS')
-          ? { icon: 'check-circle-fill', tone: 'success', tooltip: 'All checks passed' }
+          ? { icon: 'check-circle-fill', tone: 'success', tooltip: 'All CI passing' }
           : { icon: 'dash', tone: 'subtle', tooltip: 'No verdict from the checks' };
       }
       if (failing.length === 0 || requiredCheckNames === null) {
-        return { icon: 'x-circle-fill', tone: 'danger', tooltip: `Checks failing (${failing.length || failure} of ${total})${failing.length > 0 ? `: ${failing.join(', ')}` : ''}` };
+        return { icon: 'x-circle-fill', tone: 'danger', tooltip: `CI failing (${failing.length || failure} of ${total})${failing.length > 0 ? `: ${failing.join(', ')}` : ''}` };
       }
       const required = failing.filter((name) => requiredCheckNames.includes(name));
+      // Graphite's words for a required failure were not seen; "Required CI failing" follows its "Non-required CI failing".
       return required.length > 0
-        ? { icon: 'x-circle-fill', tone: 'danger', tooltip: `Required checks failing: ${required.join(', ')}` }
-        : { icon: 'check-circle-fill', tone: 'attention', tooltip: `Non-required checks failing: ${failing.join(', ')}` };
+        ? { icon: 'x-circle-fill', tone: 'danger', tooltip: `Required CI failing: ${required.join(', ')}` }
+        : { icon: 'check-circle', tone: 'attention', tooltip: `Non-required CI failing: ${failing.join(', ')}` };
     }
     default:
       return { icon: 'dash', tone: 'subtle', tooltip: 'No verdict from the checks' };
@@ -119,11 +112,11 @@ export function mergeStatusIcon(
     // As in Graphite, the column is about conflicts: a PR GitHub still holds back (reviews, checks, a stale base) is
     // mergeable here, and the hover says what GitHub still blocks on; the review and CI columns carry the rest.
     case 'BLOCKED':
-      return { icon: 'check-circle-fill', tone: 'success', tooltip: `No merge conflicts; blocked on GitHub: ${blockedReason ?? 'required reviews or checks are missing'}` };
+      return { icon: 'check-circle-fill', tone: 'success', tooltip: `Mergeable; blocked on GitHub: ${blockedReason ?? 'required reviews or checks are missing'}` };
     case 'BEHIND':
-      return { icon: 'check-circle-fill', tone: 'success', tooltip: `No merge conflicts; blocked on GitHub: ${blockedReason ?? 'the branch is behind its base'}` };
+      return { icon: 'check-circle-fill', tone: 'success', tooltip: `Mergeable; blocked on GitHub: ${blockedReason ?? 'the branch is behind its base'}` };
     case 'UNSTABLE':
-      return { icon: 'check-circle-fill', tone: 'success', tooltip: `No merge conflicts; blocked on GitHub: ${blockedReason ?? 'some checks are failing'}` };
+      return { icon: 'check-circle-fill', tone: 'success', tooltip: `Mergeable; blocked on GitHub: ${blockedReason ?? 'some checks are failing'}` };
     case 'DRAFT':
     case 'UNKNOWN':
       return { icon: 'dash', tone: 'subtle', tooltip: 'Unknown' };

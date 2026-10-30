@@ -568,24 +568,24 @@ hover. Each status column is one function from the row's data to an icon, a tone
 
 | column | icon · tone · tooltip | when |
 | --- | --- | --- |
-| Review | draft glyph · grey · "Draft" | a draft |
+| Review | pencil · grey · "Draft" | a draft |
 | | pencil · orange · "Changes requested by …" | any reviewer requested changes |
 | | filled check · green · "Approved by you" | the viewer approved |
-| | person-check · green · "Reviewed by …" | others approved or commented |
+| | person-check · green · "Approved by others" (+ "; waiting for …") | others approved (requests still open) |
 | | clock · orange · "Waiting for …" | requests nobody has answered |
-| | dash · grey · "No reviewers requested" | no reviewers at all |
-| | the dashboard's decision (approved, changes requested, waiting, none) | until GitHub names the reviewers |
-| CI | filled check · green · "All checks passed" | every check passed (cancelled ones, like skipped ones, do not count as failing) |
-| | filled check · yellow · "Non-required checks failing: …" | only optional checks fail |
-| | filled x · red · "Required checks failing: …" | a required check fails (until GitHub says which are required, any failure) |
-| | clock · orange · "Checks running (n/m)" | checks still running |
-| | dash · grey · "No checks" | no checks |
+| | dash · grey · "No opinionated reviews" | no reviewers, or comments only |
+| | skeleton; then the dashboard's decision (approved, changes requested, waiting, "No opinionated reviews") | until the row's details arrive (not for a draft); then if they name no reviewers |
+| CI | filled check · green · "All CI passing" | every check passed (cancelled ones, like skipped ones, do not count as failing) |
+| | outline check · yellow · "Non-required CI failing: …" | only optional checks fail |
+| | filled x · red · "Required CI failing: …" / "CI failing (n of m)…" | a required check fails / any failure, until GitHub says which are required |
+| | clock · grey · "CI running (n/m)" | checks still running |
+| | skeleton; dash · grey · "No checks" / "No verdict from the checks" | an open row until its details arrive; no checks / only cancelled or skipped ones |
 | Merge | filled check · green · "Mergeable" | CLEAN, HAS_HOOKS |
 | | merge · purple · "Merged" / closed glyph · red · "Closed" | merged / closed |
 | | filled x · red · "Merge conflict" | DIRTY |
-| | alert · orange · "Blocked: <the merge box's reason>" | BLOCKED, BEHIND, UNSTABLE |
+| | filled check · green · "Mergeable; blocked on GitHub: <the merge box's reason>" | BLOCKED, BEHIND, UNSTABLE |
 | | merge · blue · "Queued in the merge queue" / "Auto-merge …" | queued or set to auto-merge |
-| | draft glyph · grey · "Draft"; dash · grey · "Unknown" | a draft; not known yet |
+| | skeleton; dash · grey · "Unknown" | an open row until its details arrive; DRAFT, UNKNOWN |
 
 GitHub's dashboard rows carry review decision and CI rollup but no mergeability, reviewers or line counts: as a row comes
 within 200px of view (an `IntersectionObserver` per row, rooted at the page's own document), the inbox asks
