@@ -91,7 +91,7 @@ export function nextActionFor(pr: PrDetail, unknown: readonly PrStage[] = []): N
   };
 }
 
-type NextAction = {
+export type NextAction = {
   tone: 'success' | 'danger' | 'attention' | 'neutral' | 'done';
   title: string;
   detail: string | null;

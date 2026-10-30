@@ -30,7 +30,7 @@ import { FilesSection, useFileReview } from './Files';
 import { usePrKeybindings } from './keybindings';
 import { LabelsCard } from './Labels';
 import { MergeStackDialog } from './MergeStackDialog';
-import { nextActionFor, stackToMerge } from './next-action';
+import { nextActionFor, stackToMerge, type NextAction } from './next-action';
 import { followLink, goToPr, openOnGitHub } from './navigation';
 import { prDetailFrom, usePrPageData, type PrPageData } from './page-data';
 import { MarkdownPreview, MentionList, SavedReplyList, StageError, Staged, StatePill } from './primitives';
@@ -127,6 +127,8 @@ function PrView({
   const [quickApprove, setQuickApprove] = useState(false);
   // The method the stack's merge dialog opened with; null while it is closed.
   const [mergingStack, setMergingStack] = useState<MergeMethod | null>(null);
+  // Whether the sidebar's merge controls ask to confirm merging this PR alone, as their Merge or the top bar's asks.
+  const [mergeConfirming, setMergeConfirming] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [reviewerPickerOpen, setReviewerPickerOpen] = useState(false);
   const [stackCollapsed, setStackCollapsed] = useState(false);
@@ -141,10 +143,14 @@ function PrView({
     }
   });
   const mergeMethod: MergeMethod = pr.allowedMergeMethods.includes(settings.mergeMethod) ? settings.mergeMethod : pr.defaultMergeMethod;
-  // The sidebar's next step, as its action card finds it: while it is to merge the stack and the viewer may, the top bar's
-  // "Merge N PRs" and m open the dialog that does.
+  // The sidebar's next step, as its action card finds it, which the top bar's merge control follows: while it is to merge
+  // the stack and the viewer may, "Merge N PRs" and m open the dialog that does.
   const nextAction = nextActionFor(pr, (['mergeBox', 'stack', 'threads', 'checks'] as const).filter((stage) => data[stage].value === null || data[stage].status === 'placeholder'));
   const stackMerge = nextAction.kind === 'ready-as-stack' && pr.viewerCanMerge ? nextAction.prs : null;
+  // The confirm lasts only while this PR can merge alone.
+  useEffect(() => {
+    if (nextAction.kind !== 'ready') setMergeConfirming(false);
+  }, [nextAction.kind]);
   // The merges CarbonLayer runs in the background in this repository, under way or stopped; the sidebar shows the one that
   // merges this PR where the merge controls are.
   const backgroundMerges = useBackgroundMerges(source, pr, reload);
@@ -470,6 +476,10 @@ function PrView({
     commentsOpen,
     onToggleComments: () => setCommentsOpen((open) => !open),
     onFinishReview: () => (review.open ? closeReview() : openReview(review.event)),
+    nextAction,
+    onMergeStack: () => setMergingStack(mergeMethod),
+    // No confirm to open while CarbonLayer's own merge of the stack stands where the merge controls would (BackgroundMergeCard).
+    onMergeConfirm: backgroundMerge && !backgroundMerge.whenReady ? null : () => setMergeConfirming(true),
     onMenuOpenChange: setMenuOpen,
     onSetDraft: setDraft,
     onClosePullRequest: closePullRequest,
@@ -487,7 +497,6 @@ function PrView({
                 {...actions}
                 reviewPopover={headerActionsInView ? reviewPopover : null}
                 menuOpen={menuOpen && headerActionsInView}
-                mergeStack={stackMerge && { count: stackMerge.length, onOpen: () => setMergingStack(mergeMethod) }}
               />
             }
           />
@@ -583,6 +592,8 @@ function PrView({
           onMarkReady={() => setDraft(false)}
           onMerge={merge}
           onMergeStack={setMergingStack}
+          mergeConfirming={mergeConfirming}
+          onMergeConfirmingChange={setMergeConfirming}
           backgroundMerge={backgroundMerge}
           onDropBackgroundMerge={async (id) => {
             try {
@@ -828,9 +839,9 @@ function optimisticPr(pr: PrDetail, edits: PendingEdits): PrDetail {
 }
 
 /**
- * The PR's actions: the comments drawer's button, Finish review, the header's "Merge N PRs" while the stack can merge, and
- * More actions. In the header, and again under the assignees while the header's are scrolled out of sight, where the
- * sidebar's own next step offers the merge; the review popover and the menu open beside the ones in view.
+ * The PR's actions: the comments drawer's button, Finish review, a merge control that follows the sidebar's next step, and
+ * More actions. In the header, and again under the assignees while the header's are scrolled out of sight; the review
+ * popover and the menu open beside the ones in view.
  */
 function PrActions({
   pr,
@@ -838,6 +849,9 @@ function PrActions({
   commentsOpen,
   onToggleComments,
   onFinishReview,
+  nextAction,
+  onMergeStack,
+  onMergeConfirm,
   reviewPopover,
   menuOpen,
   onMenuOpenChange,
@@ -845,13 +859,25 @@ function PrActions({
   onClosePullRequest,
   onCopied,
   inSidebar = false,
-  mergeStack = null,
 }: {
   pr: PrDetail;
   batchCount: number;
   commentsOpen: boolean;
   onToggleComments: () => void;
   onFinishReview: () => void;
+  /**
+   * The sidebar's next step, which the merge control follows: "Merge N PRs" or Merge once ready, disabled where the viewer
+   * may not merge; Ready for review on a draft the viewer may update; nothing once merged or closed; otherwise a disabled
+   * "Not ready to merge" whose tooltip names the step.
+   */
+  nextAction: NextAction;
+  /** Opens the dialog that merges the stack. */
+  onMergeStack: () => void;
+  /**
+   * Asks the sidebar's merge controls to confirm merging this PR alone, beside their merge method; null while a merge
+   * CarbonLayer runs in the background stands in their place, when Merge has nothing to open.
+   */
+  onMergeConfirm: (() => void) | null;
   /** The review popover, when it is open and opens here. */
   reviewPopover: ReactNode;
   menuOpen: boolean;
@@ -860,8 +886,6 @@ function PrActions({
   onClosePullRequest: () => Promise<boolean>;
   onCopied: () => void;
   inSidebar?: boolean;
-  /** The header's "Merge N PRs", while the sidebar's next step is to merge the stack and the viewer may; it opens its dialog. */
-  mergeStack?: { count: number; onOpen: () => void } | null;
 }) {
   const menu = useRef<HTMLDivElement | null>(null);
 
@@ -893,9 +917,37 @@ function PrActions({
         {pr.conversations ? pr.unresolvedThreadCount : null}
       </Button>
       <FinishReview batchCount={batchCount} onToggle={onFinishReview} popover={reviewPopover} floating={inSidebar} />
-      {mergeStack && (
-        <Button variant="primary" className="pr-merge-button" title="Merge the stack (m)" onClick={mergeStack.onOpen}>
-          Merge {mergeStack.count} PRs
+      {nextAction.kind === 'ready-as-stack' && (
+        <Button
+          variant="primary"
+          className="pr-merge-button"
+          disabled={!pr.viewerCanMerge}
+          title={pr.viewerCanMerge ? 'Merge the stack (m)' : 'You do not have permission to merge this pull request'}
+          onClick={onMergeStack}
+        >
+          Merge {nextAction.prs.length} PRs
+        </Button>
+      )}
+      {nextAction.kind === 'ready' && onMergeConfirm && (
+        <Button
+          variant="primary"
+          className="pr-merge-button"
+          disabled={!pr.viewerCanMerge}
+          title={pr.viewerCanMerge ? undefined : 'You do not have permission to merge this pull request'}
+          onClick={onMergeConfirm}
+        >
+          <Icon name="git-merge" size={14} />
+          Merge
+        </Button>
+      )}
+      {nextAction.kind === 'draft' && pr.viewerCanUpdate && (
+        <Button variant="primary" onClick={() => void onSetDraft(false)}>
+          Ready for review
+        </Button>
+      )}
+      {!['ready-as-stack', 'ready', 'draft', 'merged', 'closed'].includes(nextAction.kind) && (
+        <Button icon="alert" disabled title={nextAction.title}>
+          Not ready to merge
         </Button>
       )}
       <div className="pr-menu" ref={menu}>

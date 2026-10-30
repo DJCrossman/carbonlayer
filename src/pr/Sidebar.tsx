@@ -28,6 +28,8 @@ export function Sidebar({
   onMarkReady,
   onMerge,
   onMergeStack,
+  mergeConfirming,
+  onMergeConfirmingChange,
   backgroundMerge,
   onDropBackgroundMerge,
   onRebaseStack,
@@ -51,6 +53,9 @@ export function Sidebar({
   onMerge: (method: MergeMethod) => Promise<boolean>;
   /** Opens the dialog that merges the stack (MergeStackDialog.tsx), with the method picked here. */
   onMergeStack: (method: MergeMethod) => void;
+  /** Whether the merge controls ask to confirm merging this PR alone; the page holds it, so its top bar's Merge asks too. */
+  mergeConfirming: boolean;
+  onMergeConfirmingChange: (confirming: boolean) => void;
   /**
    * The merge of this PR's stack CarbonLayer runs in the background (src/lib/stack-merges.ts), under way or stopped: the
    * merge dialog's stands where the merge controls would, and one merging when ready shows as "Merge when ready".
@@ -105,6 +110,8 @@ export function Sidebar({
           onMarkReady={onMarkReady}
           onMerge={onMerge}
           onMergeStack={onMergeStack}
+          mergeConfirming={mergeConfirming}
+          onMergeConfirmingChange={onMergeConfirmingChange}
           onRebaseStack={onRebaseStack}
           onViewThreads={onViewThreads}
         />
@@ -305,6 +312,8 @@ function ActionCard({
   onMarkReady,
   onMerge,
   onMergeStack,
+  mergeConfirming,
+  onMergeConfirmingChange,
   onRebaseStack,
   onViewThreads,
 }: {
@@ -315,6 +324,8 @@ function ActionCard({
   onMarkReady: () => Promise<boolean>;
   onMerge: (method: MergeMethod) => Promise<boolean>;
   onMergeStack: (method: MergeMethod) => void;
+  mergeConfirming: boolean;
+  onMergeConfirmingChange: (confirming: boolean) => void;
   onRebaseStack: () => Promise<boolean>;
   onViewThreads: () => void;
 }) {
@@ -399,8 +410,27 @@ function ActionCard({
           View check
         </a>
       )}
-      {action.kind === 'ready' && <MergeControls pr={pr} mergeMethod={mergeMethod} onMerge={onMerge} onMergeStack={onMergeStack} />}
-      {action.kind === 'ready-as-stack' && <MergeControls pr={pr} stack={action.prs} mergeMethod={mergeMethod} onMerge={onMerge} onMergeStack={onMergeStack} />}
+      {action.kind === 'ready' && (
+        <MergeControls
+          pr={pr}
+          mergeMethod={mergeMethod}
+          confirming={mergeConfirming}
+          onConfirmingChange={onMergeConfirmingChange}
+          onMerge={onMerge}
+          onMergeStack={onMergeStack}
+        />
+      )}
+      {action.kind === 'ready-as-stack' && (
+        <MergeControls
+          pr={pr}
+          stack={action.prs}
+          mergeMethod={mergeMethod}
+          confirming={false}
+          onConfirmingChange={onMergeConfirmingChange}
+          onMerge={onMerge}
+          onMergeStack={onMergeStack}
+        />
+      )}
     </Card>
   );
 }
@@ -409,6 +439,8 @@ function MergeControls({
   pr,
   stack,
   mergeMethod,
+  confirming,
+  onConfirmingChange,
   onMerge,
   onMergeStack,
 }: {
@@ -416,11 +448,13 @@ function MergeControls({
   /** The open PRs a merge as a stack merges, bottom first and this one last; absent when this PR merges alone. */
   stack?: StackEntry[];
   mergeMethod: MergeMethod;
+  /** Whether it asks to confirm merging this PR alone; a stack never does, merging from its dialog. */
+  confirming: boolean;
+  onConfirmingChange: (confirming: boolean) => void;
   onMerge: (method: MergeMethod) => Promise<boolean>;
   onMergeStack: (method: MergeMethod) => void;
 }) {
   const [method, setMethod] = useState(mergeMethod);
-  const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
 
   if (confirming) {
@@ -430,7 +464,7 @@ function MergeControls({
           {MERGE_LABELS[method].verb} <strong>#{pr.number}</strong> into <span className="pr-mono">{pr.baseRefName}</span>?
         </div>
         <div className="merge-row">
-          <Button onClick={() => setConfirming(false)} disabled={busy}>
+          <Button onClick={() => onConfirmingChange(false)} disabled={busy}>
             Cancel
           </Button>
           <Button
@@ -442,7 +476,7 @@ function MergeControls({
               setBusy(true);
               const ok = await onMerge(method);
               setBusy(false);
-              if (ok) setConfirming(false);
+              if (ok) onConfirmingChange(false);
             }}
           >
             {busy ? 'Merging…' : 'Confirm merge'}
@@ -467,7 +501,7 @@ function MergeControls({
         disabled={!pr.viewerCanMerge}
         title={pr.viewerCanMerge ? undefined : 'You do not have permission to merge this pull request'}
         // A stack is merged from its dialog, which names every PR it merges; this PR alone confirms here.
-        onClick={() => (stack ? onMergeStack(method) : setConfirming(true))}
+        onClick={() => (stack ? onMergeStack(method) : onConfirmingChange(true))}
       >
         <Icon name="git-merge" size={14} />
         {stack ? `Merge ${stack.length} PRs` : 'Merge'}
