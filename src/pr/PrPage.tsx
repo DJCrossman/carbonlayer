@@ -618,6 +618,7 @@ function PrView({
             return rebased;
           }}
           onViewThreads={() => setCommentsOpen(true)}
+          onEditReviewers={() => setReviewerPickerOpen(true)}
           checkReruns={checkReruns}
           reviewersCard={
             <ReviewersCard

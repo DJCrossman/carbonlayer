@@ -8,12 +8,12 @@ import { mergeMethodSchema, type PrDetail, type PrStage, type StackEntry } from 
 import { isUnderWay, type StackMerge } from '../lib/stack-merges';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
-import { Icon } from '../ui/Icon';
+import { Icon, type IconName } from '../ui/Icon';
 import { RelativeTime } from '../ui/RelativeTime';
 import { Skeleton } from '../ui/Skeleton';
 import type { CheckReruns } from './check-reruns';
 import { followLink, goToPr } from './navigation';
-import { nextActionFor } from './next-action';
+import { nextActionFor, type NextAction } from './next-action';
 import type { PrPageData } from './page-data';
 import { StatePill, Staged } from './primitives';
 import './sidebar.css';
@@ -34,6 +34,7 @@ export function Sidebar({
   onDropBackgroundMerge,
   onRebaseStack,
   onViewThreads,
+  onEditReviewers,
   checkReruns,
   reviewersCard,
   labelsCard,
@@ -67,6 +68,8 @@ export function Sidebar({
   onRebaseStack: () => Promise<boolean>;
   /** Opens the comments drawer, which shows the unresolved threads first, as Graphite's "View comments" opens its comments. */
   onViewThreads: () => void;
+  /** Opens the Reviewers card's picker, as its gear and r e do. */
+  onEditReviewers: () => void;
   checkReruns: CheckReruns;
   /** The Reviewers card (Reviewers.tsx), wired to the page's data source. */
   reviewersCard: ReactNode;
@@ -114,6 +117,7 @@ export function Sidebar({
           onMergeConfirmingChange={onMergeConfirmingChange}
           onRebaseStack={onRebaseStack}
           onViewThreads={onViewThreads}
+          onEditReviewers={onEditReviewers}
         />
       )}
       <Staged state={data.checks} what="the checks" onRetry={() => onRetry(['checks'])} skeleton={<SideCardSkeleton title="Checks" rows={3} />}>
@@ -316,6 +320,7 @@ function ActionCard({
   onMergeConfirmingChange,
   onRebaseStack,
   onViewThreads,
+  onEditReviewers,
 }: {
   pr: PrDetail;
   data: PrPageData;
@@ -328,6 +333,7 @@ function ActionCard({
   onMergeConfirmingChange: (confirming: boolean) => void;
   onRebaseStack: () => Promise<boolean>;
   onViewThreads: () => void;
+  onEditReviewers: () => void;
 }) {
   // The stages the next step depends on that have not arrived, loading or failed; what the inbox showed does not decide it.
   const unknown = (['mergeBox', 'stack', 'threads', 'checks'] as const).filter((stage) => data[stage].value === null || data[stage].status === 'placeholder');
@@ -363,8 +369,9 @@ function ActionCard({
       </Card>
     );
   }
-  const failingCheck = pr.ci.checks.find((check) => check.state === 'FAILURE');
-  const icon = ({ success: 'check-circle-fill', danger: 'x-circle-fill', attention: 'clock', neutral: 'git-pull-request-draft', done: 'git-merge' } as const)[action.tone];
+  // Graphite's own icon for these steps; every other step takes its tone's.
+  const kindIcons: Partial<Record<NextAction['kind'], IconName>> = { unresolved: 'comment-discussion', 'needs-reviewers': 'person-check', closed: 'git-pull-request-closed' };
+  const icon = kindIcons[action.kind] ?? ({ success: 'check-circle-fill', danger: 'x-circle-fill', attention: 'clock', neutral: 'git-pull-request-draft', done: 'git-merge' } as const)[action.tone];
   return (
     <Card className={`side-card side-action is-${action.tone}`}>
       <div className="side-action-title">
@@ -396,19 +403,16 @@ function ActionCard({
           View comments
         </Button>
       )}
-      {action.kind === 'checks-failed' && failingCheck?.url && (
-        <a
-          className="gg-btn gg-btn--default gg-btn--md side-action-button"
-          href={failingCheck.url}
-          onClick={(event) => {
-            // The run opens in this tab, like GitHub's own check links; ⌘, Ctrl, Shift or Alt leave it to the browser.
-            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-            event.preventDefault();
-            followLink(event.currentTarget.href);
-          }}
-        >
-          View check
-        </a>
+      {action.kind === 'needs-reviewers' && pr.viewerCanUpdate && (
+        <Button className="side-action-button" onClick={onEditReviewers} title="Edit reviewers (r e)">
+          Add reviewers
+        </Button>
+      )}
+      {/* The Checks card right below links each failing run. */}
+      {action.kind === 'checks-failed' && (
+        <Button className="side-action-button" onClick={() => document.querySelector('.side-checks')?.scrollIntoView({ block: 'nearest' })}>
+          View checks
+        </Button>
       )}
       {action.kind === 'ready' && (
         <MergeControls
@@ -579,7 +583,7 @@ function ChecksCard({ pr, reruns }: { pr: PrDetail; reruns: CheckReruns }) {
   }, [menuOpen]);
 
   return (
-    <Card className="side-card">
+    <Card className="side-card side-checks">
       <div className="side-card-head">
         <h3 className="side-card-title">
           Checks{' '}

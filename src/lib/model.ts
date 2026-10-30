@@ -383,6 +383,11 @@ export const prDetailSchema = z.extend(prSummarySchema, {
   stackSection: z.nullable(
     z.object({ kind: z.enum(['current-conflicts', 'conflicts', 'rebase-required', 'rebase-optional']), baseRefName: z.string(), viewerCanRebase: z.boolean() }),
   ),
+  /**
+   * How many approving reviews the branch rules require, as the merge box counts them (merge-box.ts), 0 where it does not
+   * say; absent where the page has not been told (the inbox's row standing in for the merge box).
+   */
+  numReviewsRequired: z.optional(z.number()),
   /** Required checks only, derived from `isRequired`; empty when the repo has no required checks. */
   requiredCheckNames: z.array(z.string()),
   unresolvedThreadCount: z.number(),
@@ -460,6 +465,7 @@ export const prStagesSchema = z.object({
       autoMerge: true,
       isInMergeQueue: true,
       stackSection: true,
+      numReviewsRequired: true,
     }),
     {
       /** The PRs of its native stack, by number, that GitHub merges once they all meet the merge requirements, auto-merge being on for the stack; the stack card marks them. */

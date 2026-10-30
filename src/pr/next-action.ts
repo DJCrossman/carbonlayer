@@ -18,7 +18,7 @@ export function nextActionFor(pr: PrDetail, unknown: readonly PrStage[] = []): N
   const checking: NextAction = { kind: 'checking', tone: 'neutral', title: 'Checking mergeability…', detail: null };
   if (unknown.includes('mergeBox')) return checking;
   if (pr.mergeStatus === 'DIRTY') {
-    return { kind: 'conflicts', tone: 'danger', title: `Conflicts with ${pr.baseRefName}`, detail: 'Resolve them before this PR can merge.' };
+    return { kind: 'conflicts', tone: 'danger', title: 'Merge conflicts', detail: "This PR can't be merged because of a conflict with the base branch" };
   }
   // GitHub's merge box sections about the stack's branches that keep it from merging, or turning on auto-merge, in its
   // words; a stack behind its base merges all the same.
@@ -53,14 +53,22 @@ export function nextActionFor(pr: PrDetail, unknown: readonly PrStage[] = []): N
       kind: 'unresolved',
       tone: 'attention',
       title: 'Unresolved comments',
-      detail: `${count} ${count === 1 ? 'thread needs' : 'threads need'} resolving`,
+      detail: `${count} open comment ${count === 1 ? 'thread needs' : 'threads need'} resolving before this PR can merge`,
     };
   }
   if (unknown.includes('checks')) return checking;
   // Only a required check's failure stands in the way: GitHub merges over optional ones, and so does Graphite.
   const failing = pr.ci.checks.filter((check) => check.state === 'FAILURE');
-  const requiredFailing = failing.find((check) => pr.requiredCheckNames.includes(check.name));
-  if (requiredFailing) return { kind: 'checks-failed', tone: 'danger', title: 'Checks failed', detail: requiredFailing.name };
+  const required = pr.ci.checks.filter((check) => pr.requiredCheckNames.includes(check.name));
+  const requiredFailing = required.filter((check) => check.state === 'FAILURE').length;
+  if (requiredFailing > 0) {
+    return {
+      kind: 'checks-failed',
+      tone: 'danger',
+      title: 'Required checks failed',
+      detail: `${requiredFailing} of ${required.length} required ${required.length === 1 ? 'check' : 'checks'} failed`,
+    };
+  }
   if (pr.reviewDecision === 'CHANGES_REQUESTED') {
     const requester = pr.reviewers.find((reviewer) => reviewer.state === 'CHANGES_REQUESTED');
     return {
@@ -72,7 +80,18 @@ export function nextActionFor(pr: PrDetail, unknown: readonly PrStage[] = []): N
   }
   if (pr.reviewDecision === 'REVIEW_REQUIRED') {
     const pending = pr.reviewers.filter((reviewer) => reviewer.state === 'PENDING').map((reviewer) => reviewer.user.login);
-    return { kind: 'review-required', tone: 'attention', title: 'Waiting for review', detail: pending.length > 0 ? pending.join(', ') : null };
+    if (pending.length > 0) return { kind: 'review-required', tone: 'attention', title: 'Waiting for review', detail: pending.join(', ') };
+    // Asked of nobody, a review is required by the branch rules alone, so a count of none is the merge box not saying.
+    const approvals = pr.reviewers.filter((reviewer) => reviewer.state === 'APPROVED').length;
+    const requiredApprovals = pr.numReviewsRequired;
+    return {
+      kind: 'needs-reviewers',
+      tone: 'attention',
+      title: 'Needs more reviewers',
+      detail: requiredApprovals
+        ? `Branch rules require ${requiredApprovals} ${requiredApprovals === 1 ? 'approval' : 'approvals'} (${approvals} so far) and no reviewers are requested`
+        : `An approval is required (${approvals} so far) and no reviewers are requested`,
+    };
   }
   if (pr.ci.state === 'PENDING') {
     const finished = pr.ci.checks.filter((check) => check.state !== 'PENDING').length;
@@ -87,7 +106,7 @@ export function nextActionFor(pr: PrDetail, unknown: readonly PrStage[] = []): N
     kind: 'ready',
     tone: 'success',
     title: 'Ready to merge',
-    detail: failing.length > 0 ? `${failing.length === 1 ? 'An optional check is' : `${failing.length} optional checks are`} failing: ${failing.map((check) => check.name).join(', ')}` : null,
+    detail: failing.length > 0 ? `${failing.length === 1 ? 'An optional check is' : `${failing.length} optional checks are`} failing: ${failing.map((check) => check.name).join(', ')}` : 'All CI and approval requirements have been met',
   };
 }
 
@@ -109,6 +128,7 @@ export type NextAction = {
         | 'checks-failed'
         | 'changes-requested'
         | 'review-required'
+        | 'needs-reviewers'
         | 'checks-running'
         | 'behind'
         | 'blocked'

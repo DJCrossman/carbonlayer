@@ -15,7 +15,7 @@ assert.isDefined(failingCheck);
 
 describe('nextActionFor', () => {
   it('is ready to merge when nothing blocks the PR', () => {
-    expect(nextActionFor(ready)).toMatchObject({ kind: 'ready', tone: 'success', title: 'Ready to merge', detail: null });
+    expect(nextActionFor(ready)).toMatchObject({ kind: 'ready', tone: 'success', title: 'Ready to merge', detail: 'All CI and approval requirements have been met' });
   });
 
   it('merges over a failing optional check, like GitHub and Graphite, and says so', () => {
@@ -27,9 +27,9 @@ describe('nextActionFor', () => {
     ['merged', { state: 'MERGED' }, 'Merged'],
     ['closed', { state: 'CLOSED' }, 'Closed'],
     ['draft', { isDraft: true }, 'Draft'],
-    ['conflicts', { mergeStatus: 'DIRTY' }, 'Conflicts with main'],
+    ['conflicts', { mergeStatus: 'DIRTY' }, 'Merge conflicts'],
     ['unresolved', { unresolvedThreadCount: 2 }, 'Unresolved comments'],
-    ['checks-failed', { ci: { ...pr42.ci }, requiredCheckNames: [failingCheck.name] }, 'Checks failed'],
+    ['checks-failed', { ci: { ...pr42.ci }, requiredCheckNames: [failingCheck.name] }, 'Required checks failed'],
     ['changes-requested', { reviewDecision: 'CHANGES_REQUESTED', reviewers: pr42.reviewers }, 'Changes requested by jlord'],
     ['review-required', { reviewDecision: 'REVIEW_REQUIRED', reviewers: pr42.reviewers }, 'Waiting for review'],
     ['behind', { mergeStatus: 'BEHIND' }, 'Behind main'],
@@ -61,10 +61,35 @@ describe('nextActionFor', () => {
     expect(action).toMatchObject({ kind: 'checks-running', title: 'Checks running · 5/7' });
   });
 
-  it('names the failing required check and the pending reviewers', () => {
-    expect(nextActionFor({ ...ready, ci: pr42.ci, requiredCheckNames: ['e2e / portal'] })).toMatchObject({ detail: 'e2e / portal' });
-    expect(nextActionFor({ ...ready, reviewDecision: 'REVIEW_REQUIRED', reviewers: pr42.reviewers })).toMatchObject({ detail: 'acme/parcs' });
-    expect(nextActionFor({ ...ready, unresolvedThreadCount: 1 })).toMatchObject({ detail: '1 thread needs resolving' });
+  it('counts the open comment threads', () => {
+    expect(nextActionFor({ ...ready, unresolvedThreadCount: 1 })).toMatchObject({ kind: 'unresolved', detail: '1 open comment thread needs resolving before this PR can merge' });
+    expect(nextActionFor({ ...ready, unresolvedThreadCount: 2 })).toMatchObject({ kind: 'unresolved', detail: '2 open comment threads need resolving before this PR can merge' });
+  });
+
+  it('counts the required checks that failed among all of them', () => {
+    expect(nextActionFor({ ...ready, ci: pr42.ci, requiredCheckNames: ['e2e / portal'] })).toMatchObject({ kind: 'checks-failed', detail: '1 of 1 required check failed' });
+    // #42's checks with build failing too: build and e2e / portal fail, unit passes.
+    const checks = pr42.ci.checks.map((check) => (check.name === 'build' ? { ...check, state: 'FAILURE' as const } : check));
+    expect(nextActionFor({ ...ready, ci: { ...pr42.ci, checks }, requiredCheckNames: ['build', 'unit', 'e2e / portal'] })).toMatchObject({
+      kind: 'checks-failed',
+      detail: '2 of 3 required checks failed',
+    });
+  });
+
+  it('names the pending reviewers while a review is requested', () => {
+    expect(nextActionFor({ ...ready, reviewDecision: 'REVIEW_REQUIRED', reviewers: pr42.reviewers })).toMatchObject({ kind: 'review-required', title: 'Waiting for review', detail: 'acme/parcs' });
+  });
+
+  it('asks for more reviewers when the rules want approvals and nobody is requested, with the count where the merge box gives it', () => {
+    const unasked: PrDetail = { ...ready, reviewDecision: 'REVIEW_REQUIRED', reviewers: [] };
+    expect(nextActionFor({ ...unasked, numReviewsRequired: 1 })).toMatchObject({
+      kind: 'needs-reviewers',
+      title: 'Needs more reviewers',
+      detail: 'Branch rules require 1 approval (0 so far) and no reviewers are requested',
+    });
+    // #41's approval counts toward the two required.
+    expect(nextActionFor({ ...ready, reviewDecision: 'REVIEW_REQUIRED', numReviewsRequired: 2 })).toMatchObject({ detail: 'Branch rules require 2 approvals (1 so far) and no reviewers are requested' });
+    expect(nextActionFor(unasked)).toMatchObject({ kind: 'needs-reviewers', detail: 'An approval is required (0 so far) and no reviewers are requested' });
   });
 
   it('waits on the open PR closest to trunk before anything about this PR', () => {
@@ -117,7 +142,11 @@ describe('nextActionFor', () => {
 
   it('puts state before conflicts, conflicts before the stack, and the stack before reviews', () => {
     expect(nextActionFor({ ...pr42, isDraft: true, mergeStatus: 'DIRTY' })).toMatchObject({ kind: 'draft' });
-    expect(nextActionFor({ ...pr42, mergeStatus: 'DIRTY' })).toMatchObject({ kind: 'conflicts', title: 'Conflicts with mona/parcs-client' });
+    expect(nextActionFor({ ...pr42, mergeStatus: 'DIRTY' })).toMatchObject({
+      kind: 'conflicts',
+      title: 'Merge conflicts',
+      detail: "This PR can't be merged because of a conflict with the base branch",
+    });
     expect(nextActionFor({ ...pr42, state: 'MERGED' })).toMatchObject({ kind: 'merged' });
   });
 

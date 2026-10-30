@@ -406,7 +406,7 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
       const pr = edited(fixturePr(repo, number));
       await new Promise((resolve) => setTimeout(resolve, FIXTURE_STAGE_DELAYS[stage]));
       const { timeline, threads, unresolvedThreadCount, files, baseOid, stack, labels, assignees, ci, requiredCheckNames, unread, conversations, ...rest } = pr;
-      const { mergeStatus, reviewers, reviewDecision, viewerCanMerge, viewerCanEnableAutoMerge, allowedMergeMethods, defaultMergeMethod, autoMerge, isInMergeQueue, stackSection, ...header } = rest;
+      const { mergeStatus, reviewers, reviewDecision, viewerCanMerge, viewerCanEnableAutoMerge, allowedMergeMethods, defaultMergeMethod, autoMerge, isInMergeQueue, stackSection, numReviewsRequired, ...header } = rest;
       const stages: PrStages = {
         header: { ...header, viewerLogin: 'octocat', stackSource: stack.source },
         activity: { timeline },
@@ -416,7 +416,7 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
           diffs: Object.fromEntries(files.slice(0, 1).map(({ path, patch, previousPath, withheld, generated }) => [path, { patch, previousPath, withheld, generated }])),
         },
         threads: { threads: [...threads, ...(posted.get(pr.id) ?? [])], unresolvedThreadCount: unresolvedThreadCount + (posted.get(pr.id)?.length ?? 0) },
-        mergeBox: { mergeStatus, reviewers, reviewDecision, viewerCanMerge, viewerCanEnableAutoMerge, allowedMergeMethods, defaultMergeMethod, autoMerge, isInMergeQueue, stackSection },
+        mergeBox: { mergeStatus, reviewers, reviewDecision, viewerCanMerge, viewerCanEnableAutoMerge, allowedMergeMethods, defaultMergeMethod, autoMerge, isInMergeQueue, stackSection, numReviewsRequired },
         checks: { ci, requiredCheckNames, emptyReason: null },
         // The other entries the way GitHub's stack listing names them, without a verdict, checks or mergeability: those
         // come with each entry's row details (enrichInbox).
