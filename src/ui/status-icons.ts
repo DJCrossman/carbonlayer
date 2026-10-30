@@ -60,7 +60,9 @@ export function reviewStatusIcon(
 /**
  * Where the checks stand. A failure blocks merging only when a required check fails: failing checks that are all
  * optional are a yellow pass. `requiredCheckNames` is null until GitHub has said which checks are required (the
- * dashboard's rollup does not), and a failure is red until then.
+ * dashboard's rollup does not), and a failure is red until then. Once the checks are known, only a failed one fails, as
+ * in Graphite: a cancelled check, like a skipped or neutral one, finished without a verdict, so cancelled checks beside
+ * passing ones are a pass.
  */
 export function ciStatusIcon(ci: CiSummary, requiredCheckNames: string[] | null): StatusIcon {
   const { success, failure, pending, other } = ci.counts;
@@ -76,7 +78,13 @@ export function ciStatusIcon(ci: CiSummary, requiredCheckNames: string[] | null)
     }
     case 'FAILURE':
     case 'CANCELLED': {
-      const failing = ci.checks.filter((check) => check.state === 'FAILURE' || check.state === 'CANCELLED').map((check) => check.name);
+      const failing = ci.checks.filter((check) => check.state === 'FAILURE').map((check) => check.name);
+      // Cancelled checks alone are no failure: the checks pass if any passed.
+      if (ci.checks.length > 0 && failing.length === 0) {
+        return ci.checks.some((check) => check.state === 'SUCCESS')
+          ? { icon: 'check-circle-fill', tone: 'success', tooltip: 'All checks passed' }
+          : { icon: 'dash', tone: 'subtle', tooltip: 'No verdict from the checks' };
+      }
       if (failing.length === 0 || requiredCheckNames === null) {
         return { icon: 'x-circle-fill', tone: 'danger', tooltip: `Checks failing (${failing.length || failure} of ${total})${failing.length > 0 ? `: ${failing.join(', ')}` : ''}` };
       }

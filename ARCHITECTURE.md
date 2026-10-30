@@ -575,7 +575,7 @@ hover. Each status column is one function from the row's data to an icon, a tone
 | | clock · orange · "Waiting for …" | requests nobody has answered |
 | | dash · grey · "No reviewers requested" | no reviewers at all |
 | | the dashboard's decision (approved, changes requested, waiting, none) | until GitHub names the reviewers |
-| CI | filled check · green · "All checks passed" | every check passed |
+| CI | filled check · green · "All checks passed" | every check passed (cancelled ones, like skipped ones, do not count as failing) |
 | | filled check · yellow · "Non-required checks failing: …" | only optional checks fail |
 | | filled x · red · "Required checks failing: …" | a required check fails (until GitHub says which are required, any failure) |
 | | clock · orange · "Checks running (n/m)" | checks still running |

@@ -109,8 +109,12 @@ export async function deferredFields(pulls: Pull[], search: { section: GitHubInb
 /** A dashboard row as the inbox shows it: the section or search fields plus its deferred fields. */
 export function summarisePull(pull: Pull, section: GitHubInboxFilter | null): PrSummary {
   const [owner = '', name = ''] = pull.repoNameWithOwner?.split('/') ?? [];
+  const state: PrSummary['state'] = pull.mergedAt || pull.state === 'MERGED' ? 'MERGED' : pull.closedAt || pull.state === 'CLOSED' ? 'CLOSED' : 'OPEN';
   const rollup = pull.statusCheckRollup;
   const rollupState = rollup?.state?.toUpperCase();
+  // A merged or closed PR's checks run no more, and its row asks for none of its own (`enrichPull`). GitHub's rollup is
+  // FAILURE whenever a check failed, so one still PENDING or EXPECTED (a check that never finished before the PR merged)
+  // means none failed: a pass when any passed, else no verdict, and none counted as pending.
   const ciState: CheckState =
     !rollup || rollup.totalCount === 0
       ? 'NONE'
@@ -119,7 +123,11 @@ export function summarisePull(pull: Pull, section: GitHubInboxFilter | null): Pr
         : rollupState === 'FAILURE' || rollupState === 'ERROR'
           ? 'FAILURE'
           : rollupState === 'PENDING' || rollupState === 'EXPECTED'
-            ? 'PENDING'
+            ? state === 'OPEN'
+              ? 'PENDING'
+              : rollup.successCount > 0
+                ? 'SUCCESS'
+                : 'NONE'
             : 'NONE';
   const notPassing = rollup ? rollup.totalCount - rollup.successCount : 0;
   const decision = pull.reviewDecisionState?.toUpperCase();
@@ -131,7 +139,7 @@ export function summarisePull(pull: Pull, section: GitHubInboxFilter | null): Pr
     title: pull.title ?? '',
     url: pull.permalink ?? `https://github.com/${owner}/${name}/pull/${pull.number}`,
     author: githubUser(pull.author?.displayLogin ?? 'ghost'),
-    state: pull.mergedAt || pull.state === 'MERGED' ? 'MERGED' : pull.closedAt || pull.state === 'CLOSED' ? 'CLOSED' : 'OPEN',
+    state,
     isDraft,
     createdAt: pull.createdAt,
     updatedAt: pull.updatedAt,

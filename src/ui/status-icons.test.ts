@@ -47,6 +47,10 @@ describe('the CI column', () => {
     ['a required check failing', ci([check('build', 'FAILURE'), check('preview', 'FAILURE')]), ['build'], ['x-circle-fill', 'danger', 'Required checks failing: build']],
     ['only optional checks failing', ci([check('build', 'SUCCESS'), check('preview', 'FAILURE')]), ['build'], ['check-circle-fill', 'attention', 'Non-required checks failing: preview']],
     ['a failure before GitHub says which are required', ci([check('preview', 'FAILURE')]), null, ['x-circle-fill', 'danger', 'Checks failing (1 of 1): preview']],
+    ['cancelled beside passing, like Graphite: no failure', { ...ci([check('build', 'SUCCESS'), check('e2e', 'CANCELLED')]), state: 'FAILURE' }, ['build'], ['check-circle-fill', 'success', 'All checks passed']],
+    ['cancelled beside an optional failure', ci([check('build', 'SUCCESS'), check('e2e', 'CANCELLED'), check('preview', 'FAILURE')]), ['build'], ['check-circle-fill', 'attention', 'Non-required checks failing: preview']],
+    ['cancelled beside a required failure', ci([check('build', 'FAILURE'), check('deploy', 'CANCELLED')]), ['build', 'deploy'], ['x-circle-fill', 'danger', 'Required checks failing: build']],
+    ['everything cancelled or skipped', { ...ci([check('e2e', 'CANCELLED'), check('docs', 'SKIPPED')]), state: 'CANCELLED' }, ['build'], ['dash', 'subtle', 'No verdict from the checks']],
   ] as const)('%s', (_, summary, required, [icon, tone, tooltip]) => {
     expect(ciStatusIcon(summary, required === null ? null : [...required])).toEqual({ icon, tone, tooltip });
   });

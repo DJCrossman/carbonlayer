@@ -34,6 +34,22 @@ describe('summarisePull', () => {
     expect(summarisePull(pull(1), 'merge-queue').isInMergeQueue).toBe(true);
     expect(summarisePull(pull(1, { mergedAt: '2026-10-01T00:00:00Z' }), null).state).toBe('MERGED');
   });
+
+  it('reads a merged PR whose rollup is still pending as passed: GitHub would say FAILURE had a check failed', () => {
+    expect(summarisePull(pull(1, { state: 'MERGED', mergedAt: '2026-10-01T00:00:00Z', statusCheckRollup: { state: 'PENDING', totalCount: 5, successCount: 3 } }), null).ci).toEqual({
+      state: 'SUCCESS',
+      checks: [],
+      counts: { success: 3, failure: 0, pending: 0, other: 0 },
+    });
+  });
+
+  it('reads an open PR whose rollup is pending as running', () => {
+    expect(summarisePull(pull(1, { statusCheckRollup: { state: 'PENDING', totalCount: 5, successCount: 3 } }), null).ci).toEqual({
+      state: 'PENDING',
+      checks: [],
+      counts: { success: 3, failure: 0, pending: 2, other: 0 },
+    });
+  });
 });
 
 describe('fetchInbox', () => {
