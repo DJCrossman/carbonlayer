@@ -1,6 +1,8 @@
-// The single next step a pull request is waiting on, as shown in the sidebar's action card.
+// The single next step a pull request is waiting on, as shown in the sidebar's action card, and in the same order the one
+// pill the stack card's row shows for each PR in the stack.
 
 import type { PrDetail, PrStage, Stack, StackEntry } from '../lib/model';
+import type { IconName } from '../ui/Icon';
 
 /**
  * What stands between this PR and being merged, most fundamental first: its state, then conflicts, what GitHub says of
@@ -137,6 +139,69 @@ export type NextAction = {
   | { kind: 'downstack'; pr: StackEntry }
   | { kind: 'ready-as-stack'; prs: StackEntry[] }
 );
+
+/** The one pill a row of the stack card shows: Graphite's words, in a tone, with an icon and, on hover, why. */
+export type StackRowPill = {
+  label: string;
+  tone: 'success' | 'danger' | 'attention' | 'neutral' | 'done';
+  icon?: IconName;
+  title?: string;
+};
+
+/**
+ * The one pill Graphite's stack card shows for a PR in the stack, the first that applies in the order the sidebar's next
+ * step goes by: its state, GitHub merging it with the viewed PR as a stack (`stackToMerge`, which `mergingAsStack` says
+ * of it: the viewed PR's row reads "Ready to merge as stack", one below it "Ready to merge"), conflicts, open
+ * conversations, a failing required check (of `requiredCheckNames`, those its page or its row details name), reviews,
+ * running checks, and last what GitHub says of merging it. None while GitHub has not said whether it can merge.
+ */
+export function stackRowPillFor(entry: StackEntry, requiredCheckNames: readonly string[] = [], mergingAsStack: 'viewed' | 'below' | null = null): StackRowPill | null {
+  if (entry.state === 'MERGED') return { label: 'Merged', tone: 'done', icon: 'git-merge' };
+  if (entry.state === 'CLOSED') return { label: 'Closed', tone: 'danger', icon: 'git-pull-request-closed' };
+  if (entry.isDraft || entry.mergeStatus === 'DRAFT') return { label: 'Draft', tone: 'neutral', icon: 'git-pull-request-draft' };
+  if (mergingAsStack) return { label: mergingAsStack === 'viewed' ? 'Ready to merge as stack' : 'Ready to merge', tone: 'success', icon: 'check' };
+  if (entry.mergeStatus === 'DIRTY') return { label: 'Merge conflicts', tone: 'danger', icon: 'alert', title: 'Merge conflicts with the base branch' };
+  const unresolved = entry.conversations ? entry.conversations.total - entry.conversations.resolved : 0;
+  if (unresolved > 0) {
+    return {
+      label: 'Unresolved comments',
+      tone: 'attention',
+      icon: 'comment-discussion',
+      title: `${unresolved} open comment ${unresolved === 1 ? 'thread needs' : 'threads need'} resolving before this PR can merge`,
+    };
+  }
+  // Only a required check's failure stands in the way, as in the sidebar: GitHub merges over optional ones.
+  const failing = entry.ci.checks.filter((check) => check.state === 'FAILURE' && requiredCheckNames.includes(check.name)).map((check) => check.name);
+  if (failing.length > 0) return { label: 'Required checks failed', tone: 'danger', icon: 'x-circle-fill', title: `Failing: ${failing.join(', ')}` };
+  if (entry.reviewDecision === 'CHANGES_REQUESTED') {
+    const requesters = entry.reviewers.filter((reviewer) => reviewer.state === 'CHANGES_REQUESTED').map((reviewer) => reviewer.user.login);
+    return { label: 'Changes requested', tone: 'danger', icon: 'x-circle-fill', title: requesters.length > 0 ? `Changes requested by ${requesters.join(', ')}` : undefined };
+  }
+  if (entry.reviewDecision === 'REVIEW_REQUIRED') {
+    const pending = entry.reviewers.filter((reviewer) => reviewer.state === 'PENDING').map((reviewer) => reviewer.user.login);
+    return { label: 'Needs reviewers', tone: 'attention', icon: 'person-check', title: pending.length > 0 ? `Waiting for ${pending.join(', ')}` : 'No reviewers requested' };
+  }
+  if (entry.ci.state === 'PENDING') {
+    // Without a check list (GitHub's rollup has only counts), the counts say how many are still running.
+    const { success, failure, pending, other } = entry.ci.counts;
+    const total = entry.ci.checks.length || success + failure + pending + other;
+    const running = entry.ci.checks.length > 0 ? entry.ci.checks.filter((check) => check.state === 'PENDING').length : pending;
+    return { label: 'CI running', tone: 'neutral', icon: 'clock', title: `${total - running}/${total} checks finished` };
+  }
+  switch (entry.mergeStatus) {
+    case 'BEHIND':
+      return { label: 'Behind base', tone: 'attention', icon: 'arrow-down', title: 'The base branch has commits this branch does not' };
+    case 'BLOCKED':
+      return { label: 'Blocked', tone: 'neutral', title: 'Blocked by branch protection: required reviews or checks are missing' };
+    case 'HAS_HOOKS':
+      return { label: 'Waiting on hooks', tone: 'neutral', icon: 'clock', title: 'Mergeable once pre-receive hooks pass' };
+    case 'CLEAN':
+    case 'UNSTABLE':
+      return { label: 'Ready to merge', tone: 'success', icon: 'check' };
+    case 'UNKNOWN':
+      return null;
+  }
+}
 
 /**
  * The PRs that merging this one as a stack merges, bottom first and this one last: in a GitHub-native stack, every open

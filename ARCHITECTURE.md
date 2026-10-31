@@ -342,7 +342,12 @@ top leaves it so until the reader scrolls into another file.
 Stacks: GitHub-native `stack` from the PR page's embedded data first; otherwise Graphite's stack
 comment in the timeline, enriched through a `/pulls/search` query on the author's open PRs. The stack card
 (`src/pr/StackCard.tsx`) shows each entry as Graphite does: its dot on the rail, its author's avatar, number and title,
-then its conversations, statuses and age. The viewed PR's review verdict, checks and merge status come with its page;
+then its conversations, Graphite's one pill for where it stands, and its age. The pill is the first that applies, in the
+order the sidebar's next step goes by (`stackRowPillFor` in `src/pr/next-action.ts`): Merged, Closed, Draft, "Ready to
+merge as stack", Merge conflicts, Unresolved comments, Required checks failed, Changes requested, Needs reviewers, CI
+running, Behind base, Blocked, Waiting on hooks, Ready to merge; its reason is on hover. The header's Copy stack puts the
+stack on the clipboard as Markdown, as Graphite's comment lists it: a line for each PR from the top, and trunk last.
+The viewed PR's review verdict, checks and merge status come with its page;
 every other entry's are the row details the inbox shows for a PR (`useRowEnrichment` in `src/inbox/row-details.ts`,
 `inbox.enrich`, below), asked for while the card is open, 10 entries a request and one request at a time, under the
 inbox's own key for a PR the inbox showed (its row, so either page finds what the other asked for) and the entry's own

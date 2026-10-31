@@ -507,6 +507,7 @@ function PrView({
                 pr.stack.source !== 'none' && (
                   <StackCard
                     stack={stack}
+                    requiredCheckNames={pr.requiredCheckNames}
                     collapsed={stackCollapsed}
                     onToggle={() => setStackCollapsed((collapsed) => !collapsed)}
                     source={source}

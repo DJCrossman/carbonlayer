@@ -1,7 +1,7 @@
 import { assert, describe, expect, it } from 'vitest';
 import { prFixtures } from '../fixtures/pr';
 import type { PrDetail } from '../lib/model';
-import { nextActionFor } from './next-action';
+import { nextActionFor, stackRowPillFor } from './next-action';
 
 const pr41 = prFixtures.find((pr) => pr.number === 41);
 const pr42 = prFixtures.find((pr) => pr.number === 42);
@@ -162,5 +162,92 @@ describe('nextActionFor', () => {
     expect(nextActionFor({ ...ready, isDraft: true }, ['mergeBox', 'stack', 'threads', 'checks'])).toMatchObject({ kind: 'draft' });
     expect(nextActionFor({ ...ready, mergeStatus: 'DIRTY' }, ['stack', 'threads', 'checks'])).toMatchObject({ kind: 'conflicts' });
     expect(nextActionFor({ ...ready, unresolvedThreadCount: 1 }, ['checks'])).toMatchObject({ kind: 'unresolved' });
+  });
+});
+
+describe('stackRowPillFor', () => {
+  it('says a merged PR is merged', () => {
+    expect(stackRowPillFor({ ...ready, state: 'MERGED' })).toMatchObject({ label: 'Merged', tone: 'done' });
+  });
+
+  it('says a closed PR is closed', () => {
+    expect(stackRowPillFor({ ...ready, state: 'CLOSED' })).toMatchObject({ label: 'Closed', tone: 'danger' });
+  });
+
+  it('says a draft is a draft, whether the PR or its mergeability says so', () => {
+    expect(stackRowPillFor({ ...ready, isDraft: true })).toMatchObject({ label: 'Draft', tone: 'neutral' });
+    expect(stackRowPillFor({ ...ready, mergeStatus: 'DRAFT' })).toMatchObject({ label: 'Draft', tone: 'neutral' });
+  });
+
+  it('says the viewed PR is ready to merge as a stack, and one below it ready to merge, when GitHub merges them as one', () => {
+    expect(stackRowPillFor(ready, [], 'viewed')).toMatchObject({ label: 'Ready to merge as stack', tone: 'success' });
+    expect(stackRowPillFor(ready, [], 'below')).toMatchObject({ label: 'Ready to merge', tone: 'success' });
+  });
+
+  it('says it has merge conflicts', () => {
+    expect(stackRowPillFor({ ...ready, mergeStatus: 'DIRTY' })).toMatchObject({ label: 'Merge conflicts', tone: 'danger' });
+  });
+
+  it('says it has unresolved comments while a conversation is open, counting them on hover', () => {
+    expect(stackRowPillFor({ ...ready, conversations: { resolved: 1, total: 3 } })).toMatchObject({
+      label: 'Unresolved comments',
+      tone: 'attention',
+      title: '2 open comment threads need resolving before this PR can merge',
+    });
+  });
+
+  it('says its required checks failed, naming them, and merges over an optional one', () => {
+    expect(stackRowPillFor({ ...ready, ci: pr42.ci }, ['build', failingCheck.name])).toMatchObject({ label: 'Required checks failed', tone: 'danger', title: `Failing: ${failingCheck.name}` });
+    expect(stackRowPillFor({ ...ready, ci: pr42.ci }, ['build'])).toMatchObject({ label: 'Ready to merge' });
+  });
+
+  it('says changes were requested, naming by whom', () => {
+    expect(stackRowPillFor({ ...ready, reviewDecision: 'CHANGES_REQUESTED', reviewers: pr42.reviewers })).toMatchObject({ label: 'Changes requested', tone: 'danger', title: 'Changes requested by jlord' });
+  });
+
+  it('says it needs reviewers, naming those asked, or that nobody is', () => {
+    expect(stackRowPillFor({ ...ready, reviewDecision: 'REVIEW_REQUIRED', reviewers: pr42.reviewers })).toMatchObject({ label: 'Needs reviewers', tone: 'attention', title: 'Waiting for acme/parcs' });
+    expect(stackRowPillFor({ ...ready, reviewDecision: 'REVIEW_REQUIRED', reviewers: [] })).toMatchObject({ label: 'Needs reviewers', title: 'No reviewers requested' });
+  });
+
+  it('says CI is running, counting the finished checks', () => {
+    // #42's checks without the failure: 5 finished, 2 still running.
+    const checks = pr42.ci.checks.filter((check) => check !== failingCheck);
+    expect(stackRowPillFor({ ...ready, ci: { ...ready.ci, state: 'PENDING', checks } })).toMatchObject({ label: 'CI running', tone: 'neutral', title: '5/7 checks finished' });
+  });
+
+  it('says it is behind its base', () => {
+    expect(stackRowPillFor({ ...ready, mergeStatus: 'BEHIND' })).toMatchObject({ label: 'Behind base', tone: 'attention' });
+  });
+
+  it('says branch protection blocks it', () => {
+    expect(stackRowPillFor({ ...ready, mergeStatus: 'BLOCKED' })).toMatchObject({ label: 'Blocked', tone: 'neutral', title: 'Blocked by branch protection: required reviews or checks are missing' });
+  });
+
+  it('says it waits on pre-receive hooks', () => {
+    expect(stackRowPillFor({ ...ready, mergeStatus: 'HAS_HOOKS' })).toMatchObject({ label: 'Waiting on hooks', tone: 'neutral' });
+  });
+
+  it('says it is ready to merge when nothing stands in the way, failing optional checks too', () => {
+    expect(stackRowPillFor(ready)).toMatchObject({ label: 'Ready to merge', tone: 'success' });
+    expect(stackRowPillFor({ ...ready, mergeStatus: 'UNSTABLE' })).toMatchObject({ label: 'Ready to merge', tone: 'success' });
+  });
+
+  it('shows no pill while GitHub has not said whether it can merge', () => {
+    expect(stackRowPillFor({ ...ready, mergeStatus: 'UNKNOWN' })).toBeNull();
+  });
+
+  it('shows the first that applies, in the order the sidebar goes by', () => {
+    // #42: changes requested, 2 of its 4 conversations open, its required e2e / portal failing, the rest running, blocked.
+    expect(stackRowPillFor(pr42, pr42.requiredCheckNames)).toMatchObject({ label: 'Unresolved comments' });
+    const resolved = { ...pr42, conversations: { resolved: 4, total: 4 } };
+    expect(stackRowPillFor(resolved, pr42.requiredCheckNames)).toMatchObject({ label: 'Required checks failed' });
+    expect(stackRowPillFor(resolved)).toMatchObject({ label: 'Changes requested' });
+    expect(stackRowPillFor({ ...resolved, reviewDecision: 'REVIEW_REQUIRED', ci: { ...pr42.ci, state: 'PENDING' } })).toMatchObject({ label: 'Needs reviewers' });
+    expect(stackRowPillFor({ ...resolved, reviewDecision: 'APPROVED', ci: { ...pr42.ci, state: 'PENDING' } })).toMatchObject({ label: 'CI running' });
+    expect(stackRowPillFor({ ...pr42, mergeStatus: 'DIRTY' }, pr42.requiredCheckNames)).toMatchObject({ label: 'Merge conflicts' });
+    expect(stackRowPillFor({ ...pr42, mergeStatus: 'DIRTY' }, pr42.requiredCheckNames, 'viewed')).toMatchObject({ label: 'Ready to merge as stack' });
+    expect(stackRowPillFor({ ...pr42, isDraft: true }, pr42.requiredCheckNames, 'viewed')).toMatchObject({ label: 'Draft' });
+    expect(stackRowPillFor({ ...pr42, isDraft: true, state: 'MERGED' })).toMatchObject({ label: 'Merged' });
   });
 });

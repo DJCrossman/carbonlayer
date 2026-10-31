@@ -1,5 +1,5 @@
-// The stack card: every PR in the stack on a vertical rail, tip at the top and trunk at the bottom, each with its review,
-// checks and merge status; and the card as it looks while the stack loads.
+// The stack card: every PR in the stack on a vertical rail, tip at the top and trunk at the bottom, each with its
+// conversations and Graphite's one pill for where it stands; and the card as it looks while the stack loads.
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef } from 'react';
 import type { DataSource } from '../app/data-source';
@@ -7,16 +7,15 @@ import { inboxRowFor, useRowEnrichment } from '../inbox/row-details';
 import type { Stack, StackEntry } from '../lib/model';
 import type { MergeMethod } from '../lib/rpc';
 import { Avatar } from '../ui/Avatar';
+import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
-import { CiStatus } from '../ui/CiStatus';
 import { Icon } from '../ui/Icon';
-import { MergeStatus } from '../ui/MergeStatus';
 import { RelativeTime } from '../ui/RelativeTime';
-import { ReviewStatus } from '../ui/ReviewStatus';
 import { Skeleton } from '../ui/Skeleton';
 import { StatusPill } from '../ui/StatusPill';
+import { showToast } from '../ui/Toast';
 import { goToPr } from './navigation';
-import { stackToMerge } from './next-action';
+import { stackRowPillFor, stackToMerge } from './next-action';
 import { useLoadAhead } from './page-data';
 import './stack.css';
 
@@ -24,16 +23,20 @@ import './stack.css';
  * The stack's entries. The viewed PR's statuses come with its page; every other entry's with the same row details the
  * inbox shows for a PR (src/inbox/row-details.ts), asked for while the card is open and kept under the inbox's own key
  * for a PR the inbox showed, so either page finds what the other asked for. An entry the pointer rests on loads its page
- * ahead, as an inbox row does.
+ * ahead, as an inbox row does. Its header's Copy stack puts the stack on the clipboard as Markdown, as Graphite's comment
+ * lists it: the top of the stack first, a line for each PR linked to it, and trunk last.
  */
 export function StackCard({
   stack,
+  requiredCheckNames,
   collapsed,
   onToggle,
   source,
   mergeMethod,
 }: {
   stack: Stack;
+  /** The viewed PR's required checks, which its page names; each other entry's come with its row details. */
+  requiredCheckNames: readonly string[];
   collapsed: boolean;
   onToggle: () => void;
   source: DataSource;
@@ -56,14 +59,33 @@ export function StackCard({
   const mergingAsStack = stackToMerge(stack);
   return (
     <Card className="stack-card">
-      <button className="stack-header" onClick={onToggle} aria-expanded={!collapsed} title="Toggle stack (s)">
-        <Icon name="stack" size={14} className="pr-fg-muted" />
-        <span>
-          Stack <span className="pr-muted">· {stack.currentIndex + 1} of {stack.entries.length}</span>
-        </span>
+      {/* A click anywhere on the header folds the card, but on Copy stack (stack.css). */}
+      <div className="stack-header">
+        <button className="stack-toggle" onClick={onToggle} aria-expanded={!collapsed} title="Toggle stack (s)">
+          <Icon name="stack" size={14} className="pr-fg-muted" />
+          <span>
+            Stack <span className="pr-muted">· {stack.currentIndex + 1} of {stack.entries.length}</span>
+          </span>
+        </button>
         <span className="files-toolbar-spacer" />
+        <Button
+          variant="ghost"
+          size="sm"
+          icon="link"
+          className="stack-copy"
+          onClick={() =>
+            navigator.clipboard
+              .writeText([...tipFirst.map(({ pr }) => `- [#${pr.number} ${pr.title}](${pr.url})`), `- \`${stack.trunk}\``].join('\n'))
+              .then(
+                () => showToast('Copied stack'),
+                () => showToast('Could not copy the stack', 'danger'),
+              )
+          }
+        >
+          Copy stack
+        </Button>
         <Icon name={collapsed ? 'chevron-right' : 'chevron-down'} size={14} className="pr-fg-muted" />
-      </button>
+      </div>
       {!collapsed && (
         <ol className="stack-rail">
           {tipFirst.map(({ pr, index }) => {
@@ -78,6 +100,7 @@ export function StackCard({
                 current={index === stack.currentIndex}
                 waiting={row !== undefined && found === undefined}
                 readyToMerge={mergingAsStack?.includes(pr) ?? false}
+                requiredCheckNames={index === stack.currentIndex ? requiredCheckNames : (found?.requiredCheckNames ?? [])}
                 onIntent={() => loadAhead(pr)}
               />
             );
@@ -122,20 +145,24 @@ function StackRow({
   current,
   waiting,
   readyToMerge,
+  requiredCheckNames,
   onIntent,
 }: {
   pr: StackEntry;
   current: boolean;
-  /** Its row details have not arrived and the cache had none: its statuses show small skeletons. */
+  /** Its row details have not arrived and the cache had none: its pill shows a small skeleton. */
   waiting: boolean;
   /** GitHub can merge it in merging the viewed PR as a stack: the viewed PR's row reads "Ready to merge as stack", one below it "Ready to merge". */
   readyToMerge: boolean;
+  /** The required checks its page or its row details name; none until GitHub has said. */
+  requiredCheckNames: readonly string[];
   /** The pointer rested on another entry: the viewer may open it next. */
   onIntent: () => void;
 }) {
   // The pointer resting 150 ms on the entry, not passing over it.
   const resting = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(resting.current), []);
+  const pill = stackRowPillFor(pr, requiredCheckNames, readyToMerge ? (current ? 'viewed' : 'below') : null);
   return (
     <li
       className={`stack-row ${current ? 'is-current' : ''} ${pr.state === 'MERGED' ? 'is-merged' : ''}`}
@@ -178,18 +205,16 @@ function StackRow({
             {pr.conversations.resolved}/{pr.conversations.total}
           </span>
         )}
-        {/* As the inbox's row: the verdict waits for the row's details, an open PR's checks and mergeability too, while a
-            merged or closed one says so at once. No review needed, no checks or no mergeability known shows nothing. */}
-        {waiting ? <Skeleton width={14} height={14} /> : pr.reviewDecision !== 'NONE' && <ReviewStatus state={pr.reviewDecision} size={14} />}
-        {waiting && pr.state === 'OPEN' ? <Skeleton width={28} height={10} /> : <CiStatus ci={pr.ci} variant="compact" />}
-        {readyToMerge ? (
-          <StatusPill tone="success" icon="check">
-            {current ? 'Ready to merge as stack' : 'Ready to merge'}
-          </StatusPill>
-        ) : waiting && pr.state === 'OPEN' ? (
-          <Skeleton width={48} height={10} />
+        {/* Graphite's one pill, its reason on hover: an open PR's waits for the row's details, unless GitHub merges it with
+            the viewed PR as a stack, while a merged or closed one says so at once. No mergeability known shows nothing. */}
+        {waiting && pr.state === 'OPEN' && !readyToMerge ? (
+          <Skeleton width={72} height={10} />
         ) : (
-          <MergeStatus status={pr.mergeStatus} state={pr.state} />
+          pill && (
+            <StatusPill tone={pill.tone} icon={pill.icon} title={pill.title}>
+              {pill.label}
+            </StatusPill>
+          )
         )}
         <RelativeTime date={pr.updatedAt} />
       </span>

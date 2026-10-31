@@ -128,59 +128,6 @@
   color: var(--gg-fg-subtle);
 }
 
-/* CiStatus */
-.gg-ci-bar {
-  display: flex;
-  gap: 2px;
-  width: 100%;
-  height: 6px;
-}
-.gg-ci-bar--dense {
-  gap: 1px;
-}
-.gg-ci-bar__seg {
-  flex: 1 1 0;
-  min-width: 1px;
-  border-radius: 1px;
-  background: var(--gg-border);
-}
-.gg-ci-bar__seg:first-child {
-  border-radius: 3px 1px 1px 3px;
-}
-.gg-ci-bar__seg:last-child {
-  border-radius: 1px 3px 3px 1px;
-}
-.gg-ci-bar__seg:only-child {
-  border-radius: 3px;
-}
-.gg-ci-bar__seg--success {
-  background: var(--gg-success);
-}
-.gg-ci-bar__seg--danger {
-  background: var(--gg-danger);
-}
-.gg-ci-bar__seg--attention {
-  background: var(--gg-attention);
-}
-.gg-ci-compact {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  color: var(--gg-fg-muted);
-  white-space: nowrap;
-}
-.gg-ci-compact--success .gg-icon {
-  color: var(--gg-success);
-}
-.gg-ci-compact--danger .gg-icon {
-  color: var(--gg-danger);
-}
-.gg-ci-compact--attention .gg-icon {
-  color: var(--gg-attention);
-}
-
 /* LabelChip (gg-label-chip): github.com's label colour maths, so any label colour stays readable in both themes. */
 .gg-label-chip {
   --perceived-lightness: calc(((var(--label-r) * 0.2126) + (var(--label-g) * 0.7152) + (var(--label-b) * 0.0722)) / 255);
