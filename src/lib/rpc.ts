@@ -64,6 +64,7 @@ export const STAGES_A_WRITE_CHANGES = {
   'pr.markFileViewed': ['files'],
   'pr.setDraft': ['header', 'activity', 'mergeBox'],
   'pr.close': ['header', 'activity', 'mergeBox'],
+  'pr.reopen': ['header', 'activity', 'mergeBox'],
   // The page moves on to GitHub's page for the revert pull request; nothing shown here changes.
   'pr.revert': [],
   // The merge box also says which PRs of a native stack auto-merge covers, which the stack card marks.
@@ -301,6 +302,8 @@ const RPC_SCHEMAS = {
       ]),
     }),
   },
+  /** Reopens a closed PR, as GitHub's "Reopen pull request" does, its branch restored first where Close deleted it. */
+  'pr.reopen': { args: z.object({ prId: z.string() }), result: z.undefined() },
   /** Reverts a merged PR the way GitHub's Revert button does: a branch undoing it, and where GitHub opens its pull request. */
   'pr.revert': { args: z.object({ prId: z.string() }), result: z.object({ url: z.string() }) },
   'pr.setAutoMerge': { args: z.object({ prId: z.string(), enabled: z.boolean(), method: mergeMethodSchema }), result: z.undefined() },

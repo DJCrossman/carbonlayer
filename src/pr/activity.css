@@ -1,6 +1,7 @@
 /* Activity timeline. Cards for comments and reviews, one grey line per event, a thin rail behind them. */
 
-.pr-activity { margin-top: 24px; }
+/* The status card's View activity lands its heading a little below the top, as g d lands the description. */
+.pr-activity { margin-top: 24px; scroll-margin-top: 12px; }
 
 .timeline {
   position: relative;

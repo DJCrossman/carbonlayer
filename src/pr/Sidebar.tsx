@@ -24,6 +24,7 @@ export function Sidebar({
   mergeMethod,
   onAutoMerge,
   onRevert,
+  onReopen,
   onMerge,
   onMergeStack,
   mergeConfirming,
@@ -48,6 +49,8 @@ export function Sidebar({
   onAutoMerge: (enabled: boolean, method: MergeMethod) => Promise<boolean>;
   /** Reverts the merged PR; resolves false when it did not, after saying why. */
   onRevert: () => Promise<boolean>;
+  /** Reopens the closed PR; resolves false when it did not, after saying why. */
+  onReopen: () => Promise<boolean>;
   onMerge: (method: MergeMethod) => Promise<boolean>;
   /** Opens the dialog that merges the stack (MergeStackDialog.tsx), with the method picked here. */
   onMergeStack: (method: MergeMethod) => void;
@@ -84,6 +87,7 @@ export function Sidebar({
         mergeMethod={mergeMethod}
         onAutoMerge={onAutoMerge}
         onRevert={onRevert}
+        onReopen={onReopen}
         ownMergeWhenReady={backgroundMerge?.whenReady ? backgroundMerge : null}
         onDropBackgroundMerge={onDropBackgroundMerge}
       />
@@ -164,6 +168,7 @@ function StatusCard({
   mergeMethod,
   onAutoMerge,
   onRevert,
+  onReopen,
   ownMergeWhenReady,
   onDropBackgroundMerge,
 }: {
@@ -171,6 +176,7 @@ function StatusCard({
   mergeMethod: MergeMethod;
   onAutoMerge: (enabled: boolean, method: MergeMethod) => Promise<boolean>;
   onRevert: () => Promise<boolean>;
+  onReopen: () => Promise<boolean>;
   /**
    * CarbonLayer's own "Merge when ready" for this PR's stack, armed where GitHub refused its stack auto-merge to the
    * repository: under way, which shows the switch on, or stopped, which says why until it is dismissed.
@@ -181,6 +187,7 @@ function StatusCard({
   const [busy, setBusy] = useState(false);
   // Reverting creates a branch on GitHub, so it asks first.
   const [revert, setRevert] = useState<'idle' | 'confirming' | 'reverting'>('idle');
+  const [reopening, setReopening] = useState(false);
   // The method Merge when ready merges with: auto-merge's own while it is on (GitHub's or CarbonLayer's), else the one
   // picked here.
   const [picked, setPicked] = useState(mergeMethod);
@@ -243,6 +250,28 @@ function StatusCard({
             </Button>
           </div>
         </div>
+      )}
+      {/* As Graphite's closed card: the activity, which says who closed it and when, then Reopen PR where the viewer may. */}
+      {pr.state === 'CLOSED' && (
+        <>
+          <Button className="side-action-button" onClick={() => document.querySelector('.pr-activity')?.scrollIntoView({ block: 'start' })}>
+            View activity
+          </Button>
+          {pr.viewerCanUpdate && (
+            <Button
+              className="side-action-button"
+              disabled={reopening}
+              onClick={async () => {
+                setReopening(true);
+                // Reopened, the card is an open PR's by now; refused, it stays, with the reason in a toast.
+                await onReopen();
+                setReopening(false);
+              }}
+            >
+              {reopening ? 'Reopening…' : 'Reopen PR'}
+            </Button>
+          )}
+        </>
       )}
       {/* GitHub never allows auto-merge on a draft, and Graphite shows a draft no switch. */}
       {pr.state === 'OPEN' && !pr.isDraft && (pr.viewerCanEnableAutoMerge || on) && (

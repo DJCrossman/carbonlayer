@@ -3,7 +3,7 @@
 
 import { browser } from 'wxt/browser';
 import { z } from 'zod/mini';
-import type { AssigneeCandidate, ChangedFileDiff, Emoji, GraphiteStackPlace, LabelCandidate, Mention, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, ReviewThread, SavedReply, StackBranches, StackEntry, TopRepository, View, ViewResult } from '../lib/model';
+import type { AssigneeCandidate, ChangedFileDiff, Emoji, GraphiteStackPlace, LabelCandidate, Mention, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, ReviewThread, SavedReply, StackBranches, StackEntry, TimelineItem, TopRepository, View, ViewResult } from '../lib/model';
 import { rpc, type DiffEntryLine, type InboxRowToEnrich, type LineRange, type MergeCommit, type MergeMethod, type RpcMethods } from '../lib/rpc';
 import { getSettings, setSettings, watchSettings, type Settings, type SettingsStorage } from '../lib/settings';
 import { STACK_MERGES, stackMergesSchema, type StackMerge, type StackMergeRequest, type stackMergeMessage } from '../lib/stack-merges';
@@ -69,6 +69,8 @@ export interface DataSource {
   setDraft(prId: string, draft: boolean): Promise<void>;
   /** Closes an open PR without merging it, then deletes its branch; resolves with what became of the branch. */
   close(prId: string): Promise<RpcMethods['pr.close']['result']>;
+  /** Reopens a closed PR, its branch restored first where it was deleted. */
+  reopen(prId: string): Promise<void>;
   /** Reverts a merged PR; resolves with GitHub's page for the revert pull request. */
   revert(prId: string): Promise<{ url: string }>;
   setAutoMerge(prId: string, enabled: boolean, method: MergeMethod): Promise<void>;
@@ -146,6 +148,7 @@ export function createRpcDataSource(): DataSource {
     markFileViewed: (prId, path, viewed) => rpc('pr.markFileViewed', { prId, path, viewed }),
     setDraft: (prId, draft) => rpc('pr.setDraft', { prId, draft }),
     close: (prId) => rpc('pr.close', { prId }),
+    reopen: (prId) => rpc('pr.reopen', { prId }),
     revert: (prId) => rpc('pr.revert', { prId }),
     setAutoMerge: (prId, enabled, method) => rpc('pr.setAutoMerge', { prId, enabled, method }),
     rebaseStack: (prId) => rpc('pr.rebaseStack', { prId }),
@@ -289,6 +292,9 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
       }),
     ]);
   };
+  // The viewer's closes and reopens of each fixture PR, by its id, as GitHub's timeline lists them: the stages answer the
+  // PR's state by the last of them, and its timeline with them, from then on, as GitHub would answer the reload that follows.
+  const closesAndReopens = new Map<string, TimelineItem[]>();
   // Each fixture comment's Markdown as the last edit left it, by its id on the page (the description's by its PR's id):
   // what the stages answer from then on, as GitHub would answer the reload that follows an edit.
   const edits = new Map<string, string>();
@@ -298,10 +304,12 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
       return markdown === undefined ? comment : { ...comment, bodyHtml: renderedByGitHub(markdown), editableMarkdown: markdown };
     };
     const description = edits.get(pr.id);
+    const stateEvents = closesAndReopens.get(pr.id) ?? [];
     return {
       ...pr,
       ...(description !== undefined && { bodyHtml: renderedByGitHub(description), editableDescription: description }),
-      timeline: pr.timeline.map((item) => (item.kind === 'comment' || item.kind === 'review' ? edit(item, item.id) : item)),
+      ...(stateEvents.length > 0 && { state: stateEvents.at(-1)?.kind === 'closed' ? 'CLOSED' : 'OPEN' }),
+      timeline: [...pr.timeline.map((item) => (item.kind === 'comment' || item.kind === 'review' ? edit(item, item.id) : item)), ...stateEvents],
       threads: pr.threads.map((thread) => ({ ...thread, comments: thread.comments.map((comment) => edit(comment, comment.id)) })),
     };
   };
@@ -472,9 +480,35 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     resolveThread: (...args) => log('resolveThread', ...args),
     markFileViewed: (...args) => log('markFileViewed', ...args),
     setDraft: (...args) => log('setDraft', ...args),
-    close: async (...args) => {
-      await log('close', ...args);
+    // Closed and reopened by the viewer a moment later, as GitHub would: the stages answer the new state from then on.
+    close: async (prId) => {
+      await log('close', prId);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const earlier = closesAndReopens.get(prId) ?? [];
+      closesAndReopens.set(prId, [
+        ...earlier,
+        {
+          kind: 'closed',
+          id: `closed-${prId}-${earlier.length}`,
+          actor: { login: 'octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/583231?v=4', url: 'https://github.com/octocat' },
+          createdAt: new Date().toISOString(),
+        },
+      ]);
       return { branch: { kind: 'deleted' } };
+    },
+    reopen: async (prId) => {
+      await log('reopen', prId);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const earlier = closesAndReopens.get(prId) ?? [];
+      closesAndReopens.set(prId, [
+        ...earlier,
+        {
+          kind: 'reopened',
+          id: `reopened-${prId}-${earlier.length}`,
+          actor: { login: 'octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/583231?v=4', url: 'https://github.com/octocat' },
+          createdAt: new Date().toISOString(),
+        },
+      ]);
     },
     revert: async (...args) => {
       await log('revert', ...args);

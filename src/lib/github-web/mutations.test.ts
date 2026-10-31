@@ -206,6 +206,26 @@ describe('mutations', () => {
     expect(writes()).toEqual([closing]);
   });
 
+  it('reopens a PR, first restoring its branch where GitHub says it was deleted', async () => {
+    const writes = () => sent.splice(0).map(({ method, path }) => [method, path]);
+
+    reads = { [`${P}/merge_box`]: { pullRequest: { viewerCanRestoreHeadRef: true } } };
+    await mutations['pr.reopen']({ prId: 'PR_1' });
+    expect(writes()).toEqual([
+      ['POST', `${P}/restore_head_ref`],
+      ['POST', `${P}/reopen_pull_request`],
+    ]);
+
+    reads = { [`${P}/merge_box`]: { pullRequest: { viewerCanRestoreHeadRef: false } } };
+    await mutations['pr.reopen']({ prId: 'PR_1' });
+    expect(writes()).toEqual([['POST', `${P}/reopen_pull_request`]]);
+
+    // Not knowing whether its branch is there, it sends nothing.
+    reads = {};
+    await expect(mutations['pr.reopen']({ prId: 'PR_1' })).rejects.toThrow('GitHub answered 404 for /o/r/pull/1/page_data/merge_box');
+    expect(writes()).toEqual([]);
+  });
+
   it('turns auto-merge on for a GitHub-native stack through the stack queue, and off as for a PR alone', async () => {
     reads = { '/o/r/pull/2/page_data/merge_box': { mergeRequirements: { commitMessageHeadline: 'Add zones (#2)', commitMessageBody: '* zones' } } };
     await mutations['pr.setAutoMerge']({ prId: 'PR_2', enabled: true, method: 'SQUASH' });

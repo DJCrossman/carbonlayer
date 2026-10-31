@@ -136,6 +136,20 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
       return { branch: { kind: 'failed', reason: error instanceof Error ? error.message : String(error) } };
     }
   },
+  'pr.reopen': async ({ prId }) => {
+    const pull = pullRequestFor(prId);
+    // GitHub cannot reopen a PR whose branch is gone, as Close leaves it where it may delete it, so the branch comes back
+    // first, as the merge box's "Restore branch" sends it, where the merge box says the viewer may
+    // (docs/research/github-web-mutations.md, item 8). A branch restored for a reopen GitHub then refuses stays.
+    const { pullRequest } = await getJson(
+      `${pull.path}/page_data/merge_box`,
+      z.object({ pullRequest: z.object({ viewerCanRestoreHeadRef: z.nullish(z.boolean()) }) }),
+    );
+    if (pullRequest.viewerCanRestoreHeadRef) await send(`${pull.path}/page_data/restore_head_ref`, 'POST');
+    // Then GitHub's own reopen, an empty POST as its close is (item 7), at the route its React route map names (item 8);
+    // not yet tried against GitHub, 2026-10-31.
+    await send(`${pull.path}/page_data/reopen_pull_request`, 'POST');
+  },
   'pr.revert': async ({ prId }) => {
     // GitHub's own Revert button: an empty POST that makes a branch undoing the merge, then redirects to the prefilled
     // "Open a pull request" page for it, where the revert pull request is created (GitHub's PR bundle, 2026-10-14).

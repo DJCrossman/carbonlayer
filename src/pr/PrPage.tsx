@@ -268,6 +268,10 @@ function PrView({
     );
   }
 
+  function reopenPullRequest() {
+    return mutate(STAGES_A_WRITE_CHANGES['pr.reopen'], () => source.reopen(pr.id), 'Could not reopen the pull request', { success: `Reopened #${pr.number}` });
+  }
+
   function merge(method: MergeMethod) {
     return mutate(STAGES_A_WRITE_CHANGES['pr.merge'], () => source.merge(pr.id, method, pr.headOid), 'Could not merge', { success: `Merged #${pr.number}` });
   }
@@ -483,6 +487,7 @@ function PrView({
     onMenuOpenChange: setMenuOpen,
     onSetDraft: setDraft,
     onClosePullRequest: closePullRequest,
+    onReopenPullRequest: reopenPullRequest,
     onCopied: () => showToast('Link copied'),
   };
 
@@ -590,6 +595,7 @@ function PrView({
               return false;
             }
           }}
+          onReopen={reopenPullRequest}
           onMerge={merge}
           onMergeStack={setMergingStack}
           mergeConfirming={mergeConfirming}
@@ -858,6 +864,7 @@ function PrActions({
   onMenuOpenChange,
   onSetDraft,
   onClosePullRequest,
+  onReopenPullRequest,
   onCopied,
   inSidebar = false,
 }: {
@@ -885,6 +892,7 @@ function PrActions({
   onMenuOpenChange: (open: boolean) => void;
   onSetDraft: (draft: boolean) => Promise<boolean>;
   onClosePullRequest: () => Promise<boolean>;
+  onReopenPullRequest: () => Promise<boolean>;
   onCopied: () => void;
   inSidebar?: boolean;
 }) {
@@ -993,6 +1001,22 @@ function PrActions({
                 >
                   <Icon name="git-pull-request-closed" size={14} />
                   Close pull request
+                </button>
+              </>
+            )}
+            {/* A closed PR's in its place, as GitHub's "Reopen pull request". */}
+            {pr.state === 'CLOSED' && pr.viewerCanUpdate && (
+              <>
+                <div role="separator" className="pr-menu-separator" />
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    onMenuOpenChange(false);
+                    void onReopenPullRequest();
+                  }}
+                >
+                  <Icon name="git-pull-request" size={14} />
+                  Reopen pull request
                 </button>
               </>
             )}
