@@ -1,5 +1,6 @@
 // Icon for a PR's review decision or one reviewer's state: approved green, changes requested red, awaiting review yellow
-// clock, none grey. The inbox's Review column is reviewStatusIcon (status-icons.ts).
+// clock, a review that only commented blue (as Graphite's), none grey. The inbox's Review column is reviewStatusIcon
+// (status-icons.ts).
 import type { ReviewDecision, ReviewerSummary } from '../lib/model';
 import { Icon, type IconName } from './Icon';
 import './ui.css';
@@ -13,12 +14,12 @@ export function ReviewStatus({ state, size = 16 }: { state: ReviewDecision | Rev
   );
 }
 
-const APPEARANCE: Record<ReviewDecision | ReviewerSummary['state'], [IconName, 'success' | 'danger' | 'attention' | 'muted' | 'subtle', string]> = {
+const APPEARANCE: Record<ReviewDecision | ReviewerSummary['state'], [IconName, 'success' | 'danger' | 'attention' | 'accent' | 'muted' | 'subtle', string]> = {
   APPROVED: ['check', 'success', 'Approved'],
   CHANGES_REQUESTED: ['file-diff', 'danger', 'Changes requested'],
   REVIEW_REQUIRED: ['clock', 'attention', 'Review required'],
   PENDING: ['clock', 'attention', 'Awaiting review'],
-  COMMENTED: ['comment', 'muted', 'Commented'],
+  COMMENTED: ['comment', 'accent', 'Commented'],
   DISMISSED: ['x', 'muted', 'Review dismissed'],
   NONE: ['circle', 'subtle', 'No review required'],
 };

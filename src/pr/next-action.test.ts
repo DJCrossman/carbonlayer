@@ -38,6 +38,10 @@ describe('nextActionFor', () => {
     expect(nextActionFor({ ...ready, ...overrides })).toMatchObject({ kind, title });
   });
 
+  it('leaves who closed a PR without merging to the status card', () => {
+    expect(nextActionFor({ ...ready, state: 'CLOSED' })).toMatchObject({ kind: 'closed', title: 'Closed', detail: null });
+  });
+
   it("says in GitHub's words what in its stack keeps it from merging, before waiting on the PRs below it; a stack behind its base merges all the same", () => {
     const section = (kind: NonNullable<PrDetail['stackSection']>['kind']) => ({ stackSection: { kind, baseRefName: 'main', viewerCanRebase: true } });
     expect(nextActionFor({ ...pr42, ...section('rebase-required') })).toMatchObject({

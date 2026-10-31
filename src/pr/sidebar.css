@@ -32,6 +32,8 @@
   flex-wrap: wrap;
 }
 .side-status-into { font-size: 12px; }
+/* Who merged or closed the PR, on a line of its own under the pill and Revert, as Graphite's sentence under its title. */
+.side-status-ended { order: 1; flex-basis: 100%; font-size: 12px; }
 
 .side-switch-row {
   display: flex;

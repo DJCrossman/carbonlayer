@@ -1,6 +1,7 @@
 // The sidebar's Reviewers card: who is asked to review and where they stand, and GitHub's controls for changing that.
 // The gear (or r e) opens a picker whose ticks are sent as one change when it closes; × withdraws a pending request;
-// ↻ asks someone who already reviewed to look again. Every change is followed by a refetch, which shows the outcome.
+// ↻ asks someone who already reviewed to look again, and the header's ↻ asks everyone it can, as Graphite's "Re-request
+// all reviews". Every change is followed by a refetch, which shows the outcome.
 import { useEffect, useRef, useState } from 'react';
 import type { ReviewerChange } from '../app/data-source';
 import type { PrDetail, ReviewerCandidate, ReviewerSummary } from '../lib/model';
@@ -9,6 +10,7 @@ import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Icon } from '../ui/Icon';
 import { ReviewStatus } from '../ui/ReviewStatus';
+import { showToast } from '../ui/Toast';
 import './reviewers.css';
 
 export function ReviewersCard({
@@ -31,6 +33,8 @@ export function ReviewersCard({
   const [flipped, setFlipped] = useState<ReadonlyMap<string, ReviewerCandidate>>(new Map());
   // GitHub lets whoever can edit the PR change its reviewers, while it is open.
   const canEdit = pr.viewerCanUpdate && pr.state === 'OPEN';
+  // Whoever a row's ↻ can ask again, which the header's ↻ asks all at once.
+  const reRequestable = pr.reviewers.flatMap((reviewer) => (reviewer.id && reviewer.canReRequest ? [{ ...reviewer, id: reviewer.id }] : []));
   if (pr.reviewers.length === 0 && !canEdit) return null;
 
   async function save(work: () => Promise<boolean>) {
@@ -54,6 +58,25 @@ export function ReviewersCard({
         <h3 className="side-card-title">
           Reviewers {busy && <span className="pr-muted">· saving…</span>}
         </h3>
+        {reRequestable.length > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            icon="sync"
+            aria-label="Re-request all reviews"
+            title="Re-request all reviews"
+            disabled={busy}
+            onClick={() =>
+              void save(async () => {
+                // One at a time, through the rows' own request, whose toasts each name one reviewer; a full set is counted once.
+                let asked = 0;
+                for (const reviewer of reRequestable) if (await onReRequest(reviewer)) asked += 1;
+                if (asked > 1 && asked === reRequestable.length) showToast(`Asked ${asked} reviewers to review again`);
+                return asked === reRequestable.length;
+              })
+            }
+          />
+        )}
         {canEdit && (
           <Button
             variant="ghost"
@@ -83,7 +106,7 @@ export function ReviewersCard({
           onClose={closePicker}
         />
       )}
-      {pr.reviewers.length === 0 && !pickerOpen && <div className="pr-muted">No reviewers yet</div>}
+      {pr.reviewers.length === 0 && !pickerOpen && <div className="pr-muted">No reviewers</div>}
       <ul className="side-list">
         {pr.reviewers.map((reviewer) => {
           const { id } = reviewer;

@@ -92,6 +92,9 @@
 .gg-review--attention {
   color: var(--gg-attention);
 }
+.gg-review--accent {
+  color: var(--gg-accent);
+}
 .gg-review--muted {
   color: var(--gg-fg-muted);
 }

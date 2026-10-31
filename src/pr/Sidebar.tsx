@@ -9,7 +9,6 @@ import { isUnderWay, type StackMerge } from '../lib/stack-merges';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Icon, type IconName } from '../ui/Icon';
-import { RelativeTime } from '../ui/RelativeTime';
 import { Skeleton } from '../ui/Skeleton';
 import type { CheckReruns } from './check-reruns';
 import { followLink, goToPr } from './navigation';
@@ -205,10 +204,14 @@ function StatusCard({
           <span className="pr-muted side-status-into">
             into <span className="pr-mono">{pr.baseRefName}</span>
           </span>
+        ) : pr.state === 'MERGED' ? (
+          <span className="pr-muted side-status-ended">
+            {endedBy && `${endedBy.login} `}merged into {pr.baseRefName}
+            {endedAt && ` on ${new Date(endedAt).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' })}`}
+          </span>
         ) : (
-          <span className="pr-muted">
-            {endedBy && `by ${endedBy.login} `}
-            {endedAt && <RelativeTime date={endedAt} ago />}
+          <span className="pr-muted side-status-ended" title={endedAt ? new Date(endedAt).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' }) : undefined}>
+            This PR was closed {endedBy && `by ${endedBy.login} `}without merging
           </span>
         )}
         {pr.state === 'MERGED' && pr.viewerCanUpdate && revert === 'idle' && (
@@ -286,6 +289,10 @@ function StatusCard({
         <p className="pr-muted side-checks-empty">
           This pull request and {mergingWithIt} {mergingWithIt === 1 ? 'other' : 'others'} in the stack will automatically merge when they all meet the merge requirements.
         </p>
+      )}
+      {/* Who merges a PR alone once the switch turned GitHub's auto-merge on; a stack's and CarbonLayer's own say so around it. */}
+      {pr.state === 'OPEN' && pr.autoMerge !== null && mergingWithIt === 0 && (
+        <p className="pr-muted side-checks-empty">GitHub merges this pull request once its requirements are met</p>
       )}
       {/* CarbonLayer's own, in place of GitHub's stack auto-merge: who merges the stack and why, and where it is. */}
       {armed && (
@@ -543,8 +550,8 @@ function ChecksCard({ pr, reruns }: { pr: PrDetail; reruns: CheckReruns }) {
   // Failing first, then running, then everything else.
   const urgency = (state: string) => (state === 'FAILURE' || state === 'CANCELLED' ? 0 : state === 'PENDING' ? 1 : 2);
   const sorted = [...checks].sort((a, b) => urgency(a.state) - urgency(b.state));
-  const hidePassed = checks.length > 8 && !showPassed;
-  const visible = hidePassed ? sorted.filter((check) => check.state !== 'SUCCESS') : sorted;
+  // As on Graphite, only the checks that have not passed are listed; the passed ones wait behind Show N passed.
+  const visible = showPassed ? sorted : sorted.filter((check) => check.state !== 'SUCCESS');
   const segments = [
     ['success', passed.length],
     ['danger', checks.filter((check) => urgency(check.state) === 0).length],
@@ -614,15 +621,17 @@ function ChecksCard({ pr, reruns }: { pr: PrDetail; reruns: CheckReruns }) {
           count > 0 ? <span key={tone} className={`is-${tone}`} style={{ flexGrow: count }} /> : null,
         )}
       </div>
+      {passed.length === checks.length && <p className="pr-muted side-checks-empty">No actionable checks</p>}
       <ul className="side-list checks-list">
         {visible.map((check) => {
           const seconds =
             check.startedAt && check.completedAt ? Math.round((Date.parse(check.completedAt) - Date.parse(check.startedAt)) / 1000) : null;
+          // An optional check's failure is grey, as on Graphite: only a required one's stands in the way.
           const [icon, tone] =
             check.state === 'SUCCESS'
               ? (['check-circle-fill', 'success'] as const)
               : urgency(check.state) === 0
-                ? (['x-circle-fill', 'danger'] as const)
+                ? (['x-circle-fill', pr.requiredCheckNames.includes(check.name) ? 'danger' : 'muted'] as const)
                 : check.state === 'PENDING'
                   ? (['dot-fill', 'attention'] as const)
                   : (['skip', 'muted'] as const);
@@ -651,7 +660,7 @@ function ChecksCard({ pr, reruns }: { pr: PrDetail; reruns: CheckReruns }) {
           );
         })}
       </ul>
-      {checks.length > 8 && passed.length > 0 && (
+      {passed.length > 0 && (
         <button className="side-more" onClick={() => setShowPassed((value) => !value)}>
           {showPassed ? 'Hide passed checks' : `Show ${passed.length} passed`}
         </button>

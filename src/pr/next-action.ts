@@ -14,7 +14,8 @@ import type { IconName } from '../ui/Icon';
  */
 export function nextActionFor(pr: PrDetail, unknown: readonly PrStage[] = []): NextAction {
   if (pr.state === 'MERGED') return { kind: 'merged', tone: 'done', title: 'Merged', detail: null };
-  if (pr.state === 'CLOSED') return { kind: 'closed', tone: 'neutral', title: 'Closed', detail: 'Closed without merging.' };
+  // A closed PR's status card says who closed it without merging, so its next step says no more, as Graphite's.
+  if (pr.state === 'CLOSED') return { kind: 'closed', tone: 'neutral', title: 'Closed', detail: null };
   // Only a required check's failure stands in the way: GitHub merges over optional ones, and so does Graphite.
   const required = pr.ci.checks.filter((check) => pr.requiredCheckNames.includes(check.name));
   const requiredFailing = required.filter((check) => check.state === 'FAILURE').length;
