@@ -228,6 +228,13 @@ stack entry's statuses and an inbox row's columns until their first row details;
 first answer, or, grouped by stack, until its open rows' branches are known; and the top repositories until their first
 page.
 
+Activity entries (`src/pr/Activity.tsx`) read as Graphite's Discussion: a review's header says its verdict as a verb,
+"approved" in green, "requested changes" in red, "commented" or "dismissed their review" muted; a review without a body
+is one line on its verdict's tint (`is-bar`), its inline comments link after its time, and one with a body keeps its card,
+with a green or red left border for an approval or changes requested. A comment or review summary GitHub's conversation
+marks edited (`.js-comment-edit-history` in its header, `edited` in `src/lib/github-web/timeline.ts`) says "(edited)"
+after its time. Commits, force-pushes and review requests, which Graphite's Discussion leaves out, stay.
+
 Comment links: every comment GitHub gives a permalink to has a Copy link (`CopyLink` in `src/pr/Comment.tsx`, a link
 icon at the end of its header, or in the description's top corner, out of sight until the pointer is on the comment or
 the keyboard reaches it) that puts the permalink on the clipboard and says so in a toast, as GitHub's "Copy link" and

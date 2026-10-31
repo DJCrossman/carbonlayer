@@ -19,13 +19,17 @@ export interface Editable {
   save: (body: string) => Promise<boolean>;
 }
 
-export function Comment({ author, createdAt, bodyHtml, url, action, footer, compact, edit, onDelete }: {
+export function Comment({ author, createdAt, bodyHtml, url, action, edited, aside, footer, compact, edit, onDelete }: {
   author: UserRef | null;
   createdAt: string;
   bodyHtml: string;
   url?: string;
-  /** Shown after the author's login, e.g. "commented" or a review badge. */
+  /** Shown after the author's login, e.g. "commented" or a review's verdict, "approved". */
   action?: ReactNode;
+  /** Edited since it was posted, which a muted "(edited)" after its time says, as Graphite's does. */
+  edited?: boolean;
+  /** Shown after its time, e.g. the link to the inline comments a review without a body left. */
+  aside?: ReactNode;
   /** Shown under the body, e.g. its reactions. */
   footer?: ReactNode;
   compact?: boolean;
@@ -63,6 +67,8 @@ export function Comment({ author, createdAt, bodyHtml, url, action, footer, comp
         ) : (
           <RelativeTime date={createdAt} />
         )}
+        {edited && <span className="pr-muted">(edited)</span>}
+        {aside}
         {edit && !editing && <EditButton ref={editButton} onClick={() => setEditing(true)} />}
         {url && <CopyLink url={url} />}
         {onDelete && !editing && (

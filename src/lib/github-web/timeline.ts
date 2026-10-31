@@ -55,6 +55,8 @@ export function timelineFrom(
         createdAt,
         url: `${context.pageUrl}#${review.id}`,
         threadIds: context.threadIdsByReview.get(review.id.replace('pullrequestreview-', '')) ?? [],
+        // Its summary edited, which its header marks as a comment's is, not a comment edited in a thread it opened.
+        ...([...review.querySelectorAll('.js-comment-edit-history')].some((marker) => !review.contains(marker.closest('turbo-frame'))) && { edited: true }),
         ...reactionsIn(reactionForm),
         ...editingIn(actions, review),
       });
@@ -76,6 +78,8 @@ export function timelineFrom(
           bodyHtml: body.innerHTML.trim(),
           createdAt,
           url: `${context.pageUrl}#${comment.id}`,
+          // GitHub's header marks an edited comment with its edit history, "• edited" (or "edited by mona") opening it.
+          ...(comment.querySelector('.js-comment-edit-history') && { edited: true }),
           ...reactionsIn(comment.querySelector('form.js-pick-reaction')),
           ...editingIn(comment.querySelector('.timeline-comment-actions'), comment.querySelector('.js-comment')),
           // The viewer's own, where its menu offers GitHub's Delete (`form.js-comment-delete`); GitHub deletes no review.

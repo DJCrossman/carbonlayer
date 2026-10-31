@@ -147,6 +147,39 @@ describe('timelineFrom', () => {
       editableMarkdown: 'Ship it',
     });
   });
+
+  it("marks a comment or a review's summary edited where its header shows GitHub's edit history, not a review whose thread comment was edited", () => {
+    // The shape of GitHub's conversation page (nodejs/node#67062 and #62239, 2026-10-29, cut down): an edited comment's
+    // header holds its edit history, "• edited" or "edited by …", and an unedited one's holds none.
+    const history = (by: string) => `<span class="js-comment-edit-history"><span class="d-inline-block color-fg-muted">&#8226;</span>
+      <details class="details-overlay details-reset d-inline-block dropdown"><summary class="btn-link no-underline color-fg-muted js-notice"><span>${by}</span></summary>
+        <details-menu class="dropdown-menu js-comment-edit-history-menu" src="/user_content_edits/show_edit_history_log/IC_1" preload></details-menu></details></span>`;
+    const comment = (id: number, edited: string) => `<div class="TimelineItem js-comment-container">
+      <div class="timeline-comment-group TimelineItem-body" id="issuecomment-${id}"><div class="timeline-comment js-comment">
+        <div class="timeline-comment-header"><h3><strong><a class="author">ana</a></strong> commented
+          <a href="#issuecomment-${id}" class="Link--secondary js-timestamp"><relative-time datetime="2026-10-27T15:02:03Z"></relative-time></a>${edited}</h3></div>
+        <div class="comment-body"><p>Comment ${id}</p></div></div></div>
+    </div>`;
+    const review = (id: number, edited: string, threadEdited: string) => `<div id="pullrequestreview-${id}" class="js-comment">
+      <div class="TimelineItem"><div class="TimelineItem-body"><a class="author">bo</a> reviewed <relative-time datetime="2026-10-28T09:00:00Z"></relative-time></div></div>
+      <div class="TimelineItem"><div class="TimelineItem-body"><div id="pullrequestreview-${id}" class="timeline-comment-group">
+        <div class="timeline-comment-header"><h3><a class="author">bo</a> left a comment${edited}</h3></div>
+        <div class="comment-body"><p>Review ${id}</p></div></div></div></div>
+      <div class="TimelineItem"><turbo-frame id="review-thread-or-comment-id-${id}"><div id="discussion_r${id}">
+        <h3><a class="author">ana</a>${threadEdited}</h3><div class="comment-body"><p>nit</p></div></div></turbo-frame></div>
+    </div>`;
+    const page = new DOMParser().parseFromString(
+      `<turbo-frame id="repo-content-turbo-frame" target="_top">${comment(1, history('edited by joyeecheung'))}${comment(2, '')}${review(3, history('edited'), '')}${review(4, '', history('edited'))}</turbo-frame>`,
+      'text/html',
+    );
+    const timeline = timelineFrom(page, { pageUrl: '', threadIdsByReview: new Map(), commits: new Map() });
+    expect(timeline[0]).toMatchObject({ kind: 'comment', id: 'issuecomment-1', edited: true });
+    expect(timeline[1]).toMatchObject({ kind: 'comment', id: 'issuecomment-2' });
+    expect(timeline[1]).not.toHaveProperty('edited');
+    expect(timeline[2]).toMatchObject({ kind: 'review', id: 'pullrequestreview-3', edited: true });
+    expect(timeline[3]).toMatchObject({ kind: 'review', id: 'pullrequestreview-4' });
+    expect(timeline[3]).not.toHaveProperty('edited');
+  });
 });
 
 describe('timelineFrom, on comments the viewer may edit', () => {

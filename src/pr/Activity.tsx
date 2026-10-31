@@ -15,6 +15,15 @@ import { CommentInput, Staged } from './primitives';
 import { Reactions } from './Reactions';
 import './activity.css';
 
+/** How a review's header says its verdict, as Graphite's does: a verb, coloured for an approval or changes requested. */
+const REVIEW_VERDICTS: Record<Extract<TimelineItem, { kind: 'review' }>['state'], { verb: string; tone: 'success' | 'danger' | 'muted' | 'attention' }> = {
+  APPROVED: { verb: 'approved', tone: 'success' },
+  CHANGES_REQUESTED: { verb: 'requested changes', tone: 'danger' },
+  COMMENTED: { verb: 'commented', tone: 'muted' },
+  DISMISSED: { verb: 'dismissed their review', tone: 'muted' },
+  PENDING: { verb: 'started a review', tone: 'attention' },
+};
+
 export function Activity({
   pr,
   stage,
@@ -58,6 +67,7 @@ export function Activity({
                         bodyHtml={entry.bodyHtml}
                         url={entry.url}
                         action={<span className="pr-muted">commented</span>}
+                        edited={entry.edited}
                         footer={<Reactions subjectId={entry.subjectId} reactions={entry.reactions} />}
                         edit={entry.editableMarkdown === undefined ? undefined : { markdown: entry.editableMarkdown, save: (body) => onEditComment(entry.id, entry.bodyVersion, body) }}
                         onDelete={entry.deletable ? () => onDeleteComment(entry.id) : undefined}
@@ -67,23 +77,30 @@ export function Activity({
                 case 'review': {
                   const inline = entry.threadIds.length;
                   const firstThread = entry.threadIds[0];
+                  const { verb, tone } = REVIEW_VERDICTS[entry.state];
+                  // A review without a body is one line on its verdict's tint, its inline comments after its time, as
+                  // Graphite's approval is; one with a body keeps its card, the link under it.
+                  const bar = entry.bodyHtml.trim() === '';
+                  const threads = firstThread && (
+                    <button className="timeline-threads" onClick={() => onRevealThread(firstThread)}>
+                      <Icon name="comment" size={12} />
+                      {inline} inline {inline === 1 ? 'comment' : 'comments'}
+                    </button>
+                  );
                   return (
-                    <li key={entry.id} className={`timeline-card is-review is-${entry.state.toLowerCase().replace('_', '-')}`}>
+                    <li key={entry.id} className={`timeline-card ${bar ? 'is-bar' : 'is-review'} is-${entry.state.toLowerCase().replace('_', '-')}`}>
                       <Comment
                         author={entry.author}
                         createdAt={entry.createdAt}
                         bodyHtml={entry.bodyHtml}
                         url={entry.url}
-                        action={<ReviewBadge state={entry.state} />}
+                        action={<span className={`review-verb is-${tone}`}>{verb}</span>}
+                        edited={entry.edited}
+                        aside={bar && threads}
                         footer={<Reactions subjectId={entry.subjectId} reactions={entry.reactions} />}
                         edit={entry.editableMarkdown === undefined ? undefined : { markdown: entry.editableMarkdown, save: (body) => onEditComment(entry.id, entry.bodyVersion, body) }}
                       />
-                      {firstThread && (
-                        <button className="timeline-threads" onClick={() => onRevealThread(firstThread)}>
-                          <Icon name="comment" size={12} />
-                          {inline} inline {inline === 1 ? 'comment' : 'comments'}
-                        </button>
-                      )}
+                      {!bar && threads}
                     </li>
                   );
                 }
@@ -188,24 +205,6 @@ function ActivitySkeleton() {
         <Skeleton width={200} height={10} />
       </li>
     </ol>
-  );
-}
-
-function ReviewBadge({ state }: { state: Extract<TimelineItem, { kind: 'review' }>['state'] }) {
-  const [label, tone, icon] = (
-    {
-      APPROVED: ['Approved', 'success', 'check'],
-      CHANGES_REQUESTED: ['Changes requested', 'danger', 'file-diff'],
-      COMMENTED: ['Commented', 'neutral', 'comment'],
-      DISMISSED: ['Dismissed', 'neutral', 'skip'],
-      PENDING: ['Pending', 'attention', 'clock'],
-    } as const
-  )[state];
-  return (
-    <span className={`review-badge is-${tone}`}>
-      <Icon name={icon} size={12} />
-      {label}
-    </span>
   );
 }
 

@@ -504,6 +504,8 @@ const detail42: PrDetail = {
       bodyHtml: '<p>Does this also cover the overnight zones? Their <code>closesAt</code> is before <code>opensAt</code>.</p>',
       createdAt: '2026-10-07T13:20:00Z',
       url: 'https://github.com/acme/widgets/pull/42#issuecomment-1',
+      // Edited since it was posted: its header says "(edited)".
+      edited: true,
       subjectId: 'IC_fixture1',
       reactions: [
         { content: 'THUMBS_UP', count: 2, viewerHasReacted: true, reactors: ['mona'] },

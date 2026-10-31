@@ -27,25 +27,21 @@
   background: var(--gg-bg);
   scroll-margin-top: 12px;
 }
+/* A review without a body, as Graphite's approval: one line on its verdict's tint, no border of its own. */
+.timeline-card.is-bar { border-color: transparent; background: var(--gg-neutral-bg); }
+.timeline-card.is-bar.is-approved { background: var(--gg-success-bg); }
+.timeline-card.is-bar.is-changes-requested { background: var(--gg-danger-bg); }
+.timeline-card.is-bar .timeline-threads { margin-top: 0; }
 /* Opened from a link to it (PrPage's useLinkedComment), as GitHub marks the comment a link names. */
 .timeline-card.is-linked { border-color: var(--gg-accent); box-shadow: 0 0 0 1px var(--gg-accent); }
 .timeline-card.is-review.is-approved { border-left: 3px solid var(--gg-success); }
 .timeline-card.is-review.is-changes-requested { border-left: 3px solid var(--gg-danger); }
 
-.review-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 20px;
-  padding: 0 7px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 500;
-}
-.review-badge.is-success { background: var(--gg-success-bg); color: var(--gg-success); }
-.review-badge.is-danger { background: var(--gg-danger-bg); color: var(--gg-danger); }
-.review-badge.is-neutral { background: var(--gg-neutral-bg); color: var(--gg-fg-muted); }
-.review-badge.is-attention { background: var(--gg-attention-bg); color: var(--gg-attention); }
+/* A review's verdict in its header, as Graphite says it: "approved" in green, "requested changes" in red. */
+.review-verb.is-success { color: var(--gg-success); }
+.review-verb.is-danger { color: var(--gg-danger); }
+.review-verb.is-muted { color: var(--gg-fg-muted); }
+.review-verb.is-attention { color: var(--gg-attention); }
 
 .timeline-threads {
   display: inline-flex;

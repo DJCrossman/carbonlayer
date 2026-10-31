@@ -294,7 +294,18 @@ export const reviewThreadSchema = z.object({
 export type ReviewThread = z.infer<typeof reviewThreadSchema>;
 
 export const timelineItemSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('comment'), id: z.string(), author: userRefSchema, bodyHtml: z.string(), createdAt: z.string(), url: z.string(), ...reactable, ...editable }),
+  z.object({
+    kind: z.literal('comment'),
+    id: z.string(),
+    author: userRefSchema,
+    bodyHtml: z.string(),
+    createdAt: z.string(),
+    url: z.string(),
+    /** Edited since it was posted, as GitHub's conversation marks it in its header ("edited", "edited by mona"); absent where it was not. */
+    edited: z.optional(z.boolean()),
+    ...reactable,
+    ...editable,
+  }),
   z.object({
     kind: z.literal('review'),
     id: z.string(),
@@ -305,6 +316,8 @@ export const timelineItemSchema = z.discriminatedUnion('kind', [
     url: z.string(),
     /** Thread ids opened by this review, so the UI can link review → threads. */
     threadIds: z.array(z.string()),
+    /** Its summary edited since it was posted, as GitHub's conversation marks it in its header; absent where it was not. */
+    edited: z.optional(z.boolean()),
     ...reactable,
     ...editable,
   }),
