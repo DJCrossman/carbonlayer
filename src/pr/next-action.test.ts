@@ -141,13 +141,23 @@ describe('nextActionFor', () => {
   });
 
   it('puts state before conflicts, conflicts before the stack, and the stack before reviews', () => {
-    expect(nextActionFor({ ...pr42, isDraft: true, mergeStatus: 'DIRTY' })).toMatchObject({ kind: 'draft' });
+    // #42 with its checks green: a draft's failing required check is its next step.
+    expect(nextActionFor({ ...pr42, ci: ready.ci, isDraft: true, mergeStatus: 'DIRTY' })).toMatchObject({ kind: 'draft' });
     expect(nextActionFor({ ...pr42, mergeStatus: 'DIRTY' })).toMatchObject({
       kind: 'conflicts',
       title: 'Merge conflicts',
       detail: "This PR can't be merged because of a conflict with the base branch",
     });
     expect(nextActionFor({ ...pr42, state: 'MERGED' })).toMatchObject({ kind: 'merged' });
+  });
+
+  it("names a draft's failing required check, as Graphite does, once the checks have arrived", () => {
+    expect(nextActionFor({ ...ready, isDraft: true, ci: pr42.ci, requiredCheckNames: [failingCheck.name] })).toMatchObject({
+      kind: 'checks-failed',
+      title: 'Required checks failed',
+      detail: '1 of 1 required check failed',
+    });
+    expect(nextActionFor({ ...ready, isDraft: true, ci: pr42.ci, requiredCheckNames: [failingCheck.name] }, ['checks'])).toMatchObject({ kind: 'draft' });
   });
 
   it('stops at "Checking mergeability…" while a stage the answer depends on has not arrived', () => {

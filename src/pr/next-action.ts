@@ -8,13 +8,26 @@ import type { IconName } from '../ui/Icon';
  * What stands between this PR and being merged, most fundamental first: its state, then conflicts, what GitHub says of
  * its native stack's branches, the stack below it, open conversations, required checks, reviews, and finally branch
  * protection. When nothing does, it is ready to merge, and in a GitHub-native stack that GitHub can merge from the
- * bottom up to it, ready to merge as a stack: GitHub's verdict then stands for the open PRs below it. While a stage that
- * a step depends on has not arrived (`unknown`), the answer stops at that step: "Checking mergeability…".
+ * bottom up to it, ready to merge as a stack: GitHub's verdict then stands for the open PRs below it. A draft is a draft,
+ * as Graphite's sidebar has it, unless a required check failed, and stays one while the checks have not arrived. While a
+ * stage that a step depends on has not arrived (`unknown`), the answer stops at that step: "Checking mergeability…".
  */
 export function nextActionFor(pr: PrDetail, unknown: readonly PrStage[] = []): NextAction {
   if (pr.state === 'MERGED') return { kind: 'merged', tone: 'done', title: 'Merged', detail: null };
   if (pr.state === 'CLOSED') return { kind: 'closed', tone: 'neutral', title: 'Closed', detail: 'Closed without merging.' };
+  // Only a required check's failure stands in the way: GitHub merges over optional ones, and so does Graphite.
+  const required = pr.ci.checks.filter((check) => pr.requiredCheckNames.includes(check.name));
+  const requiredFailing = required.filter((check) => check.state === 'FAILURE').length;
+  const checksFailed: NextAction = {
+    kind: 'checks-failed',
+    tone: 'danger',
+    title: 'Required checks failed',
+    detail: `${requiredFailing} of ${required.length} required ${required.length === 1 ? 'check' : 'checks'} failed`,
+  };
+  // Graphite's sidebar shows a draft no next step but a required check that failed, and was not seen naming anything else
+  // in a draft's way; Ready for review is the top bar's and the ⋯ menu's.
   if (pr.isDraft || pr.mergeStatus === 'DRAFT') {
+    if (requiredFailing > 0 && !unknown.includes('checks')) return checksFailed;
     return { kind: 'draft', tone: 'neutral', title: 'Draft', detail: 'Mark ready for review when it is done.' };
   }
   const checking: NextAction = { kind: 'checking', tone: 'neutral', title: 'Checking mergeability…', detail: null };
@@ -59,18 +72,8 @@ export function nextActionFor(pr: PrDetail, unknown: readonly PrStage[] = []): N
     };
   }
   if (unknown.includes('checks')) return checking;
-  // Only a required check's failure stands in the way: GitHub merges over optional ones, and so does Graphite.
   const failing = pr.ci.checks.filter((check) => check.state === 'FAILURE');
-  const required = pr.ci.checks.filter((check) => pr.requiredCheckNames.includes(check.name));
-  const requiredFailing = required.filter((check) => check.state === 'FAILURE').length;
-  if (requiredFailing > 0) {
-    return {
-      kind: 'checks-failed',
-      tone: 'danger',
-      title: 'Required checks failed',
-      detail: `${requiredFailing} of ${required.length} required ${required.length === 1 ? 'check' : 'checks'} failed`,
-    };
-  }
+  if (requiredFailing > 0) return checksFailed;
   if (pr.reviewDecision === 'CHANGES_REQUESTED') {
     const requester = pr.reviewers.find((reviewer) => reviewer.state === 'CHANGES_REQUESTED');
     return {

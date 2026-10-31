@@ -25,7 +25,6 @@ export function Sidebar({
   mergeMethod,
   onAutoMerge,
   onRevert,
-  onMarkReady,
   onMerge,
   onMergeStack,
   mergeConfirming,
@@ -50,7 +49,6 @@ export function Sidebar({
   onAutoMerge: (enabled: boolean, method: MergeMethod) => Promise<boolean>;
   /** Reverts the merged PR; resolves false when it did not, after saying why. */
   onRevert: () => Promise<boolean>;
-  onMarkReady: () => Promise<boolean>;
   onMerge: (method: MergeMethod) => Promise<boolean>;
   /** Opens the dialog that merges the stack (MergeStackDialog.tsx), with the method picked here. */
   onMergeStack: (method: MergeMethod) => void;
@@ -110,7 +108,6 @@ export function Sidebar({
           data={data}
           onRetry={onRetry}
           mergeMethod={mergeMethod}
-          onMarkReady={onMarkReady}
           onMerge={onMerge}
           onMergeStack={onMergeStack}
           mergeConfirming={mergeConfirming}
@@ -244,7 +241,8 @@ function StatusCard({
           </div>
         </div>
       )}
-      {pr.state === 'OPEN' && (pr.viewerCanEnableAutoMerge || on) && (
+      {/* GitHub never allows auto-merge on a draft, and Graphite shows a draft no switch. */}
+      {pr.state === 'OPEN' && !pr.isDraft && (pr.viewerCanEnableAutoMerge || on) && (
         <div className="side-switch-row">
           <label className="side-switch" title={stackBlocks && !on ? 'Merging is blocked due to failing stack merge requirements' : undefined}>
             <input
@@ -313,7 +311,6 @@ function ActionCard({
   data,
   onRetry,
   mergeMethod,
-  onMarkReady,
   onMerge,
   onMergeStack,
   mergeConfirming,
@@ -326,7 +323,6 @@ function ActionCard({
   data: PrPageData;
   onRetry: (stages: PrStage[]) => void;
   mergeMethod: MergeMethod;
-  onMarkReady: () => Promise<boolean>;
   onMerge: (method: MergeMethod) => Promise<boolean>;
   onMergeStack: (method: MergeMethod) => void;
   mergeConfirming: boolean;
@@ -338,7 +334,8 @@ function ActionCard({
   // The stages the next step depends on that have not arrived, loading or failed; what the inbox showed does not decide it.
   const unknown = (['mergeBox', 'stack', 'threads', 'checks'] as const).filter((stage) => data[stage].value === null || data[stage].status === 'placeholder');
   const action = nextActionFor(pr, unknown);
-  const [busy, setBusy] = useState(false);
+  // As on Graphite, a draft has no next step: its Ready for review is the top bar's and the ⋯ menu's.
+  if (action.kind === 'draft') return null;
   if (action.kind === 'checking') {
     const failed = unknown.flatMap((stage) => {
       const state = data[stage];
@@ -379,19 +376,6 @@ function ActionCard({
         <span>{action.title}</span>
       </div>
       {action.detail && <div className="side-action-detail">{action.detail}</div>}
-      {action.kind === 'draft' && pr.viewerCanUpdate && (
-        <Button
-          className="side-action-button"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true);
-            await onMarkReady();
-            setBusy(false);
-          }}
-        >
-          Ready for review
-        </Button>
-      )}
       {action.kind === 'downstack' && (
         <Button className="side-action-button" onClick={() => goToPr(action.pr)}>
           Go to #{action.pr.number}

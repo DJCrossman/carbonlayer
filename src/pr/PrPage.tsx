@@ -590,7 +590,6 @@ function PrView({
               return false;
             }
           }}
-          onMarkReady={() => setDraft(false)}
           onMerge={merge}
           onMergeStack={setMergingStack}
           mergeConfirming={mergeConfirming}
@@ -942,12 +941,13 @@ function PrActions({
           Merge
         </Button>
       )}
-      {nextAction.kind === 'draft' && pr.viewerCanUpdate && (
+      {/* A draft's own button, whatever its next step says (a failed required check still leaves it a draft to mark ready). */}
+      {pr.isDraft && pr.viewerCanUpdate && (
         <Button variant="primary" onClick={() => void onSetDraft(false)}>
           Ready for review
         </Button>
       )}
-      {!['ready-as-stack', 'ready', 'draft', 'merged', 'closed'].includes(nextAction.kind) && (
+      {!pr.isDraft && !['ready-as-stack', 'ready', 'draft', 'merged', 'closed'].includes(nextAction.kind) && (
         <Button icon="alert" disabled title={nextAction.title}>
           Not ready to merge
         </Button>
