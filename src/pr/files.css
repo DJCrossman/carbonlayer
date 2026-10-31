@@ -252,10 +252,14 @@
 .file-stub-prev-name { opacity: 0.7; font: 12px var(--gg-font); }
 /* The line counts, as a diff's header shows them. */
 .file-stub-counts { display: inline-flex; gap: 6px; font: 12px var(--gg-font-mono); }
+/* After a file's path, as Graphite's header has them: its change as a pill (Created, Deleted, Renamed), sized as
+   "Generated", and its language, muted. */
+.file-header-tags { flex: none; display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }
+.file-header-tags > .gg-pill { padding: 0 6px; font-size: 11px; }
+.file-language { color: var(--gg-fg-muted); font: 12px var(--gg-font); }
 /* GitHub calls the file generated (a lockfile, or one marked linguist-generated). */
 .file-generated {
   flex: none;
-  margin-left: 6px;
   padding: 0 6px;
   border: 1px solid var(--gg-border);
   border-radius: 10px;

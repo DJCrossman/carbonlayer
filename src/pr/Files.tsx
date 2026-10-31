@@ -15,6 +15,7 @@ import type { ChangedFile, PrDetail, PrStages, ReviewThread } from '../lib/model
 import { Button } from '../ui/Button';
 import { Icon, type IconName } from '../ui/Icon';
 import { Skeleton } from '../ui/Skeleton';
+import { StatusPill } from '../ui/StatusPill';
 import { showToast } from '../ui/Toast';
 import { composerAnchorFor, currentLinesOf, fileNotes, filesInTreeOrder, fileTree, hiddenLines, renderableDiff, takesComments, type ComposerAnchor, type DiffNote, type FileTreeNode } from './diff';
 import { followLink } from './navigation';
@@ -22,6 +23,46 @@ import { prFileContentsQuery, prHeldBackDiffQuery, type StageState } from './pag
 import { StageError } from './primitives';
 import { DiffNoteView, type NoteActions } from './Threads';
 import './files.css';
+
+/** A file's change as Graphite's header tags it, after the path: a created, deleted or renamed file's; a modified one has none. */
+const CHANGE_PILLS: Partial<Record<ChangedFile['status'], { label: string; tone: 'success' | 'danger' | 'accent' }>> = {
+  added: { label: 'Created', tone: 'success' },
+  removed: { label: 'Deleted', tone: 'danger' },
+  renamed: { label: 'Renamed', tone: 'accent' },
+};
+
+/** The language Graphite's header names a file in, by its extension: the common languages only, none for the rest. */
+const LANGUAGES: Record<string, string> = {
+  ts: 'TypeScript',
+  tsx: 'TypeScript',
+  js: 'JavaScript',
+  jsx: 'JavaScript',
+  mjs: 'JavaScript',
+  cjs: 'JavaScript',
+  json: 'JSON',
+  md: 'Markdown',
+  mdx: 'Markdown',
+  css: 'CSS',
+  scss: 'CSS',
+  html: 'HTML',
+  yml: 'YAML',
+  yaml: 'YAML',
+  sql: 'SQL',
+  py: 'Python',
+  go: 'Go',
+  rs: 'Rust',
+  sh: 'Shell',
+  toml: 'TOML',
+  svg: 'Image',
+  png: 'Image',
+  jpg: 'Image',
+  jpeg: 'Image',
+  gif: 'Image',
+  webp: 'Image',
+  prisma: 'Prisma',
+  graphql: 'GraphQL',
+  gql: 'GraphQL',
+};
 
 export function FilesSection({
   source,
@@ -533,7 +574,18 @@ function FileCard({
       <Icon name={collapsed ? 'chevron-right' : 'chevron-down'} size={14} />
     </button>
   );
-  const generatedTag = file.generated && <span className="file-generated">Generated</span>;
+  // After the path, as Graphite's header has them: the file's change, GitHub's "Generated", and the file's language, muted,
+  // last, nearest the line counts, which it follows in Graphite's. A path without an extension names no language.
+  const change = CHANGE_PILLS[file.status];
+  const language = LANGUAGES[/\.(\w+)$/.exec(file.path)?.[1]?.toLowerCase() ?? ''];
+  const headerTags =
+    change || file.generated || language ? (
+      <span className="file-header-tags">
+        {change && <StatusPill tone={change.tone}>{change.label}</StatusPill>}
+        {file.generated && <span className="file-generated">Generated</span>}
+        {language && <span className="file-language">{language}</span>}
+      </span>
+    ) : null;
 
   if (missingDiff) {
     return (
@@ -602,7 +654,7 @@ function FileCard({
           <span className="file-stub-name">
             <bdi>{file.path}</bdi>
           </span>
-          {generatedTag}
+          {headerTags}
           <span className="files-toolbar-spacer" />
           {/* As the diff's header counts them: removed lines when there are any or nothing was added, and the other way round. */}
           <span className="file-stub-counts">
@@ -676,7 +728,7 @@ function FileCard({
         />
       )}
       renderHeaderPrefix={() => collapseToggle}
-      renderHeaderFilenameSuffix={file.generated ? () => generatedTag : undefined}
+      renderHeaderFilenameSuffix={headerTags ? () => headerTags : undefined}
       renderHeaderMetadata={() => (
         <div className="file-header-meta">
           {threadCount > 0 && (

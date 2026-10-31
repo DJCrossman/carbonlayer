@@ -313,7 +313,9 @@ drawn, so the files below stay where they will be and are near only once the rea
 file reads "This file was deleted." with a quiet "Load diff", which loads it the same way, only when clicked; a file renamed
 without changes reads "File renamed without changes." and asks nothing; a binary file reads "Binary file not shown"; and
 a file with no lines at all, "No lines changed". Each keeps the header a diff has: the path (the old one → the new for a
-rename), the line counts, Viewed, "Comment on this file" and the ⋯ menu.
+rename), after it Graphite's pill for a created, deleted or renamed file (Created, Deleted, Renamed; a modified file has
+none), "Generated" and the file's language, muted (by its extension, the common ones only: `LANGUAGES` in
+`src/pr/Files.tsx`), the line counts, Viewed, "Comment on this file" and the ⋯ menu.
 
 Long diffs: a diff whose hunks have more than 1,000 rows (in the unified layout, whichever shows; `VIRTUALIZED_FROM_ROWS`
 in `src/pr/Files.tsx`) draws only the rows near the viewport, with `@pierre/diffs`' own virtualization. `FilesSection`
