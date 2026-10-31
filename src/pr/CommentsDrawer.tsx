@@ -18,7 +18,7 @@ import { CommentInput, Staged } from './primitives';
 import { Reactions } from './Reactions';
 import type { NoteActions } from './Threads';
 import './comments-drawer.css';
-// The diff's Outdated and Pending tags, for Stale and Pending here.
+// The diff's Stale and Pending tags, which the drawer's threads show too.
 import './threads.css';
 
 export function CommentsDrawer({

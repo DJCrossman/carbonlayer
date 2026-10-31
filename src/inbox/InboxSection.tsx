@@ -83,8 +83,6 @@ export function InboxSection({
             <span className="gg-section__name">{view.name}</span>
             {result?.error ? (
               <span className="gg-section__failed">Could not load</span>
-            ) : empty ? (
-              <span className="gg-section__empty">No pull requests</span>
             ) : (
               result && <span className="gg-section__count">{sectionCount(result)}</span>
             )}
@@ -312,14 +310,14 @@ function PrRow({
       </span>
       <span className="gg-row__stack">
         {pr.nativeStack && (
-          <span className="gg-row__chip" title={`Stacked: ${pr.nativeStack.position} of ${pr.nativeStack.size}`}>
+          <span className="gg-row__chip" title={`${pr.nativeStack.position}/${pr.nativeStack.size} position in stack`}>
             <Icon name="stack" size={12} />
             {pr.nativeStack.position}/{pr.nativeStack.size}
           </span>
         )}
         {/* A stack GitHub doesn't track, as Graphite's comment on the PR's page lists it, every entry counted. */}
         {!pr.nativeStack && graphiteStackPlace && (
-          <span className="gg-row__chip" title={`Stacked: ${graphiteStackPlace.position} of ${graphiteStackPlace.size} (from Graphite's stack comment)`}>
+          <span className="gg-row__chip" title={`${graphiteStackPlace.position}/${graphiteStackPlace.size} position in stack (from Graphite's stack comment)`}>
             <Icon name="stack" size={12} />
             {graphiteStackPlace.position}/{graphiteStackPlace.size}
           </span>
@@ -328,7 +326,7 @@ function PrRow({
         {stackPlace?.untracked && !graphiteStackPlace && (
           <span
             className="gg-row__chip gg-row__chip--attention"
-            title={`${stackPlace.position} of ${stackPlace.size} in a stack GitHub doesn't track (worked out from branch names)`}
+            title={`${stackPlace.position}/${stackPlace.size} position in a stack GitHub doesn't track (worked out from branch names)`}
           >
             <Icon name="stack" size={12} />
             {stackPlace.position}/{stackPlace.size}

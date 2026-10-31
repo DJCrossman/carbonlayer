@@ -556,18 +556,19 @@ from the top bar's toggle.
 
 Rows follow Graphite's columns (`src/inbox/InboxSection.tsx`): unread dot, avatar, title with `author · owner/repo #N`,
 stacked reviewer avatars (three, then `+N`; a bot without an avatar gets its GitHub App's, else a bot glyph; the tooltip
-names each reviewer with their state, "jlord · approved"), a labels chip, Graphite's conversation counter (review threads
-resolved of all, "2/3", hidden without any and once every one is resolved; the PR page's stack card shows it on each entry, "3/3" too), the stack chip (GitHub's
+names each reviewer with their state, "jlord · approved"), a labels chip, Graphite's conversation counter (an icon and review threads
+resolved of all, "2/3", without a chip's border, hidden without any and once every one is resolved; the PR page's stack card shows it on each entry, "3/3" too), the stack chip (its tooltip Graphite's "2/2 position in stack"; GitHub's
 own stack's position, grey; else, as Graphite's inbox shows it, the place Graphite's stack comment on the PR's page gives
 it among every entry, merged and closed ones too, grey as well, for open, merged and closed rows alike (`inbox.graphiteStacks`:
 the page's HTML read by `graphiteStackComment` and `graphiteStackPlace` in `src/lib/github-web/stack.ts`, three PRs at a
 time, asked as a row not in GitHub's own stack comes within 200px of view, 10 rows a request and one request at a time,
 and again only once the row has been updated since; `useGraphiteStacks` in `src/inbox/InboxPage.tsx`); else, for a stack
 GitHub doesn't track, found from branch names as "Group by stack" finds it, the
-row's place counted up from the bottom-most PR the inbox knows, of its own line (a fork's other branches left out), amber, grouped or not; `stackPlaces` in
+row's place counted up from the bottom-most PR the inbox knows, of its own line (a fork's other branches left out), amber, its tooltip saying GitHub doesn't track the stack, grouped or not; `stackPlaces` in
 `src/inbox/stacks.ts`), then
 fixed Review, CI and Merge icon columns, line counts and age, under a header row whose Title, Changes and Updated sort
-the section (page state only); Changes and Updated keep 16px from their neighbours. Every icon says what it means on
+the section (page state only); Changes and Updated keep 16px from their neighbours. An empty section shows only its header,
+its count `0`, as Graphite's does. Every icon says what it means on
 hover. Each status column is one function from the row's data to an icon, a tone and a tooltip (`reviewStatusIcon`,
 `ciStatusIcon`, `mergeStatusIcon` in `src/ui/status-icons.ts`, drawn by `StatusIcon`), tested case by case:
 

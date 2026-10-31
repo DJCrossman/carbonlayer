@@ -78,7 +78,7 @@ function ThreadNote({ thread, current, actions }: { thread: ReviewThread; curren
       <div className={`diff-note is-collapsed ${current ? 'is-current' : ''}`} data-thread-id={thread.id}>
         <button className="diff-note-summary" onClick={() => setExpanded(true)}>
           <Icon name="check-circle-fill" size={14} className="pr-fg-success" />
-          {thread.isOutdated && <span className="diff-note-tag">Outdated</span>}
+          {thread.isOutdated && <span className="diff-note-tag">Stale</span>}
           <span>
             Resolved · {count} {count === 1 ? 'comment' : 'comments'} · <span className="diff-note-show">show</span>
           </span>
@@ -103,7 +103,7 @@ function ThreadNote({ thread, current, actions }: { thread: ReviewThread; curren
     <div className={`diff-note ${thread.isResolved ? 'is-resolved' : ''} ${current ? 'is-current' : ''}`} data-thread-id={thread.id}>
       {thread.isOutdated && (
         <div className="diff-note-outdated">
-          <span className="diff-note-tag">Outdated</span>
+          <span className="diff-note-tag">Stale</span>
           {thread.diffHunk !== '' && <pre>{thread.diffHunk}</pre>}
         </div>
       )}
@@ -129,7 +129,7 @@ function ThreadNote({ thread, current, actions }: { thread: ReviewThread; curren
             </Button>
           )}
           <Button size="sm" onClick={toggleResolved} disabled={busy}>
-            {thread.isResolved ? 'Unresolve' : 'Resolve'}
+            {thread.isResolved ? 'Reopen' : 'Resolve'}
           </Button>
           {reply.trim() !== '' && (
             <Button variant="primary" size="sm" onClick={sendReply} disabled={busy}>
