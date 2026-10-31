@@ -198,7 +198,8 @@ export type StackBranches = z.infer<typeof stackBranchesSchema>;
 
 /**
  * Where a PR sits in the stack Graphite's comment on its page lists, the way Graphite's inbox counts it: `position` from
- * the bottom (1 is closest to trunk) among every entry, merged and closed ones too, of `size` entries.
+ * the bottom (1 is closest to trunk) on the PR's own line, merged and closed entries too, of `size` entries, the forks off
+ * the line left out.
  */
 export const graphiteStackPlaceSchema = z.object({ position: z.number(), size: z.number() });
 
@@ -210,6 +211,11 @@ export type GraphiteStackPlace = z.infer<typeof graphiteStackPlaceSchema>;
  */
 export const stackEntrySchema = z.extend(prSummarySchema, {
   author: z.nullable(userRefSchema),
+  /**
+   * The number of the PR it is stacked on: the entry below it on its own line, or for a fork the entry it branches from;
+   * null for one on trunk.
+   */
+  parentNumber: z.nullable(z.number()),
   /**
    * Whether GitHub can merge it now with the open PRs below it, as one stack: its own `stack_mergeability` says READY.
    * GitHub is asked for each open PR of a GitHub-native stack from the bottom up to the viewed one; false for the others
@@ -227,8 +233,13 @@ export const stackEntrySchema = z.extend(prSummarySchema, {
 export type StackEntry = z.infer<typeof stackEntrySchema>;
 
 export const stackSchema = z.object({
-  /** Ordered from the PR closest to trunk (index 0) to the top of the stack. */
+  /** The viewed PR's own line, ordered from the PR closest to trunk (index 0) to the top of the stack. */
   entries: z.array(stackEntrySchema),
+  /**
+   * The PRs that branch off the line, each with the entry it branches from (`parentNumber`: an entry of the line, or
+   * another fork). Only Graphite's comment names them; GitHub's own stack is one line.
+   */
+  forks: z.array(stackEntrySchema),
   /** Index of the PR being viewed in `entries`. */
   currentIndex: z.number(),
   trunk: z.string(),

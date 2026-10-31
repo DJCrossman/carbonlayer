@@ -1,5 +1,6 @@
 // The stack card: every PR in the stack on a vertical rail, tip at the top and trunk at the bottom, each with its
-// conversations and Graphite's one pill for where it stands; and the card as it looks while the stack loads.
+// conversations and Graphite's one pill for where it stands, a fork off the line indented on a rail of its own; and the
+// card as it looks while the stack loads.
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef } from 'react';
 import type { DataSource } from '../app/data-source';
@@ -23,8 +24,11 @@ import './stack.css';
  * The stack's entries. The viewed PR's statuses come with its page; every other entry's with the same row details the
  * inbox shows for a PR (src/inbox/row-details.ts), asked for while the card is open and kept under the inbox's own key
  * for a PR the inbox showed, so either page finds what the other asked for. An entry the pointer rests on loads its page
- * ahead, as an inbox row does. Its header's Copy stack puts the stack on the clipboard as Markdown, as Graphite's comment
- * lists it: the top of the stack first, a line for each PR linked to it, and trunk last.
+ * ahead, as an inbox row does. A fork off the line is drawn as Graphite draws it: indented, right above the entry it
+ * branches from, its dot on a short rail that curves out of the main one, its own forks above it; the header counts the
+ * line alone. Its header's Copy stack puts the line on the clipboard as Markdown, as Graphite's comment lists it: the top
+ * of the stack first, an item for each PR linked to it, and trunk last. The forks are left out: a list of one line has no
+ * place for them that would not read as part of it.
  */
 export function StackCard({
   stack,
@@ -44,9 +48,9 @@ export function StackCard({
   mergeMethod: MergeMethod;
 }) {
   const queryClient = useQueryClient();
-  // Each other entry as the inbox last showed it, when it did, else as the stack names it.
+  // Each other entry and each fork as the inbox last showed it, when it did, else as the stack names it.
   const rows = useMemo(
-    () => new Map(stack.entries.flatMap((entry, index) => (index === stack.currentIndex ? [] : [[entry.id, inboxRowFor(queryClient, entry.repo, entry.number) ?? entry] as const]))),
+    () => new Map([...stack.entries, ...stack.forks].flatMap((entry, index) => (index === stack.currentIndex ? [] : [[entry.id, inboxRowFor(queryClient, entry.repo, entry.number) ?? entry] as const]))),
     [queryClient, stack],
   );
   const details = useRowEnrichment(source, [...rows.values()], mergeMethod);
@@ -55,6 +59,8 @@ export function StackCard({
     if (!collapsed) for (const row of rows.values()) details.want(row);
   }, [rows, collapsed]);
   const tipFirst = stack.entries.map((pr, index) => ({ pr, index })).reverse();
+  // The rows top first, each entry's forks right above it; a fork has no index on the line.
+  const drawn = tipFirst.flatMap(({ pr, index }): Array<{ pr: StackEntry; index: number | null }> => [...forksOff(stack.forks, pr.number).map((fork) => ({ pr: fork, index: null })), { pr, index }]);
   // The PRs GitHub can merge with the viewed one as a stack, whose rows say so as Graphite's do.
   const mergingAsStack = stackToMerge(stack);
   return (
@@ -88,7 +94,7 @@ export function StackCard({
       </div>
       {!collapsed && (
         <ol className="stack-rail">
-          {tipFirst.map(({ pr, index }) => {
+          {drawn.map(({ pr, index }) => {
             const row = rows.get(pr.id);
             const found = row && details.found.get(row.id)?.enrichment;
             // What the inbox would show for it: its row's verdict and checks, what its details found over them.
@@ -98,6 +104,7 @@ export function StackCard({
                 key={pr.id}
                 pr={shown}
                 current={index === stack.currentIndex}
+                fork={index === null}
                 waiting={row !== undefined && found === undefined}
                 readyToMerge={mergingAsStack?.includes(pr) ?? false}
                 requiredCheckNames={index === stack.currentIndex ? requiredCheckNames : (found?.requiredCheckNames ?? [])}
@@ -143,6 +150,7 @@ export function StackSkeleton() {
 function StackRow({
   pr,
   current,
+  fork,
   waiting,
   readyToMerge,
   requiredCheckNames,
@@ -150,6 +158,8 @@ function StackRow({
 }: {
   pr: StackEntry;
   current: boolean;
+  /** A PR off the stack's line: its row is indented, its dot on a short rail of its own. */
+  fork: boolean;
   /** Its row details have not arrived and the cache had none: its pill shows a small skeleton. */
   waiting: boolean;
   /** GitHub can merge it in merging the viewed PR as a stack: the viewed PR's row reads "Ready to merge as stack", one below it "Ready to merge". */
@@ -165,7 +175,7 @@ function StackRow({
   const pill = stackRowPillFor(pr, requiredCheckNames, readyToMerge ? (current ? 'viewed' : 'below') : null);
   return (
     <li
-      className={`stack-row ${current ? 'is-current' : ''} ${pr.state === 'MERGED' ? 'is-merged' : ''}`}
+      className={`stack-row ${current ? 'is-current' : ''} ${fork ? 'is-fork' : ''} ${pr.state === 'MERGED' ? 'is-merged' : ''}`}
       onMouseEnter={() => !current && (resting.current = setTimeout(onIntent, 150))}
       onMouseLeave={() => clearTimeout(resting.current)}
     >
@@ -220,4 +230,12 @@ function StackRow({
       </span>
     </li>
   );
+}
+
+/**
+ * The forks that branch off the entry numbered `number`, in the order Graphite draws them above it: each fork's own forks,
+ * its sub-line, right above it.
+ */
+function forksOff(forks: StackEntry[], number: number): StackEntry[] {
+  return forks.filter((fork) => fork.parentNumber === number).flatMap((fork) => [...forksOff(forks, fork.number), fork]);
 }

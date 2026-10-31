@@ -1,10 +1,11 @@
 // PR page fixtures for the dev harness (`app.html?fixtures=1#/pr/acme/widgets/42`): a three-PR stack in
 // acme/widgets. #41 (bottom) is approved and green, #42 (middle) has review feedback and a failing check, both
-// mona's; #43 (top) is jlord's draft. The viewer, octocat, may edit #41's and #42's descriptions and some of #42's
+// mona's; #43 (top) is jlord's draft; and mona's closed #40 branches off #41 beside #42, a fork off the stack's line.
+// The viewer, octocat, may edit #41's and #42's descriptions and some of #42's
 // comments, those with `editableMarkdown` (GitHub lets a repository's writers edit others' comments). Patches are written as line arrays so blank context lines keep their
 // leading space; every hunk header's counts match its body (the diff parser validates them).
 
-import type { PrDetail, PrSummary, ReviewThread, UserRef } from '../lib/model';
+import type { PrDetail, PrSummary, ReviewThread, StackEntry, UserRef } from '../lib/model';
 
 const repo = { owner: 'acme', name: 'widgets' };
 
@@ -134,7 +135,46 @@ const summary43: PrSummary = {
   conversations: { resolved: 0, total: 0 },
 };
 
-const stackEntries = [summary41, summary42, summary43];
+const stackEntries: StackEntry[] = [
+  { ...summary41, parentNumber: null },
+  { ...summary42, parentNumber: 41 },
+  { ...summary43, parentNumber: 42 },
+];
+
+// A PR off the stack's line, as Graphite's comment names one (#9003 branching off #8994 in offstreetparking/core#9029's
+// stack): mona's closed #40, which branches off #41 beside #42.
+const stackForks: StackEntry[] = [
+  {
+    id: 'PR_fixture40',
+    repo,
+    number: 40,
+    title: 'Retry PARCS requests that time out',
+    url: 'https://github.com/acme/widgets/pull/40',
+    author: mona,
+    state: 'CLOSED',
+    isDraft: false,
+    createdAt: '2026-10-06T11:20:00Z',
+    updatedAt: '2026-10-08T09:10:00Z',
+    mergedAt: null,
+    headRefName: 'mona/parcs-retries',
+    baseRefName: 'mona/parcs-client',
+    reviewDecision: 'NONE',
+    reviewers: [],
+    ci: { state: 'NONE', checks: [], counts: { success: 0, failure: 0, pending: 0, other: 0 } },
+    mergeStatus: 'UNKNOWN',
+    additions: 31,
+    deletions: 2,
+    changedFiles: 2,
+    labels: [],
+    commentCount: 0,
+    unread: null,
+    isInMergeQueue: false,
+    autoMerge: null,
+    nativeStack: null,
+    conversations: { resolved: 0, total: 0 },
+    parentNumber: 41,
+  },
+];
 
 const threads42: ReviewThread[] = [
   {
@@ -690,7 +730,7 @@ const detail42: PrDetail = {
       blobUrl: 'https://github.com/acme/widgets/blob/c0ffee4/docs/zones.png',
     },
   ],
-  stack: { entries: stackEntries, currentIndex: 1, trunk: 'main', source: 'graphite-comment' },
+  stack: { entries: stackEntries, forks: stackForks, currentIndex: 1, trunk: 'main', source: 'graphite-comment' },
   defaultMergeMethod: 'SQUASH',
   allowedMergeMethods: ['SQUASH', 'MERGE'],
   viewerCanMerge: true,
@@ -796,7 +836,7 @@ const detail41: PrDetail = {
       blobUrl: 'https://github.com/acme/widgets/blob/bead414/package.json',
     },
   ],
-  stack: { entries: stackEntries, currentIndex: 0, trunk: 'main', source: 'graphite-comment' },
+  stack: { entries: stackEntries, forks: stackForks, currentIndex: 0, trunk: 'main', source: 'graphite-comment' },
   defaultMergeMethod: 'SQUASH',
   allowedMergeMethods: ['SQUASH', 'MERGE', 'REBASE'],
   viewerCanMerge: true,
@@ -894,7 +934,7 @@ const detail43: PrDetail = {
       blobUrl: 'https://github.com/acme/widgets/blob/facade4/pnpm-lock.yaml',
     },
   ],
-  stack: { entries: stackEntries, currentIndex: 2, trunk: 'main', source: 'graphite-comment' },
+  stack: { entries: stackEntries, forks: stackForks, currentIndex: 2, trunk: 'main', source: 'graphite-comment' },
   defaultMergeMethod: 'SQUASH',
   allowedMergeMethods: ['SQUASH', 'MERGE', 'REBASE'],
   viewerCanMerge: false,
@@ -919,7 +959,7 @@ export const prFixtures: PrDetail[] = [
     mergedAt: '2026-10-09T15:20:00Z',
     mergeStatus: 'UNKNOWN',
     viewerCanMerge: false,
-    stack: { entries: [], currentIndex: 0, trunk: 'main', source: 'none' },
+    stack: { entries: [], forks: [], currentIndex: 0, trunk: 'main', source: 'none' },
   },
 ];
 

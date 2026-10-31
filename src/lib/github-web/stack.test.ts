@@ -1,9 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 import type { PrSummary } from '../model';
-import { githubUser } from './session';
 import { authorHeaderAnswer, authorIn, graphiteStackComment, graphiteStackPlace, resolveStack, stackMergeabilityAnswer } from './stack';
 
-const noLookups = { mergeability: async () => null, authorsOpenPulls: async () => [], conversations: async () => null, author: async () => null };
+const noLookups = { mergeability: async () => null, authorsOpenPulls: async () => [], conversations: async () => null, header: async () => null };
 
 describe('native stacks', () => {
   it('orders the stack from trunk up (GitHub lists the top first) and chains the branches', async () => {
@@ -26,12 +25,15 @@ describe('native stacks', () => {
       noLookups,
     );
     expect(stack).toMatchObject({ currentIndex: 1, trunk: 'main', source: 'native' });
-    expect(stack.entries[1]).toEqual({ ...current, readyToMergeAsStack: false });
+    expect(stack.entries[1]).toEqual({ ...current, parentNumber: 1, readyToMergeAsStack: false });
     expect(stack.entries.map((entry) => [entry.number, entry.state, entry.isDraft, entry.baseRefName, entry.headRefName])).toEqual([
       [1, 'MERGED', false, 'main', 'a'],
       [2, 'OPEN', false, 'main', 'b'],
       [3, 'OPEN', true, 'b', 'c'],
     ]);
+    // Each on the one below it, the bottom one on trunk; GitHub's stack is one line.
+    expect(stack.entries.map((entry) => entry.parentNumber)).toEqual([null, 1, 2]);
+    expect(stack.forks).toEqual([]);
     expect(stack.entries[0]).toMatchObject({ url: 'https://github.com/o/r/pull/1', nativeStack: { position: 1, size: 3 } });
     expect(stack.entries[2]?.mergeStatus).toBe('DRAFT');
   });
@@ -63,7 +65,7 @@ describe('native stacks', () => {
         },
       },
     );
-    expect(stack.entries[1]).toEqual({ ...current, readyToMergeAsStack: false });
+    expect(stack.entries[1]).toEqual({ ...current, parentNumber: 1, readyToMergeAsStack: false });
     expect(stack.entries.map((entry) => entry.conversations)).toEqual([
       { resolved: 0, total: 1 },
       null,
@@ -92,13 +94,13 @@ describe('native stacks', () => {
       },
       {
         ...noLookups,
-        author: async (number) => {
+        header: async (number) => {
           asked.push(number);
-          return number === 3 ? githubUser('riley') : null;
+          return number === 3 ? authorHeaderAnswer.parse({ pullRequest: { author: { login: 'riley' } } }) : null;
         },
       },
     );
-    expect(stack.entries[1]).toEqual({ ...current, readyToMergeAsStack: false });
+    expect(stack.entries[1]).toEqual({ ...current, parentNumber: 1, readyToMergeAsStack: false });
     expect(stack.entries.map((entry) => entry.author?.login ?? null)).toEqual([null, 'ana', 'riley']);
     expect(asked.toSorted()).toEqual([1, 3]);
   });
@@ -207,13 +209,64 @@ describe("Graphite's stack comment", () => {
   it('reads the PRs bottom-up with their titles and states, and the trunk', () => {
     expect(graphiteStackComment(page)).toEqual({
       entries: [
-        { number: 22, title: 'Layer 1', url: 'https://github.com/o/r/pull/22', state: 'MERGED', isDraft: false },
-        { number: 26, title: 'Layer 2', url: 'https://github.com/o/r/pull/26', state: 'OPEN', isDraft: false },
-        { number: 29, title: 'Layer 3', url: 'https://github.com/o/r/pull/29', state: 'OPEN', isDraft: false },
+        { number: 22, title: 'Layer 1', url: 'https://github.com/o/r/pull/22', state: 'MERGED', isDraft: false, parentNumber: null },
+        { number: 26, title: 'Layer 2', url: 'https://github.com/o/r/pull/26', state: 'OPEN', isDraft: false, parentNumber: 22 },
+        { number: 29, title: 'Layer 3', url: 'https://github.com/o/r/pull/29', state: 'OPEN', isDraft: false, parentNumber: 26 },
       ],
+      forks: [],
       trunk: 'main',
     });
     expect(graphiteStackComment(emptyPage())).toBeNull();
+  });
+
+  it("reads a PR that branches off the line, which the item of the entry it branches from names, as a fork off that entry (core#9029's comment)", () => {
+    expect(graphiteStackComment(forked9029)).toEqual({
+      entries: [
+        { number: 8994, title: 'Layer 1', url: 'https://github.com/o/r/pull/8994', state: 'OPEN', isDraft: false, parentNumber: null },
+        { number: 9002, title: 'Layer 2', url: 'https://github.com/o/r/pull/9002', state: 'OPEN', isDraft: false, parentNumber: 8994 },
+        { number: 9001, title: 'Layer 3', url: 'https://github.com/o/r/pull/9001', state: 'OPEN', isDraft: false, parentNumber: 9002 },
+        { number: 9004, title: 'Layer 4', url: 'https://github.com/o/r/pull/9004', state: 'OPEN', isDraft: false, parentNumber: 9001 },
+        { number: 9026, title: 'Layer 5', url: 'https://github.com/o/r/pull/9026', state: 'OPEN', isDraft: false, parentNumber: 9004 },
+        { number: 9029, title: 'Layer 6', url: 'https://github.com/o/r/pull/9029', state: 'OPEN', isDraft: false, parentNumber: 9026 },
+      ],
+      // A plain link, which says nothing of the PR but its number.
+      forks: [{ number: 9003, title: '#9003', url: 'https://github.com/o/r/pull/9003', state: 'OPEN', isDraft: false, parentNumber: 8994 }],
+      trunk: 'main',
+    });
+  });
+
+  it("reads a fork off an entry in the middle of the line, past the comment's warning, where GitHub renders the numbers alone (core#9604's comment)", () => {
+    const comment = graphiteStackComment(forked9604);
+    expect(comment?.entries.map((entry) => [entry.number, entry.title, entry.parentNumber])).toEqual([
+      [9528, '#9528', null],
+      [9530, '#9530', 9528],
+      [9577, '#9577', 9530],
+      [9578, '#9578', 9577],
+      [9604, '#9604', 9578],
+    ]);
+    expect(comment?.forks.map((fork) => [fork.number, fork.url, fork.parentNumber])).toEqual([[9291, 'https://github.com/o/r/pull/9291', 9530]]);
+    expect(comment?.trunk).toBe('main');
+  });
+
+  it("reads the PRs off the top of a line that has more than one, each a fork, and shows them with the line (core#8994's comment)", async () => {
+    const current = summary(8994, 'layer-1');
+    const forkedTop = new DOMParser().parseFromString(
+      `<html><body><div class="timeline-comment-group" id="issuecomment-4"><div class="comment-body">
+        <ul dir="auto">
+          <li><strong><a class="issue-link js-issue-link" href="https://github.com/o/r/pull/8994">#8994</a></strong> <a href="https://app.graphite.com/github/pr/o/r/8994?utm_source=stack-comment-icon" rel="nofollow"><img alt="Graphite"></a>: 2  dependent PRs (<a href="https://github.com/o/r/pull/9002" data-hovercard-type="pull_request">#9002</a> <a href="https://app.graphite.com/github/pr/o/r/9002?utm_source=stack-comment-icon" rel="nofollow"><img alt="Graphite"></a>, <a href="https://github.com/o/r/pull/9003" data-hovercard-type="pull_request">#9003</a> <a href="https://app.graphite.com/github/pr/o/r/9003?utm_source=stack-comment-icon" rel="nofollow"><img alt="Graphite"></a>) 👈 <a href="https://app.graphite.com/github/pr/o/r/8994?utm_source=stack-comment-view-in-graphite" rel="nofollow">(View in Graphite)</a></li>
+          <li><code class="notranslate">main</code></li>
+        </ul>
+        <h2 dir="auto"></h2>
+        <p dir="auto">This stack of pull requests is managed by <a href="https://graphite.dev?utm-source=stack-comment" rel="nofollow"><b>Graphite</b></a>.</p>
+      </div></div></body></html>`,
+      'text/html',
+    );
+    const stack = await resolveStack({ current, page: forkedTop, nativeStack: null }, noLookups);
+    expect(stack).toMatchObject({ entries: [{ ...current, parentNumber: null }], currentIndex: 0, trunk: 'main', source: 'graphite-comment' });
+    expect(stack.forks.map((fork) => [fork.number, fork.parentNumber])).toEqual([
+      [9002, 8994],
+      [9003, 8994],
+    ]);
   });
 
   it("orders the stack by the comment, using the author's open PRs where the search has them, and asks who opened the others", async () => {
@@ -225,47 +278,145 @@ describe("Graphite's stack comment", () => {
       {
         ...noLookups,
         authorsOpenPulls: async () => [fromSearch],
-        author: async (number) => {
+        header: async (number) => {
           asked.push(number);
-          return githubUser('riley');
+          return authorHeaderAnswer.parse({ pullRequest: { author: { login: 'riley' } } });
         },
       },
     );
     expect(stack).toMatchObject({ currentIndex: 1, trunk: 'main', source: 'graphite-comment' });
-    expect(stack.entries[2]).toEqual(fromSearch);
+    expect(stack.entries[2]).toEqual({ ...fromSearch, parentNumber: 26 });
     expect(stack.entries[0]).toMatchObject({ number: 22, title: 'Layer 1', state: 'MERGED', author: { login: 'riley' } });
     expect(asked).toEqual([22]);
+  });
+
+  it("keeps the viewed PR's line as the stack's entries and puts a fork beside them, from the author's open PRs where the search has it", async () => {
+    const current = summary(9029, 'layer-6');
+    const fromSearch = summary(9003, 'layer-2b');
+    const asked: number[] = [];
+    const stack = await resolveStack(
+      { current, page: forked9029, nativeStack: null },
+      {
+        ...noLookups,
+        authorsOpenPulls: async () => [fromSearch],
+        conversations: async (number) => {
+          asked.push(number);
+          return null;
+        },
+      },
+    );
+    expect(stack.entries.map((entry) => entry.number)).toEqual([8994, 9002, 9001, 9004, 9026, 9029]);
+    expect(stack).toMatchObject({ currentIndex: 5, source: 'graphite-comment' });
+    expect(stack.forks).toEqual([{ ...fromSearch, parentNumber: 8994 }]);
+    // A fork's conversations are asked for like any other entry's.
+    expect(asked.toSorted()).toEqual([8994, 9001, 9002, 9003, 9004, 9026]);
+  });
+
+  it('gives a PR the comment names by its number alone the title and state its own header gives, and keeps those the comment named', async () => {
+    const current = summary(9029, 'layer-6');
+    const stack = await resolveStack(
+      { current, page: forked9029, nativeStack: null },
+      { ...noLookups, header: async (number) => authorHeaderAnswer.parse({ pullRequest: { author: { login: 'mona' }, title: `Header's title for ${number}`, state: 'CLOSED' } }) },
+    );
+    expect(stack.forks).toMatchObject([{ number: 9003, title: "Header's title for 9003", state: 'CLOSED', isDraft: false, author: { login: 'mona' }, parentNumber: 8994 }]);
+    // #8994's reference named it, with its open icon.
+    expect(stack.entries[0]).toMatchObject({ number: 8994, title: 'Layer 1', state: 'OPEN', author: { login: 'mona' } });
   });
 });
 
 describe("a PR's place in Graphite's stack", () => {
   // Bottom first, as Graphite's comment is read.
-  const entries: Parameters<typeof graphiteStackPlace>[0] = [
-    { number: 22, title: 'Layer 1', url: 'https://github.com/o/r/pull/22', state: 'MERGED', isDraft: false },
-    { number: 24, title: 'Layer 2', url: 'https://github.com/o/r/pull/24', state: 'CLOSED', isDraft: false },
-    { number: 26, title: 'Layer 3', url: 'https://github.com/o/r/pull/26', state: 'OPEN', isDraft: false },
-    { number: 29, title: 'Layer 4', url: 'https://github.com/o/r/pull/29', state: 'OPEN', isDraft: true },
+  const entries: Parameters<typeof graphiteStackPlace>[0]['entries'] = [
+    { number: 22, title: 'Layer 1', url: 'https://github.com/o/r/pull/22', state: 'MERGED', isDraft: false, parentNumber: null },
+    { number: 24, title: 'Layer 2', url: 'https://github.com/o/r/pull/24', state: 'CLOSED', isDraft: false, parentNumber: 22 },
+    { number: 26, title: 'Layer 3', url: 'https://github.com/o/r/pull/26', state: 'OPEN', isDraft: false, parentNumber: 24 },
+    { number: 29, title: 'Layer 4', url: 'https://github.com/o/r/pull/29', state: 'OPEN', isDraft: true, parentNumber: 26 },
   ];
 
   it('counts it from the bottom among every entry the comment lists, merged and closed ones too', () => {
-    expect(graphiteStackPlace(entries, 26)).toEqual({ position: 3, size: 4 });
-    expect(graphiteStackPlace(entries, 22)).toEqual({ position: 1, size: 4 });
+    expect(graphiteStackPlace({ entries, forks: [] }, 26)).toEqual({ position: 3, size: 4 });
+    expect(graphiteStackPlace({ entries, forks: [] }, 22)).toEqual({ position: 1, size: 4 });
+  });
+
+  it('counts the PR on its own line, the forks off it left out, as Graphite reads core#9029 6 of 6', () => {
+    const comment = graphiteStackComment(forked9029);
+    assert.isNotNull(comment);
+    expect(graphiteStackPlace(comment, 9029)).toEqual({ position: 6, size: 6 });
+    expect(graphiteStackPlace(comment, 8994)).toEqual({ position: 1, size: 6 });
+  });
+
+  it('counts a fork on its own line, the entries below it down to trunk and itself, as its own page lists it', () => {
+    const comment = graphiteStackComment(forked9029);
+    assert.isNotNull(comment);
+    expect(graphiteStackPlace(comment, 9003)).toEqual({ position: 2, size: 2 });
+    // A fork of the fork continues its line.
+    const forked: Parameters<typeof graphiteStackPlace>[0] = {
+      ...comment,
+      forks: [...comment.forks, { number: 9005, title: '#9005', url: 'https://github.com/o/r/pull/9005', state: 'OPEN', isDraft: false, parentNumber: 9003 }],
+    };
+    expect(graphiteStackPlace(forked, 9003)).toEqual({ position: 2, size: 3 });
+    expect(graphiteStackPlace(forked, 9005)).toEqual({ position: 3, size: 3 });
   });
 
   it('gives none where the comment does not name the PR', () => {
-    expect(graphiteStackPlace(entries, 31)).toBeNull();
-    expect(graphiteStackPlace([], 31)).toBeNull();
+    expect(graphiteStackPlace({ entries, forks: [] }, 31)).toBeNull();
+    expect(graphiteStackPlace({ entries: [], forks: [] }, 31)).toBeNull();
   });
 
   it('gives none where the comment lists the PR alone', () => {
-    expect(graphiteStackPlace([{ number: 31, title: 'Alone', url: 'https://github.com/o/r/pull/31', state: 'OPEN', isDraft: false }], 31)).toBeNull();
+    expect(graphiteStackPlace({ entries: [{ number: 31, title: 'Alone', url: 'https://github.com/o/r/pull/31', state: 'OPEN', isDraft: false, parentNumber: null }], forks: [] }, 31)).toBeNull();
   });
 });
 
 it('leaves an unstacked PR on its own', async () => {
   const current = summary(5, 'feature');
-  expect(await resolveStack({ current, page: emptyPage(), nativeStack: null }, noLookups)).toEqual({ entries: [current], currentIndex: 0, trunk: 'main', source: 'none' });
+  expect(await resolveStack({ current, page: emptyPage(), nativeStack: null }, noLookups)).toEqual({ entries: [{ ...current, parentNumber: null }], forks: [], currentIndex: 0, trunk: 'main', source: 'none' });
 });
+
+/**
+ * Graphite's comment on offstreetparking/core#9029 (read 2026-10-31) in the shape GitHub renders it on the page: the line
+ * #8994 → #9002 → #9001 → #9004 → #9026 → #9029 top first, each number a reference with its title and state icon, and
+ * #8994's item naming #9003, which branches off it beside #9002, in a plain link. The titles stand in for the real ones.
+ */
+const forked9029 = new DOMParser().parseFromString(
+  `<html><body><div class="timeline-comment-group" id="issuecomment-2"><div class="comment-body">
+    <ul dir="auto">
+      <li><strong><span class="reference"><svg class="octicon octicon-git-pull-request open"></svg><a class="issue-link js-issue-link" href="https://github.com/o/r/pull/9029">Layer 6<span class="issue-shorthand">&nbsp;#9029</span></a></span></strong> <a href="https://app.graphite.com/github/pr/o/r/9029?utm_source=stack-comment-icon" rel="nofollow"><img alt="Graphite"></a> 👈 <a href="https://app.graphite.com/github/pr/o/r/9029?utm_source=stack-comment-view-in-graphite" rel="nofollow">(View in Graphite)</a></li>
+      <li><strong><span class="reference"><svg class="octicon octicon-git-pull-request open"></svg><a class="issue-link js-issue-link" href="https://github.com/o/r/pull/9026">Layer 5<span class="issue-shorthand">&nbsp;#9026</span></a></span></strong> <a href="https://app.graphite.com/github/pr/o/r/9026?utm_source=stack-comment-icon" rel="nofollow"><img alt="Graphite"></a></li>
+      <li><strong><span class="reference"><svg class="octicon octicon-git-pull-request open"></svg><a class="issue-link js-issue-link" href="https://github.com/o/r/pull/9004">Layer 4<span class="issue-shorthand">&nbsp;#9004</span></a></span></strong> <a href="https://app.graphite.com/github/pr/o/r/9004?utm_source=stack-comment-icon" rel="nofollow"><img alt="Graphite"></a></li>
+      <li><strong><span class="reference"><svg class="octicon octicon-git-pull-request open"></svg><a class="issue-link js-issue-link" href="https://github.com/o/r/pull/9001">Layer 3<span class="issue-shorthand">&nbsp;#9001</span></a></span></strong> <a href="https://app.graphite.com/github/pr/o/r/9001?utm_source=stack-comment-icon" rel="nofollow"><img alt="Graphite"></a></li>
+      <li><strong><span class="reference"><svg class="octicon octicon-git-pull-request open"></svg><a class="issue-link js-issue-link" href="https://github.com/o/r/pull/9002">Layer 2<span class="issue-shorthand">&nbsp;#9002</span></a></span></strong> <a href="https://app.graphite.com/github/pr/o/r/9002?utm_source=stack-comment-icon" rel="nofollow"><img alt="Graphite"></a></li>
+      <li><strong><span class="reference"><svg class="octicon octicon-git-pull-request open"></svg><a class="issue-link js-issue-link" href="https://github.com/o/r/pull/8994">Layer 1<span class="issue-shorthand">&nbsp;#8994</span></a></span></strong> <a href="https://app.graphite.com/github/pr/o/r/8994?utm_source=stack-comment-icon" rel="nofollow"><img alt="Graphite"></a>: 1 other dependent PR (<a href="https://github.com/o/r/pull/9003" data-hovercard-type="pull_request">#9003</a> <a href="https://app.graphite.com/github/pr/o/r/9003?utm_source=stack-comment-icon" rel="nofollow"><img alt="Graphite"></a>)</li>
+      <li><code class="notranslate">main</code></li>
+    </ul>
+    <h2 dir="auto"></h2>
+    <p dir="auto">This stack of pull requests is managed by <a href="https://graphite.dev?utm-source=stack-comment" rel="nofollow"><b>Graphite</b></a>. Learn more about <a href="https://stacking.dev/?utm_source=stack-comment" rel="nofollow">stacking</a>.</p>
+  </div></div></body></html>`,
+  'text/html',
+);
+
+/**
+ * Graphite's comment on offstreetparking/core#9604 (read 2026-10-31) as GitHub's API renders it, each number a reference
+ * without a title: its warning that a downstack PR is open, then the line #9528 → #9530 → #9577 → #9578 → #9604 top first,
+ * #9530's item naming #9291, which branches off it.
+ */
+const forked9604 = new DOMParser().parseFromString(
+  `<html><body><div class="timeline-comment-group" id="issuecomment-3"><div class="comment-body">
+    <div class="markdown-alert markdown-alert-warning" dir="auto"><p class="markdown-alert-title" dir="auto"><svg class="octicon octicon-alert mr-2"></svg>Warning</p><p dir="auto"><b>This pull request is not mergeable via GitHub because a downstack PR is open. Once all requirements are satisfied, merge this PR as a stack <a href="https://app.graphite.com/github/pr/o/r/9604?utm_source=stack-comment-downstack-mergeability-warning" rel="nofollow">on Graphite</a>.</b><br>
+    <a href="https://graphite.dev/docs/merge-pull-requests" rel="nofollow">Learn more</a></p></div>
+    <ul dir="auto">
+      <li><strong><a class="issue-link js-issue-link" data-hovercard-type="pull_request" href="https://github.com/o/r/pull/9604">#9604</a></strong> <a href="https://app.graphite.com/github/pr/o/r/9604?utm_source=stack-comment-icon" rel="nofollow"><img alt="Graphite"></a> 👈 <a href="https://app.graphite.com/github/pr/o/r/9604?utm_source=stack-comment-view-in-graphite" rel="nofollow">(View in Graphite)</a></li>
+      <li><strong><a class="issue-link js-issue-link" data-hovercard-type="pull_request" href="https://github.com/o/r/pull/9578">#9578</a></strong> <a href="https://app.graphite.com/github/pr/o/r/9578?utm_source=stack-comment-icon" rel="nofollow"><img alt="Graphite"></a></li>
+      <li><strong><a class="issue-link js-issue-link" data-hovercard-type="pull_request" href="https://github.com/o/r/pull/9577">#9577</a></strong> <a href="https://app.graphite.com/github/pr/o/r/9577?utm_source=stack-comment-icon" rel="nofollow"><img alt="Graphite"></a></li>
+      <li><strong><a class="issue-link js-issue-link" data-hovercard-type="pull_request" href="https://github.com/o/r/pull/9530">#9530</a></strong> <a href="https://app.graphite.com/github/pr/o/r/9530?utm_source=stack-comment-icon" rel="nofollow"><img alt="Graphite"></a>: 1 other dependent PR (<a href="https://github.com/o/r/pull/9291" data-hovercard-type="pull_request">#9291</a> <a href="https://app.graphite.com/github/pr/o/r/9291?utm_source=stack-comment-icon" rel="nofollow"><img alt="Graphite"></a>)</li>
+      <li><strong><a class="issue-link js-issue-link" data-hovercard-type="pull_request" href="https://github.com/o/r/pull/9528">#9528</a></strong> <a href="https://app.graphite.com/github/pr/o/r/9528?utm_source=stack-comment-icon" rel="nofollow"><img alt="Graphite"></a></li>
+      <li><code class="notranslate">main</code></li>
+    </ul>
+    <h2 dir="auto"></h2>
+    <p dir="auto">This stack of pull requests is managed by <a href="https://graphite.dev?utm-source=stack-comment" rel="nofollow"><b>Graphite</b></a>. Learn more about <a href="https://stacking.dev/?utm_source=stack-comment" rel="nofollow">stacking</a>.</p>
+  </div></div></body></html>`,
+  'text/html',
+);
 
 /** page_data/stack_mergeability as GitHub answered it for both PRs of a two-PR native stack (verified signed in, 2026-10-15). */
 const verifiedVerdict = { state: 'MERGEABLE', effectiveEntryStatus: 'READY', isInAutoMergeRange: false, channels: {}, statusCheckChannels: {} };

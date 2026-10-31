@@ -357,6 +357,12 @@ order the sidebar's next step goes by (`stackRowPillFor` in `src/pr/next-action.
 merge as stack", Merge conflicts, Unresolved comments, Required checks failed, Changes requested, Needs reviewers, CI
 running, Behind base, Blocked, Waiting on hooks, Ready to merge; its reason is on hover. The header's Copy stack puts the
 stack on the clipboard as Markdown, as Graphite's comment lists it: a line for each PR from the top, and trunk last.
+Forks come from Graphite's comment alone (GitHub's own stack is one line): it lists one line of the stack, the PR's own,
+and names in an entry's item the PRs that branch off it past the line, "1 other dependent PR (#9003)"
+(`graphiteStackComment`), which become `Stack.forks`, each with the entry it branches from (`StackEntry.parentNumber`),
+beside the line's `Stack.entries`. The card draws a fork as Graphite does, indented right above the entry it branches
+from, its dot on a short rail in the rail's own colour that curves out of the main one; the header's count, the
+sidebar's "Waiting on downstack" and Copy stack are the line's alone, the forks left out.
 The viewed PR's review verdict, checks and merge status come with its page;
 every other entry's are the row details the inbox shows for a PR (`useRowEnrichment` in `src/inbox/row-details.ts`,
 `inbox.enrich`, below), asked for while the card is open, 10 entries a request and one request at a time, under the
@@ -368,7 +374,9 @@ and merge status too while a merged or closed one says so at once; a request Git
 opened an entry, and the search finds only the viewed PR's author's, so each other entry's author is its own
 `page_data/header`'s `pullRequest.author` (`authorIn` in `src/lib/github-web/stack.ts`), asked alongside its threads. Until the stack arrives its skeleton has a round placeholder there; an
 entry whose header GitHub did not answer leaves the place empty (`StackEntry.author` is null), never the viewed PR's
-author.
+author. An entry Graphite's comment names by its number alone, as it links a fork, takes its title and state from that
+same header (`pullRequest.title` and `state`, `withConversationsAndAuthors`); one the comment named with a title and an
+icon keeps them.
 
 Merging a GitHub-native stack: GitHub merges the viewed PR and every open PR below it in one request, `enqueue_stack`
 from the viewed PR, as its own "Squash and merge stack" does (`pr.merge` sends it for any PR of a native stack). Each
@@ -569,7 +577,8 @@ stacked reviewer avatars (three, then `+N`; a bot without an avatar gets its Git
 names each reviewer with their state, "jlord · approved"), a labels chip, Graphite's conversation counter (an icon and review threads
 resolved of all, "2/3", without a chip's border, hidden without any and once every one is resolved; the PR page's stack card shows it on each entry, "3/3" too), the stack chip (its tooltip Graphite's "2/2 position in stack"; GitHub's
 own stack's position, grey; else, as Graphite's inbox shows it, the place Graphite's stack comment on the PR's page gives
-it among every entry, merged and closed ones too, grey as well, for open, merged and closed rows alike (`inbox.graphiteStacks`:
+it on the PR's own line, merged and closed entries too, forks left out ("6/6" on offstreetparking/core#9029, whose #9003
+branches off #8994), grey as well, for open, merged and closed rows alike (`inbox.graphiteStacks`:
 the page's HTML read by `graphiteStackComment` and `graphiteStackPlace` in `src/lib/github-web/stack.ts`, three PRs at a
 time, asked as a row not in GitHub's own stack comes within 200px of view, 10 rows a request and one request at a time,
 and again only once the row has been updated since; `useGraphiteStacks` in `src/inbox/InboxPage.tsx`); else, for a stack

@@ -219,11 +219,11 @@ export function prDetailFrom(header: PrStages['header'], data: PrPageData): PrDe
       ? {
           ...stack,
           entries: stack.entries.map((entry, index) => ({
-            ...(index === stack.currentIndex ? { ...summary, readyToMergeAsStack: entry.readyToMergeAsStack } : entry),
+            ...(index === stack.currentIndex ? { ...summary, parentNumber: entry.parentNumber, readyToMergeAsStack: entry.readyToMergeAsStack } : entry),
             willMergeWhenReady: autoMergeRange?.includes(entry.number),
           })),
         }
-      : { entries: [summary], currentIndex: 0, trunk: header.baseRefName, source: 'none' },
+      : { entries: [{ ...summary, parentNumber: null }], forks: [], currentIndex: 0, trunk: header.baseRefName, source: 'none' },
   };
 }
 
@@ -272,7 +272,7 @@ export function stagesStandingIn(queryClient: QueryClient, repo: RepoRef, number
   if (!known) return {};
   const details = enrichmentFoundBefore(queryClient).get(known.id);
   const branches = z.optional(z.nullable(stackBranchesSchema)).parse(queryClient.getQueryData(['stack-branches', known.repo.owner, known.repo.name, known.number]));
-  const pr: StackEntry = { ...known, ...details };
+  const pr: PrSummary | StackEntry = { ...known, ...details };
   const { id, title, url, author, state, isDraft, createdAt, updatedAt, mergedAt, additions, deletions, changedFiles, commentCount, nativeStack } = pr;
   return {
     // A stack entry whose page header GitHub did not answer names nobody; the page's own header will.

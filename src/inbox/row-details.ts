@@ -18,7 +18,7 @@ import type { MergeMethod } from '../lib/rpc';
  * changed, and kept 2 minutes; until the new answer comes, and wherever it misses something, what was found before
  * stays, from the cache too. A request that fails leaves its rows as they were, and says so in the console.
  */
-export function useRowEnrichment(source: DataSource, rows: StackEntry[], mergeMethod: MergeMethod) {
+export function useRowEnrichment(source: DataSource, rows: Array<PrSummary | StackEntry>, mergeMethod: MergeMethod) {
   const queryClient = useQueryClient();
   // The rows shown so far, as they were when shown (rowVersion).
   const [shown, setShown] = useState<ReadonlySet<string>>(new Set());
@@ -27,7 +27,7 @@ export function useRowEnrichment(source: DataSource, rows: StackEntry[], mergeMe
   const askForRow = useMemo(
     () =>
       askedTogether(
-        async (prs: StackEntry[]) => {
+        async (prs: Array<PrSummary | StackEntry>) => {
           try {
             return await source.enrichInbox(prs.map(({ repo, number, state, isDraft, author, ci }) => ({ repo, number, state, isDraft, author, ci: { state: ci.state } })));
           } catch (error) {
@@ -55,7 +55,7 @@ export function useRowEnrichment(source: DataSource, rows: StackEntry[], mergeMe
     },
   });
 
-  function want(pr: StackEntry) {
+  function want(pr: PrSummary | StackEntry) {
     const version = hashKey(rowVersion(pr));
     if (!shown.has(version)) setShown((current) => new Set(current).add(version));
   }
@@ -95,7 +95,7 @@ export function enrichmentFoundBefore(queryClient: QueryClient): Map<string, PrE
 }
 
 /** What a row's enrichment goes by: the PR, and what the dashboard says of it that would change the answer. */
-function rowVersion(pr: StackEntry) {
+function rowVersion(pr: PrSummary | StackEntry) {
   return [pr.id, pr.updatedAt, pr.state, pr.isDraft, pr.ci.state];
 }
 

@@ -354,10 +354,10 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     // viewer's review as octocat's.
     enrichInbox: async (prs) => {
       await new Promise((resolve) => setTimeout(resolve, 400));
-      const rows: Array<StackEntry & Pick<InboxFixtureRow, 'requiredCheckNames' | 'mergeBlockedReason'>> = [
+      const rows: Array<(PrSummary | StackEntry) & Pick<InboxFixtureRow, 'requiredCheckNames' | 'mergeBlockedReason'>> = [
         ...fixtures.inbox.flatMap((result) => result.prs),
         ...Object.values(fixtures.inboxPages).flat(2),
-        ...fixtures.prs.flatMap((pr) => pr.stack.entries),
+        ...fixtures.prs.flatMap((pr) => [...pr.stack.entries, ...pr.stack.forks]),
       ];
       return prs.map(({ repo, number }) => {
         const pr = rows.find((row) => row.repo.owner === repo.owner && row.repo.name === repo.name && row.number === number);

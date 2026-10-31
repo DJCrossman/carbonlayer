@@ -15,7 +15,7 @@ import { mergeBoxAnswer, mergeState, type MergeBoxAnswer } from './merge-box';
 import { rememberPullRequest } from './mutations';
 import { reviewDecisionOf, reviewRequestsAnswer, reviewersOf } from './reviews';
 import { SIGNED_OUT, embeddedPayload, getJson, getPage, githubUser } from './session';
-import { authorHeaderAnswer, authorIn, graphiteStackComment, nativeStackSchema, resolveStack, stackMergeabilityAnswer } from './stack';
+import { authorHeaderAnswer, graphiteStackComment, nativeStackSchema, resolveStack, stackMergeabilityAnswer } from './stack';
 import { conversationsIn, reviewThreads, threadsAnswer } from './threads';
 import { descriptionPermalink, reactionsIn, timelineFrom } from './timeline';
 
@@ -194,9 +194,9 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
                 console.debug('[gg]', `page_data/threads for ${pull.repo.owner}/${pull.repo.name}#${number} failed; its stack entry shows no conversations:`, error instanceof Error ? error.message : error);
                 return null;
               }),
-          author: (number) =>
+          header: (number) =>
             answersFor({ repo: pull.repo, number, path: `/${pull.repo.owner}/${pull.repo.name}/pull/${number}` })
-              .author()
+              .header()
               .catch((error: unknown) => {
                 console.debug('[gg]', `page_data/header for ${pull.repo.owner}/${pull.repo.name}#${number} failed; its stack entry shows no author:`, error instanceof Error ? error.message : error);
                 return null;
@@ -248,8 +248,8 @@ function answersFor(pull: Pull) {
     diffstat: () => ask(answers.diffstat, '', () => getJson(`${data}/diffstat`, diffstatAnswer)),
     description: () => ask(answers.description, '', () => sideDetail('description', descriptionAnswer)),
     threads: () => ask(answers.threads, '', () => getJson(`${data}/threads`, threadsAnswer)),
-    // Who opened the PR, for its entry in another PR's stack.
-    author: () => ask(answers.author, '', () => getJson(`${data}/header`, authorHeaderAnswer).then(authorIn)),
+    // Who opened the PR, and its title and state, for its entry in another PR's stack.
+    header: () => ask(answers.header, '', () => getJson(`${data}/header`, authorHeaderAnswer)),
     comparison: () => ask(answers.comparison, '', () => getJson(`${data}/base_comparison_info`, baseComparisonAnswer)),
     // The comparison is only asked for should GitHub want a range after all.
     diffs: (paths: string[]) => ask(answers.diffs, paths.join('\n'), () => fileDiffs(pull.path, paths, async () => (await github.comparison()).comparison?.fullDiff?.headOid ?? null)),
@@ -312,7 +312,7 @@ const answers = {
   diffstat: new Map<string, Promise<z.infer<typeof diffstatAnswer>>>(),
   description: new Map<string, Promise<z.infer<typeof descriptionAnswer> | null>>(),
   threads: new Map<string, Promise<z.infer<typeof threadsAnswer>>>(),
-  author: new Map<string, Promise<UserRef | null>>(),
+  header: new Map<string, Promise<z.infer<typeof authorHeaderAnswer>>>(),
   comparison: new Map<string, Promise<BaseComparison>>(),
   diffs: new Map<string, Promise<Record<string, ChangedFileDiff>>>(),
   mergeBox: new Map<string, Promise<MergeBoxAnswer | null>>(),
@@ -333,7 +333,7 @@ type GitHubRequest =
   | 'diffstat'
   | 'description'
   | 'threads'
-  | 'author'
+  | 'header'
   | 'comparison'
   | 'diffs'
   | 'mergeBox'

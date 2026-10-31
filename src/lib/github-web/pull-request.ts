@@ -35,6 +35,6 @@ export async function fetchPullRequestPage(repo: RepoRef, number: number): Promi
     baseOid: files.baseOid,
     files: files.files.map((file) => ({ ...file, ...(diffs[file.path] ?? { patch: null, previousPath: null, withheld: null, generated: false }) })),
     // The stack's own entry for this PR knows only the header.
-    stack: { ...stack.stack, entries: stack.stack.entries.map((entry, index) => (index === stack.stack.currentIndex ? summary : entry)) },
+    stack: { ...stack.stack, entries: stack.stack.entries.map((entry, index) => (index === stack.stack.currentIndex ? { ...summary, parentNumber: entry.parentNumber } : entry)) },
   };
 }

@@ -66,6 +66,21 @@
 }
 .stack-row.is-current { background: color-mix(in srgb, var(--gg-accent) 10%, transparent); }
 .stack-row.is-merged .stack-title { color: var(--gg-fg-muted); }
+/* A fork off the line, indented 16px: its dot sits on a short rail, in the rail's own colour, that curves out of the
+   main rail on its way down to the entry it branches from. */
+.stack-row.is-fork { padding-left: 28px; }
+.stack-row.is-fork::before {
+  content: '';
+  position: absolute;
+  left: 17px;
+  top: calc(50% - 1px);
+  bottom: 0;
+  width: 17px;
+  box-sizing: border-box;
+  border-top: 2px solid var(--gg-border);
+  border-left: 2px solid var(--gg-border);
+  border-top-left-radius: 8px;
+}
 
 .stack-dot {
   position: relative;

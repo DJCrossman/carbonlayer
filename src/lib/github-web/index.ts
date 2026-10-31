@@ -64,7 +64,7 @@ const handlers: { [M in RpcMethod]: (args: RpcMethods[M]['args']) => Promise<Rpc
     // the place or none; one GitHub does not answer gives null, which the inbox asks about again.
     politely(prs, 3, ({ repo, number }) =>
       getPage(`/${repo.owner}/${repo.name}/pull/${number}`)
-        .then((page) => ({ place: graphiteStackPlace(graphiteStackComment(page)?.entries ?? [], number) }))
+        .then((page) => ({ place: graphiteStackPlace(graphiteStackComment(page) ?? { entries: [], forks: [] }, number) }))
         .catch((error: unknown) => {
           console.debug('[gg]', `the page of ${repo.owner}/${repo.name}#${number} failed; the row shows no place in Graphite's stack:`, error instanceof Error ? error.message : error);
           return null;

@@ -1,7 +1,7 @@
 // The single next step a pull request is waiting on, as shown in the sidebar's action card, and in the same order the one
 // pill the stack card's row shows for each PR in the stack.
 
-import type { PrDetail, PrStage, Stack, StackEntry } from '../lib/model';
+import type { PrDetail, PrStage, PrSummary, Stack, StackEntry } from '../lib/model';
 import type { IconName } from '../ui/Icon';
 
 /**
@@ -56,7 +56,8 @@ export function nextActionFor(pr: PrDetail, unknown: readonly PrStage[] = []): N
     };
   }
   if (unknown.includes('stack')) return checking;
-  // The PR closest to trunk that is still open has to merge first, unless GitHub can merge it and this one as a stack.
+  // The PR closest to trunk that is still open has to merge first, unless GitHub can merge it and this one as a stack; only
+  // this PR's own line counts, never a fork off it.
   const downstack = pr.stack.entries.slice(0, pr.stack.currentIndex).find((entry) => entry.state === 'OPEN');
   const asStack = stackToMerge(pr.stack);
   if (downstack && !asStack) {
@@ -159,7 +160,7 @@ export type StackRowPill = {
  * conversations, a failing required check (of `requiredCheckNames`, those its page or its row details name), reviews,
  * running checks, and last what GitHub says of merging it. None while GitHub has not said whether it can merge.
  */
-export function stackRowPillFor(entry: StackEntry, requiredCheckNames: readonly string[] = [], mergingAsStack: 'viewed' | 'below' | null = null): StackRowPill | null {
+export function stackRowPillFor(entry: PrSummary | StackEntry, requiredCheckNames: readonly string[] = [], mergingAsStack: 'viewed' | 'below' | null = null): StackRowPill | null {
   if (entry.state === 'MERGED') return { label: 'Merged', tone: 'done', icon: 'git-merge' };
   if (entry.state === 'CLOSED') return { label: 'Closed', tone: 'danger', icon: 'git-pull-request-closed' };
   if (entry.isDraft || entry.mergeStatus === 'DRAFT') return { label: 'Draft', tone: 'neutral', icon: 'git-pull-request-draft' };

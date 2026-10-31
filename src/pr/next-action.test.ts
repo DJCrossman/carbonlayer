@@ -1,6 +1,6 @@
 import { assert, describe, expect, it } from 'vitest';
 import { prFixtures } from '../fixtures/pr';
-import type { PrDetail } from '../lib/model';
+import type { PrDetail, StackEntry } from '../lib/model';
 import { nextActionFor, stackRowPillFor } from './next-action';
 
 const pr41 = prFixtures.find((pr) => pr.number === 41);
@@ -107,6 +107,16 @@ describe('nextActionFor', () => {
     expect(nextActionFor({ ...pr42, stack: { ...pr42.stack, entries } })).toMatchObject({ kind: 'unresolved' });
   });
 
+  it('waits only on its own line: an open PR branching off the stack below it is not downstack', () => {
+    const fork = pr42.stack.forks.find((entry) => entry.number === 40);
+    assert.isDefined(fork);
+    // #41 merged, and #40, off #41 beside #42, open again.
+    const entries = pr42.stack.entries.map((entry): StackEntry => (entry.number === 41 ? { ...entry, state: 'MERGED' } : entry));
+    expect(nextActionFor({ ...pr42, stack: { ...pr42.stack, entries, forks: [{ ...fork, state: 'OPEN' }] } })).toMatchObject({ kind: 'unresolved' });
+    // With #41 open, #41 is what it waits on, never the fork.
+    expect(nextActionFor({ ...pr42, stack: { ...pr42.stack, forks: [{ ...fork, state: 'OPEN' }] } })).toMatchObject({ kind: 'downstack', title: 'Waiting on downstack · #41' });
+  });
+
   describe('in a stack GitHub merges as one', () => {
     // #42 with nothing of its own in the way: approved, green, its threads resolved. #41 below it is open, #43 above a draft.
     const ready42: PrDetail = { ...pr42, reviewDecision: 'APPROVED', reviewers: ready.reviewers, ci: ready.ci, requiredCheckNames: ready.requiredCheckNames, unresolvedThreadCount: 0, mergeStatus: 'CLEAN' };
@@ -140,7 +150,10 @@ describe('nextActionFor', () => {
       const merged41 = inStack('native', [42]);
       const entries = merged41.stack.entries.map((entry) => (entry.number === 41 ? { ...entry, state: 'MERGED' as const } : entry));
       expect(nextActionFor({ ...merged41, stack: { ...merged41.stack, entries } })).toMatchObject({ kind: 'ready', title: 'Ready to merge' });
-      expect(nextActionFor({ ...ready, stack: { entries: [ready], currentIndex: 0, trunk: 'main', source: 'none' } })).toMatchObject({ kind: 'ready', title: 'Ready to merge' });
+      expect(nextActionFor({ ...ready, stack: { entries: [{ ...ready, parentNumber: null }], forks: [], currentIndex: 0, trunk: 'main', source: 'none' } })).toMatchObject({
+        kind: 'ready',
+        title: 'Ready to merge',
+      });
     });
   });
 
