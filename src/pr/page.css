@@ -154,9 +154,13 @@
   text-decoration: none;
   cursor: pointer;
 }
-.pr-menu-list button:hover,
+.pr-menu-list button:hover:not(:disabled),
 .pr-menu-list a:hover { background: var(--gg-bg-hover); }
 .pr-menu-list .gg-icon { color: var(--gg-fg-muted); }
+/* An item the viewer cannot use (the PR's Merge without permission, or Not ready to merge), dimmed as a disabled button. */
+.pr-menu-list button:disabled { cursor: default; opacity: 0.55; }
+/* Finish review's pending count, on the menu's background where the primary button's is on the accent. */
+.pr-menu-list .pr-review-badge { background: var(--gg-accent); color: var(--gg-accent-fg); }
 /* An item that destroys something (a file's Delete file), red as GitHub's. */
 .pr-menu-list .is-danger,
 .pr-menu-list .is-danger .gg-icon { color: var(--gg-danger); }
@@ -164,9 +168,10 @@
 .pr-menu-check { display: inline-flex; flex: none; width: 14px; }
 .pr-menu-separator { height: 1px; margin: 4px -4px; background: var(--gg-border-muted); }
 
-/* The header's actions again, under the assignees: one row across the sidebar, Finish review taking what the other two
-   leave (its popover floats below its right edge, review.css). The menu is fixed to its button, so the sidebar's
-   scrolling cannot clip it, and opens above it when there is no room below. */
+/* The header's actions again, under the assignees: one row across the sidebar, its one primary button (Finish review, or
+   the merge control on the viewer's own PR) taking what the other two leave (the review popover floats below its right
+   edge, review.css). The menu is fixed to its button, so the sidebar's scrolling cannot clip it, and opens above it when
+   there is no room below. */
 .side-pr-actions { display: flex; align-items: center; gap: 6px; }
 .side-pr-actions > .pr-review-anchor { display: flex; flex: 1; min-width: 0; }
 .side-pr-actions > .pr-review-anchor > .gg-btn { flex: 1; justify-content: center; }

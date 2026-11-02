@@ -388,8 +388,9 @@ open entry from the bottom up to the viewed PR carries GitHub's verdict from its
 (`StackEntry.readyToMergeAsStack`: READY only, a status GitHub adds later is not). When every one is READY, the sidebar's next step
 is Graphite's "Ready to merge as stack" in place of "Waiting on downstack", once nothing of the viewed PR's own stands in
 the way (`stackToMerge` and `nextActionFor` in `src/pr/next-action.ts`); the stack card's row for the viewed PR reads
-"Ready to merge as stack" and those below it "Ready to merge". Its "Merge N PRs", a green button in the top bar beside
-Finish review too while the viewer may merge, and `m` open Graphite's dialog (`MergeStackDialog` in
+"Ready to merge as stack" and those below it "Ready to merge". Its "Merge N PRs", in the top bar too while the viewer
+may merge (the bar's one primary button, green, on the viewer's own PR; on another's, where Finish review is that button,
+the first item of its ⋯), and `m` open Graphite's dialog (`MergeStackDialog` in
 `src/pr/MergeStackDialog.tsx`): "Merge stack of N PRs into <trunk>", a sentence true of GitHub's merge (one request, from
 the PR closest to trunk up to this one), the merge strategy (the sidebar's pick, else the remembered method; its ⓘ says
 what GitHub's merge box says that way does to a stack), the PRs this one first, Graphite's two options, and "<method> N

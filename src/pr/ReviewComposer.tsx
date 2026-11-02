@@ -1,5 +1,6 @@
-// Finishing a review: the popover under "Finish review" (also opened by r c / r n / r a) that submits the
-// body, the verdict and every inline comment batched with "Add to review"; and the r y quick-approve dialog.
+// Finishing a review: the popover under "Finish review" (also opened by r c / r n / r a, and from the ⋯ menu on the
+// viewer's own PR, under the merge control that takes the button's place there) that submits the body, the verdict and
+// every inline comment batched with "Add to review"; and the r y quick-approve dialog.
 import { useEffect, useState } from 'react';
 import type { ReviewThreadDraft } from '../app/data-source';
 import type { PrDetail } from '../lib/model';

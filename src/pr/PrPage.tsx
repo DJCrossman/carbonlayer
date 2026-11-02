@@ -723,7 +723,7 @@ function PrView({
   );
 }
 
-function PrHeader({ pr, actions }: { pr: PrDetail; /** The comments button, Finish review and More actions (PrActions). */ actions: ReactNode }) {
+function PrHeader({ pr, actions }: { pr: PrDetail; /** The comments button, the one primary button and More actions (PrActions). */ actions: ReactNode }) {
   return (
     <header className="pr-header">
       <div className="pr-header-top">
@@ -851,9 +851,11 @@ function optimisticPr(pr: PrDetail, edits: PendingEdits): PrDetail {
 }
 
 /**
- * The PR's actions: the comments drawer's button, Finish review, a merge control that follows the sidebar's next step, and
- * More actions. In the header, and again under the assignees while the header's are scrolled out of sight; the review
- * popover and the menu open beside the ones in view.
+ * The PR's actions: the comments drawer's button, one primary button, and More actions. On the viewer's own PR, where
+ * their review can only comment, that button is the merge control that follows the sidebar's next step, and Finish
+ * review is the menu's first item; on another's, and on their own once there is no merge control, it is Finish review,
+ * and the merge control the menu's first item. In the header, and again under the assignees while the header's are
+ * scrolled out of sight; the review popover and the menu open beside the ones in view.
  */
 function PrActions({
   pr,
@@ -917,6 +919,91 @@ function PrActions({
     };
   }, [menuOpen, onMenuOpenChange]);
 
+  // The merge control, as the row's button and as the menu's item. A draft's own Ready for review, whatever its next step
+  // says (a failed required check still leaves it a draft to mark ready), has the menu's own Ready for review for its item.
+  const merge: { button: ReactNode; item: ReactNode } | null =
+    nextAction.kind === 'ready-as-stack'
+      ? {
+          button: (
+            <Button
+              variant="primary"
+              className="pr-merge-button"
+              disabled={!pr.viewerCanMerge}
+              title={pr.viewerCanMerge ? 'Merge the stack (m)' : 'You do not have permission to merge this pull request'}
+              onClick={onMergeStack}
+            >
+              Merge {nextAction.prs.length} PRs
+            </Button>
+          ),
+          item: (
+            <button
+              role="menuitem"
+              disabled={!pr.viewerCanMerge}
+              title={pr.viewerCanMerge ? 'Merge the stack (m)' : 'You do not have permission to merge this pull request'}
+              onClick={() => {
+                onMenuOpenChange(false);
+                onMergeStack();
+              }}
+            >
+              <Icon name="git-merge" size={14} />
+              Merge {nextAction.prs.length} PRs
+            </button>
+          ),
+        }
+      : nextAction.kind === 'ready' && onMergeConfirm
+        ? {
+            button: (
+              <Button
+                variant="primary"
+                className="pr-merge-button"
+                disabled={!pr.viewerCanMerge}
+                title={pr.viewerCanMerge ? undefined : 'You do not have permission to merge this pull request'}
+                onClick={onMergeConfirm}
+              >
+                <Icon name="git-merge" size={14} />
+                Merge
+              </Button>
+            ),
+            item: (
+              <button
+                role="menuitem"
+                disabled={!pr.viewerCanMerge}
+                title={pr.viewerCanMerge ? undefined : 'You do not have permission to merge this pull request'}
+                onClick={() => {
+                  onMenuOpenChange(false);
+                  onMergeConfirm();
+                }}
+              >
+                <Icon name="git-merge" size={14} />
+                Merge
+              </button>
+            ),
+          }
+        : pr.isDraft && pr.viewerCanUpdate
+          ? {
+              button: (
+                <Button variant="primary" onClick={() => void onSetDraft(false)}>
+                  Ready for review
+                </Button>
+              ),
+              item: null,
+            }
+          : !pr.isDraft && !['ready-as-stack', 'ready', 'draft', 'merged', 'closed'].includes(nextAction.kind)
+            ? {
+                button: (
+                  <Button icon="alert" disabled title={nextAction.title}>
+                    Not ready to merge
+                  </Button>
+                ),
+                item: (
+                  <button role="menuitem" disabled title={nextAction.title}>
+                    <Icon name="alert" size={14} />
+                    Not ready to merge
+                  </button>
+                ),
+              }
+            : null;
+
   return (
     <>
       {/* Opens the comments drawer; counts the open conversations once the threads have arrived. */}
@@ -930,47 +1017,38 @@ function PrActions({
       >
         {pr.conversations ? pr.unresolvedThreadCount : null}
       </Button>
-      <FinishReview batchCount={batchCount} onToggle={onFinishReview} popover={reviewPopover} floating={inSidebar} />
-      {nextAction.kind === 'ready-as-stack' && (
-        <Button
-          variant="primary"
-          className="pr-merge-button"
-          disabled={!pr.viewerCanMerge}
-          title={pr.viewerCanMerge ? 'Merge the stack (m)' : 'You do not have permission to merge this pull request'}
-          onClick={onMergeStack}
-        >
-          Merge {nextAction.prs.length} PRs
-        </Button>
-      )}
-      {nextAction.kind === 'ready' && onMergeConfirm && (
-        <Button
-          variant="primary"
-          className="pr-merge-button"
-          disabled={!pr.viewerCanMerge}
-          title={pr.viewerCanMerge ? undefined : 'You do not have permission to merge this pull request'}
-          onClick={onMergeConfirm}
-        >
-          <Icon name="git-merge" size={14} />
-          Merge
-        </Button>
-      )}
-      {/* A draft's own button, whatever its next step says (a failed required check still leaves it a draft to mark ready). */}
-      {pr.isDraft && pr.viewerCanUpdate && (
-        <Button variant="primary" onClick={() => void onSetDraft(false)}>
-          Ready for review
-        </Button>
-      )}
-      {!pr.isDraft && !['ready-as-stack', 'ready', 'draft', 'merged', 'closed'].includes(nextAction.kind) && (
-        <Button icon="alert" disabled title={nextAction.title}>
-          Not ready to merge
-        </Button>
-      )}
+      <PrimaryAction popover={reviewPopover} floating={inSidebar}>
+        {merge && pr.viewerDidAuthor ? (
+          merge.button
+        ) : (
+          <Button variant="primary" onClick={onFinishReview} aria-expanded={Boolean(reviewPopover)} title="Finish review (r c)">
+            Finish review
+            {batchCount > 0 && <span className="pr-badge pr-review-badge">{batchCount}</span>}
+          </Button>
+        )}
+      </PrimaryAction>
       <div className="pr-menu" ref={menu}>
         <Button onClick={() => onMenuOpenChange(!menuOpen)} aria-haspopup="menu" aria-expanded={menuOpen} aria-label="More actions">
           <Icon name="kebab-horizontal" size={14} />
         </Button>
         {menuOpen && (
           <div className="pr-menu-list" role="menu">
+            {/* First, whichever of Finish review and the merge control the row's primary button is not. */}
+            {merge && pr.viewerDidAuthor ? (
+              <button
+                role="menuitem"
+                onClick={() => {
+                  onMenuOpenChange(false);
+                  onFinishReview();
+                }}
+              >
+                <Icon name="comment" size={14} />
+                Finish review
+                {batchCount > 0 && <span className="pr-badge pr-review-badge">{batchCount}</span>}
+              </button>
+            ) : (
+              merge?.item
+            )}
             {pr.state === 'OPEN' && pr.viewerCanUpdate && (
               <button
                 role="menuitem"
@@ -1033,10 +1111,11 @@ function PrActions({
 }
 
 /**
- * Finish review, its popover under it; in the sidebar the popover floats beside it instead, rendered into the body since
- * the sidebar would clip it.
+ * The row's one primary button, Finish review or the merge control, with the review popover under it wherever the review
+ * was opened from (the button, the menu's Finish review, or r c); in the sidebar the popover floats beside it instead,
+ * rendered into the body since the sidebar would clip it.
  */
-function FinishReview({ batchCount, onToggle, popover, floating }: { batchCount: number; onToggle: () => void; popover: ReactNode; floating: boolean }) {
+function PrimaryAction({ popover, floating, children }: { popover: ReactNode; floating: boolean; children: ReactNode }) {
   const anchor = useRef<HTMLDivElement | null>(null);
   const [at, setAt] = useState<{ top: number; right: number; above: boolean } | null>(null);
   useLayoutEffect(() => {
@@ -1059,10 +1138,7 @@ function FinishReview({ batchCount, onToggle, popover, floating }: { batchCount:
   }, [popover, floating]);
   return (
     <div className="pr-review-anchor" ref={anchor}>
-      <Button variant="primary" onClick={onToggle} aria-expanded={Boolean(popover)} title="Finish review (r c)">
-        Finish review
-        {batchCount > 0 && <span className="pr-badge pr-review-badge">{batchCount}</span>}
-      </Button>
+      {children}
       {!floating
         ? popover
         : popover &&

@@ -1,4 +1,5 @@
-/* Review popover (anchored under "Finish review") and the quick-approve dialog. */
+/* Review popover (anchored under the PR's one primary button: "Finish review", or the merge control on the viewer's own
+   PR) and the quick-approve dialog. */
 
 .pr-review-anchor { position: relative; }
 .review-popover-float { position: fixed; z-index: 30; width: 0; height: 0; }

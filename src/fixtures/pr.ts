@@ -1,6 +1,6 @@
 // PR page fixtures for the dev harness (`app.html?fixtures=1#/pr/acme/widgets/42`): a three-PR stack in
 // acme/widgets. #41 (bottom) is approved and green, #42 (middle) has review feedback and a failing check, both
-// mona's; #43 (top) is jlord's draft; and mona's closed #40 branches off #41 beside #42, a fork off the stack's line.
+// mona's; #43 (top) is the viewer's own draft; and mona's closed #40 branches off #41 beside #42, a fork off the stack's line.
 // The viewer, octocat, may edit #41's and #42's descriptions and some of #42's
 // comments, those with `editableMarkdown` (GitHub lets a repository's writers edit others' comments). Patches are written as line arrays so blank context lines keep their
 // leading space; every hunk header's counts match its body (the diff parser validates them).
@@ -107,13 +107,13 @@ const summary43: PrSummary = {
   number: 43,
   title: 'Show the zone switcher in the operator console',
   url: 'https://github.com/acme/widgets/pull/43',
-  author: jlord,
+  author: octocat,
   state: 'OPEN',
   isDraft: true,
   createdAt: '2026-10-08T11:40:00Z',
   updatedAt: '2026-10-09T07:05:00Z',
   mergedAt: null,
-  headRefName: 'jlord/zone-switcher-ui',
+  headRefName: 'octocat/zone-switcher-ui',
   baseRefName: 'mona/parcs-zone-switching',
   reviewDecision: 'REVIEW_REQUIRED',
   reviewers: [],
@@ -855,8 +855,8 @@ const detail43: PrDetail = {
   baseOid: '3f2a9c1d5e7b9a1c3e5d7f9b1d3f5a7c9e1b3d5f',
   headRepository: { owner: 'acme', name: 'widgets' },
   assignees: [],
-  viewerCanUpdate: false,
-  viewerDidAuthor: false,
+  viewerCanUpdate: true,
+  viewerDidAuthor: true,
   timeline: [
     {
       kind: 'commit',
@@ -864,7 +864,7 @@ const detail43: PrDetail = {
       oid: 'facade43facade43facade43facade43facade43',
       abbreviatedOid: 'facade4',
       messageHeadline: 'Show the zone switcher in the operator console',
-      author: jlord,
+      author: octocat,
       committedAt: '2026-10-09T07:04:00Z',
       url: 'https://github.com/acme/widgets/commit/facade4',
     },
