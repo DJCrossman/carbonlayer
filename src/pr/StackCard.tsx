@@ -1,12 +1,13 @@
 // The stack card: every PR in the stack on a vertical rail, tip at the top and trunk at the bottom, each with its
-// conversations and Graphite's one pill for where it stands, a fork off the line indented on a rail of its own; and the
-// card as it looks while the stack loads.
+// conversations and Graphite's one pill for where it stands, a fork off the line indented on a rail of its own, merged and
+// closed PRs as the header's ⋯ shows them; and the card as it looks while the stack loads.
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef } from 'react';
 import type { DataSource } from '../app/data-source';
 import { inboxRowFor, useRowEnrichment } from '../inbox/row-details';
 import type { Stack, StackEntry } from '../lib/model';
 import type { MergeMethod } from '../lib/rpc';
+import type { Settings } from '../lib/settings';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
@@ -16,8 +17,9 @@ import { Skeleton } from '../ui/Skeleton';
 import { StatusPill } from '../ui/StatusPill';
 import { showToast } from '../ui/Toast';
 import { goToPr } from './navigation';
-import { stackRowPillFor, stackToMerge } from './next-action';
+import { stackRowPillFor, stackRowsFor, stackToMerge } from './next-action';
 import { useLoadAhead } from './page-data';
+import { StackMenu } from './StackMenu';
 import './stack.css';
 
 /**
@@ -28,7 +30,8 @@ import './stack.css';
  * branches from, its dot on a short rail that curves out of the main one, its own forks above it; the header counts the
  * line alone. Its header's Copy stack puts the line on the clipboard as Markdown, as Graphite's comment lists it: the top
  * of the stack first, an item for each PR linked to it, and trunk last. The forks are left out: a list of one line has no
- * place for them that would not read as part of it.
+ * place for them that would not read as part of it. Its ⋯ (`StackMenu`) hides the stack's merged or closed PRs, but the
+ * viewed one, from the rows alone (`stackRowsFor`): the header's count and Copy stack still count the whole line.
  */
 export function StackCard({
   stack,
@@ -37,6 +40,9 @@ export function StackCard({
   onToggle,
   source,
   mergeMethod,
+  showMerged,
+  showClosed,
+  onSettingsChange,
 }: {
   stack: Stack;
   /** The viewed PR's required checks, which its page names; each other entry's come with its row details. */
@@ -46,6 +52,12 @@ export function StackCard({
   source: DataSource;
   /** The merge method in the settings, which the row details go by. */
   mergeMethod: MergeMethod;
+  /** Whether the card draws the stack's merged PRs, as the settings say (`stackShowMerged`). */
+  showMerged: boolean;
+  /** Whether the card draws the stack's closed PRs, as the settings say (`stackShowClosed`). */
+  showClosed: boolean;
+  /** Saves the setting the ⋯ menu's Show merged PRs or Show closed PRs changed. */
+  onSettingsChange: (patch: Pick<Partial<Settings>, 'stackShowMerged' | 'stackShowClosed'>) => void;
 }) {
   const queryClient = useQueryClient();
   // Each other entry and each fork as the inbox last showed it, when it did, else as the stack names it.
@@ -58,14 +70,13 @@ export function StackCard({
   useEffect(() => {
     if (!collapsed) for (const row of rows.values()) details.want(row);
   }, [rows, collapsed]);
-  const tipFirst = stack.entries.map((pr, index) => ({ pr, index })).reverse();
-  // The rows top first, each entry's forks right above it; a fork has no index on the line.
-  const drawn = tipFirst.flatMap(({ pr, index }): Array<{ pr: StackEntry; index: number | null }> => [...forksOff(stack.forks, pr.number).map((fork) => ({ pr: fork, index: null })), { pr, index }]);
+  // The rows top first, each entry's forks right above it, the merged and closed PRs the ⋯ hides left out.
+  const drawn = stackRowsFor(stack, { merged: showMerged, closed: showClosed });
   // The PRs GitHub can merge with the viewed one as a stack, whose rows say so as Graphite's do.
   const mergingAsStack = stackToMerge(stack);
   return (
     <Card className="stack-card">
-      {/* A click anywhere on the header folds the card, but on Copy stack (stack.css). */}
+      {/* A click anywhere on the header folds the card, but on Copy stack and the ⋯ menu (stack.css). */}
       <div className="stack-header">
         <button className="stack-toggle" onClick={onToggle} aria-expanded={!collapsed} title="Toggle stack (s)">
           <Icon name="stack" size={14} className="pr-fg-muted" />
@@ -81,7 +92,7 @@ export function StackCard({
           className="stack-copy"
           onClick={() =>
             navigator.clipboard
-              .writeText([...tipFirst.map(({ pr }) => `- [#${pr.number} ${pr.title}](${pr.url})`), `- \`${stack.trunk}\``].join('\n'))
+              .writeText([...[...stack.entries].reverse().map((pr) => `- [#${pr.number} ${pr.title}](${pr.url})`), `- \`${stack.trunk}\``].join('\n'))
               .then(
                 () => showToast('Copied stack'),
                 () => showToast('Could not copy the stack', 'danger'),
@@ -90,6 +101,7 @@ export function StackCard({
         >
           Copy stack
         </Button>
+        <StackMenu showMerged={showMerged} showClosed={showClosed} onSettingsChange={onSettingsChange} />
         <Icon name={collapsed ? 'chevron-right' : 'chevron-down'} size={14} className="pr-fg-muted" />
       </div>
       {!collapsed && (
@@ -230,12 +242,4 @@ function StackRow({
       </span>
     </li>
   );
-}
-
-/**
- * The forks that branch off the entry numbered `number`, in the order Graphite draws them above it: each fork's own forks,
- * its sub-line, right above it.
- */
-function forksOff(forks: StackEntry[], number: number): StackEntry[] {
-  return forks.filter((fork) => fork.parentNumber === number).flatMap((fork) => [...forksOff(forks, fork.number), fork]);
 }

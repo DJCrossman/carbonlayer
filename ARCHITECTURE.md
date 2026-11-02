@@ -362,7 +362,11 @@ and names in an entry's item the PRs that branch off it past the line, "1 other 
 (`graphiteStackComment`), which become `Stack.forks`, each with the entry it branches from (`StackEntry.parentNumber`),
 beside the line's `Stack.entries`. The card draws a fork as Graphite does, indented right above the entry it branches
 from, its dot on a short rail in the rail's own colour that curves out of the main one; the header's count, the
-sidebar's "Waiting on downstack" and Copy stack are the line's alone, the forks left out.
+sidebar's "Waiting on downstack" and Copy stack are the line's alone, the forks left out. The header's ⋯ is Graphite's
+(`StackMenu` in `src/pr/StackMenu.tsx`): View settings opens the options page, and Show merged PRs and Show closed PRs
+(`stackShowMerged` and `stackShowClosed` in settings, both on unless switched off) leave the stack's PRs in that state,
+on the line or off it, out of the rows, but never the viewed PR (`stackRowsFor` in `src/pr/next-action.ts`); a fork whose
+parent is left out stays above the next row below it, and the header's count and Copy stack still count the whole line.
 The viewed PR's review verdict, checks and merge status come with its page;
 every other entry's are the row details the inbox shows for a PR (`useRowEnrichment` in `src/inbox/row-details.ts`,
 `inbox.enrich`, below), asked for while the card is open, 10 entries a request and one request at a time, under the

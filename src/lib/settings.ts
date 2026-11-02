@@ -35,6 +35,10 @@ export interface Settings {
   sidebarCollapsed: boolean;
   /** Whether each inbox section shows a stack's pull requests together, the top of the stack first. */
   inboxGroupByStack: boolean;
+  /** Whether the PR page's stack card draws the stack's merged pull requests (Graphite's "Show merged PRs"); the viewed one it always draws. */
+  stackShowMerged: boolean;
+  /** Whether the PR page's stack card draws the stack's closed pull requests (Graphite's "Show closed PRs"); the viewed one it always draws. */
+  stackShowClosed: boolean;
   inboxEnabled: boolean;
   prEnabled: boolean;
   diffLayout: 'unified' | 'split';
@@ -50,6 +54,8 @@ export const DEFAULT_SETTINGS: Settings = {
   inboxRepos: [],
   sidebarCollapsed: false,
   inboxGroupByStack: false,
+  stackShowMerged: true,
+  stackShowClosed: true,
   inboxEnabled: true,
   prEnabled: true,
   diffLayout: 'unified',
@@ -157,6 +163,8 @@ const storedSettingsSchema = z.looseObject({
   inboxScope: z.catch(z.optional(z.string()), undefined),
   sidebarCollapsed: z.catch(z.optional(z.boolean()), DEFAULT_SETTINGS.sidebarCollapsed),
   inboxGroupByStack: z.catch(z.optional(z.boolean()), DEFAULT_SETTINGS.inboxGroupByStack),
+  stackShowMerged: z.catch(z.optional(z.boolean()), DEFAULT_SETTINGS.stackShowMerged),
+  stackShowClosed: z.catch(z.optional(z.boolean()), DEFAULT_SETTINGS.stackShowClosed),
   inboxEnabled: z.catch(z.optional(z.boolean()), DEFAULT_SETTINGS.inboxEnabled),
   prEnabled: z.catch(z.optional(z.boolean()), DEFAULT_SETTINGS.prEnabled),
   diffLayout: z.catch(z.optional(z.enum(['unified', 'split'])), DEFAULT_SETTINGS.diffLayout),

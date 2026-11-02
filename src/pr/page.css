@@ -160,6 +160,8 @@
 /* An item that destroys something (a file's Delete file), red as GitHub's. */
 .pr-menu-list .is-danger,
 .pr-menu-list .is-danger .gg-icon { color: var(--gg-danger); }
+/* A checkable item's leading slot (the stack's Show merged PRs): its check while on, the same width empty while off. */
+.pr-menu-check { display: inline-flex; flex: none; width: 14px; }
 .pr-menu-separator { height: 1px; margin: 4px -4px; background: var(--gg-border-muted); }
 
 /* The header's actions again, under the assignees: one row across the sidebar, Finish review taking what the other two

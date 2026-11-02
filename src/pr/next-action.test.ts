@@ -1,7 +1,7 @@
 import { assert, describe, expect, it } from 'vitest';
 import { prFixtures } from '../fixtures/pr';
 import type { PrDetail, StackEntry } from '../lib/model';
-import { nextActionFor, stackRowPillFor } from './next-action';
+import { nextActionFor, stackRowPillFor, stackRowsFor } from './next-action';
 
 const pr41 = prFixtures.find((pr) => pr.number === 41);
 const pr42 = prFixtures.find((pr) => pr.number === 42);
@@ -276,5 +276,38 @@ describe('stackRowPillFor', () => {
     expect(stackRowPillFor({ ...pr42, mergeStatus: 'DIRTY' }, pr42.requiredCheckNames, 'viewed')).toMatchObject({ label: 'Ready to merge as stack' });
     expect(stackRowPillFor({ ...pr42, isDraft: true }, pr42.requiredCheckNames, 'viewed')).toMatchObject({ label: 'Draft' });
     expect(stackRowPillFor({ ...pr42, isDraft: true, state: 'MERGED' })).toMatchObject({ label: 'Merged' });
+  });
+});
+
+describe('stackRowsFor', () => {
+  // #42's stack, #42 viewed: #43 on top, #42, #41 at the bottom, and mona's closed #40 branching off #41.
+  it('draws the line from its tip down, each fork right above the entry it branches from, while merged and closed PRs are shown', () => {
+    expect(stackRowsFor(pr42.stack, { merged: true, closed: true }).map(({ pr, index }) => [pr.number, index])).toEqual([
+      [43, 2],
+      [42, 1],
+      [40, null],
+      [41, 0],
+    ]);
+  });
+
+  it.each<[string, 'MERGED' | 'CLOSED', { merged: boolean; closed: boolean }]>([
+    ['merged', 'MERGED', { merged: false, closed: true }],
+    ['closed', 'CLOSED', { merged: true, closed: false }],
+  ])('leaves %s PRs out while they are hidden, on the line and off it, but never the viewed PR', (_, state, show) => {
+    // #41, the viewed #42 and the fork #40 in that state; #43 open.
+    const entries = pr42.stack.entries.map((entry): StackEntry => (entry.number === 43 ? entry : { ...entry, state }));
+    const forks = pr42.stack.forks.map((fork): StackEntry => ({ ...fork, state }));
+    expect(stackRowsFor({ ...pr42.stack, entries, forks }, show).map(({ pr }) => pr.number)).toEqual([43, 42]);
+  });
+
+  it('hides only the state it is asked to: the closed fork stays while merged PRs are hidden', () => {
+    expect(stackRowsFor(pr42.stack, { merged: false, closed: true }).map(({ pr }) => pr.number)).toEqual([43, 42, 40, 41]);
+  });
+
+  it('keeps a fork whose parent is hidden, right above the next row drawn below it', () => {
+    // #43 merged, and #40 open, branching off it.
+    const entries = pr42.stack.entries.map((entry): StackEntry => (entry.number === 43 ? { ...entry, state: 'MERGED' } : entry));
+    const forks = pr42.stack.forks.map((fork): StackEntry => ({ ...fork, state: 'OPEN', parentNumber: 43 }));
+    expect(stackRowsFor({ ...pr42.stack, entries, forks }, { merged: false, closed: true }).map(({ pr }) => pr.number)).toEqual([40, 42, 41]);
   });
 });

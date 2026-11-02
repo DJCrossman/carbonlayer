@@ -20,7 +20,8 @@
   cursor: pointer;
 }
 .stack-header:hover { background: var(--gg-bg-hover); }
-/* The toggle reaches over the whole header, so a click anywhere on it folds the card; Copy stack sits above it. */
+/* The toggle reaches over the whole header, so a click anywhere on it folds the card; Copy stack and the ⋯ menu
+   (StackMenu.tsx) sit above it, the menu's list over the rail's dots too, in its items' own weight, not the header's. */
 .stack-toggle {
   display: inline-flex;
   align-items: center;
@@ -34,6 +35,8 @@
 }
 .stack-toggle::after { content: ''; position: absolute; inset: 0; border-radius: var(--gg-radius); }
 .stack-copy { position: relative; z-index: 1; }
+.stack-menu { z-index: 2; }
+.stack-menu .pr-menu-list { font-weight: 400; }
 /* The header of the stack card while the stack loads: nothing to toggle yet. */
 .stack-header.is-loading { cursor: default; }
 .stack-header.is-loading:hover { background: none; }

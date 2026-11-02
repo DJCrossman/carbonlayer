@@ -1,5 +1,5 @@
 // The single next step a pull request is waiting on, as shown in the sidebar's action card, and in the same order the one
-// pill the stack card's row shows for each PR in the stack.
+// pill the stack card's row shows for each PR in the stack; and which of the stack's PRs the card draws rows for.
 
 import type { PrDetail, PrStage, PrSummary, Stack, StackEntry } from '../lib/model';
 import type { IconName } from '../ui/Icon';
@@ -217,4 +217,26 @@ export function stackToMerge(stack: Stack): StackEntry[] | null {
   if (stack.source !== 'native') return null;
   const merging = stack.entries.slice(0, stack.currentIndex + 1).filter((entry) => entry.state === 'OPEN');
   return merging.length > 1 && merging.every((entry) => entry.readyToMergeAsStack) ? merging : null;
+}
+
+/**
+ * The rows the stack card draws, top first: the line from its tip down, each entry's forks right above it, with the
+ * entry's index on the line (a fork has none). A merged PR is left out while `show.merged` is off, and a closed one while
+ * `show.closed` is (Graphite's ⋯ "Show merged PRs" and "Show closed PRs"), on the line or off it, but never the viewed PR;
+ * a fork whose parent is left out stays, right above the next row drawn below it.
+ */
+export function stackRowsFor(stack: Stack, show: { merged: boolean; closed: boolean }): Array<{ pr: StackEntry; index: number | null }> {
+  return stack.entries
+    .map((pr, index) => ({ pr, index }))
+    .reverse()
+    .flatMap(({ pr, index }): Array<{ pr: StackEntry; index: number | null }> => [...forksOff(stack.forks, pr.number).map((fork) => ({ pr: fork, index: null })), { pr, index }])
+    .filter(({ pr, index }) => index === stack.currentIndex || ((pr.state !== 'MERGED' || show.merged) && (pr.state !== 'CLOSED' || show.closed)));
+}
+
+/**
+ * The forks that branch off the entry numbered `number`, in the order Graphite draws them above it: each fork's own forks,
+ * its sub-line, right above it.
+ */
+function forksOff(forks: StackEntry[], number: number): StackEntry[] {
+  return forks.filter((fork) => fork.parentNumber === number).flatMap((fork) => [...forksOff(forks, fork.number), fork]);
 }

@@ -517,6 +517,11 @@ function PrView({
                     onToggle={() => setStackCollapsed((collapsed) => !collapsed)}
                     source={source}
                     mergeMethod={settings.mergeMethod}
+                    showMerged={settings.stackShowMerged}
+                    showClosed={settings.stackShowClosed}
+                    onSettingsChange={(patch) =>
+                      source.setSettings(patch).catch((reason: unknown) => showToast(`Could not save: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger'))
+                    }
                   />
                 )
               }
