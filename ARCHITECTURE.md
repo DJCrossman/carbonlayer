@@ -267,7 +267,8 @@ the description is the viewer's to edit where the title is (`editableDescription
 File links: each file's header copies as Graphite's does (`FileCard` in `src/pr/Files.tsx`), each copy confirmed in a
 toast. A click on its path copies the path: `@pierre/diffs` draws the path in the diff's shadow root, so the card hears
 the click and finds the path in the click's composed path, and the library's `unsafeCSS` marks it on hover. The ⋯ at the
-header's end offers Copy file name, the same, and Copy link, the link GitHub's files view gives the file,
+header's end starts, on a file whose diff shows and leaves lines out (not an added or deleted file's, the whole file
+already), with Graphite's "Show all lines" ("Hide unchanged lines" once they show; see Unchanged lines), then offers Copy file name, the same, and Copy link, the link GitHub's files view gives the file,
 `…/pull/<n>/files#diff-<the SHA-256 of its path, in hex>` (`fileAnchor` in `src/app/routes.ts`). Below them are GitHub's
 own file menu's links, built as its files view builds them: View file (`…/blob/<head commit>/<path>`, a deleted file's at
 the base commit), and Edit file (`…/edit/<head branch>/<path>?pr=/<owner>/<repo>/pull/<n>`, which comes back to the PR)
@@ -304,7 +305,9 @@ unchanged context may be available". The contents are a query beside the file's 
 'contents']`, `prFileContentsQuery` in `src/pr/page-data.ts`), in this tab's memory and never on the device, and the
 library keeps the lines expanded while the file shows, collapsed and opened again or in the other layout. An expanded
 line looks like any unchanged line, numbered on both sides, and takes no comment (`takesComments`): it has no "+", and a
-selection that reaches it opens no composer.
+selection that reaches it opens no composer. The ⋯'s "Show all lines" shows every unchanged line of the file at once
+(`expandUnchanged`, which has the library ask GitHub for them the same way), and "Hide unchanged lines" puts the
+separators back, the lines expanded by hand staying.
 
 Lines GitHub holds back: GitHub sends no lines for a generated file (a lockfile, or one marked `linguist-generated`)
 whatever its size, for one too big, and for every deleted file, which it marks too big; its own page shows them on

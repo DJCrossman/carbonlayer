@@ -486,6 +486,8 @@ function FileCard({
   const openComposer = useRef(review.openComposer);
   openComposer.current = review.openComposer;
   const setCollapsed = review.setCollapsed;
+  // Whether the ⋯'s "Show all lines" shows every unchanged line of the file, kept while it is collapsed and opened again.
+  const [allLines, setAllLines] = useState(false);
 
   // Stable identity unless a value the library renders from changes: it re-renders on every new options object.
   const options = useMemo(
@@ -517,6 +519,9 @@ function FileCard({
       // fewer all at once. The library shows them once it has the whole file, which the first expand asks GitHub for (every
       // hidden line in one request, kept with the diff), and keeps them shown, the file collapsed and opened again or not.
       expansionLineCount: 20,
+      // "Show all lines" shows every one of them at once, which has the library ask for the whole file the same way; "Hide
+      // unchanged lines" puts the separators back, with the lines expanded by hand still shown.
+      expandUnchanged: allLines,
       loadDiffFiles: async (partial) => {
         try {
           // Until its own header arrives, a PR opened from the inbox or a stack names no head commit.
@@ -532,7 +537,7 @@ function FileCard({
       // (onClick below), so it shows it on hover, as Graphite's does, without moving. An expanded unchanged line has no "+".
       unsafeCSS: `[data-sticky] { top: ${STICKY_TOP}px; } [data-title] { margin: -2px -4px; padding: 2px 4px; border-radius: 4px; cursor: pointer; } [data-title]:hover { background: var(--gg-bg-hover); } [data-line-type='context-expanded'] [data-gutter-utility-slot] { display: none; }`,
     }),
-    [diffStyle, themeType, collapsed, file.path, fileDiff, queryClient, source, owner, name, number, headOid, baseRefName],
+    [diffStyle, themeType, collapsed, allLines, file.path, fileDiff, queryClient, source, owner, name, number, headOid, baseRefName],
   );
 
   const viewedToggle = (
@@ -739,7 +744,8 @@ function FileCard({
           )}
           {viewedToggle}
           {commentOnFile}
-          <FileMenu file={file} pr={pr} />
+          {/* An added or deleted file's diff is the whole file already: nothing unchanged to show. */}
+          <FileMenu file={file} pr={pr} allLines={file.status === 'added' || file.status === 'removed' ? undefined : { shown: allLines, toggle: () => setAllLines((shown) => !shown) }} />
         </div>
       )}
     />
@@ -775,9 +781,19 @@ function copyFileName(path: string) {
  * the PR's files on GitHub, the one GitHub's own files view gives it (`fileAnchor`), which opens this page at the file.
  * Then GitHub's own file menu's: View file, at the head commit (a deleted file at the base's), and Edit file and Delete
  * file on the PR's head branch, where GitHub's pages take them on (whoever may not push there is offered a fork). A deleted
- * file is not on the branch to edit.
+ * file is not on the branch to edit. A file whose diff shows, and leaves lines out, starts it with Graphite's "Show all
+ * lines", every unchanged line of the file shown so that the diff reads as the whole file, and "Hide unchanged lines"
+ * once they show.
  */
-function FileMenu({ file, pr }: { file: ChangedFile; pr: Pick<PrDetail, 'url' | 'headRepository' | 'headRefName'> }) {
+function FileMenu({
+  file,
+  pr,
+  allLines,
+}: {
+  file: ChangedFile;
+  pr: Pick<PrDetail, 'url' | 'headRepository' | 'headRefName'>;
+  allLines?: { shown: boolean; toggle: () => void };
+}) {
   const { path } = file;
   const [open, setOpen] = useState(false);
   const menu = useRef<HTMLDivElement | null>(null);
@@ -822,6 +838,21 @@ function FileMenu({ file, pr }: { file: ChangedFile; pr: Pick<PrDetail, 'url' | 
       />
       {open && (
         <div className="pr-menu-list" role="menu">
+          {allLines && (
+            <>
+              <button
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  allLines.toggle();
+                }}
+              >
+                <Icon name={allLines.shown ? 'fold' : 'unfold'} size={14} />
+                {allLines.shown ? 'Hide unchanged lines' : 'Show all lines'}
+              </button>
+              <div role="separator" className="pr-menu-separator" />
+            </>
+          )}
           <button
             role="menuitem"
             onClick={() => {
