@@ -14,11 +14,11 @@ import type { DataSource } from '../app/data-source';
 import { SaveCacheNow } from '../app/query-cache';
 import { toGitHubUrl, type AppRoute } from '../app/routes';
 import { useSettings } from '../app/use-settings';
-import { viewResultSchema, type GraphiteStackPlace, type Organization, type PrSummary, type RepoRef, type StackBranches, type TopRepository, type View, type ViewResult } from '../lib/model';
+import { prStagesSchema, viewResultSchema, type GraphiteStackPlace, type Organization, type PrSummary, type RepoRef, type StackBranches, type StackEntry, type TopRepository, type View, type ViewResult } from '../lib/model';
 import type { Settings } from '../lib/settings';
 import { encodeViewsShareLink, sectionCount } from '../lib/views';
 import { createChordReader } from '../pr/keybindings';
-import { useLoadAhead } from '../pr/page-data';
+import { prStageQuery, useLoadAhead } from '../pr/page-data';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
 import { RelativeTime } from '../ui/RelativeTime';
@@ -33,7 +33,7 @@ import { SectionEditor } from './SectionEditor';
 import { SectionsSidebar } from './SectionsSidebar';
 import { moveSelection, type SelectedRow } from './selection';
 import { ShortcutHelp } from './ShortcutHelp';
-import { rowsByStack, stackPlaces } from './stacks';
+import { isSamePr, rowsWithStacks, stackPlaces } from './stacks';
 import './inbox.css';
 
 export function InboxPage({ source, route }: { source: DataSource; route: Extract<AppRoute, { page: 'inbox' }> }) {
@@ -52,9 +52,16 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   // Enrichment is asked about rows the way GitHub's dashboard gave them, by id: its key follows the dashboard's own CI
   // rollup, which the enriched checks replace on screen, so the row is asked again when the rollup moves on and not before.
   const dashboardRows = new Map(dashboard.flatMap(({ result, added }) => [...result.prs, ...added].map((pr) => [pr.id, pr] as const)));
-  const enrichment = useRowEnrichment(source, [...dashboardRows.values()], settings?.mergeMethod ?? 'MERGE');
   // Where Graphite's stack comment places each row shown, merged and closed ones too, for the chip of a stack Graphite manages.
   const graphiteStacks = useGraphiteStacks(source, [...dashboardRows.values()]);
+  // Grouped by stack, the stacks of the rows shown that are in one, as their PR pages' stack stage answers them.
+  const inboxStacks = useInboxStacks(source, [...dashboardRows.values()], graphiteStacks.found, settings?.inboxGroupByStack === true);
+  // Those stacks' PRs the inbox lists in no section, by id: grouped by stack, they show as context rows, enriched as rows
+  // are (one the inbox lists elsewhere shows as that row, an inbox row already).
+  const contextEntries = new Map(
+    inboxStacks.found.flatMap((stack) => stack.entries.flatMap((entry) => ([...dashboardRows.values()].some((row) => isSamePr(entry, row)) ? [] : [[entry.id, entry] as const]))),
+  );
+  const enrichment = useRowEnrichment(source, [...dashboardRows.values(), ...contextEntries.values()], settings?.mergeMethod ?? 'MERGE');
   const loadAhead = useLoadAhead(source);
   const saveCacheNow = useContext(SaveCacheNow);
   const viewerLogin = organizations.list?.find((candidate) => candidate.isViewer)?.login ?? null;
@@ -97,18 +104,27 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
     });
     return { ...result, prs };
   });
-  // Where each row sits in its stack, among every row the inbox has, so a stack joins through a PR another section shows;
-  // grouped by stack or not, a stack GitHub doesn't track gets a chip from it.
-  const places = stackPlaces(sections.flatMap((result) => result.prs));
+  // Every row the inbox has, in any section: where each sits in its stack is found among them, so a stack joins through a
+  // PR another section shows, and grouped by stack or not, a stack GitHub doesn't track gets a chip from it.
+  const inboxRows = sections.flatMap((result) => result.prs);
+  const places = stackPlaces(inboxRows);
   // Grouped by stack, a section shows each stack's rows together, the top first and the others hanging under it (their
-  // ids, by view id).
+  // ids, by view id), with the stack's PRs it does not list as context rows (where each sits in its stack, by id, by view
+  // id), which j / k, the copy keys and a click reach as any row.
   const stackedByView = new Map<string, ReadonlySet<string>>();
-  const resultsByView = new Map(
+  const contextByView = new Map<string, ReadonlyMap<string, { position: number; size: number }>>();
+  const resultsByView = new Map<string, Omit<ViewResult, 'prs'> & { prs: Array<PrSummary | StackEntry> }>(
     sections.map((result) => {
       if (!settings?.inboxGroupByStack) return [result.view.id, result];
-      const rows = rowsByStack(result.prs, places);
+      const rows = rowsWithStacks(result.prs, inboxRows, places, inboxStacks.found, { merged: settings.stackShowMerged, closed: settings.stackShowClosed });
       stackedByView.set(result.view.id, new Set(rows.filter((row) => row.stacked).map((row) => row.pr.id)));
-      return [result.view.id, { ...result, prs: rows.map((row) => row.pr) }];
+      contextByView.set(result.view.id, new Map(rows.flatMap((row) => (row.context ? [[row.pr.id, row.context] as const] : []))));
+      // A context row with what its details found over the stack's entry, as a section's own row has it (above).
+      const prs = rows.map(({ pr, context }) => {
+        const found = context && enrichment.found.get(pr.id)?.enrichment;
+        return found ? { ...pr, ...found, ci: found.ci ?? pr.ci } : pr;
+      });
+      return [result.view.id, { ...result, prs }];
     }),
   );
   const firstResult = settings?.views[0] && resultsByView.get(settings.views[0].id);
@@ -183,7 +199,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   }, []);
 
   /** Opens a PR's page once what the inbox loaded for it is saved, so the page finds it. */
-  function openPr(pr: PrSummary, newTab: boolean) {
+  function openPr(pr: PrSummary | StackEntry, newTab: boolean) {
     void saveCacheNow().finally(() => openOnGitHub(pr.url, newTab));
   }
 
@@ -412,10 +428,12 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
 
             {settings.views.map((view) => {
               const result = resultsByView.get(view.id);
+              // The rows the section lists itself, without the context rows grouping by stack adds, which "Load more" goes on from.
+              const listed = sections.find((section) => section.view.id === view.id)?.prs ?? [];
               // GitHub has more rows than shown, until one of its pages comes back empty.
               const more = moreRows.loading.has(view.id)
                 ? 'loading'
-                : result && result.prs.length < result.totalCount && !moreRows.addedTo(view, settings.inboxScope)?.done
+                : result && listed.length < result.totalCount && !moreRows.addedTo(view, settings.inboxScope)?.done
                   ? 'more'
                   : 'none';
               return (
@@ -430,6 +448,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
                     viewerLogin={viewerLogin}
                     enrichmentOf={(pr) => enrichment.found.get(pr.id)?.enrichment}
                     stackedPrIds={stackedByView.get(view.id)}
+                    contextPlaces={contextByView.get(view.id)}
                     stackPlaces={places}
                     graphiteStackPlaces={graphiteStacks.found}
                     // Until its open rows' branches are known, a section shows skeleton rows, so it appears already grouped.
@@ -437,11 +456,18 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
                     more={more}
                     onSort={(by) => sortSection(view.id, by)}
                     onRowShown={(pr) => {
-                      enrichment.want(dashboardRows.get(pr.id) ?? pr);
-                      graphiteStacks.want(dashboardRows.get(pr.id) ?? pr);
+                      const row = dashboardRows.get(pr.id);
+                      // A context row needs only its details: its stack is known, and Graphite's place in it is not asked.
+                      if (!row) {
+                        enrichment.want(contextEntries.get(pr.id) ?? pr);
+                        return;
+                      }
+                      enrichment.want(row);
+                      graphiteStacks.want(row);
+                      inboxStacks.want(row);
                     }}
                     onRowIntent={loadAhead}
-                    onLoadMore={() => void moreRows.loadMore(view, settings.inboxScope, result?.prs ?? [])}
+                    onLoadMore={() => void moreRows.loadMore(view, settings.inboxScope, listed)}
                     onToggleCollapsed={() => toggleCollapsed(view.id)}
                     onEdit={() => setEditing(view)}
                     onOpen={(pr, newTab) => {
@@ -733,6 +759,52 @@ function useGraphiteStacks(source: DataSource, rows: PrSummary[]) {
   function want(pr: PrSummary) {
     const version = `${pr.id} ${pr.updatedAt}`;
     if (!shown.has(version)) setShown((current) => new Set(current).add(version));
+  }
+
+  return { found, want };
+}
+
+/**
+ * Grouped by stack (`enabled`), the stack of each row shown that is in one (one of GitHub's own, or Graphite's stack
+ * comment places it among two or more), as its PR page's stack stage answers it: under the page's own key, so the PR
+ * page opens with it, and a stack a PR page fetched shows here at once. Only an answer whose line lists its own row
+ * counts, and only the line: the forks stay out, as the inbox's chip leaves them out. The stage costs the PR's page and,
+ * for Graphite's stack, a request or two for each of its PRs, so it is asked sparingly: not for a row a stack known for a
+ * row before it already lists, and one new row at a time, so that a stack's other rows find its answer first; an answer
+ * is kept 2 minutes, and not asked again on coming back to the tab.
+ */
+function useInboxStacks(source: DataSource, rows: PrSummary[], graphitePlaces: ReadonlyMap<string, GraphiteStackPlace>, enabled: boolean) {
+  const queryClient = useQueryClient();
+  // The rows shown so far, by id.
+  const [shown, setShown] = useState<ReadonlySet<string>>(new Set());
+  const inStacks = enabled ? rows.filter((pr) => shown.has(pr.id) && (pr.nativeStack !== null || (graphitePlaces.get(pr.id)?.size ?? 0) > 1)) : [];
+  // What the cache has for each (read by its stage's schema): its stack, when the line lists the row, and whether GitHub
+  // has answered at all.
+  const cached = inStacks.map((pr) => {
+    const state = queryClient.getQueryState(prStageQuery(source, pr.repo, pr.number, 'stack').queryKey);
+    const stack = z.optional(prStagesSchema.shape.stack).parse(state?.data)?.stack;
+    return { pr, stack: stack?.entries.some((entry) => isSamePr(entry, pr)) ? stack : undefined, answered: state?.data !== undefined || state?.status === 'error' };
+  });
+  const covered = cached.map(({ pr }, index) => cached.slice(0, index).some(({ stack }) => stack?.entries.some((entry) => isSamePr(entry, pr))));
+  const next = cached.findIndex(({ answered }, index) => !answered && !covered[index]);
+  const results = useQueries({
+    queries: cached.map(({ pr, answered }, index) => ({
+      ...prStageQuery(source, pr.repo, pr.number, 'stack'),
+      staleTime: 2 * 60_000,
+      refetchOnWindowFocus: false,
+      enabled: !covered[index] && (answered || index === next),
+    })),
+  });
+  // Each query's status is read here (pending until it has data), so that the page renders again, and the next row is
+  // asked, once the one before it has answered or failed, whatever it said.
+  const found = results.flatMap((result, index) => {
+    const pr = cached[index]?.pr;
+    const stack = result.status === 'pending' ? undefined : result.data?.stack;
+    return pr && stack && stack.entries.length > 1 && stack.entries.some((entry) => isSamePr(entry, pr)) ? [stack] : [];
+  });
+
+  function want(pr: PrSummary) {
+    if (!shown.has(pr.id)) setShown((current) => new Set(current).add(pr.id));
   }
 
   return { found, want };

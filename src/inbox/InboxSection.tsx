@@ -3,7 +3,7 @@
 // dense row per PR in fixed columns so the status icons line up (skeleton rows while loading). Every icon in a row says
 // what it means on hover.
 import { useEffect, useEffectEvent, useRef, type MouseEvent } from 'react';
-import type { GraphiteStackPlace, PrEnrichment, PrSummary, ReviewerSummary, View, ViewResult } from '../lib/model';
+import type { GraphiteStackPlace, PrEnrichment, PrSummary, ReviewerSummary, StackEntry, View, ViewResult } from '../lib/model';
 import { sectionCount } from '../lib/views';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
@@ -25,6 +25,7 @@ export function InboxSection({
   viewerLogin,
   enrichmentOf,
   stackedPrIds,
+  contextPlaces,
   stackPlaces,
   graphiteStackPlaces,
   awaitingStacks,
@@ -38,8 +39,8 @@ export function InboxSection({
   onOpen,
 }: {
   view: View;
-  /** The section's rows, already in `sort` order. */
-  result: ViewResult | undefined;
+  /** The section's rows, already in `sort` order; grouped by stack, with the context rows among them. */
+  result: (Omit<ViewResult, 'prs'> & { prs: Array<PrSummary | StackEntry> }) | undefined;
   loading: boolean;
   sort: SectionSort;
   selectedPrId: string | null;
@@ -50,9 +51,14 @@ export function InboxSection({
    * What GitHub's dashboard left out of a row and its page data said (merge status, reviewers, line counts, failing
    * checks); undefined until it arrives, when the reviewer and Changes columns show a skeleton dash.
    */
-  enrichmentOf: (pr: PrSummary) => PrEnrichment | undefined;
+  enrichmentOf: (pr: PrSummary | StackEntry) => PrEnrichment | undefined;
   /** Grouped by stack, the ids of the rows below the top of their stack, which hang under the row above. */
   stackedPrIds?: ReadonlySet<string>;
+  /**
+   * Grouped by stack, the PRs of a row's stack the section does not list itself, drawn dimmed as context, with where each
+   * sits in its stack's line, by PR id.
+   */
+  contextPlaces?: ReadonlyMap<string, { position: number; size: number }>;
   /** Where each row the inbox knows sits in its stack, by PR id (`stackPlaces`), for the chip of a stack GitHub doesn't track. */
   stackPlaces: ReadonlyMap<string, StackPlace>;
   /** Where Graphite's stack comment on each row's page places it, by PR id, for the chip of a stack Graphite manages. */
@@ -64,12 +70,12 @@ export function InboxSection({
   onSort: (by: SectionSort['by']) => void;
   onLoadMore: () => void;
   /** A row came within 200px of view (again, after it was updated): time to ask for what the dashboard leaves out. */
-  onRowShown: (pr: PrSummary) => void;
+  onRowShown: (pr: PrSummary | StackEntry) => void;
   /** The pointer rested on a row: the viewer may open it next. */
-  onRowIntent: (pr: PrSummary) => void;
+  onRowIntent: (pr: PrSummary | StackEntry) => void;
   onToggleCollapsed: () => void;
   onEdit: () => void;
-  onOpen: (pr: PrSummary, newTab: boolean) => void;
+  onOpen: (pr: PrSummary | StackEntry, newTab: boolean) => void;
 }) {
   const expanded = view.collapsed !== true;
   const empty = result?.prs.length === 0;
@@ -143,6 +149,7 @@ export function InboxSection({
                 viewerLogin={viewerLogin}
                 selected={pr.id === selectedPrId}
                 stacked={stackedPrIds?.has(pr.id) === true}
+                contextPlace={contextPlaces?.get(pr.id)}
                 stackPlace={stackPlaces.get(pr.id)}
                 graphiteStackPlace={graphiteStackPlaces.get(pr.id)}
                 overdueAfterHours={overdueAfterHours}
@@ -201,6 +208,7 @@ function PrRow({
   viewerLogin,
   selected,
   stacked,
+  contextPlace,
   stackPlace,
   graphiteStackPlace,
   overdueAfterHours,
@@ -208,21 +216,23 @@ function PrRow({
   onIntent,
   onOpen,
 }: {
-  /** The row with its enrichment applied. */
-  pr: PrSummary;
+  /** The row with its enrichment applied; a context row is its stack's entry, whose author may be unknown. */
+  pr: PrSummary | StackEntry;
   enrichment: PrEnrichment | undefined;
   viewerLogin: string | null;
   selected: boolean;
   /** Below the top of its stack: indented, hanging from the row above. */
   stacked: boolean;
+  /** For a PR of the stack the section does not list itself (a context row, dimmed), where it sits in the stack's line. */
+  contextPlace: { position: number; size: number } | undefined;
   /** Where it sits in its stack among the rows the inbox knows; undefined while it stands alone. */
   stackPlace: StackPlace | undefined;
   /** Where Graphite's stack comment on its page places it; undefined while unknown, or where it places none. */
   graphiteStackPlace: GraphiteStackPlace | undefined;
   overdueAfterHours: number | undefined;
-  onShown: (pr: PrSummary) => void;
-  onIntent: (pr: PrSummary) => void;
-  onOpen: (pr: PrSummary, newTab: boolean) => void;
+  onShown: (pr: PrSummary | StackEntry) => void;
+  onIntent: (pr: PrSummary | StackEntry) => void;
+  onOpen: (pr: PrSummary | StackEntry, newTab: boolean) => void;
 }) {
   const row = useRef<HTMLDivElement | null>(null);
   // The pointer resting 150 ms on the row, not passing over it.
@@ -266,20 +276,21 @@ function PrRow({
   return (
     <div
       ref={row}
-      className={`gg-row${stacked ? ' gg-row--stacked' : ''}${selected ? ' is-selected' : ''}`}
+      className={`gg-row${stacked ? ' gg-row--stacked' : ''}${contextPlace ? ' gg-row--context' : ''}${selected ? ' is-selected' : ''}`}
       data-pr-id={pr.id}
       onClick={open}
       onMouseEnter={() => (resting.current = setTimeout(() => onIntent(pr), 150))}
       onMouseLeave={() => clearTimeout(resting.current)}
     >
       <span className="gg-row__unread">{pr.unread && <span className="gg-row__dot" title="Unread" />}</span>
-      <Avatar user={pr.author} size={20} />
+      {pr.author ? <Avatar user={pr.author} size={20} /> : <span />}
       <div className="gg-row__main">
         <a className="gg-row__title" href={pr.url} title={pr.title}>
           {pr.title}
         </a>
         <span className="gg-row__byline">
-          {pr.author.login} · {pr.repo.owner}/{pr.repo.name} #{pr.number}
+          {pr.author && `${pr.author.login} · `}
+          {pr.repo.owner}/{pr.repo.name} #{pr.number}
         </span>
       </div>
       <span className="gg-row__reviewers" title={reviewersTitle || undefined}>
@@ -309,21 +320,28 @@ function PrRow({
         )}
       </span>
       <span className="gg-row__stack">
-        {pr.nativeStack && (
+        {/* A context row's place in the stack its section's row brought along. */}
+        {contextPlace && (
+          <span className="gg-row__chip" title={`${contextPlace.position}/${contextPlace.size} position in stack`}>
+            <Icon name="stack" size={12} />
+            {contextPlace.position}/{contextPlace.size}
+          </span>
+        )}
+        {!contextPlace && pr.nativeStack && (
           <span className="gg-row__chip" title={`${pr.nativeStack.position}/${pr.nativeStack.size} position in stack`}>
             <Icon name="stack" size={12} />
             {pr.nativeStack.position}/{pr.nativeStack.size}
           </span>
         )}
         {/* A stack GitHub doesn't track, as Graphite's comment on the PR's page lists it, every entry counted. */}
-        {!pr.nativeStack && graphiteStackPlace && (
+        {!contextPlace && !pr.nativeStack && graphiteStackPlace && (
           <span className="gg-row__chip" title={`${graphiteStackPlace.position}/${graphiteStackPlace.size} position in stack (from Graphite's stack comment)`}>
             <Icon name="stack" size={12} />
             {graphiteStackPlace.position}/{graphiteStackPlace.size}
           </span>
         )}
         {/* Without that comment, a stack GitHub doesn't track is known only from branch names, counted among the PRs the inbox has. */}
-        {stackPlace?.untracked && !graphiteStackPlace && (
+        {!contextPlace && stackPlace?.untracked && !graphiteStackPlace && (
           <span
             className="gg-row__chip gg-row__chip--attention"
             title={`${stackPlace.position}/${stackPlace.size} position in a stack GitHub doesn't track (worked out from branch names)`}

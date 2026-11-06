@@ -226,8 +226,8 @@ the activity, the file list and each file's diff, the threads and the drawer for
 in the last 30 minutes (they are never kept on the device); the labels and assignees for a PR known only from a stack entry; the sidebar's
 "Checking mergeability…" line while its next step stands on placeholders (a merge button must not come from them); a
 stack entry's statuses and an inbox row's columns until their first row details; a section's skeleton rows until its
-first answer, or, grouped by stack, until its open rows' branches are known; and the top repositories until their first
-page.
+first answer, or, grouped by stack, until its open rows' branches are known (its context rows simply join it as their
+stacks are answered, with no skeleton of their own); and the top repositories until their first page.
 
 Activity entries (`src/pr/Activity.tsx`) read as Graphite's Discussion: a review's header says its verdict as a verb,
 "approved" in green, "requested changes" in red, "commented" or "dismissed their review" muted; a review without a body
@@ -652,6 +652,25 @@ named none for is asked again on the next page load. A row's merge box, once enr
 about) a section shows skeleton rows, so it appears already grouped (at once when every row is remembered), each section
 on its own; once shown it stays so, and rows that come later ("Load more", a refresh) join their stacks as their
 branches arrive.
+
+Grouped by stack, the inbox also asks for the stack of each row shown that is in one (one of GitHub's own, or one
+Graphite's stack comment places it in among two or more) through the PR page's own stack stage
+(`prStageQuery(…, 'stack')`, `useInboxStacks` in `src/inbox/InboxPage.tsx`), under the page's key, so the PR page opens
+with that stack cached and a stack a PR page fetched shows here at once. The stage costs the PR's page and, for
+Graphite's stack, a search and a header and threads request for each entry, so it is asked sparingly: not for a row a
+stack known for a row before it already lists (matched by number and repository, its name in any case, `isSamePr`), one
+new row at a time so that a stack's other rows find its answer first, kept 2 minutes, and not asked again on coming back
+to the tab. Only an answer whose line lists its own row counts, and only the line: the forks stay out, as the inbox's
+stack chip leaves them out. A row a known stack lists brings its whole line along (`rowsWithStacks` in
+`src/inbox/stacks.ts`): the group sits where its first row sorts, top first, and the stack's PRs the section does not
+list show among its rows as context rows: full rows with every column, each the row another section shows for the PR
+where there is one, else the stack's entry loaded with the same row details, its author left out where the stack names
+none; their chip their place in the stack's line ("3/4 position in stack"), and dimmed
+(`gg-row--context`: their columns muted, the row's own hover and selection as any row's), so that a section's PR whose
+stack Graphite restacked after merges, which branch names no longer chain, still shows the whole stack under it. A merged
+or closed context row follows the stack card's `stackShowMerged` / `stackShowClosed` (its ⋯ menu), while a row the
+section lists always shows. The section's count stays its own, "Load more" goes on from its own rows, and j / k, the copy
+keys and a click reach a context row as any row. A row no known stack lists is grouped by its branches as above.
 
 Section counts read `sectionCount` (`99+` above 99, `<limit>+` for a view cut short below that). A section shows
 GitHub's first page of rows (cut to the view's `limit`, default 50); while GitHub counts more, "Load more" at its foot

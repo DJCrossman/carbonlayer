@@ -3,7 +3,7 @@
 
 import { browser } from 'wxt/browser';
 import { z } from 'zod/mini';
-import type { AssigneeCandidate, ChangedFileDiff, Emoji, GraphiteStackPlace, LabelCandidate, Mention, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, ReviewThread, SavedReply, StackBranches, StackEntry, TimelineItem, TopRepository, View, ViewResult } from '../lib/model';
+import type { AssigneeCandidate, ChangedFileDiff, Emoji, GraphiteStackPlace, LabelCandidate, Mention, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, ReviewThread, SavedReply, Stack, StackBranches, StackEntry, TimelineItem, TopRepository, View, ViewResult } from '../lib/model';
 import { rpc, type DiffEntryLine, type InboxRowToEnrich, type LineRange, type MergeCommit, type MergeMethod, type RpcMethods } from '../lib/rpc';
 import { getSettings, setSettings, watchSettings, type Settings, type SettingsStorage } from '../lib/settings';
 import { STACK_MERGES, stackMergesSchema, type StackMerge, type StackMergeRequest, type stackMergeMessage } from '../lib/stack-merges';
@@ -219,9 +219,10 @@ export interface Fixtures {
 
 /**
  * An inbox row with its check list and what only its enrichment says: which checks are required, why it is blocked; and,
- * for a row in a stack Graphite manages, where Graphite's comment on its page places it.
+ * for a row in a stack Graphite manages, where Graphite's comment on its page places it, and for one whose PR no fixture
+ * PR is, the stack its page's stack stage answers.
  */
-export type InboxFixtureRow = PrSummary & Pick<PrEnrichment, 'requiredCheckNames' | 'mergeBlockedReason'> & { graphiteStackPlace?: GraphiteStackPlace };
+export type InboxFixtureRow = PrSummary & Pick<PrEnrichment, 'requiredCheckNames' | 'mergeBlockedReason'> & { graphiteStackPlace?: GraphiteStackPlace; stack?: Stack };
 
 /** Serves fixture data as octocat, a member of acme and globex, and logs mutations; settings live in memory. */
 export function createFixtureDataSource(fixtures: Fixtures): DataSource {
@@ -358,6 +359,7 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
         ...fixtures.inbox.flatMap((result) => result.prs),
         ...Object.values(fixtures.inboxPages).flat(2),
         ...fixtures.prs.flatMap((pr) => [...pr.stack.entries, ...pr.stack.forks]),
+        ...fixtures.inbox.flatMap((result) => result.prs.flatMap((pr) => pr.stack?.entries ?? [])),
       ];
       return prs.map(({ repo, number }) => {
         const pr = rows.find((row) => row.repo.owner === repo.owner && row.repo.name === repo.name && row.number === number);
@@ -413,7 +415,10 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     fetchPrStage: async (stage, repo, number) => {
       const pr = edited(fixturePr(repo, number));
       await new Promise((resolve) => setTimeout(resolve, FIXTURE_STAGE_DELAYS[stage]));
-      const { timeline, threads, unresolvedThreadCount, files, baseOid, stack, labels, assignees, ci, requiredCheckNames, unread, conversations, ...rest } = pr;
+      // An inbox row no fixture PR is answers its own stack, where it has one.
+      const rowStack = fixtures.inbox.flatMap((result) => result.prs).find((row) => row.repo.owner === repo.owner && row.repo.name === repo.name && row.number === number)?.stack;
+      const { timeline, threads, unresolvedThreadCount, files, baseOid, stack: prStack, labels, assignees, ci, requiredCheckNames, unread, conversations, ...rest } = pr;
+      const stack = rowStack ?? prStack;
       const { mergeStatus, reviewers, reviewDecision, viewerCanMerge, viewerCanEnableAutoMerge, allowedMergeMethods, defaultMergeMethod, autoMerge, isInMergeQueue, stackSection, numReviewsRequired, ...header } = rest;
       const stages: PrStages = {
         header: { ...header, viewerLogin: 'octocat', stackSource: stack.source },

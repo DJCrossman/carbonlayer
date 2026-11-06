@@ -1,8 +1,53 @@
 // "Group by stack" in the inbox. A stack, Graphite's or GitHub's own, is a chain of branches in one repository: a PR whose
 // base branch is another open PR's head branch sits on top of it. GitHub's dashboard rows name no branches; the inbox
 // looks an open row's up (its page header; its merge box, once enriched, has the last word), so a row stands alone until
-// then.
-import type { PrSummary } from '../lib/model';
+// then. Once the PR page's stack stage has answered for a row, that stack has the last word: grouped by stack, its other
+// PRs, those the section does not list too, show under the row.
+import type { PrSummary, RepoRef, Stack, StackEntry } from '../lib/model';
+
+/**
+ * A section's rows grouped by stack, in its order: each stack where the first of its rows sorts, its top first and the
+ * others below it, `stacked`. A row a known stack's line lists (`stacks`, as the PR page's stack stage answered them; the
+ * first that lists it) brings the whole line along, top first: the PRs the section does not list itself are context rows
+ * (`context`, where each sits in the line, counted from the bottom as the stack's chip counts), each as the inbox lists it
+ * in another section (`known`, every row the inbox has) or else as the stack's entry, a merged or closed one only when
+ * `show` says so, while a row the section lists always shows. The forks off the line stay out. A row no known stack
+ * lists is grouped by its branches, as `rowsByStack` groups it.
+ */
+export function rowsWithStacks(
+  prs: PrSummary[],
+  known: readonly PrSummary[],
+  places: ReadonlyMap<string, StackPlace>,
+  stacks: readonly Stack[],
+  show: { merged: boolean; closed: boolean },
+): Array<{ pr: PrSummary | StackEntry; stacked: boolean; context: { position: number; size: number } | null }> {
+  // Each group's rows, by the stack that lists them, else by the PR at the bottom of their branches' chain (a row in no
+  // stack is its own). Groups keep the order their first rows came in.
+  const groups = new Map<Stack | string, PrSummary[]>();
+  for (const pr of prs) {
+    const group = stacks.find((stack) => stack.entries.some((entry) => isSamePr(entry, pr))) ?? places.get(pr.id)?.bottomId ?? pr.id;
+    groups.set(group, [...(groups.get(group) ?? []), pr]);
+  }
+
+  // A context row shows once, should two stacks known list it.
+  const drawn = new Set<string>();
+  return [...groups].flatMap(([group, rows]) => {
+    if (typeof group === 'string') return rowsByStack(rows, places).map((row) => ({ ...row, context: null }));
+    return group.entries
+      .flatMap<{ pr: PrSummary | StackEntry; context: { position: number; size: number } | null }>((entry, index) => {
+        const own = rows.find((pr) => isSamePr(entry, pr));
+        if (own) return [{ pr: own, context: null }];
+        // A PR the section lists in another group shows there.
+        const hidden = prs.some((pr) => isSamePr(entry, pr)) || (entry.state === 'MERGED' && !show.merged) || (entry.state === 'CLOSED' && !show.closed);
+        if (hidden || drawn.has(entry.id)) return [];
+        drawn.add(entry.id);
+        // The row another section shows for it has every column and its own details; the stack's entry has what the stack said.
+        return [{ pr: known.find((pr) => isSamePr(entry, pr)) ?? entry, context: { position: index + 1, size: group.entries.length } }];
+      })
+      .reverse()
+      .map((row, index) => ({ ...row, stacked: index > 0 }));
+  });
+}
 
 /**
  * A section's rows, in its order, with each stack's together: the stack where the first of its rows sorts, its top (the
@@ -81,4 +126,9 @@ export function stackPlaces(known: PrSummary[]): Map<string, StackPlace> {
     if (size > 1) places.set(id, { bottomId, position: height + 1, size, untracked: pr.nativeStack === null });
   }
   return places;
+}
+
+/** Whether two rows are the same pull request: its number in the same repository, the repository's name in any case. */
+export function isSamePr(a: { repo: RepoRef; number: number }, b: { repo: RepoRef; number: number }): boolean {
+  return a.number === b.number && a.repo.owner.toLowerCase() === b.repo.owner.toLowerCase() && a.repo.name.toLowerCase() === b.repo.name.toLowerCase();
 }

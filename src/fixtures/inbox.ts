@@ -9,7 +9,7 @@
 // your review" a Graphite stack GitHub doesn't track. Graphite's stack comment places #410 third of three (its bottom PR,
 // merged, is in no section) and merged #395 first of three; #409's page has none, so its chip is worked out from branches.
 import type { Fixtures, InboxFixtureRow } from '../app/data-source';
-import type { CheckRunSummary, CheckState, CiSummary, UserRef } from '../lib/model';
+import type { CheckRunSummary, CheckState, CiSummary, Stack, UserRef } from '../lib/model';
 import { DEFAULT_VIEWS } from '../lib/views';
 
 const NOW = Date.now();
@@ -337,6 +337,7 @@ function prsFor(viewId: string): InboxFixtureRow[] {
       ];
     case 'graphite-waiting-for-reviewers':
       return [
+        occupancyWebhooksRow(),
         pr({
           repo: 'acme/platform',
           number: 1290,
@@ -537,4 +538,91 @@ function ci({ passed = 0, failed = [], pending = [], skipped = [] }: { passed?: 
     ...skipped.map((name) => [name, 'SKIPPED'] as const),
   ].map(([name, checkState]): CheckRunSummary => ({ name, state: checkState, url: null, description: null, group: 'GitHub Actions', startedAt: null, completedAt: null, runId: null }));
   return { state, checks, counts };
+}
+
+/**
+ * octocat's #120 in acme/api, the top of a stack of four of which the inbox lists only it, as offstreetparking/core#10002
+ * stood in its user's inbox: Graphite's comment lists #116 and #117 merged, then mona's #118, open and restacked onto
+ * main once they merged, so that branch names no longer chain it, which no section lists.
+ */
+function occupancyWebhooksRow(): InboxFixtureRow {
+  const row = pr({
+    repo: 'acme/api',
+    number: 120,
+    title: 'Send occupancy webhooks from the events table',
+    author: octocat,
+    updated: 30 * MINUTE,
+    headRefName: 'octocat/occupancy-webhooks',
+    baseRefName: 'mona/occupancy-api',
+    graphiteStackPlace: { position: 4, size: 4 },
+    reviewers: [{ kind: 'user', user: kenji, state: 'PENDING' }],
+    ci: ci({ passed: 9 }),
+    additions: 132,
+    deletions: 18,
+  });
+  const stack: Stack = {
+    entries: [
+      {
+        ...pr({
+          repo: 'acme/api',
+          number: 116,
+          title: 'Add the occupancy events table',
+          author: octocat,
+          updated: 2 * DAY,
+          state: 'MERGED',
+          mergedAt: new Date(NOW - 2 * DAY).toISOString(),
+          headRefName: 'octocat/occupancy-events-table',
+          reviewDecision: 'APPROVED',
+          reviewers: [{ kind: 'user', user: kenji, state: 'APPROVED' }],
+          ci: ci({ passed: 9 }),
+          mergeStatus: 'UNKNOWN',
+          additions: 64,
+          deletions: 0,
+        }),
+        parentNumber: null,
+      },
+      {
+        ...pr({
+          repo: 'acme/api',
+          number: 117,
+          title: 'Write occupancy events from the PARCS poller',
+          author: octocat,
+          updated: 1 * DAY,
+          state: 'MERGED',
+          mergedAt: new Date(NOW - DAY).toISOString(),
+          headRefName: 'octocat/occupancy-poller',
+          baseRefName: 'octocat/occupancy-events-table',
+          reviewDecision: 'APPROVED',
+          reviewers: [{ kind: 'user', user: kenji, state: 'APPROVED' }],
+          ci: ci({ passed: 9 }),
+          mergeStatus: 'UNKNOWN',
+          additions: 210,
+          deletions: 31,
+        }),
+        parentNumber: 116,
+      },
+      {
+        ...pr({
+          repo: 'acme/api',
+          number: 118,
+          title: 'Expose occupancy events over the API',
+          author: mona,
+          updated: 3 * HOUR,
+          headRefName: 'mona/occupancy-api',
+          reviewers: [{ kind: 'user', user: octocat, state: 'PENDING' }],
+          ci: ci({ passed: 8, pending: ['e2e (chromium)'] }),
+          additions: 188,
+          deletions: 12,
+          conversations: { resolved: 1, total: 2 },
+        }),
+        parentNumber: null,
+      },
+      { ...row, parentNumber: 118 },
+    ],
+    forks: [],
+    currentIndex: 3,
+    trunk: 'main',
+    source: 'graphite-comment',
+  };
+  return { ...row, stack };
 }

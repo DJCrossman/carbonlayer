@@ -401,6 +401,19 @@
   border-left: 1px solid var(--gg-border);
   border-bottom-left-radius: 4px;
 }
+/* Grouped by stack, a PR of a row's stack that the section does not list itself (a context row): every column as any
+   row's, muted so it reads as context, its title in the muted colour the stack card gives a merged PR's. The row's own
+   background is left alone, so hover and selection read as on any row. */
+.gg-row--context > * {
+  opacity: 0.6;
+}
+.gg-row--context .gg-row__title {
+  color: var(--gg-fg-muted);
+  font-weight: 400;
+}
+.gg-row--context .gg-row__title:hover {
+  color: var(--gg-accent);
+}
 .gg-row__unread {
   display: flex;
   justify-content: center;

@@ -28,7 +28,7 @@ export function SectionsSidebar({
   /** Whose sections these are. */
   org: Organization;
   views: View[];
-  resultsByView: Map<string, ViewResult>;
+  resultsByView: Map<string, Omit<ViewResult, 'prs'>>;
   currentViewId: string | null;
   /** Shown over the inbox on a narrow window. */
   open: boolean;

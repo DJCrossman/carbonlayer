@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { PrSummary } from '../lib/model';
-import { rowsByStack, stackPlaces } from './stacks';
+import type { PrSummary, Stack } from '../lib/model';
+import { rowsByStack, rowsWithStacks, stackPlaces } from './stacks';
 
 describe('rowsByStack', () => {
   it("puts a stack's rows together where the first of them sorts, the top first, and leaves the other rows in their places", () => {
@@ -50,6 +50,74 @@ describe('rowsByStack', () => {
       [2, true],
       [1, true],
     ]);
+  });
+});
+
+describe('rowsWithStacks', () => {
+  const everything = { merged: true, closed: true };
+
+  it("draws every PR of a known stack's line under the section's row, top first, those it does not list as context rows", () => {
+    const prs = [pr(10, 'x', 'main'), pr(20, 'd', 'c')];
+    // 17 and 18 merged, 19 open on trunk, the row 20, and 21 above it; a fork off 19 stays out.
+    const stack = stackOf([{ ...pr(17, 'a', 'main'), state: 'MERGED' }, { ...pr(18, 'b', 'a'), state: 'MERGED' }, pr(19, 'c', 'main'), pr(20, 'd', 'c'), pr(21, 'e', 'd')], [pr(30, 'f', 'c')]);
+    expect(rowsWithStacks(prs, prs, stackPlaces(prs), [stack], everything).map((row) => [row.pr.number, row.stacked, row.context])).toEqual([
+      [10, false, null],
+      [21, false, { position: 5, size: 5 }],
+      [20, true, null],
+      [19, true, { position: 3, size: 5 }],
+      [18, true, { position: 2, size: 5 }],
+      [17, true, { position: 1, size: 5 }],
+    ]);
+  });
+
+  it("leaves the stack's merged or closed PRs out as `show` says, but never a row the section lists", () => {
+    const prs = [{ ...pr(18, 'b', 'a'), state: 'MERGED' as const }, pr(20, 'd', 'c')];
+    const stack = stackOf([{ ...pr(17, 'a', 'main'), state: 'MERGED' }, { ...pr(18, 'b', 'a'), state: 'MERGED' }, { ...pr(19, 'c', 'b'), state: 'CLOSED' }, pr(20, 'd', 'c')]);
+    expect(rowsWithStacks(prs, prs, stackPlaces(prs), [stack], { merged: false, closed: true }).map((row) => [row.pr.number, row.context !== null])).toEqual([
+      [20, false],
+      [19, true],
+      [18, false],
+    ]);
+    expect(rowsWithStacks(prs, prs, stackPlaces(prs), [stack], { merged: true, closed: false }).map((row) => [row.pr.number, row.context !== null])).toEqual([
+      [20, false],
+      [18, false],
+      [17, true],
+    ]);
+  });
+
+  it("puts a section's two rows of one stack in one group, where the first of them sorts", () => {
+    const prs = [pr(18, 'b', 'a'), pr(10, 'x', 'main'), pr(20, 'd', 'c', 'Acme/Widgets')];
+    const stack = stackOf([pr(17, 'a', 'main'), pr(18, 'b', 'a'), pr(19, 'c', 'b'), pr(20, 'd', 'c')]);
+    expect(rowsWithStacks(prs, prs, stackPlaces(prs), [stack], everything).map((row) => [row.pr.number, row.stacked, row.context !== null])).toEqual([
+      [20, false, false],
+      [19, true, true],
+      [18, true, false],
+      [17, true, true],
+      [10, false, false],
+    ]);
+  });
+
+  it('groups a row no known stack lists by its branches, as before', () => {
+    const prs = [pr(2, 'b', 'a'), pr(20, 'd', 'c'), pr(1, 'a', 'main')];
+    const stack = stackOf([pr(19, 'c', 'main'), pr(20, 'd', 'c')]);
+    expect(rowsWithStacks(prs, prs, stackPlaces(prs), [stack], everything).map((row) => [row.pr.number, row.stacked, row.context !== null])).toEqual([
+      [2, false, false],
+      [1, true, false],
+      [20, false, false],
+      [19, true, true],
+    ]);
+  });
+
+  it('draws a context row the inbox lists in another section as that row, with its columns', () => {
+    const elsewhere = pr(19, 'c', 'main');
+    const prs = [pr(20, 'd', 'c')];
+    const stack = stackOf([pr(19, 'c', 'main'), pr(20, 'd', 'c')]);
+    const rows = rowsWithStacks(prs, [...prs, elsewhere], stackPlaces([...prs, elsewhere]), [stack], everything);
+    expect(rows.map((row) => [row.pr.number, row.context !== null])).toEqual([
+      [20, false],
+      [19, true],
+    ]);
+    expect(rows[1]?.pr).toBe(elsewhere);
   });
 });
 
@@ -136,5 +204,16 @@ function pr(number: number, head: string, base: string, repo = 'acme/widgets'): 
     autoMerge: null,
     nativeStack: null,
     conversations: null,
+  };
+}
+
+/** A stack's line from the bottom up, each entry on the one below it, the first on trunk; the forks, on the line's first. */
+function stackOf(line: PrSummary[], forks: PrSummary[] = []): Stack {
+  return {
+    entries: line.map((entry, index) => ({ ...entry, parentNumber: line[index - 1]?.number ?? null })),
+    forks: forks.map((fork) => ({ ...fork, parentNumber: line[0]?.number ?? null })),
+    currentIndex: 0,
+    trunk: 'main',
+    source: 'graphite-comment',
   };
 }
