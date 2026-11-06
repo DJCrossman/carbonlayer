@@ -17,7 +17,7 @@ import { Skeleton } from '../ui/Skeleton';
 import { StatusPill } from '../ui/StatusPill';
 import { showToast } from '../ui/Toast';
 import { goToPr } from './navigation';
-import { stackRowPillFor, stackRowsFor, stackToMerge } from './next-action';
+import { stackRowPillFor, stackRowsFor } from './next-action';
 import { useLoadAhead } from './page-data';
 import { StackMenu } from './StackMenu';
 import './stack.css';
@@ -43,6 +43,7 @@ export function StackCard({
   showMerged,
   showClosed,
   onSettingsChange,
+  mergingAsStack,
 }: {
   stack: Stack;
   /** The viewed PR's required checks, which its page names; each other entry's come with its row details. */
@@ -58,6 +59,11 @@ export function StackCard({
   showClosed: boolean;
   /** Saves the setting the ⋯ menu's Show merged PRs or Show closed PRs changed. */
   onSettingsChange: (patch: Pick<Partial<Settings>, 'stackShowMerged' | 'stackShowClosed'>) => void;
+  /**
+   * The PRs the page's next step merges with the viewed one as a stack, whose rows say so as Graphite's do; null while that
+   * step is another, so the rows never read ready where the sidebar does not.
+   */
+  mergingAsStack: StackEntry[] | null;
 }) {
   const queryClient = useQueryClient();
   // Each other entry and each fork as the inbox last showed it, when it did, else as the stack names it.
@@ -72,8 +78,6 @@ export function StackCard({
   }, [rows, collapsed]);
   // The rows top first, each entry's forks right above it, the merged and closed PRs the ⋯ hides left out.
   const drawn = stackRowsFor(stack, { merged: showMerged, closed: showClosed });
-  // The PRs GitHub can merge with the viewed one as a stack, whose rows say so as Graphite's do.
-  const mergingAsStack = stackToMerge(stack);
   return (
     <Card className="stack-card">
       {/* A click anywhere on the header folds the card, but on Copy stack and the ⋯ menu (stack.css). */}
@@ -118,7 +122,7 @@ export function StackCard({
                 current={index === stack.currentIndex}
                 fork={index === null}
                 waiting={row !== undefined && found === undefined}
-                readyToMerge={mergingAsStack?.includes(pr) ?? false}
+                readyToMerge={mergingAsStack?.some(({ number }) => number === pr.number) ?? false}
                 requiredCheckNames={index === stack.currentIndex ? requiredCheckNames : (found?.requiredCheckNames ?? [])}
                 onIntent={() => loadAhead(pr)}
               />
@@ -174,7 +178,7 @@ function StackRow({
   fork: boolean;
   /** Its row details have not arrived and the cache had none: its pill shows a small skeleton. */
   waiting: boolean;
-  /** GitHub can merge it in merging the viewed PR as a stack: the viewed PR's row reads "Ready to merge as stack", one below it "Ready to merge". */
+  /** The page's next step merges it in merging the viewed PR as a stack: the viewed PR's row reads "Ready to merge as stack", one below it "Ready to merge". */
   readyToMerge: boolean;
   /** The required checks its page or its row details name; none until GitHub has said. */
   requiredCheckNames: readonly string[];

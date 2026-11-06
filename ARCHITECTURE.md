@@ -355,7 +355,10 @@ comment in the timeline, enriched through a `/pulls/search` query on the author'
 then its conversations, Graphite's one pill for where it stands, and its age. The pill is the first that applies, in the
 order the sidebar's next step goes by (`stackRowPillFor` in `src/pr/next-action.ts`): Merged, Closed, Draft, "Ready to
 merge as stack", Merge conflicts, Unresolved comments, Required checks failed, Changes requested, Needs reviewers, CI
-running, Behind base, Blocked, Waiting on hooks, Ready to merge; its reason is on hover. The header's Copy stack puts the
+running, Behind base, Blocked, Waiting on hooks, Ready to merge; its reason is on hover. A PR nobody has approved reads
+Needs reviewers, and the sidebar's next step Needs more reviewers, whatever GitHub says of merging it (GitHub says
+mergeable to a viewer who may bypass the review rule); the rows read "Ready to merge as stack" and "Ready to merge" only
+while the page's next step is to merge the stack. The header's Copy stack puts the
 stack on the clipboard as Markdown, as Graphite's comment lists it: a line for each PR from the top, and trunk last.
 Forks come from Graphite's comment alone (GitHub's own stack is one line): it lists one line of the stack, the PR's own,
 and names in an entry's item the PRs that branch off it past the line, "1 other dependent PR (#9003)"

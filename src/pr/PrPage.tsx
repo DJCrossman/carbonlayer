@@ -522,6 +522,7 @@ function PrView({
                     onSettingsChange={(patch) =>
                       source.setSettings(patch).catch((reason: unknown) => showToast(`Could not save: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger'))
                     }
+                    mergingAsStack={nextAction.kind === 'ready-as-stack' ? nextAction.prs : null}
                   />
                 )
               }

@@ -7,9 +7,10 @@ import type { IconName } from '../ui/Icon';
 /**
  * What stands between this PR and being merged, most fundamental first: its state, then conflicts, what GitHub says of
  * its native stack's branches, the stack below it, open conversations, required checks, reviews, and finally branch
- * protection. When nothing does, it is ready to merge, and in a GitHub-native stack that GitHub can merge from the
- * bottom up to it, ready to merge as a stack: GitHub's verdict then stands for the open PRs below it. A draft is a draft,
- * as Graphite's sidebar has it, unless a required check failed, and stays one while the checks have not arrived. While a
+ * protection. A PR nobody has approved is not ready whatever the branch rules require, since GitHub says mergeable to a
+ * viewer who may bypass the review rule, where Graphite does not. When nothing stands in the way, it is ready to merge,
+ * and in a GitHub-native stack that GitHub can merge from the bottom up to it, ready to merge as a stack: GitHub's
+ * verdict then stands for the open PRs below it. A draft is a draft, as Graphite's sidebar has it, unless a required check failed, and stays one while the checks have not arrived. While a
  * stage that a step depends on has not arrived (`unknown`), the answer stops at that step: "Checking mergeability…".
  */
 export function nextActionFor(pr: PrDetail, unknown: readonly PrStage[] = []): NextAction {
@@ -85,10 +86,11 @@ export function nextActionFor(pr: PrDetail, unknown: readonly PrStage[] = []): N
       detail: null,
     };
   }
-  if (pr.reviewDecision === 'REVIEW_REQUIRED') {
+  if (pr.reviewDecision !== 'APPROVED') {
     const pending = pr.reviewers.filter((reviewer) => reviewer.state === 'PENDING').map((reviewer) => reviewer.user.login);
     if (pending.length > 0) return { kind: 'review-required', tone: 'attention', title: 'Waiting for review', detail: pending.join(', ') };
-    // Asked of nobody, a review is required by the branch rules alone, so a count of none is the merge box not saying.
+    // Asked of nobody, an approval is wanted by the branch rules or by CarbonLayer alone, so a count of none is the merge
+    // box not saying.
     const approvals = pr.reviewers.filter((reviewer) => reviewer.state === 'APPROVED').length;
     const requiredApprovals = pr.numReviewsRequired;
     return {
@@ -155,10 +157,11 @@ export type StackRowPill = {
 
 /**
  * The one pill Graphite's stack card shows for a PR in the stack, the first that applies in the order the sidebar's next
- * step goes by: its state, GitHub merging it with the viewed PR as a stack (`stackToMerge`, which `mergingAsStack` says
- * of it: the viewed PR's row reads "Ready to merge as stack", one below it "Ready to merge"), conflicts, open
- * conversations, a failing required check (of `requiredCheckNames`, those its page or its row details name), reviews,
- * running checks, and last what GitHub says of merging it. None while GitHub has not said whether it can merge.
+ * step goes by: its state, the page merging it with the viewed PR as a stack (its next step "Ready to merge as stack",
+ * which `mergingAsStack` says of it: the viewed PR's row reads "Ready to merge as stack", one below it "Ready to merge"),
+ * conflicts, open conversations, a failing required check (of `requiredCheckNames`, those its page or its row details
+ * name), reviews (a PR nobody approved needs reviewers), running checks, and last what GitHub says of merging it. None
+ * while GitHub has not said whether it can merge.
  */
 export function stackRowPillFor(entry: PrSummary | StackEntry, requiredCheckNames: readonly string[] = [], mergingAsStack: 'viewed' | 'below' | null = null): StackRowPill | null {
   if (entry.state === 'MERGED') return { label: 'Merged', tone: 'done', icon: 'git-merge' };
@@ -182,7 +185,8 @@ export function stackRowPillFor(entry: PrSummary | StackEntry, requiredCheckName
     const requesters = entry.reviewers.filter((reviewer) => reviewer.state === 'CHANGES_REQUESTED').map((reviewer) => reviewer.user.login);
     return { label: 'Changes requested', tone: 'danger', icon: 'x-circle-fill', title: requesters.length > 0 ? `Changes requested by ${requesters.join(', ')}` : undefined };
   }
-  if (entry.reviewDecision === 'REVIEW_REQUIRED') {
+  // Nobody approved it: it needs reviewers whatever GitHub says of merging it, as in the sidebar.
+  if (entry.reviewDecision !== 'APPROVED') {
     const pending = entry.reviewers.filter((reviewer) => reviewer.state === 'PENDING').map((reviewer) => reviewer.user.login);
     return { label: 'Needs reviewers', tone: 'attention', icon: 'person-check', title: pending.length > 0 ? `Waiting for ${pending.join(', ')}` : 'No reviewers requested' };
   }

@@ -96,6 +96,20 @@ describe('nextActionFor', () => {
     expect(nextActionFor(unasked)).toMatchObject({ kind: 'needs-reviewers', detail: 'An approval is required (0 so far) and no reviewers are requested' });
   });
 
+  it('needs more reviewers when nobody has approved it, whatever GitHub says of merging it', () => {
+    const unapproved: PrDetail = { ...ready, reviewDecision: 'NONE', reviewers: [] };
+    expect(nextActionFor(unapproved)).toEqual({
+      kind: 'needs-reviewers',
+      tone: 'attention',
+      title: 'Needs more reviewers',
+      detail: 'An approval is required (0 so far) and no reviewers are requested',
+    });
+    expect(nextActionFor({ ...unapproved, numReviewsRequired: 1 })).toMatchObject({
+      kind: 'needs-reviewers',
+      detail: 'Branch rules require 1 approval (0 so far) and no reviewers are requested',
+    });
+  });
+
   it('waits on the open PR closest to trunk before anything about this PR', () => {
     const action = nextActionFor(pr42);
     expect(action).toMatchObject({ kind: 'downstack', title: 'Waiting on downstack · #41' });
@@ -235,6 +249,15 @@ describe('stackRowPillFor', () => {
   it('says it needs reviewers, naming those asked, or that nobody is', () => {
     expect(stackRowPillFor({ ...ready, reviewDecision: 'REVIEW_REQUIRED', reviewers: pr42.reviewers })).toMatchObject({ label: 'Needs reviewers', tone: 'attention', title: 'Waiting for acme/parcs' });
     expect(stackRowPillFor({ ...ready, reviewDecision: 'REVIEW_REQUIRED', reviewers: [] })).toMatchObject({ label: 'Needs reviewers', title: 'No reviewers requested' });
+  });
+
+  it('says it needs reviewers when nobody has approved it, whatever GitHub says of merging it', () => {
+    expect(stackRowPillFor({ ...ready, reviewDecision: 'NONE', reviewers: [] })).toMatchObject({ label: 'Needs reviewers', tone: 'attention', title: 'No reviewers requested' });
+    expect(stackRowPillFor({ ...ready, reviewDecision: 'NONE', reviewers: pr42.reviewers })).toMatchObject({ label: 'Needs reviewers', title: 'Waiting for acme/parcs' });
+  });
+
+  it('leaves merging as a stack to the page, which says so of the rows', () => {
+    expect(stackRowPillFor({ ...ready, reviewDecision: 'NONE' }, [], 'viewed')).toMatchObject({ label: 'Ready to merge as stack' });
   });
 
   it('says CI is running, counting the finished checks', () => {
