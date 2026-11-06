@@ -669,8 +669,20 @@ none; their chip their place in the stack's line ("3/4 position in stack"), and 
 (`gg-row--context`: their columns muted, the row's own hover and selection as any row's), so that a section's PR whose
 stack Graphite restacked after merges, which branch names no longer chain, still shows the whole stack under it. A merged
 or closed context row follows the stack card's `stackShowMerged` / `stackShowClosed` (its ⋯ menu), while a row the
-section lists always shows. The section's count stays its own, "Load more" goes on from its own rows, and j / k, the copy
-keys and a click reach a context row as any row. A row no known stack lists is grouped by its branches as above.
+section lists always shows. The context rows are collapsed until their group is open: every row carries its group (the
+id of the first row drawn in it, the stack's top, `group` from `rowsWithStacks`), and `InboxSection` opens a group once
+the pointer has rested 150 ms on one of its rows, as the load-ahead intent waits, and closes it about 100 ms after the
+pointer leaves it unless it came onto another of the group's rows by then, so moving down through an open group keeps
+it open; one group is open by hover at a time, the selected row's group stays open too, so j / k walk into a stack's
+hidden PRs, and it closes once the selection moves past it. Opening draws the context rows in the line's order, those
+below the hovered row under it, and should some sit above it the page scrolls by as much so the row stays under the
+pointer; the groups are not wrapped in an element of their own, so the rows stay `.gg-row` siblings, and a row hangs
+from the rail under the row drawn above it only when that row is in its group, so a section's row stands on its own
+while the context rows above it are collapsed. A context row's details are asked as soon as its stack is known (an effect in `InboxPage` wants each context entry's
+enrichment), not when it is first drawn, so a group opens with its rows complete; its PR page is not loaded ahead until
+it is hovered or selected, as for any row. The section's count stays its own, "Load more" goes on from its own rows,
+and j / k, the copy keys and a click reach a context row as any row. A row no known stack lists is grouped by its
+branches as above.
 
 Section counts read `sectionCount` (`99+` above 99, `<limit>+` for a view cut short below that). A section shows
 GitHub's first page of rows (cut to the view's `limit`, default 50); while GitHub counts more, "Load more" at its foot
