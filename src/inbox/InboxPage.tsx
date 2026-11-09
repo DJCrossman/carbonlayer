@@ -52,9 +52,10 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   // Enrichment is asked about rows the way GitHub's dashboard gave them, by id: its key follows the dashboard's own CI
   // rollup, which the enriched checks replace on screen, so the row is asked again when the rollup moves on and not before.
   const dashboardRows = new Map(dashboard.flatMap(({ result, added }) => [...result.prs, ...added].map((pr) => [pr.id, pr] as const)));
-  // Where Graphite's stack comment places each row shown, merged and closed ones too, for the chip of a stack Graphite manages.
-  const graphiteStacks = useGraphiteStacks(source, [...dashboardRows.values()]);
-  // Grouped by stack, the stacks of the rows shown that are in one, as their PR pages' stack stage answers them.
+  // Where Graphite's stack comment places each row, merged and closed ones too, for the chip of a stack Graphite manages:
+  // grouped by stack, every open row's up front, else each row's as it shows.
+  const graphiteStacks = useGraphiteStacks(source, [...dashboardRows.values()], settings?.inboxGroupByStack === true);
+  // Grouped by stack, the stacks of the open rows that are in one, as their PR pages' stack stage answers them.
   const inboxStacks = useInboxStacks(source, [...dashboardRows.values()], graphiteStacks.found, settings?.inboxGroupByStack === true);
   const enrichment = useRowEnrichment(source, [...dashboardRows.values()], settings?.mergeMethod ?? 'MERGE');
   const loadAhead = useLoadAhead(source);
@@ -74,11 +75,16 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
 
   // How each section orders its rows, as its column headers were last clicked (this visit only).
   const [sorts, setSorts] = useState<Record<string, SectionSort>>({});
-  // Each section's open rows' branches, "Load more"'s too, looked up or remembered before grouping by stack shows the rows.
+  // Each section's open rows' branches, "Load more"'s too, looked up or remembered before grouping by stack shows the rows,
+  // which wait for their Graphite places and, those in a stack, for their stacks too.
   const stackBranches = useStackBranches(
     source,
     settings?.inboxGroupByStack === true,
     dashboard.map(({ result, added }) => ({ viewId: result.view.id, openRows: [...result.prs, ...added].filter((pr) => pr.state === 'OPEN') })),
+    // A row in one of GitHub's own stacks has no Graphite place to wait for, and a row in no stack no stack.
+    (pr) =>
+      (pr.nativeStack !== null || graphiteStacks.answered.has(pr.id)) &&
+      ((pr.nativeStack === null && (graphiteStacks.found.get(pr.id)?.size ?? 0) <= 1) || inboxStacks.answered.has(pr.id)),
   );
   // Each section's rows, those "Load more" added after the first page's, with what enrichment has found, in the order the
   // section shows them, which j / k follow too.
@@ -441,7 +447,8 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
                     contextPlaces={contextByView.get(view.id)}
                     stackPlaces={places}
                     graphiteStackPlaces={graphiteStacks.found}
-                    // Until its open rows' branches are known, a section shows skeleton rows, so it appears already grouped.
+                    // Until its open rows' branches, places and stacks are known, a section shows skeleton rows, so it appears
+                    // already grouped, its context rows with it.
                     awaitingStacks={stackBranches.awaiting(view.id)}
                     more={more}
                     onSort={(by) => sortSection(view.id, by)}
@@ -449,7 +456,6 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
                       const row = dashboardRows.get(pr.id) ?? pr;
                       enrichment.want(row);
                       graphiteStacks.want(row);
-                      inboxStacks.want(row);
                     }}
                     onRowIntent={loadAhead}
                     onLoadMore={() => void moreRows.loadMore(view, settings.inboxScope, listed)}
@@ -644,15 +650,16 @@ function useMoreRows(source: DataSource, org: Organization | null) {
 
 /**
  * The open rows' branches, by PR id, by which "Group by stack" chains them before (and whether or not) a row is enriched,
- * and which sections wait for theirs: a query a PR. While `enabled`, GitHub is asked (each PR's page header) about every
- * open row the cache has nothing for: 25 rows a request and up to three requests at once, the rows of the sections higher
- * up first (`sections` comes in their order). A PR's branches do not change, so once GitHub has named them they are kept
- * until the cache lets them go (a day); a row GitHub named none for is asked again on the next page load. A section is
- * `awaiting` until each of its open rows has its branches, or GitHub had none for it, or 8 s after its rows were first
- * asked about, whichever comes first; once shown it stays so, and rows that join it later join their stacks as their
- * branches arrive.
+ * and which sections wait for their stacks: a query a PR. While `enabled`, GitHub is asked (each PR's page header) about
+ * every open row the cache has nothing for: 25 rows a request and up to three requests at once, the rows of the sections
+ * higher up first (`sections` comes in their order). A PR's branches do not change, so once GitHub has named them they
+ * are kept until the cache lets them go (a day); a row GitHub named none for is asked again on the next page load. A
+ * section is `awaiting` until each of its open rows has its branches, or GitHub had none for it, and its stack is known
+ * (`stackKnown`: its Graphite place answered and, in a stack, its stack too), or 15 s after its rows were first asked
+ * about, whichever comes first, so that its context rows show with it; once shown it stays so, and rows that join it
+ * later join their stacks as their branches and stacks arrive.
  */
-function useStackBranches(source: DataSource, enabled: boolean, sections: Array<{ viewId: string; openRows: PrSummary[] }>) {
+function useStackBranches(source: DataSource, enabled: boolean, sections: Array<{ viewId: string; openRows: PrSummary[] }>, stackKnown: (pr: PrSummary) => boolean) {
   // When each section's rows were first asked about, and the sections shown since, by view id.
   const [askedAt, setAskedAt] = useState<ReadonlyMap<string, number>>(new Map());
   const [shown, setShown] = useState<ReadonlySet<string>>(new Set());
@@ -678,67 +685,73 @@ function useStackBranches(source: DataSource, enabled: boolean, sections: Array<
     browser?.storage?.local.remove('stackBranches').catch(() => {});
   }, []);
 
-  // A section with rows not answered yet, asked about now or before for another section, waits 8 s at most from now.
+  // The sections with an open row whose branches or stack are not answered yet, by view id.
+  const unanswered = sections.flatMap(({ viewId, openRows }) => (openRows.every((pr) => found.has(pr.id) && stackKnown(pr)) ? [] : [viewId]));
+  // A section with rows not answered yet, asked about now or before for another section, waits 15 s at most from now.
   const startWaiting = useEffectEvent(() => {
-    const waiting = sections.filter(({ viewId, openRows }) => !askedAt.has(viewId) && !openRows.every((pr) => found.has(pr.id)));
-    if (waiting.length > 0) setAskedAt((at) => new Map([...waiting.map(({ viewId }) => [viewId, Date.now()] as const), ...at]));
+    const waiting = unanswered.filter((viewId) => !askedAt.has(viewId));
+    if (waiting.length > 0) setAskedAt((at) => new Map([...waiting.map((viewId) => [viewId, Date.now()] as const), ...at]));
   });
   // A section shown once stays shown, whatever rows join it later.
   const keepShown = useEffectEvent(() => {
     if (!enabled) return;
-    const answered = sections.filter(({ viewId, openRows }) => !shown.has(viewId) && openRows.every((pr) => found.has(pr.id)));
+    const answered = sections.filter(({ viewId }) => !shown.has(viewId) && !unanswered.includes(viewId));
     if (answered.length > 0) setShown((ids) => new Set([...ids, ...answered.map(({ viewId }) => viewId)]));
   });
   const sectionsKey = sections.map(({ viewId, openRows }) => `${viewId}:${openRows.map((pr) => pr.id).join(',')}`).join(' ');
   useEffect(() => {
     if (enabled) startWaiting();
   }, [enabled, sectionsKey]);
-  useEffect(() => keepShown(), [enabled, sectionsKey, found]);
+  useEffect(() => keepShown(), [enabled, sectionsKey, unanswered.join(' ')]);
 
-  // A slow GitHub holds a section's rows back 8 s at most.
+  // A slow GitHub holds a section's rows back 15 s at most: its branches, places and stacks are asked one after the other.
   useEffect(() => {
-    const timers = [...askedAt].map(([viewId, at]) => setTimeout(() => setShown((ids) => (ids.has(viewId) ? ids : new Set(ids).add(viewId))), Math.max(0, at + 8000 - Date.now())));
+    const timers = [...askedAt].map(([viewId, at]) => setTimeout(() => setShown((ids) => (ids.has(viewId) ? ids : new Set(ids).add(viewId))), Math.max(0, at + 15_000 - Date.now())));
     return () => timers.forEach((timer) => clearTimeout(timer));
   }, [askedAt]);
 
   return {
     branchesOf: (prId: string) => found.get(prId) ?? undefined,
-    awaiting: (viewId: string) => enabled && !shown.has(viewId) && sections.some((section) => section.viewId === viewId && !section.openRows.every((pr) => found.has(pr.id))),
+    awaiting: (viewId: string) => enabled && !shown.has(viewId) && unanswered.includes(viewId),
   };
 }
 
 /**
- * Where Graphite's stack comment on each row's page places it, by PR id, for the chip of a stack Graphite manages: a query
- * a PR, asked once the row comes within 200px of view, open, merged and closed rows alike (Graphite's inbox gives each its
- * chip), except a row in one of GitHub's own stacks, whose chip GitHub's place gives. Rows that come into view together
- * share a request, 10 rows a request and one request at a time, the content script reading three of their pages at once.
- * A PR's stack seldom changes, so what its page said, a place or none, is asked again only once the row has been updated
- * since, and is kept until the cache lets it go (a day); a page GitHub did not answer is asked again the next time the
- * row shows.
+ * Where Graphite's stack comment on each row's page places it, by PR id (`found`), and the rows its page has answered for,
+ * a place, none or a failure (`answered`), for the chip of a stack Graphite manages and, grouped by stack, for the
+ * sections waiting for their stacks: a query a PR, open, merged and closed rows alike (Graphite's inbox gives each its
+ * chip), except a row in one of GitHub's own stacks, whose chip GitHub's place gives. Grouped by stack (`grouped`), an
+ * open row is asked as soon as it is known, the rows of the sections higher up first (`rows` comes in their order); a
+ * merged or closed row, and every row otherwise, once it comes within 200px of view. Rows asked together share a
+ * request, 10 rows a request and one request at a time, the content script reading three of their pages at once. A PR's
+ * stack seldom changes, so what its page said, a place or none, is asked again only once the row has been updated since,
+ * and is kept until the cache lets it go (a day); a page GitHub did not answer is asked again the next time the row shows.
  */
-function useGraphiteStacks(source: DataSource, rows: PrSummary[]) {
+function useGraphiteStacks(source: DataSource, rows: PrSummary[], grouped: boolean) {
   // The rows shown so far, as they were when shown (by id and when GitHub last updated them).
   const [shown, setShown] = useState<ReadonlySet<string>>(new Set());
   const askForPlace = useMemo(
     () => askedTogether((prs: PrSummary[]) => source.graphiteStacksOf(prs.map(({ repo, number }) => ({ repo, number }))), { perRequest: 10, atOnce: 1, gatherMs: 50 }),
     [source],
   );
-  const found = useQueries({
+  const { found, answered } = useQueries({
     queries: rows.map((pr) => ({
       queryKey: ['graphite-stack', pr.repo.owner, pr.repo.name, pr.number],
       queryFn: () => askForPlace(pr),
       // What was found before the row's latest update, or not answered, is asked again; the place found meanwhile stays on the row.
       staleTime: (query: Query<{ place: GraphiteStackPlace | null } | null>) => (query.state.data && query.state.dataUpdatedAt >= Date.parse(pr.updatedAt) ? Infinity : 0),
       refetchOnWindowFocus: false,
-      enabled: pr.nativeStack === null && shown.has(`${pr.id} ${pr.updatedAt}`),
+      enabled: pr.nativeStack === null && ((grouped && pr.state === 'OPEN') || shown.has(`${pr.id} ${pr.updatedAt}`)),
     })),
-    combine: (results) =>
-      new Map(
+    combine: (results) => ({
+      found: new Map(
         rows.flatMap((pr, index) => {
           const place = results[index]?.data?.place;
           return place ? [[pr.id, place] as const] : [];
         }),
       ),
+      answered: new Set(rows.flatMap((pr, index) => (results[index]?.data !== undefined || results[index]?.isError ? [pr.id] : []))),
+    }),
   });
 
   function want(pr: PrSummary) {
@@ -746,23 +759,24 @@ function useGraphiteStacks(source: DataSource, rows: PrSummary[]) {
     if (!shown.has(version)) setShown((current) => new Set(current).add(version));
   }
 
-  return { found, want };
+  return { found, answered, want };
 }
 
 /**
- * Grouped by stack (`enabled`), the stack of each row shown that is in one (one of GitHub's own, or Graphite's stack
- * comment places it among two or more), as its PR page's stack stage answers it: under the page's own key, so the PR
- * page opens with it, and a stack a PR page fetched shows here at once. Only an answer whose line lists its own row
- * counts, and only the line: the forks stay out, as the inbox's chip leaves them out. The stage costs the PR's page and,
- * for Graphite's stack, a request or two for each of its PRs, so it is asked sparingly: not for a row a stack known for a
- * row before it already lists, and one new row at a time, so that a stack's other rows find its answer first; an answer
- * is kept 2 minutes, and not asked again on coming back to the tab.
+ * Grouped by stack (`enabled`), the stack of each open row that is in one (one of GitHub's own, or Graphite's stack
+ * comment places it among two or more), as its PR page's stack stage answers it (`found`), and the rows whose stack is
+ * answered or already listed by another's (`answered`), for the sections waiting for their stacks: under the page's own
+ * key, so the PR page opens with it, and a stack a PR page fetched shows here at once. Only an answer whose line lists
+ * its own row counts, and only the line: the forks stay out, as the inbox's chip leaves them out. A row is asked as soon
+ * as it is known to be in a stack, whether or not it shows, in the order of `rows` (the sections higher up first); a
+ * merged or closed row never, as it joins no stack's group. The stage costs the PR's page and, for Graphite's stack, a
+ * request or two for each of its PRs, so it is asked sparingly: not for a row a stack known for a row before it already
+ * lists, and three rows at a time, the next row no answered stack lists following as each answers, so that a stack's
+ * other rows mostly find its answer first; an answer is kept 2 minutes, and not asked again on coming back to the tab.
  */
 function useInboxStacks(source: DataSource, rows: PrSummary[], graphitePlaces: ReadonlyMap<string, GraphiteStackPlace>, enabled: boolean) {
   const queryClient = useQueryClient();
-  // The rows shown so far, by id.
-  const [shown, setShown] = useState<ReadonlySet<string>>(new Set());
-  const inStacks = enabled ? rows.filter((pr) => shown.has(pr.id) && (pr.nativeStack !== null || (graphitePlaces.get(pr.id)?.size ?? 0) > 1)) : [];
+  const inStacks = enabled ? rows.filter((pr) => pr.state === 'OPEN' && (pr.nativeStack !== null || (graphitePlaces.get(pr.id)?.size ?? 0) > 1)) : [];
   // What the cache has for each (read by its stage's schema): its stack, when the line lists the row, and whether GitHub
   // has answered at all.
   const cached = inStacks.map((pr) => {
@@ -771,28 +785,25 @@ function useInboxStacks(source: DataSource, rows: PrSummary[], graphitePlaces: R
     return { pr, stack: stack?.entries.some((entry) => isSamePr(entry, pr)) ? stack : undefined, answered: state?.data !== undefined || state?.status === 'error' };
   });
   const covered = cached.map(({ pr }, index) => cached.slice(0, index).some(({ stack }) => stack?.entries.some((entry) => isSamePr(entry, pr))));
-  const next = cached.findIndex(({ answered }, index) => !answered && !covered[index]);
+  // The first three rows neither answered nor listed by an answered stack, which are asked now.
+  const next = cached.flatMap(({ answered }, index) => (!answered && !covered[index] ? [index] : [])).slice(0, 3);
   const results = useQueries({
     queries: cached.map(({ pr, answered }, index) => ({
       ...prStageQuery(source, pr.repo, pr.number, 'stack'),
       staleTime: 2 * 60_000,
       refetchOnWindowFocus: false,
-      enabled: !covered[index] && (answered || index === next),
+      enabled: !covered[index] && (answered || next.includes(index)),
     })),
   });
   // Each query's status is read here (pending until it has data), so that the page renders again, and the next row is
-  // asked, once the one before it has answered or failed, whatever it said.
+  // asked, once one asked before it has answered or failed, whatever it said.
   const found = results.flatMap((result, index) => {
     const pr = cached[index]?.pr;
     const stack = result.status === 'pending' ? undefined : result.data?.stack;
     return pr && stack && stack.entries.length > 1 && stack.entries.some((entry) => isSamePr(entry, pr)) ? [stack] : [];
   });
 
-  function want(pr: PrSummary) {
-    if (!shown.has(pr.id)) setShown((current) => new Set(current).add(pr.id));
-  }
-
-  return { found, want };
+  return { found, answered: new Set(cached.flatMap(({ pr, answered }, index) => (answered || covered[index] ? [pr.id] : []))) };
 }
 
 /**

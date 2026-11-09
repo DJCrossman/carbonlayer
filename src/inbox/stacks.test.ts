@@ -74,14 +74,33 @@ describe('rowsWithStacks', () => {
     const prs = [{ ...pr(18, 'b', 'a'), state: 'MERGED' as const }, pr(20, 'd', 'c')];
     const stack = stackOf([{ ...pr(17, 'a', 'main'), state: 'MERGED' }, { ...pr(18, 'b', 'a'), state: 'MERGED' }, { ...pr(19, 'c', 'b'), state: 'CLOSED' }, pr(20, 'd', 'c')]);
     expect(rowsWithStacks(prs, prs, stackPlaces(prs), [stack], { merged: false, closed: true }).map((row) => [row.pr.number, row.context !== null])).toEqual([
+      [18, false],
       [20, false],
       [19, true],
-      [18, false],
     ]);
     expect(rowsWithStacks(prs, prs, stackPlaces(prs), [stack], { merged: true, closed: false }).map((row) => [row.pr.number, row.context !== null])).toEqual([
-      [20, false],
       [18, false],
+      [20, false],
       [17, true],
+    ]);
+  });
+
+  it('leaves a merged or closed row a known stack lists alone, while the stack draws it under an open row of another section', () => {
+    const open = pr(20, 'd', 'c');
+    // The inbox looks up no branches for a merged or closed row.
+    const merged = { ...pr(18, '', ''), state: 'MERGED' as const };
+    const closed = { ...pr(19, '', ''), state: 'CLOSED' as const };
+    const stack = stackOf([pr(17, 'a', 'main'), merged, closed, open]);
+    const known = [merged, closed, open];
+    expect(rowsWithStacks([merged, closed], known, stackPlaces(known), [stack], everything).map((row) => [row.pr.number, row.stacked, row.context])).toEqual([
+      [18, false, null],
+      [19, false, null],
+    ]);
+    expect(rowsWithStacks([open], known, stackPlaces(known), [stack], everything).map((row) => [row.pr.number, row.stacked, row.context])).toEqual([
+      [20, false, null],
+      [19, true, { position: 3, size: 4 }],
+      [18, true, { position: 2, size: 4 }],
+      [17, true, { position: 1, size: 4 }],
     ]);
   });
 

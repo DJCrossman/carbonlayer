@@ -428,6 +428,23 @@ function prsFor(viewId: string): InboxFixtureRow[] {
           deletions: 27,
           commentCount: 2,
         }),
+        // Merged #117 of #120's stack (below), which stands alone here: the inbox groups no merged row by its stack.
+        pr({
+          repo: 'acme/api',
+          number: 117,
+          title: 'Write occupancy events from the PARCS poller',
+          author: octocat,
+          updated: 1 * DAY,
+          state: 'MERGED',
+          mergedAt: new Date(NOW - DAY).toISOString(),
+          graphiteStackPlace: { position: 2, size: 4 },
+          reviewDecision: 'APPROVED',
+          reviewers: [{ kind: 'user', user: kenji, state: 'APPROVED' }],
+          ci: ci({ passed: 9 }),
+          mergeStatus: 'UNKNOWN',
+          additions: 210,
+          deletions: 31,
+        }),
         pr({
           repo: 'acme/platform',
           number: 1251,
