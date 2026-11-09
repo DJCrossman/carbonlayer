@@ -60,13 +60,13 @@ describe('rowsWithStacks', () => {
     const prs = [pr(10, 'x', 'main'), pr(20, 'd', 'c')];
     // 17 and 18 merged, 19 open on trunk, the row 20, and 21 above it; a fork off 19 stays out.
     const stack = stackOf([{ ...pr(17, 'a', 'main'), state: 'MERGED' }, { ...pr(18, 'b', 'a'), state: 'MERGED' }, pr(19, 'c', 'main'), pr(20, 'd', 'c'), pr(21, 'e', 'd')], [pr(30, 'f', 'c')]);
-    expect(rowsWithStacks(prs, prs, stackPlaces(prs), [stack], everything).map((row) => [row.pr.number, row.context])).toEqual([
-      [10, null],
-      [21, { position: 5, size: 5 }],
-      [20, null],
-      [19, { position: 3, size: 5 }],
-      [18, { position: 2, size: 5 }],
-      [17, { position: 1, size: 5 }],
+    expect(rowsWithStacks(prs, prs, stackPlaces(prs), [stack], everything).map((row) => [row.pr.number, row.stacked, row.context])).toEqual([
+      [10, false, null],
+      [21, false, { position: 5, size: 5 }],
+      [20, true, null],
+      [19, true, { position: 3, size: 5 }],
+      [18, true, { position: 2, size: 5 }],
+      [17, true, { position: 1, size: 5 }],
     ]);
   });
 
@@ -88,38 +88,37 @@ describe('rowsWithStacks', () => {
   it("puts a section's two rows of one stack in one group, where the first of them sorts", () => {
     const prs = [pr(18, 'b', 'a'), pr(10, 'x', 'main'), pr(20, 'd', 'c', 'Acme/Widgets')];
     const stack = stackOf([pr(17, 'a', 'main'), pr(18, 'b', 'a'), pr(19, 'c', 'b'), pr(20, 'd', 'c')]);
-    expect(rowsWithStacks(prs, prs, stackPlaces(prs), [stack], everything).map((row) => [row.pr.number, row.context !== null])).toEqual([
-      [20, false],
-      [19, true],
-      [18, false],
-      [17, true],
-      [10, false],
+    expect(rowsWithStacks(prs, prs, stackPlaces(prs), [stack], everything).map((row) => [row.pr.number, row.stacked, row.context !== null])).toEqual([
+      [20, false, false],
+      [19, true, true],
+      [18, true, false],
+      [17, true, true],
+      [10, false, false],
     ]);
   });
 
-  it("gives every row its group, the id of the first row drawn in it, a known stack's context rows too", () => {
+  it("hangs every row but the first of its group under the row above, a known stack's context rows too", () => {
     const prs = [pr(2, 'b', 'a'), pr(20, 'd', 'c'), pr(1, 'a', 'main'), pr(10, 'x', 'main')];
     // 21, a context row, tops the stack the row 20 is in.
     const stack = stackOf([pr(19, 'c', 'main'), pr(20, 'd', 'c'), pr(21, 'e', 'd')]);
-    const groups = rowsWithStacks(prs, prs, stackPlaces(prs), [stack], everything).map((row) => [row.pr.number, row.group]);
-    expect(groups).toEqual([
-      [2, prs[0]?.id],
-      [1, prs[0]?.id],
-      [21, stack.entries[2]?.id],
-      [20, stack.entries[2]?.id],
-      [19, stack.entries[2]?.id],
-      [10, prs[3]?.id],
+    expect(rowsWithStacks(prs, prs, stackPlaces(prs), [stack], everything).map((row) => [row.pr.number, row.stacked])).toEqual([
+      [2, false],
+      [1, true],
+      [21, false],
+      [20, true],
+      [19, true],
+      [10, false],
     ]);
   });
 
   it('groups a row no known stack lists by its branches, as before', () => {
     const prs = [pr(2, 'b', 'a'), pr(20, 'd', 'c'), pr(1, 'a', 'main')];
     const stack = stackOf([pr(19, 'c', 'main'), pr(20, 'd', 'c')]);
-    expect(rowsWithStacks(prs, prs, stackPlaces(prs), [stack], everything).map((row) => [row.pr.number, row.context !== null, row.group])).toEqual([
-      [2, false, prs[0]?.id],
-      [1, false, prs[0]?.id],
-      [20, false, prs[1]?.id],
-      [19, true, prs[1]?.id],
+    expect(rowsWithStacks(prs, prs, stackPlaces(prs), [stack], everything).map((row) => [row.pr.number, row.stacked, row.context !== null])).toEqual([
+      [2, false, false],
+      [1, true, false],
+      [20, false, false],
+      [19, true, true],
     ]);
   });
 

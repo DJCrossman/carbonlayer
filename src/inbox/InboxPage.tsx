@@ -56,17 +56,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   const graphiteStacks = useGraphiteStacks(source, [...dashboardRows.values()]);
   // Grouped by stack, the stacks of the rows shown that are in one, as their PR pages' stack stage answers them.
   const inboxStacks = useInboxStacks(source, [...dashboardRows.values()], graphiteStacks.found, settings?.inboxGroupByStack === true);
-  // Those stacks' PRs the inbox lists in no section, by id: grouped by stack, they show as context rows, enriched as rows
-  // are (one the inbox lists elsewhere shows as that row, an inbox row already).
-  const contextEntries = new Map(
-    inboxStacks.found.flatMap((stack) => stack.entries.flatMap((entry) => ([...dashboardRows.values()].some((row) => isSamePr(entry, row)) ? [] : [[entry.id, entry] as const]))),
-  );
-  const enrichment = useRowEnrichment(source, [...dashboardRows.values(), ...contextEntries.values()], settings?.mergeMethod ?? 'MERGE');
-  // A context row shows only while its stack's group is open (InboxSection), so its details are asked as soon as its
-  // stack is known rather than once it is drawn: the group opens with its rows complete.
-  useEffect(() => {
-    for (const entry of contextEntries.values()) enrichment.want(entry);
-  }, [[...contextEntries.keys()].join(' ')]);
+  const enrichment = useRowEnrichment(source, [...dashboardRows.values()], settings?.mergeMethod ?? 'MERGE');
   const loadAhead = useLoadAhead(source);
   const saveCacheNow = useContext(SaveCacheNow);
   const viewerLogin = organizations.list?.find((candidate) => candidate.isViewer)?.login ?? null;
@@ -113,24 +103,18 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
   // PR another section shows, and grouped by stack or not, a stack GitHub doesn't track gets a chip from it.
   const inboxRows = sections.flatMap((result) => result.prs);
   const places = stackPlaces(inboxRows);
-  // Grouped by stack, a section shows each stack's rows together, the top first and the others hanging under it, with
-  // the stack's PRs it does not list as context rows (where each sits in its stack, by id, by view id), which j / k, the
-  // copy keys and a click reach as any row, and the group each row is drawn in (by id, by view id), whose context rows
-  // show while it is open.
+  // Grouped by stack, a section shows each stack's rows together, the top first and the others hanging under it (their
+  // ids, by view id), with the stack's PRs it does not list as condensed context rows (where each sits in its stack, by
+  // id, by view id), which j / k, the copy keys and a click reach as any row.
+  const stackedByView = new Map<string, ReadonlySet<string>>();
   const contextByView = new Map<string, ReadonlyMap<string, { position: number; size: number }>>();
-  const groupsByView = new Map<string, ReadonlyMap<string, string>>();
   const resultsByView = new Map<string, Omit<ViewResult, 'prs'> & { prs: Array<PrSummary | StackEntry> }>(
     sections.map((result) => {
       if (!settings?.inboxGroupByStack) return [result.view.id, result];
       const rows = rowsWithStacks(result.prs, inboxRows, places, inboxStacks.found, { merged: settings.stackShowMerged, closed: settings.stackShowClosed });
+      stackedByView.set(result.view.id, new Set(rows.filter((row) => row.stacked).map((row) => row.pr.id)));
       contextByView.set(result.view.id, new Map(rows.flatMap((row) => (row.context ? [[row.pr.id, row.context] as const] : []))));
-      groupsByView.set(result.view.id, new Map(rows.map((row) => [row.pr.id, row.group])));
-      // A context row with what its details found over the stack's entry, as a section's own row has it (above).
-      const prs = rows.map(({ pr, context }) => {
-        const found = context && enrichment.found.get(pr.id)?.enrichment;
-        return found ? { ...pr, ...found, ci: found.ci ?? pr.ci } : pr;
-      });
-      return [result.view.id, { ...result, prs }];
+      return [result.view.id, { ...result, prs: rows.map((row) => row.pr) }];
     }),
   );
   const firstResult = settings?.views[0] && resultsByView.get(settings.views[0].id);
@@ -453,8 +437,8 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
                     overdueAfterHours={view.id === 'graphite-needs-your-review' ? 48 : undefined}
                     viewerLogin={viewerLogin}
                     enrichmentOf={(pr) => enrichment.found.get(pr.id)?.enrichment}
+                    stackedPrIds={stackedByView.get(view.id)}
                     contextPlaces={contextByView.get(view.id)}
-                    stackGroups={groupsByView.get(view.id)}
                     stackPlaces={places}
                     graphiteStackPlaces={graphiteStacks.found}
                     // Until its open rows' branches are known, a section shows skeleton rows, so it appears already grouped.
@@ -462,12 +446,7 @@ export function InboxPage({ source, route }: { source: DataSource; route: Extrac
                     more={more}
                     onSort={(by) => sortSection(view.id, by)}
                     onRowShown={(pr) => {
-                      const row = dashboardRows.get(pr.id);
-                      // A context row needs only its details: its stack is known, and Graphite's place in it is not asked.
-                      if (!row) {
-                        enrichment.want(contextEntries.get(pr.id) ?? pr);
-                        return;
-                      }
+                      const row = dashboardRows.get(pr.id) ?? pr;
                       enrichment.want(row);
                       graphiteStacks.want(row);
                       inboxStacks.want(row);

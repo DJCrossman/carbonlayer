@@ -401,18 +401,56 @@
   border-left: 1px solid var(--gg-border);
   border-bottom-left-radius: 4px;
 }
-/* Grouped by stack, a PR of a row's stack that the section does not list itself (a context row): every column as any
-   row's, muted so it reads as context, its title in the muted colour the stack card gives a merged PR's. The row's own
+/* Grouped by stack, a PR of a row's stack that the section does not list itself (a context row): one short line in the
+   rows' grid, so its left edge and the rail line up with theirs, its state icon where a row's avatar is and its place in
+   the stack, title and byline side by side from the title's column to the row's end, smaller and muted, its title in the
+   muted colour the stack card gives a merged PR's, so it reads as part of the row it hangs under. The row's own
    background is left alone, so hover and selection read as on any row. */
-.gg-row--context > * {
-  opacity: 0.6;
+.gg-row--context {
+  min-height: 26px;
+  padding-top: 1px;
+  padding-bottom: 1px;
+  color: var(--gg-fg-muted);
+  font-size: 12px;
+}
+.gg-row--context .gg-row__main {
+  grid-column: 3 / -1;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+.gg-row--context .gg-row__chip {
+  flex: none;
 }
 .gg-row--context .gg-row__title {
+  min-width: 0;
   color: var(--gg-fg-muted);
   font-weight: 400;
 }
 .gg-row--context .gg-row__title:hover {
   color: var(--gg-accent);
+}
+/* A little further from the title than the chip, so the two read apart in the same colour. */
+.gg-row--context .gg-row__byline {
+  flex: none;
+  margin-left: 4px;
+}
+/* A context row's state, in the colours the PR page's state pill gives it. */
+.gg-row__state {
+  display: flex;
+  justify-content: center;
+}
+.gg-row__state--open {
+  color: var(--gg-success);
+}
+.gg-row__state--draft {
+  color: var(--gg-neutral);
+}
+.gg-row__state--merged {
+  color: var(--gg-done);
+}
+.gg-row__state--closed {
+  color: var(--gg-danger);
 }
 .gg-row__unread {
   display: flex;

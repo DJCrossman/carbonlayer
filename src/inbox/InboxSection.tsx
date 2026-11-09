@@ -2,7 +2,7 @@
 // editor, a column header row (sortable Title, Changes and Updated; icons over the Review, CI and Merge columns), then one
 // dense row per PR in fixed columns so the status icons line up (skeleton rows while loading). Every icon in a row says
 // what it means on hover.
-import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useEffectEvent, useRef, type MouseEvent } from 'react';
 import type { GraphiteStackPlace, PrEnrichment, PrSummary, ReviewerSummary, StackEntry, View, ViewResult } from '../lib/model';
 import { sectionCount } from '../lib/views';
 import { Avatar } from '../ui/Avatar';
@@ -13,6 +13,7 @@ import { RelativeTime } from '../ui/RelativeTime';
 import { Skeleton } from '../ui/Skeleton';
 import { StatusIcon } from '../ui/StatusIcon';
 import { ciStatusIcon, mergeStatusIcon, reviewStatusIcon } from '../ui/status-icons';
+import { ContextRow } from './ContextRow';
 import type { StackPlace } from './stacks';
 
 export function InboxSection({
@@ -24,8 +25,8 @@ export function InboxSection({
   overdueAfterHours,
   viewerLogin,
   enrichmentOf,
+  stackedPrIds,
   contextPlaces,
-  stackGroups,
   stackPlaces,
   graphiteStackPlaces,
   awaitingStacks,
@@ -51,17 +52,14 @@ export function InboxSection({
    * What GitHub's dashboard left out of a row and its page data said (merge status, reviewers, line counts, failing
    * checks); undefined until it arrives, when the reviewer and Changes columns show a skeleton dash.
    */
-  enrichmentOf: (pr: PrSummary | StackEntry) => PrEnrichment | undefined;
+  enrichmentOf: (pr: PrSummary) => PrEnrichment | undefined;
+  /** Grouped by stack, the ids of the rows below the top of their stack, which hang under the row above. */
+  stackedPrIds?: ReadonlySet<string>;
   /**
-   * Grouped by stack, the PRs of a row's stack the section does not list itself, drawn dimmed as context, with where each
-   * sits in its stack's line, by PR id.
+   * Grouped by stack, the PRs of a row's stack the section does not list itself, drawn as condensed context rows, with
+   * where each sits in its stack's line, by PR id.
    */
   contextPlaces?: ReadonlyMap<string, { position: number; size: number }>;
-  /**
-   * Grouped by stack, the group each row is drawn in, by PR id (the id of the group's first row, its stack's top): a
-   * group's context rows show only while it is open, hovered or holding the selection.
-   */
-  stackGroups?: ReadonlyMap<string, string>;
   /** Where each row the inbox knows sits in its stack, by PR id (`stackPlaces`), for the chip of a stack GitHub doesn't track. */
   stackPlaces: ReadonlyMap<string, StackPlace>;
   /** Where Graphite's stack comment on each row's page places it, by PR id, for the chip of a stack Graphite manages. */
@@ -73,7 +71,7 @@ export function InboxSection({
   onSort: (by: SectionSort['by']) => void;
   onLoadMore: () => void;
   /** A row came within 200px of view (again, after it was updated): time to ask for what the dashboard leaves out. */
-  onRowShown: (pr: PrSummary | StackEntry) => void;
+  onRowShown: (pr: PrSummary) => void;
   /** The pointer rested on a row: the viewer may open it next. */
   onRowIntent: (pr: PrSummary | StackEntry) => void;
   onToggleCollapsed: () => void;
@@ -82,29 +80,6 @@ export function InboxSection({
 }) {
   const expanded = view.collapsed !== true;
   const empty = result?.prs.length === 0;
-  // Grouped by stack, the group the pointer rests on, open with its context rows: it opens once the pointer has rested
-  // 150 ms on one of its rows, as the load-ahead intent waits, and closes 100 ms after the pointer leaves it unless it
-  // came back to another of its rows by then, so moving down through an open group keeps it open. One at a time.
-  const [hoveredGroup, setHoveredGroup] = useState<string | null>(null);
-  const opening = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const closing = useRef<ReturnType<typeof setTimeout>>(undefined);
-  useEffect(
-    () => () => {
-      clearTimeout(opening.current);
-      clearTimeout(closing.current);
-    },
-    [],
-  );
-  // The row the pointer rested on as its group opened, and where it stood: context rows drawn above it would push it
-  // down, so the page scrolls by as much and the row stays under the pointer.
-  const anchor = useRef<{ row: HTMLElement; top: number } | null>(null);
-  useLayoutEffect(() => {
-    const at = anchor.current;
-    anchor.current = null;
-    if (at) window.scrollBy(0, at.row.getBoundingClientRect().top - at.top);
-  }, [hoveredGroup]);
-  // The selected row's group stays open too, so that j / k walk into a stack's context rows.
-  const selectedGroup = selectedPrId ? stackGroups?.get(selectedPrId) : undefined;
   return (
     <Card
       className="gg-section"
@@ -167,53 +142,40 @@ export function InboxSection({
       {expanded &&
         !empty &&
         (result && !awaitingStacks
-          ? result.prs
-              // A context row shows while its group is open.
-              .filter((pr) => {
-                const group = stackGroups?.get(pr.id);
-                return !contextPlaces?.has(pr.id) || (group !== undefined && (group === hoveredGroup || group === selectedGroup));
-              })
-              .map((pr, index, drawn) => {
-                // Grouped by stack, a row hangs under the row drawn above it when that row is in its group: a group's
-                // first row drawn, its own row while the context rows above it are collapsed too, stands on its own.
-                const group = stackGroups?.get(pr.id);
-                const above = drawn[index - 1];
+          ? result.prs.map((pr) => {
+              const place = contextPlaces?.get(pr.id);
+              if (place) {
                 return (
-                  <PrRow
+                  <ContextRow
                     key={pr.id}
                     pr={pr}
-                    enrichment={enrichmentOf(pr)}
-                    viewerLogin={viewerLogin}
+                    place={place}
                     selected={pr.id === selectedPrId}
-                    stacked={group !== undefined && above !== undefined && stackGroups?.get(above.id) === group}
-                    contextPlace={contextPlaces?.get(pr.id)}
-                    stackPlace={stackPlaces.get(pr.id)}
-                    graphiteStackPlace={graphiteStackPlaces.get(pr.id)}
-                    overdueAfterHours={overdueAfterHours}
-                    onShown={onRowShown}
+                    stacked={stackedPrIds?.has(pr.id) === true}
                     onIntent={onRowIntent}
-                    onPointerIn={(row) => {
-                      if (!group) return;
-                      clearTimeout(opening.current);
-                      if (group === hoveredGroup) {
-                        clearTimeout(closing.current);
-                        return;
-                      }
-                      opening.current = setTimeout(() => {
-                        clearTimeout(closing.current);
-                        anchor.current = { row, top: row.getBoundingClientRect().top };
-                        setHoveredGroup(group);
-                      }, 150);
-                    }}
-                    onPointerOut={() => {
-                      clearTimeout(opening.current);
-                      clearTimeout(closing.current);
-                      if (hoveredGroup !== null) closing.current = setTimeout(() => setHoveredGroup(null), 100);
-                    }}
                     onOpen={onOpen}
                   />
                 );
-              })
+              }
+              // Only a context row is ever a stack's entry; the section's own rows are the rows it lists.
+              if ('parentNumber' in pr) return null;
+              return (
+                <PrRow
+                  key={pr.id}
+                  pr={pr}
+                  enrichment={enrichmentOf(pr)}
+                  viewerLogin={viewerLogin}
+                  selected={pr.id === selectedPrId}
+                  stacked={stackedPrIds?.has(pr.id) === true}
+                  stackPlace={stackPlaces.get(pr.id)}
+                  graphiteStackPlace={graphiteStackPlaces.get(pr.id)}
+                  overdueAfterHours={overdueAfterHours}
+                  onShown={onRowShown}
+                  onIntent={onRowIntent}
+                  onOpen={onOpen}
+                />
+              );
+            })
           : (awaitingStacks || loading) && ['48%', '62%', '36%'].map((width) => <SkeletonRow key={width} titleWidth={width} />))}
       {expanded && result && !awaitingStacks && more !== 'none' && (
         <button type="button" className="gg-section__more" disabled={more === 'loading'} onClick={onLoadMore}>
@@ -264,36 +226,28 @@ function PrRow({
   viewerLogin,
   selected,
   stacked,
-  contextPlace,
   stackPlace,
   graphiteStackPlace,
   overdueAfterHours,
   onShown,
   onIntent,
-  onPointerIn,
-  onPointerOut,
   onOpen,
 }: {
-  /** The row with its enrichment applied; a context row is its stack's entry, whose author may be unknown. */
-  pr: PrSummary | StackEntry;
+  /** The row with its enrichment applied. */
+  pr: PrSummary;
   enrichment: PrEnrichment | undefined;
   viewerLogin: string | null;
   selected: boolean;
   /** Below the top of its stack: indented, hanging from the row above. */
   stacked: boolean;
-  /** For a PR of the stack the section does not list itself (a context row, dimmed), where it sits in the stack's line. */
-  contextPlace: { position: number; size: number } | undefined;
   /** Where it sits in its stack among the rows the inbox knows; undefined while it stands alone. */
   stackPlace: StackPlace | undefined;
   /** Where Graphite's stack comment on its page places it; undefined while unknown, or where it places none. */
   graphiteStackPlace: GraphiteStackPlace | undefined;
   overdueAfterHours: number | undefined;
-  onShown: (pr: PrSummary | StackEntry) => void;
-  onIntent: (pr: PrSummary | StackEntry) => void;
-  /** The pointer came onto the row (its element), or left it: grouped by stack, its group opens or closes. */
-  onPointerIn: (row: HTMLDivElement) => void;
-  onPointerOut: () => void;
-  onOpen: (pr: PrSummary | StackEntry, newTab: boolean) => void;
+  onShown: (pr: PrSummary) => void;
+  onIntent: (pr: PrSummary) => void;
+  onOpen: (pr: PrSummary, newTab: boolean) => void;
 }) {
   const row = useRef<HTMLDivElement | null>(null);
   // The pointer resting 150 ms on the row, not passing over it.
@@ -337,27 +291,20 @@ function PrRow({
   return (
     <div
       ref={row}
-      className={`gg-row${stacked ? ' gg-row--stacked' : ''}${contextPlace ? ' gg-row--context' : ''}${selected ? ' is-selected' : ''}`}
+      className={`gg-row${stacked ? ' gg-row--stacked' : ''}${selected ? ' is-selected' : ''}`}
       data-pr-id={pr.id}
       onClick={open}
-      onMouseEnter={(event) => {
-        resting.current = setTimeout(() => onIntent(pr), 150);
-        onPointerIn(event.currentTarget);
-      }}
-      onMouseLeave={() => {
-        clearTimeout(resting.current);
-        onPointerOut();
-      }}
+      onMouseEnter={() => (resting.current = setTimeout(() => onIntent(pr), 150))}
+      onMouseLeave={() => clearTimeout(resting.current)}
     >
       <span className="gg-row__unread">{pr.unread && <span className="gg-row__dot" title="Unread" />}</span>
-      {pr.author ? <Avatar user={pr.author} size={20} /> : <span />}
+      <Avatar user={pr.author} size={20} />
       <div className="gg-row__main">
         <a className="gg-row__title" href={pr.url} title={pr.title}>
           {pr.title}
         </a>
         <span className="gg-row__byline">
-          {pr.author && `${pr.author.login} · `}
-          {pr.repo.owner}/{pr.repo.name} #{pr.number}
+          {pr.author.login} · {pr.repo.owner}/{pr.repo.name} #{pr.number}
         </span>
       </div>
       <span className="gg-row__reviewers" title={reviewersTitle || undefined}>
@@ -387,28 +334,21 @@ function PrRow({
         )}
       </span>
       <span className="gg-row__stack">
-        {/* A context row's place in the stack its section's row brought along. */}
-        {contextPlace && (
-          <span className="gg-row__chip" title={`${contextPlace.position}/${contextPlace.size} position in stack`}>
-            <Icon name="stack" size={12} />
-            {contextPlace.position}/{contextPlace.size}
-          </span>
-        )}
-        {!contextPlace && pr.nativeStack && (
+        {pr.nativeStack && (
           <span className="gg-row__chip" title={`${pr.nativeStack.position}/${pr.nativeStack.size} position in stack`}>
             <Icon name="stack" size={12} />
             {pr.nativeStack.position}/{pr.nativeStack.size}
           </span>
         )}
         {/* A stack GitHub doesn't track, as Graphite's comment on the PR's page lists it, every entry counted. */}
-        {!contextPlace && !pr.nativeStack && graphiteStackPlace && (
+        {!pr.nativeStack && graphiteStackPlace && (
           <span className="gg-row__chip" title={`${graphiteStackPlace.position}/${graphiteStackPlace.size} position in stack (from Graphite's stack comment)`}>
             <Icon name="stack" size={12} />
             {graphiteStackPlace.position}/{graphiteStackPlace.size}
           </span>
         )}
         {/* Without that comment, a stack GitHub doesn't track is known only from branch names, counted among the PRs the inbox has. */}
-        {!contextPlace && stackPlace?.untracked && !graphiteStackPlace && (
+        {stackPlace?.untracked && !graphiteStackPlace && (
           <span
             className="gg-row__chip gg-row__chip--attention"
             title={`${stackPlace.position}/${stackPlace.size} position in a stack GitHub doesn't track (worked out from branch names)`}

@@ -227,7 +227,8 @@ in the last 30 minutes (they are never kept on the device); the labels and assig
 "Checking mergeability…" line while its next step stands on placeholders (a merge button must not come from them); a
 stack entry's statuses and an inbox row's columns until their first row details; a section's skeleton rows until its
 first answer, or, grouped by stack, until its open rows' branches are known (its context rows simply join it as their
-stacks are answered, with no skeleton of their own); and the top repositories until their first page.
+stacks are answered, condensed and with no skeleton of their own, since they ask for no row details); and the top
+repositories until their first page.
 
 Activity entries (`src/pr/Activity.tsx`) read as Graphite's Discussion: a review's header says its verdict as a verb,
 "approved" in green, "requested changes" in red, "commented" or "dismissed their review" muted; a review without a body
@@ -663,26 +664,20 @@ new row at a time so that a stack's other rows find its answer first, kept 2 min
 to the tab. Only an answer whose line lists its own row counts, and only the line: the forks stay out, as the inbox's
 stack chip leaves them out. A row a known stack lists brings its whole line along (`rowsWithStacks` in
 `src/inbox/stacks.ts`): the group sits where its first row sorts, top first, and the stack's PRs the section does not
-list show among its rows as context rows: full rows with every column, each the row another section shows for the PR
-where there is one, else the stack's entry loaded with the same row details, its author left out where the stack names
-none; their chip their place in the stack's line ("3/4 position in stack"), and dimmed
-(`gg-row--context`: their columns muted, the row's own hover and selection as any row's), so that a section's PR whose
-stack Graphite restacked after merges, which branch names no longer chain, still shows the whole stack under it. A merged
-or closed context row follows the stack card's `stackShowMerged` / `stackShowClosed` (its ⋯ menu), while a row the
-section lists always shows. The context rows are collapsed until their group is open: every row carries its group (the
-id of the first row drawn in it, the stack's top, `group` from `rowsWithStacks`), and `InboxSection` opens a group once
-the pointer has rested 150 ms on one of its rows, as the load-ahead intent waits, and closes it about 100 ms after the
-pointer leaves it unless it came onto another of the group's rows by then, so moving down through an open group keeps
-it open; one group is open by hover at a time, the selected row's group stays open too, so j / k walk into a stack's
-hidden PRs, and it closes once the selection moves past it. Opening draws the context rows in the line's order, those
-below the hovered row under it, and should some sit above it the page scrolls by as much so the row stays under the
-pointer; the groups are not wrapped in an element of their own, so the rows stay `.gg-row` siblings, and a row hangs
-from the rail under the row drawn above it only when that row is in its group, so a section's row stands on its own
-while the context rows above it are collapsed. A context row's details are asked as soon as its stack is known (an effect in `InboxPage` wants each context entry's
-enrichment), not when it is first drawn, so a group opens with its rows complete; its PR page is not loaded ahead until
-it is hovered or selected, as for any row. The section's count stays its own, "Load more" goes on from its own rows,
-and j / k, the copy keys and a click reach a context row as any row. A row no known stack lists is grouped by its
-branches as above.
+list show among its rows as context rows (`ContextRow` in `src/inbox/ContextRow.tsx`, `gg-row--context`), always
+drawn: one condensed line each, about two thirds of a row's height, in the rows' grid so its left edge and the rail line
+up with theirs, showing only what the stack already says: the PR's state icon (open, draft, merged or closed, in the
+colours the PR page's state pill gives them) where a row's avatar is, then its chip, its place in the stack's line ("3/4
+position in stack"), its title and its byline (its author where the stack names one, the repository and number), all
+smaller and muted, the row's own hover and selection as any row's. It has no reviewer, CI, merge, changes or updated
+columns, so it asks for no details: a context row is the stack's entry, or the row another section shows for the PR
+where there is one, as they are. This way a section's PR whose stack Graphite restacked after merges, which branch names
+no longer chain, still shows the whole stack under it. A merged or closed context row follows the stack card's
+`stackShowMerged` / `stackShowClosed` (its ⋯ menu), while a row the section lists always shows. Every row but the first
+of its group hangs from the rail under the row above (`stacked` from `rowsWithStacks`), a context row too. Its PR page is
+loaded ahead once the pointer has rested on it or it is selected, as for any row. The section's count stays its own,
+"Load more" goes on from its own rows, and j / k, the copy keys and a click reach a context row as any row. A row no
+known stack lists is grouped by its branches as above.
 
 Section counts read `sectionCount` (`99+` above 99, `<limit>+` for a view cut short below that). A section shows
 GitHub's first page of rows (cut to the view's `limit`, default 50); while GitHub counts more, "Load more" at its foot

@@ -359,7 +359,6 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
         ...fixtures.inbox.flatMap((result) => result.prs),
         ...Object.values(fixtures.inboxPages).flat(2),
         ...fixtures.prs.flatMap((pr) => [...pr.stack.entries, ...pr.stack.forks]),
-        ...fixtures.inbox.flatMap((result) => result.prs.flatMap((pr) => pr.stack?.entries ?? [])),
       ];
       return prs.map(({ repo, number }) => {
         const pr = rows.find((row) => row.repo.owner === repo.owner && row.repo.name === repo.name && row.number === number);
