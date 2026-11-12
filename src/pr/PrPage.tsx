@@ -79,7 +79,7 @@ function PrStagesView({ source, route, settings }: { source: DataSource; route: 
     <MarkdownPreview value={previewMarkdown}>
       <MentionList value={mentionList}>
         <SavedReplyList value={source.listSavedReplies}>
-          <PrView header={header.value} data={data} reload={reload} settings={settings} source={source} section={route.section} comment={route.comment} file={route.file} />
+          <PrView header={header.value} data={data} reload={reload} settings={settings} source={source} section={route.section} comment={route.comment} file={route.file} lines={route.lines} />
         </SavedReplyList>
       </MentionList>
     </MarkdownPreview>
@@ -95,6 +95,7 @@ function PrView({
   section,
   comment,
   file,
+  lines,
 }: {
   header: PrStages['header'];
   data: PrPageData;
@@ -104,6 +105,7 @@ function PrView({
   section: Extract<AppRoute, { page: 'pr' }>['section'];
   comment: Extract<AppRoute, { page: 'pr' }>['comment'];
   file: Extract<AppRoute, { page: 'pr' }>['file'];
+  lines: Extract<AppRoute, { page: 'pr' }>['lines'];
 }) {
   const [edits, setEdits] = useState((): PendingEdits => ({ viewed: {}, resolved: {}, isDraft: null, autoMerge: null, reactions: {} }));
   const pr = useMemo(() => optimisticPr(prDetailFrom(header, data), edits), [header, data, edits]);
@@ -171,14 +173,27 @@ function PrView({
     [pr.stack, mergingWhenReady],
   );
   useLinkedComment(comment, pr, data, files.revealThread);
-  const linkedFile = useLinkedFile(file, pr.files);
+  const linkedFile = useLinkedFile(file, lines, pr.files);
 
   useEffect(() => {
-    const files = document.getElementById('pr-files');
+    const filesSection = document.getElementById('pr-files');
     // A link to a comment opens the page at that comment instead.
-    if (section !== 'files' || comment || !files) return;
+    if (section !== 'files' || comment || !filesSection) return;
+    const events = ['wheel', 'keydown', 'pointerdown'] as const;
+    // A link to lines of a file opens the page at them, marked, should the file's diff show them, as it does at a thread's
+    // line; the reader scrolling, typing or clicking takes over. Lines it does not show open the page at the file.
+    let readerMoved = false;
+    const moved = () => (readerMoved = true);
+    const unmark = linkedFile && lines ? files.revealLines(linkedFile, lines, () => readerMoved) : null;
+    if (unmark) {
+      for (const type of events) window.addEventListener(type, moved, { passive: true });
+      return () => {
+        unmark();
+        for (const type of events) window.removeEventListener(type, moved);
+      };
+    }
     // A link to a file opens the page at the file, once the file list has it.
-    const target = (linkedFile && document.getElementById(`gg-file:${linkedFile}`)) || files;
+    const target = (linkedFile && document.getElementById(`gg-file:${linkedFile}`)) || filesSection;
     // The page may be too short to bring the files to the top until the diffs have rendered, so keep them
     // pinned there while the page grows, until the reader takes over or it has settled.
     const pin = () => target.scrollIntoView({ block: 'start' });
@@ -187,14 +202,14 @@ function PrView({
     pin();
     observer.observe(document.body);
     const timer = setTimeout(stop, 3000);
-    const events = ['wheel', 'keydown', 'pointerdown'] as const;
     for (const type of events) window.addEventListener(type, stop, { once: true, passive: true });
     return () => {
       stop();
       clearTimeout(timer);
       for (const type of events) window.removeEventListener(type, stop);
     };
-  }, [section, comment, linkedFile]);
+    // The file review is left out: the lines are revealed once, as the link's file is found, with the files as they are then.
+  }, [section, comment, linkedFile, lines]);
 
   useEffect(() => {
     try {
@@ -1239,11 +1254,11 @@ function useLinkedComment(anchor: string | undefined, pr: PrDetail, data: PrPage
 }
 
 /**
- * The changed file a GitHub link to the PR's files names (`route.file`, `fileAnchor`), once the file list has it: its
- * path; null before that, for a file the PR does not change, and when the reader scrolled, typed or clicked before it was
- * found.
+ * The changed file a GitHub link to the PR's files names (`route.file`, `fileAnchor`), once the file list has it (and,
+ * for a link to lines of it, `route.lines`, its diff, which decides whether the page can open at them): its path; null
+ * before that, for a file the PR does not change, and when the reader scrolled, typed or clicked before it was found.
  */
-function useLinkedFile(anchor: string | undefined, files: ChangedFile[]): string | null {
+function useLinkedFile(anchor: string | undefined, lines: Extract<AppRoute, { page: 'pr' }>['lines'], files: ChangedFile[]): string | null {
   const [linked, setLinked] = useState<{ anchor: string; path: string } | null>(null);
   // As a browser does with a link's anchor, the link gives up once the reader has scrolled, typed or clicked.
   const readerMoved = useRef(false);
@@ -1257,20 +1272,21 @@ function useLinkedFile(anchor: string | undefined, files: ChangedFile[]): string
     return () => {
       for (const type of events) window.removeEventListener(type, moved);
     };
-  }, [anchor]);
+  }, [anchor, lines]);
 
   useEffect(() => {
     if (!anchor) return;
     let current = true;
     // The anchor is a hash of the path, so each file's is worked out to find the one it names.
-    void Promise.all(files.map(async (file) => ((await fileAnchor(file.path)) === anchor ? file.path : null))).then((paths) => {
-      const path = paths.find((candidate) => candidate !== null);
-      if (current && path && !readerMoved.current) setLinked({ anchor, path });
+    void Promise.all(files.map(async (file) => ((await fileAnchor(file.path)) === anchor ? file : null))).then((found) => {
+      const file = found.find((candidate) => candidate !== null);
+      // A file's diff has arrived once it has lines, or GitHub's reason for sending none.
+      if (current && file && (!lines || file.patch !== null || file.withheld !== null) && !readerMoved.current) setLinked({ anchor, path: file.path });
     });
     return () => {
       current = false;
     };
-  }, [anchor, files]);
+  }, [anchor, lines, files]);
 
   return linked && linked.anchor === anchor ? linked.path : null;
 }

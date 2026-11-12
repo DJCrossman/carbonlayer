@@ -10,7 +10,7 @@ import { FileDiff, VirtualizerContext, type FileDiffOptions, type SelectedLineRa
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent } from 'react';
 import type { DataSource, ReviewThreadDraft } from '../app/data-source';
-import { fileAnchor } from '../app/routes';
+import { fileAnchor, type LinkedLines } from '../app/routes';
 import type { ChangedFile, PrDetail, PrStages, ReviewThread } from '../lib/model';
 import { Button } from '../ui/Button';
 import { Icon, type IconName } from '../ui/Icon';
@@ -188,6 +188,15 @@ interface FileReview {
   stepFile(delta: 1 | -1): void;
   /** Opens a thread's file and brings the thread into view, giving up on the way once `readerMoved` says so. */
   revealThread(threadId: string, readerMoved?: () => boolean): void;
+  /** The lines a GitHub link names (`revealLines`), marked in their file as selected lines are. */
+  linkedLines: { path: string; range: SelectedLineRange } | null;
+  /**
+   * Opens a file at the lines a GitHub link names, the first centred, and marks them, giving up on the way once
+   * `readerMoved` says so: null, doing nothing, when the file's diff does not show them, else what takes the mark off.
+   */
+  revealLines(path: string, lines: LinkedLines, readerMoved: () => boolean): (() => void) | null;
+  /** The reader selected lines in a file, or unselected the one marked: the linked lines there are no longer marked. */
+  forgetLinkedLines(path: string): void;
   stepThread(delta: 1 | -1): void;
   toggleTree(): void;
   openComposer(anchor: ComposerAnchor): void;
@@ -203,6 +212,7 @@ export function useFileReview(pr: PrDetail): FileReview {
   const [collapsed, setCollapsedState] = useState<Record<string, boolean>>({});
   const [treeOpen, setTreeOpen] = useState(true);
   const [composer, setComposer] = useState<ComposerAnchor | null>(null);
+  const [linkedLines, setLinkedLines] = useState<{ path: string; range: SelectedLineRange } | null>(null);
   // Scrolling updates the current file, except right after j/k or v moved it (the page may not be able to
   // scroll the last files to the top, which would otherwise hand "current" back to an earlier file), and except back to a
   // file marked viewed and moved on from, its header still at the top, until the reader scrolls into another one.
@@ -270,6 +280,54 @@ export function useFileReview(pr: PrDetail): FileReview {
     [pr.threads],
   );
 
+  const revealLines = useCallback(
+    (path: string, lines: LinkedLines, readerMoved: () => boolean) => {
+      const file = pr.files.find((candidate) => candidate.path === path);
+      const end = lines.end ?? lines.start;
+      const range: SelectedLineRange = {
+        start: lines.start.line,
+        side: lines.start.side === 'LEFT' ? 'deletions' : 'additions',
+        end: end.line,
+        endSide: end.side === 'LEFT' ? 'deletions' : 'additions',
+      };
+      // Lines its diff shows, as a comment's are; a deleted file shows its lines only once asked to.
+      const diff = file && file.status !== 'removed' ? renderableDiff(file) : null;
+      if (!diff || !takesComments(diff, range)) return null;
+      const marked = { path, range };
+      navigatedAt.current = performance.now();
+      setCollapsedState((current) => ({ ...current, [path]: false }));
+      setCurrentPath(path);
+      setLinkedLines(marked);
+      // As for a thread's line (revealThread): the lines have a box only once the file is expanded and they are drawn, a
+      // long diff drawing only those near the viewport, so the page moves toward them meanwhile, unless the reader moves
+      // first. The library marks the selected lines' numbers, the first of them the first line linked, in either layout.
+      // Once drawn, the line stays centred while the diffs above it arrive and grow the page, until the reader takes over
+      // or the page has settled, as a link to a file keeps its card at the top.
+      const started = performance.now();
+      let frames = 0;
+      let frame = 0;
+      const tryScroll = () => {
+        if (readerMoved()) return;
+        const cell = document.getElementById(`gg-file:${path}`)?.querySelector('diffs-container')?.shadowRoot?.querySelector('[data-gutter] [data-selected-line]');
+        if (cell && cell.getClientRects().length > 0) {
+          navigatedAt.current = performance.now();
+          cell.scrollIntoView({ block: 'center' });
+          if (performance.now() - started < 3000) frame = requestAnimationFrame(tryScroll);
+        } else if (frames++ < 120) {
+          navigatedAt.current = performance.now();
+          scrollTowardLine({ path, ...lines.start });
+          frame = requestAnimationFrame(tryScroll);
+        }
+      };
+      frame = requestAnimationFrame(tryScroll);
+      return () => {
+        cancelAnimationFrame(frame);
+        setLinkedLines((current) => (current === marked ? null : current));
+      };
+    },
+    [pr.files],
+  );
+
   return {
     tree,
     order,
@@ -303,6 +361,9 @@ export function useFileReview(pr: PrDetail): FileReview {
       if (next) goToFile(next.path);
     },
     revealThread,
+    linkedLines,
+    revealLines,
+    forgetLinkedLines: useCallback((path: string) => setLinkedLines((current) => (current?.path === path ? null : current)), []),
     stepThread: (delta) => {
       const unresolved = pr.threads
         .filter((thread) => !thread.isResolved)
@@ -470,15 +531,16 @@ function FileCard({
       : null;
   // Lines being selected, until the pointer is released and the composer opens for them.
   const [selecting, setSelecting] = useState<SelectedLineRange | null>(null);
-  // The commented lines stay highlighted while the composer is open, and only then (a comment on the whole file has none);
-  // a selection shows as it grows.
+  // The commented lines stay highlighted while the composer is open (a comment on the whole file has none), and the lines a
+  // GitHub link names while neither shows; a selection shows as it grows.
+  const linked = review.linkedLines?.path === file.path ? review.linkedLines.range : null;
   const selectedLines = useMemo(
     () =>
       selecting ??
       (composer && !('subjectType' in composer)
         ? { start: composer.startLine ?? composer.line, side: composer.startSide ?? composer.side, end: composer.line, endSide: composer.side }
-        : null),
-    [selecting, composer],
+        : linked),
+    [selecting, composer, linked],
   );
   const viewed = file.viewerViewedState === 'VIEWED';
   const threadCount = pr.threads.filter((thread) => thread.path === file.path).length;
@@ -486,6 +548,7 @@ function FileCard({
   const openComposer = useRef(review.openComposer);
   openComposer.current = review.openComposer;
   const setCollapsed = review.setCollapsed;
+  const forgetLinkedLines = review.forgetLinkedLines;
   // Whether the ⋯'s "Show all lines" shows every unchanged line of the file, kept while it is collapsed and opened again.
   const [allLines, setAllLines] = useState(false);
 
@@ -506,9 +569,15 @@ function FileCard({
       // does the "+" pressed and dragged; the composer opens for them when the pointer is released.
       // Only lines of the diff take a comment: a selection that reaches an unchanged line expanded around them shows none.
       enableLineSelection: true,
-      onLineSelectionStart: (range) => setSelecting(range && fileDiff && takesComments(fileDiff, range) ? range : null),
+      // The reader selecting lines, or unselecting the one a link marked (a click on it, which ends a selection of none),
+      // takes the link's mark off.
+      onLineSelectionStart: (range) => {
+        forgetLinkedLines(file.path);
+        setSelecting(range && fileDiff && takesComments(fileDiff, range) ? range : null);
+      },
       onLineSelectionChange: (range) => setSelecting(range && fileDiff && takesComments(fileDiff, range) ? range : null),
       onLineSelectionEnd: (range) => {
+        forgetLinkedLines(file.path);
         setSelecting(null);
         // Null when the one line already selected was clicked again: the composer stays, with whatever it holds.
         if (range && fileDiff && takesComments(fileDiff, range)) openComposer.current(composerAnchorFor(file.path, fileDiff, range));
@@ -537,7 +606,7 @@ function FileCard({
       // (onClick below), so it shows it on hover, as Graphite's does, without moving. An expanded unchanged line has no "+".
       unsafeCSS: `[data-sticky] { top: ${STICKY_TOP}px; } [data-title] { margin: -2px -4px; padding: 2px 4px; border-radius: 4px; cursor: pointer; } [data-title]:hover { background: var(--gg-bg-hover); } [data-line-type='context-expanded'] [data-gutter-utility-slot] { display: none; }`,
     }),
-    [diffStyle, themeType, collapsed, allLines, file.path, fileDiff, queryClient, source, owner, name, number, headOid, baseRefName],
+    [diffStyle, themeType, collapsed, allLines, file.path, fileDiff, forgetLinkedLines, queryClient, source, owner, name, number, headOid, baseRefName],
   );
 
   const viewedToggle = (
@@ -918,14 +987,15 @@ function FilesSkeleton({ count }: { count: number }) {
 }
 
 /**
- * Moves the page toward a thread's line in a long diff, which draws only the lines near the viewport
- * (`data-virtualized`): to the file while it draws none, then by the line numbers it has drawn on the thread's side, a
- * line's height for each line between. The page stays where it is once the line is among those drawn, and for any other diff.
+ * Moves the page toward a line in a long diff (a thread's, or one a link names), which draws only the lines near the
+ * viewport (`data-virtualized`): to the file while it draws none, then by the line numbers it has drawn on the line's side,
+ * a line's height for each line between. The page stays where it is once the line is among those drawn, and for any other
+ * diff.
  */
-function scrollTowardLine(thread: ReviewThread) {
-  const fileCard = document.getElementById(`gg-file:${thread.path}`);
+function scrollTowardLine(target: Pick<ReviewThread, 'path' | 'side' | 'line'>) {
+  const fileCard = document.getElementById(`gg-file:${target.path}`);
   if (!(fileCard instanceof HTMLElement) || fileCard.dataset.virtualized === undefined) return;
-  const side = thread.side === 'LEFT' ? 'deletions' : 'additions';
+  const side = target.side === 'LEFT' ? 'deletions' : 'additions';
   // The unified layout numbers an added or unchanged line by its new number, a removed one by its old.
   const drawn = [...(fileCard.querySelector('diffs-container')?.shadowRoot?.querySelectorAll(`[data-unified] [data-gutter] [data-column-number], [data-${side}] [data-gutter] [data-column-number]`) ?? [])]
     .filter((cell) => cell.getAttribute('data-line-type') !== (side === 'additions' ? 'change-deletion' : 'change-addition'))
@@ -933,7 +1003,7 @@ function scrollTowardLine(thread: ReviewThread) {
   const first = drawn[0];
   const last = drawn.at(-1);
   // An outdated thread, and one on the whole file, sits above the file's first line.
-  const line = thread.line ?? 0;
+  const line = target.line ?? 0;
   if (!first || !last) fileCard.scrollIntoView({ block: 'start' });
   else if (line < first.line) window.scrollBy({ top: first.top - (first.line - line) * DIFF_LINE_HEIGHT - innerHeight / 2, behavior: 'instant' });
   else if (line > last.line) window.scrollBy({ top: last.top + (line - last.line) * DIFF_LINE_HEIGHT - innerHeight / 2, behavior: 'instant' });

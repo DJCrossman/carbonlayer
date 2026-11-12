@@ -51,7 +51,29 @@ describe('parseGitHubLocation', () => {
     });
   });
 
-  it.each([`/acme/widgets/pull/42#diff-${README_SHA256}`, `/acme/widgets/pull/42/files#diff-${README_SHA256}R12`, `/acme/widgets/pull/42/files#diff-${README_SHA256.toUpperCase()}`])(
+  it.each([
+    ['R240', { start: { side: 'RIGHT', line: 240 } }],
+    ['L240', { start: { side: 'LEFT', line: 240 } }],
+    ['R240-R250', { start: { side: 'RIGHT', line: 240 }, end: { side: 'RIGHT', line: 250 } }],
+    ['L10-R12', { start: { side: 'LEFT', line: 10 }, end: { side: 'RIGHT', line: 12 } }],
+  ])('carries the lines a link to /changes#diff-<hash>%s names into the PR route, with the file', (suffix, lines) => {
+    expect(parseGitHubLocation(new URL(`https://github.com/acme/widgets/pull/42/changes#diff-${README_SHA256}${suffix}`))).toEqual({
+      page: 'pr',
+      repo: { owner: 'acme', name: 'widgets' },
+      number: 42,
+      section: 'files',
+      file: `diff-${README_SHA256}`,
+      lines,
+    });
+  });
+
+  it.each([
+    `/acme/widgets/pull/42#diff-${README_SHA256}`,
+    `/acme/widgets/pull/42#diff-${README_SHA256}R12`,
+    `/acme/widgets/pull/42/files#diff-${README_SHA256}X12`,
+    `/acme/widgets/pull/42/files#diff-${README_SHA256}R12-`,
+    `/acme/widgets/pull/42/files#diff-${README_SHA256.toUpperCase()}`,
+  ])(
     'names no file for %s',
     (path) => {
       expect(parseGitHubLocation(new URL(`https://github.com${path}`))).not.toHaveProperty('file');
@@ -113,6 +135,8 @@ describe('app hash round trip', () => {
       parseGitHubLocation(new URL('https://github.com/acme/widgets/pull/42#issuecomment-7')),
       parseGitHubLocation(new URL('https://github.com/acme/widgets/pull/42/files#r501')),
       parseGitHubLocation(new URL(`https://github.com/acme/widgets/pull/42/changes#diff-${README_SHA256}`)),
+      parseGitHubLocation(new URL(`https://github.com/acme/widgets/pull/42/changes#diff-${README_SHA256}R240`)),
+      parseGitHubLocation(new URL(`https://github.com/acme/widgets/pull/42/changes#diff-${README_SHA256}L10-R12`)),
       parseGitHubLocation(new URL(encodeViewsShareLink([{ id: 'a', name: 'A', query: 'is:pr' }]))),
     ];
     for (const route of routes) expect(parseAppHash(toAppHash(route))).toEqual(route);
@@ -124,6 +148,22 @@ describe('app hash round trip', () => {
 
   it('drops a file that is not one of GitHub’s anchors from the app hash', () => {
     expect(parseAppHash('#/pr/acme/widgets/42?section=files&file=diff-0123abcd')).not.toHaveProperty('file');
+  });
+
+  it('spells the lines in the app hash as GitHub does', () => {
+    expect(toAppHash(parseGitHubLocation(new URL(`https://github.com/acme/widgets/pull/42/files#diff-${README_SHA256}R240-R250`)))).toBe(
+      `#/pr/acme/widgets/42?section=files&file=diff-${README_SHA256}&lines=R240-R250`,
+    );
+  });
+
+  it('drops lines the app hash names without a file, and a file whose lines are not as GitHub spells them, as GitHub’s anchor would be', () => {
+    expect(parseAppHash('#/pr/acme/widgets/42?section=files&lines=R240')).not.toHaveProperty('lines');
+    expect(parseAppHash(`#/pr/acme/widgets/42?section=files&file=diff-${README_SHA256}&lines=240`)).toEqual({
+      page: 'pr',
+      repo: { owner: 'acme', name: 'widgets' },
+      number: 42,
+      section: 'files',
+    });
   });
 
   it('drops malformed import payloads from the app hash', () => {

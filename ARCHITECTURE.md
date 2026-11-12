@@ -282,7 +282,21 @@ on `/files` or `/changes`, opens the page at the file: the content script carrie
 (`?section=files&file=diff-<hash>`, `file` in `src/app/routes.ts`), and once the file list has the file whose path
 hashes to it (`useLinkedFile` in `src/pr/PrPage.tsx`) the page keeps that file's card at the top while it grows, as it
 keeps the files there for a link to them. An anchor no file has leaves the page at the files, and the reader scrolling,
-typing or clicking before the file is found leaves it where they are.
+typing or clicking before the file is found leaves it where they are. A link to a line of the diff opens the page at
+the line: GitHub's anchor goes on with `L<n>` (line n of the old file, the deletions' side) or `R<n>` (of the new file,
+the additions'), or a range, `R<n>-R<m>` or across the sides (`L10-R12`), which the route parses with the file
+(`FILE_ANCHOR`, `fileLink`) into `lines` (`{ start: { side: 'LEFT' | 'RIGHT', line }, end? }`) and carries in GitHub's
+own spelling (`&lines=R240-R250`). `useLinkedFile` then waits for the file's diff too, and once it has arrived the page
+asks the files to reveal the lines (`revealLines` in `src/pr/Files.tsx`) instead of keeping the card at the top: should
+the diff show them (inside its hunks, `takesComments`, and not a deleted file's, whose lines show only once asked), the
+file expands, becomes current, and the lines are marked as selected lines are (the diff's `selectedLines`, which the
+library only draws, firing none of the card's selection callbacks); then, as for a thread's line, the page moves toward
+the line each frame (`scrollTowardLine`, a long diff drawing only the lines near the viewport) until the first marked
+line number is drawn, centres it, and keeps it centred while the diffs above it arrive, for 3 s. The mark shows while
+nothing is being selected and no composer is open for lines; it goes once the reader selects lines in that file (or
+clicks the marked line, which unselects it) and when another link arrives. Lines the diff does not show open the page at
+the file, as a link to the file does, and the reader scrolling, typing or clicking before the diff arrives, or during the
+reveal, leaves the page where they put it.
 
 Comments on a file: besides a line comment (the gutter's "+" or selected lines), every file's header, a diff's or one
 without lines, has GitHub's "Comment on this file" (a comment icon between Viewed and the ⋯), which opens the line

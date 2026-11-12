@@ -5,6 +5,18 @@ import { z } from 'zod/mini';
 import { viewSchema, type RepoRef, type View } from '../lib/model';
 import { decodeViewsShareHash } from '../lib/views';
 
+/** A line of a PR's diff as GitHub's links name it: `L<n>` on the old file's side (LEFT), `R<n>` on the new file's (RIGHT). */
+export interface LinkedLine {
+  side: 'LEFT' | 'RIGHT';
+  line: number;
+}
+
+/** The line, or the lines from `start` to `end`, a GitHub link to a PR's files names after the file (`diff-<hash>R240-R250`). */
+export interface LinkedLines {
+  start: LinkedLine;
+  end?: LinkedLine;
+}
+
 export type AppRoute =
   | { page: 'inbox'; importViews: View[] | null }
   | {
@@ -16,6 +28,8 @@ export type AppRoute =
       comment?: string;
       /** The file a GitHub link to the PR's files names, by its anchor (`fileAnchor`): the page opens at it. */
       file?: string;
+      /** The lines of that file's diff the link names: the page opens at them and marks them. */
+      lines?: LinkedLines;
     }
   | { page: 'none' };
 
@@ -32,15 +46,15 @@ export function parseGitHubLocation(url: URL): AppRoute {
     const section = tab === 'changes' ? 'files' : (tab as 'conversation' | 'files' | 'commits' | 'checks');
     // GitHub's files view names a diff comment `#r<id>`, the conversation `#discussion_r<id>`.
     const comment = url.hash.slice(1).replace(/^r(?=\d+$)/, 'discussion_r');
-    // Only the files view names a file.
-    const file = url.hash.slice(1);
+    // Only the files view names a file, and with it, maybe, lines of its diff.
+    const link = fileLink(url.hash.slice(1));
     return {
       page: 'pr',
       repo: { owner: match[1], name: match[2] },
       number: Number(match[3]),
       section,
       ...(COMMENT_ANCHOR.test(comment) && { comment }),
-      ...(section === 'files' && FILE_ANCHOR.test(file) && { file }),
+      ...(section === 'files' && link),
     };
   }
   return { page: 'none' };
@@ -70,6 +84,11 @@ export function toAppHash(route: AppRoute): string {
       if (route.section !== 'conversation') params.set('section', route.section);
       if (route.comment) params.set('comment', route.comment);
       if (route.file) params.set('file', route.file);
+      // In GitHub's own spelling, `R240` or `R240-R250`.
+      if (route.lines) {
+        const { start, end } = route.lines;
+        params.set('lines', [start, ...(end ? [end] : [])].map(({ side, line }) => `${side === 'LEFT' ? 'L' : 'R'}${line}`).join('-'));
+      }
       const query = params.toString();
       return `#/pr/${route.repo.owner}/${route.repo.name}/${route.number}${query ? `?${query}` : ''}`;
     }
@@ -98,14 +117,15 @@ export function parseAppHash(hash: string): AppRoute {
   if (match && match[1] && match[2] && match[3]) {
     const section = params.get('section');
     const comment = params.get('comment');
-    const file = params.get('file');
+    // The file and its lines as GitHub's anchor spells them, read as that anchor is.
+    const link = fileLink(`${params.get('file') ?? ''}${params.get('lines') ?? ''}`);
     return {
       page: 'pr',
       repo: { owner: match[1], name: match[2] },
       number: Number(match[3]),
       section: section === 'files' || section === 'commits' || section === 'checks' ? section : 'conversation',
       ...(comment !== null && COMMENT_ANCHOR.test(comment) && { comment }),
-      ...(file !== null && FILE_ANCHOR.test(file) && { file }),
+      ...link,
     };
   }
   return { page: 'none' };
@@ -137,5 +157,18 @@ export async function fileAnchor(path: string): Promise<string> {
  */
 const COMMENT_ANCHOR = /^(?:issue-|issuecomment-|pullrequestreview-|discussion_r)\d+$/;
 
-/** The anchor of GitHub's link to a file in a PR's files view (`fileAnchor`). */
-const FILE_ANCHOR = /^diff-[0-9a-f]{64}$/;
+/**
+ * The anchor of GitHub's link to a file in a PR's files view (`fileAnchor`), then maybe the lines of its diff it names:
+ * one (`R240`, `L240`) or a range (`R240-R250`, or across the sides, `L10-R12`).
+ */
+const FILE_ANCHOR = /^(diff-[0-9a-f]{64})(?:([LR])(\d+)(?:-([LR])(\d+))?)?$/;
+
+/** The file, and the lines of its diff, an anchor of GitHub's link to a PR's files names (`FILE_ANCHOR`); null for any other. */
+function fileLink(anchor: string): { file: string; lines?: LinkedLines } | null {
+  const [, file, startSide, start, endSide, end] = FILE_ANCHOR.exec(anchor) ?? [];
+  if (file === undefined) return null;
+  if (startSide === undefined || start === undefined) return { file };
+  const lines: LinkedLines = { start: { side: startSide === 'L' ? 'LEFT' : 'RIGHT', line: Number(start) } };
+  if (endSide !== undefined && end !== undefined) lines.end = { side: endSide === 'L' ? 'LEFT' : 'RIGHT', line: Number(end) };
+  return { file, lines };
+}
