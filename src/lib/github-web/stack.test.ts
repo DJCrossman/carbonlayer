@@ -322,6 +322,122 @@ describe("Graphite's stack comment", () => {
     // #8994's reference named it, with its open icon.
     expect(stack.entries[0]).toMatchObject({ number: 8994, title: 'Layer 1', state: 'OPEN', author: { login: 'mona' } });
   });
+
+  describe("continuing a lower PR's line above what the comment names, by the branches of the author's open PRs", () => {
+    // core#10166's stack: #10166 → #10167 → #10181 → #10182 → #10183 → #10171, the closed #10168 off #10167, and #10200 of
+    // the same author on trunk, each with the branches its page header names.
+    const branches = new Map([
+      [10166, { baseBranch: 'main', headBranch: 'l1' }],
+      [10167, { baseBranch: 'l1', headBranch: 'l2' }],
+      [10168, { baseBranch: 'l2', headBranch: 'l3b' }],
+      [10181, { baseBranch: 'l2', headBranch: 'l3' }],
+      [10182, { baseBranch: 'l3', headBranch: 'l4' }],
+      [10183, { baseBranch: 'l4', headBranch: 'l5' }],
+      [10171, { baseBranch: 'l5', headBranch: 'l6' }],
+      [10200, { baseBranch: 'main', headBranch: 'other' }],
+    ]);
+    const openPulls = [10166, 10167, 10181, 10182, 10183, 10171, 10200].map((number) => summary(number, branches.get(number)?.headBranch ?? ''));
+    const headerOf = (number: number) =>
+      authorHeaderAnswer.parse({ pullRequest: { author: { login: 'ana' }, ...branches.get(number), headRepositoryOwnerLogin: 'o', headRepositoryName: 'r' } });
+
+    it('continues the line through the named dependent up to the top, keeps the closed one a fork, and leaves a PR on another base out', async () => {
+      const current = summary(10166, 'l1');
+      const asked: number[] = [];
+      const stack = await resolveStack(
+        { current, page: graphiteComment([{ number: 10167, dependents: [10168, 10181] }, { number: 10166, viewed: true }]), nativeStack: null },
+        {
+          ...noLookups,
+          authorsOpenPulls: async () => openPulls,
+          header: async (number) => {
+            asked.push(number);
+            return headerOf(number);
+          },
+        },
+      );
+      expect(stack.entries.map((entry) => [entry.number, entry.parentNumber])).toEqual([
+        [10166, null],
+        [10167, 10166],
+        [10181, 10167],
+        [10182, 10181],
+        [10183, 10182],
+        [10171, 10183],
+      ]);
+      expect(stack.entries[5]).toEqual({ ...openPulls[5], parentNumber: 10183, conversations: null });
+      expect(stack).toMatchObject({ currentIndex: 0, trunk: 'main', source: 'graphite-comment' });
+      expect(stack.forks.map((fork) => [fork.number, fork.parentNumber])).toEqual([[10168, 10167]]);
+      // The branches of the author's open PRs the comment does not place, and #10168's author, which the search lacks.
+      expect(asked.toSorted()).toEqual([10168, 10171, 10181, 10182, 10183, 10200]);
+    });
+
+    it('continues a mid-stack PR\'s line above the dependents its comment names', async () => {
+      const current = summary(10181, 'l3');
+      const stack = await resolveStack(
+        {
+          current,
+          page: graphiteComment([{ number: 10182, dependents: [10183] }, { number: 10181, viewed: true }, { number: 10167, dependents: [10168] }, { number: 10166 }]),
+          nativeStack: null,
+        },
+        { ...noLookups, authorsOpenPulls: async () => openPulls, header: async (number) => headerOf(number) },
+      );
+      expect(stack.entries.map((entry) => entry.number)).toEqual([10166, 10167, 10181, 10182, 10183, 10171]);
+      expect(stack.currentIndex).toBe(2);
+      expect(stack.forks.map((fork) => [fork.number, fork.parentNumber])).toEqual([[10168, 10167]]);
+    });
+
+    it('takes the tallest chain where PRs above the line branch, the other child a fork off its parent', async () => {
+      const current = summary(10166, 'l1');
+      // #10179 sits on #10181 beside #10182, with nothing above it; the lower number loses to the taller chain.
+      const forked = new Map([...branches, [10179, { baseBranch: 'l3', headBranch: 'side' }]]);
+      const stack = await resolveStack(
+        { current, page: graphiteComment([{ number: 10167, dependents: [10168, 10181] }, { number: 10166, viewed: true }]), nativeStack: null },
+        {
+          ...noLookups,
+          authorsOpenPulls: async () => [...openPulls, summary(10179, 'side')],
+          header: async (number) => authorHeaderAnswer.parse({ pullRequest: { ...forked.get(number), headRepositoryOwnerLogin: 'o', headRepositoryName: 'r' } }),
+        },
+      );
+      expect(stack.entries.map((entry) => entry.number)).toEqual([10166, 10167, 10181, 10182, 10183, 10171]);
+      expect(stack.forks.map((fork) => [fork.number, fork.parentNumber])).toEqual([
+        [10168, 10167],
+        [10179, 10181],
+      ]);
+    });
+
+    it("leaves the comment's stack as it is when GitHub answers no header", async () => {
+      const current = summary(10166, 'l1');
+      const stack = await resolveStack(
+        { current, page: graphiteComment([{ number: 10167, dependents: [10168, 10181] }, { number: 10166, viewed: true }]), nativeStack: null },
+        { ...noLookups, authorsOpenPulls: async () => openPulls },
+      );
+      expect(stack.entries.map((entry) => [entry.number, entry.parentNumber])).toEqual([
+        [10166, null],
+        [10167, 10166],
+      ]);
+      expect(stack.forks.map((fork) => [fork.number, fork.parentNumber])).toEqual([
+        [10168, 10167],
+        [10181, 10167],
+      ]);
+    });
+
+    it("asks no header for the author's other open PRs where the comment names nothing off its line's top", async () => {
+      const current = summary(9029, 'layer-6');
+      const asked: number[] = [];
+      const stack = await resolveStack(
+        { current, page: forked9029, nativeStack: null },
+        {
+          ...noLookups,
+          authorsOpenPulls: async () => [current, ...openPulls],
+          header: async (number) => {
+            asked.push(number);
+            return null;
+          },
+        },
+      );
+      expect(stack.entries.map((entry) => entry.number)).toEqual([8994, 9002, 9001, 9004, 9026, 9029]);
+      // Only the authors the search does not give, as before.
+      expect(asked.toSorted()).toEqual([8994, 9001, 9002, 9003, 9004, 9026]);
+    });
+  });
 });
 
 describe("a PR's place in Graphite's stack", () => {
@@ -420,6 +536,25 @@ const forked9604 = new DOMParser().parseFromString(
 
 /** page_data/stack_mergeability as GitHub answered it for both PRs of a two-PR native stack (verified signed in, 2026-10-15). */
 const verifiedVerdict = { state: 'MERGEABLE', effectiveEntryStatus: 'READY', isInAutoMergeRange: false, channels: {}, statusCheckChannels: {} };
+
+/**
+ * Graphite's comment the way GitHub's API renders it on a lower PR of a stack (core#10166's, read 2026-11-12), each number
+ * a reference without a title, top first: an item for each PR on the viewed PR's line, the PRs off it named in its item
+ * as plain links (`: 2 dependent PRs (#10168, #10181)`), the viewed one marked 👈, and the trunk last.
+ */
+function graphiteComment(topFirst: Array<{ number: number; dependents?: number[]; viewed?: boolean }>): Document {
+  const items = topFirst.map(({ number, dependents = [], viewed }) => {
+    const named = dependents.map((dependent) => `<a href="https://github.com/o/r/pull/${dependent}" data-hovercard-type="pull_request">#${dependent}</a>`).join(', ');
+    return `<li><strong><a class="issue-link js-issue-link" data-hovercard-type="pull_request" href="https://github.com/o/r/pull/${number}">#${number}</a></strong>${named && `: ${dependents.length} dependent PRs (${named})`}${viewed ? ' 👈' : ''}</li>`;
+  });
+  return new DOMParser().parseFromString(
+    `<html><body><div class="timeline-comment-group" id="issuecomment-5"><div class="comment-body">
+      <ul dir="auto">${items.join('')}<li><code class="notranslate">main</code></li></ul>
+      <p dir="auto">This stack of pull requests is managed by <a href="https://graphite.dev?utm-source=stack-comment" rel="nofollow"><b>Graphite</b></a>.</p>
+    </div></div></body></html>`,
+    'text/html',
+  );
+}
 
 function emptyPage(): Document {
   return new DOMParser().parseFromString('<html><body></body></html>', 'text/html');

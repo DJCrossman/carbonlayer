@@ -382,8 +382,19 @@ stack on the clipboard as Markdown, as Graphite's comment lists it: a line for e
 Forks come from Graphite's comment alone (GitHub's own stack is one line): it lists one line of the stack, the PR's own,
 and names in an entry's item the PRs that branch off it past the line, "1 other dependent PR (#9003)"
 (`graphiteStackComment`), which become `Stack.forks`, each with the entry it branches from (`StackEntry.parentNumber`),
-beside the line's `Stack.entries`. The card draws a fork as Graphite does, indented right above the entry it branches
-from, its dot on a short rail in the rail's own colour that curves out of the main one; the header's count, the
+beside the line's `Stack.entries`. On a lower PR the comment lists the line only up to the one PR directly above it and
+names that PR's dependents by number, nothing above them (core#10166 lists four PRs of a nine-PR stack), so when it names
+PRs off the line's top, `resolveStack` continues the line upward (`lineContinuedAbove`): each of the author's open PRs
+the comment does not place (those dependents among them) is asked for its `page_data/header`, the same request that names
+an entry's author, now also read for its branches as `branchesIn` reads them, three at a time; a PR whose base branch is
+another's head branch in the repository sits on it, and from the line's top the line goes on through the child with the
+tallest chain above it (the lowest number on a tie) until none is left, every other child along the way becoming a fork
+off its parent. On core#10166, with the author's 15 open PRs in the repository, that is 13 headers (all but #10166 and
+#10167), before the 25-entry window centred on the viewed PR is cut. A top PR's comment names nothing off its top and asks
+for nothing more. A named dependent outside the author's open PRs (closed, or another author's) stays the fork the comment
+names, a header GitHub does not answer leaves its PR out (with none answered the stack is the comment's alone), and PRs
+above by another author beyond what the comment names are not found, as the search lists only the author's. The card
+draws a fork as Graphite does, indented right above the entry it branches from, its dot on a short rail in the rail's own colour that curves out of the main one; the header's count, the
 sidebar's "Waiting on downstack" and Copy stack are the line's alone, the forks left out. The header's ⋯ is Graphite's
 (`StackMenu` in `src/pr/StackMenu.tsx`): View settings opens the options page, and Show merged PRs and Show closed PRs
 (`stackShowMerged` and `stackShowClosed` in settings, both on unless switched off) leave the stack's PRs in that state,

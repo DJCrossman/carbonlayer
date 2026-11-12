@@ -198,7 +198,7 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
             answersFor({ repo: pull.repo, number, path: `/${pull.repo.owner}/${pull.repo.name}/pull/${number}` })
               .header()
               .catch((error: unknown) => {
-                console.debug('[gg]', `page_data/header for ${pull.repo.owner}/${pull.repo.name}#${number} failed; its stack entry shows no author:`, error instanceof Error ? error.message : error);
+                console.debug('[gg]', `page_data/header for ${pull.repo.owner}/${pull.repo.name}#${number} failed; its stack entry shows no author, and the stack's line is not continued through it:`, error instanceof Error ? error.message : error);
                 return null;
               }),
         },

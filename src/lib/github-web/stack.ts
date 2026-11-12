@@ -2,7 +2,8 @@
 // stack Graphite lists in its PR comment, else the PR alone.
 
 import { z } from 'zod/mini';
-import type { GraphiteStackPlace, PrSummary, Stack, StackEntry, UserRef } from '../model';
+import type { GraphiteStackPlace, PrSummary, RepoRef, Stack, StackBranches, StackEntry, UserRef } from '../model';
+import { branchesIn } from './inbox';
 import { githubUser, politely } from './session';
 
 export async function resolveStack(
@@ -16,7 +17,8 @@ export async function resolveStack(
     conversations(number: number): Promise<PrSummary['conversations']>;
     /**
      * Another entry's own page_data/header, for who opened it and, for an entry the stack's listing names by its number
-     * alone, its title and state; null when GitHub did not answer.
+     * alone, its title and state; and another of the author's open PRs', for its branches, by which a lower PR's line is
+     * continued above what Graphite's comment names. Null when GitHub did not answer.
      */
     header(number: number): Promise<AuthorHeaderAnswer | null>;
   },
@@ -56,11 +58,12 @@ export async function resolveStack(
   const comment = graphiteStackComment(subject.page);
   if (comment && (comment.entries.length > 1 || comment.forks.length > 0) && comment.entries.some((entry) => entry.number === current.number)) {
     const open = new Map((await lookups.authorsOpenPulls()).map((pull) => [pull.number, pull]));
+    const whole = await lineContinuedAbove(comment, open, current.repo, lookups.header);
     // At most 25 entries, centred on the PR being viewed, and the forks off them.
-    const index = comment.entries.findIndex((entry) => entry.number === current.number);
-    const start = Math.max(0, Math.min(index - 12, comment.entries.length - 25));
-    const line = comment.entries.slice(start, start + 25);
-    const forks = comment.forks.filter((fork) => line.some((entry) => entry.number === fork.parentNumber));
+    const index = whole.entries.findIndex((entry) => entry.number === current.number);
+    const start = Math.max(0, Math.min(index - 12, whole.entries.length - 25));
+    const line = whole.entries.slice(start, start + 25);
+    const forks = whole.forks.filter((fork) => line.some((entry) => entry.number === fork.parentNumber));
     const named = [...line, ...forks].map((entry): StackEntry => {
       const known = entry.number === current.number ? current : open.get(entry.number);
       return known
@@ -148,6 +151,74 @@ export function authorIn(header: AuthorHeaderAnswer): UserRef | null {
 }
 
 /**
+ * Graphite's comment with its line continued above what it names. On a lower PR the comment lists the line up to the one
+ * PR directly above it and names that PR's dependents by number alone, nothing above them (core#10166 lists #10166, #10167
+ * and #10167's #10181 and #10168 of a nine-PR stack). So, when it names PRs off the line's top, each of the author's other
+ * open PRs, those dependents among them, is asked for its page header's branches, three at a time, and the line continues
+ * from its top through the child with the tallest chain of them above it, a PR sitting on another whose head branch is its
+ * base branch in this repository, the lowest number on a tie, up to where no child is left; every other child along the
+ * way is a fork off its parent, as the comment's own are. A named dependent the author's open PRs do not include (a
+ * closed one, another author's) stays the fork the comment names, as does any PR whose header GitHub does not answer, so
+ * with none answered the stack is the comment's alone. PRs above by another author beyond what the comment names are not
+ * found: the search lists the author's alone. A top PR's comment names nothing off its top and asks for nothing.
+ */
+async function lineContinuedAbove(
+  comment: { entries: GraphiteEntry[]; forks: GraphiteEntry[] },
+  open: Map<number, PrSummary>,
+  repo: RepoRef,
+  header: (number: number) => Promise<AuthorHeaderAnswer | null>,
+): Promise<{ entries: GraphiteEntry[]; forks: GraphiteEntry[] }> {
+  const top = comment.entries.at(-1);
+  if (!top || !comment.forks.some((fork) => fork.parentNumber === top.number)) return comment;
+  // The line's own entries and the forks the comment names off its lower entries already have their places.
+  const placed = [...comment.entries, ...comment.forks.filter((fork) => fork.parentNumber !== top.number)];
+  const asked = await politely(
+    [...open.values()].filter((pull) => !placed.some((entry) => entry.number === pull.number)),
+    3,
+    async (pull) => {
+      const answer = await header(pull.number);
+      return { pull, branches: answer && branchesIn(answer, repo) };
+    },
+  );
+  const candidates = asked.flatMap(({ pull, branches }) => (branches ? [{ pull, branches }] : []));
+  // The comment says which PRs sit on the top; the branches say which sit on each of those.
+  const childrenOf = (number: number): Candidate[] => {
+    const head = candidates.find((candidate) => candidate.pull.number === number)?.branches.headRefName;
+    return number === top.number
+      ? candidates.filter((candidate) => comment.forks.some((fork) => fork.number === candidate.pull.number && fork.parentNumber === top.number))
+      : candidates.filter((candidate) => head && candidate.branches.baseRefName === head);
+  };
+  const chain = tallestChainAbove(top.number, childrenOf, []);
+  const onLine = [top.number, ...chain.map((candidate) => candidate.pull.number)];
+  return {
+    entries: [...comment.entries, ...chain.map((candidate, index) => ({ ...candidate.pull, parentNumber: onLine[index] ?? null }))],
+    forks: [
+      ...comment.forks.filter((fork) => !onLine.includes(fork.number)),
+      ...chain.flatMap((candidate) =>
+        childrenOf(candidate.pull.number)
+          .filter((child) => !onLine.includes(child.pull.number))
+          .map((child) => ({ ...child.pull, parentNumber: candidate.pull.number })),
+      ),
+    ],
+  };
+}
+
+/**
+ * The tallest chain of PRs stacked above the PR numbered `number`, bottom first: the child with the most PRs above it,
+ * the lowest number on a tie, then its own tallest chain. `below` is the chain up to it, which a child never repeats, so
+ * branches that name each other end the chain.
+ */
+function tallestChainAbove(number: number, childrenOf: (number: number) => Candidate[], below: number[]): Candidate[] {
+  let tallest: Candidate[] = [];
+  for (const child of childrenOf(number).toSorted((a, b) => a.pull.number - b.pull.number)) {
+    if (child.pull.number === number || below.includes(child.pull.number)) continue;
+    const chain = [child, ...tallestChainAbove(child.pull.number, childrenOf, [...below, number])];
+    if (chain.length > tallest.length) tallest = chain;
+  }
+  return tallest;
+}
+
+/**
  * A stack entry known only from what the stack lists about it, in the viewed PR's repository. The listing names nobody,
  * so who opened it is unknown until its own page header says.
  */
@@ -219,9 +290,10 @@ export const stackMergeabilityAnswer = z.object({ state: z.nullish(z.string()), 
 type StackMergeabilityAnswer = z.infer<typeof stackMergeabilityAnswer>;
 
 /**
- * page_data/header, for who opened the PR and its title and state (the fields read here). Its `pullRequest` carries the
- * fields of the page's own `pullRequestsLayoutRoute.pullRequest` (docs/research/github-web-endpoints.md), whose `state` is
- * OPEN, DRAFT, MERGED or CLOSED; `title` is read by that same name and stays unread where GitHub leaves it out.
+ * page_data/header, for who opened the PR, its title and state, and its branches (the fields read here). Its
+ * `pullRequest` carries the fields of the page's own `pullRequestsLayoutRoute.pullRequest`
+ * (docs/research/github-web-endpoints.md), whose `state` is OPEN, DRAFT, MERGED or CLOSED; `title` is read by that same
+ * name and stays unread where GitHub leaves it out.
  */
 export const authorHeaderAnswer = z.object({
   pullRequest: z.nullish(
@@ -229,6 +301,11 @@ export const authorHeaderAnswer = z.object({
       author: z.nullish(z.object({ login: z.nullish(z.string()), avatarUrl: z.nullish(z.string()) })),
       title: z.nullish(z.string()),
       state: z.nullish(z.string()),
+      // The branches, as `branchesIn` reads them, by which a lower PR's line is continued above Graphite's comment.
+      baseBranch: z.nullish(z.string()),
+      headBranch: z.nullish(z.string()),
+      headRepositoryOwnerLogin: z.nullish(z.string()),
+      headRepositoryName: z.nullish(z.string()),
     }),
   ),
 });
@@ -244,6 +321,12 @@ export const nativeStackSchema = z.object({
 });
 
 export type NativeStack = z.infer<typeof nativeStackSchema>;
+
+/** One of the author's open PRs the comment does not place, with the branches its page header names. */
+interface Candidate {
+  pull: PrSummary;
+  branches: StackBranches;
+}
 
 interface GraphiteEntry {
   number: number;
