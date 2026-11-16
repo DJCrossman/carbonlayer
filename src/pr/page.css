@@ -202,6 +202,15 @@
 .pr-description > .pr-comment-edit:not(:has(+ .pr-comment-link)) { right: 6px; }
 .pr-description > .pr-comment-edit:hover { background: var(--gg-bg-hover); }
 .pr-description:hover > .pr-comment-edit { opacity: 1; }
+/* Its ⋯, GitHub's description menu, takes the corner, the Copy link and Edit moving one place to its left. */
+.pr-description > .pr-comment-menu { position: absolute; top: 6px; right: 6px; }
+.pr-description > .pr-comment-menu > .pr-comment-more { background: var(--gg-bg); }
+.pr-description > .pr-comment-menu > .pr-comment-more:hover,
+.pr-description > .pr-comment-menu > .pr-comment-more[aria-expanded='true'] { background: var(--gg-bg-hover); }
+.pr-description:hover > .pr-comment-menu > .pr-comment-more { opacity: 1; }
+.pr-description > .pr-comment-link:has(+ .pr-comment-menu) { right: 28px; }
+.pr-description > .pr-comment-edit:has(+ .pr-comment-menu) { right: 28px; }
+.pr-description > .pr-comment-edit:has(+ .pr-comment-link + .pr-comment-menu) { right: 50px; }
 /* Opened from a link to it (PrPage's useLinkedComment), as GitHub marks the comment a link names. */
 .pr-description.is-linked { border-color: var(--gg-accent); box-shadow: 0 0 0 1px var(--gg-accent); }
 .pr-description-empty { margin: 0; font-style: italic; }

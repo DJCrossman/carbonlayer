@@ -329,7 +329,7 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
     const stateEvents = closesAndReopens.get(pr.id) ?? [];
     return {
       ...pr,
-      ...(description !== undefined && { bodyHtml: renderedByGitHub(description), editableDescription: description }),
+      ...(description !== undefined && { bodyHtml: renderedByGitHub(description), descriptionMarkdown: description, editableDescription: description }),
       ...(stateEvents.length > 0 && { state: stateEvents.at(-1)?.kind === 'closed' ? 'CLOSED' : 'OPEN' }),
       timeline: [...pr.timeline.map((item) => (item.kind === 'comment' || item.kind === 'review' ? edit(item, item.id) : item)), ...stateEvents],
       threads: pr.threads.map((thread) => ({ ...thread, comments: thread.comments.map((comment) => edit(comment, comment.id)) })),

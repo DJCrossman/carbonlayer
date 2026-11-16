@@ -53,10 +53,17 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
     const updatedAt = times.filter((time): time is string => !!time && !Number.isNaN(Date.parse(time))).sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? pr.createdTime;
     // The description as the conversation renders it, so it comes with the page; page_data/description when it does not.
     const description = page.querySelector('[id^="pullrequest-"] .comment-body');
-    const described = description ? null : await github.description();
-    // GitHub's own page lets whoever may edit the title edit the description. Its Markdown is what the description's Copy
-    // Markdown copies, or page_data/description's `body`.
-    const markdown = description ? page.querySelector('[id^="pullrequest-"] .timeline-comment-actions clipboard-copy[role="menuitem"][value]')?.getAttribute('value') : described?.body;
+    // The description's Markdown is what its options menu's Copy Markdown copies, where the conversation has that menu
+    // inline (signed out it does; signed in its markup is unverified and may be deferred).
+    const menuMarkdown = description ? page.querySelector('[id^="pullrequest-"] .timeline-comment-actions clipboard-copy[role="menuitem"][value]')?.getAttribute('value') : undefined;
+    // GitHub's own page lets whoever may edit the title edit the description, so for them page_data/description's `body`
+    // stands in for a menu that gave none; for anyone else nothing more is asked only to copy or quote it.
+    const canEditTitle = layout.user?.canEditTitle ?? false;
+    const described = !description || (canEditTitle && typeof menuMarkdown !== 'string') ? await github.description() : null;
+    const markdown = menuMarkdown ?? described?.body ?? undefined;
+    if (canEditTitle && markdown === undefined) {
+      console.debug('[gg]', "the description's Markdown is in neither its menu's Copy Markdown nor page_data/description's body; it offers no Edit:", `${pull.repo.owner}/${pull.repo.name}#${pull.number}`);
+    }
     const header: PrStages['header'] = {
       id: pr.relayId,
       repo: pull.repo,
@@ -81,9 +88,10 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
       // The conversation's reaction form that names the PR itself is the description's.
       descriptionReactions: [...page.querySelectorAll('form.js-pick-reaction')].map((form) => reactionsIn(form)).find(({ subjectId }) => subjectId === pr.relayId)?.reactions ?? [],
       descriptionUrl: descriptionPermalink(page, `https://github.com${pull.path}`),
-      ...(layout.user?.canEditTitle && typeof markdown === 'string' && { editableDescription: markdown }),
+      ...(markdown !== undefined && { descriptionMarkdown: markdown }),
+      ...(canEditTitle && markdown !== undefined && { editableDescription: markdown }),
       headOid: pr.headSha,
-      viewerCanUpdate: layout.user?.canEditTitle ?? false,
+      viewerCanUpdate: canEditTitle,
       viewerDidAuthor: viewerLogin === author.login,
       viewerLogin,
       stackSource: nativeStack ? 'native' : graphiteStackComment(page) ? 'graphite-comment' : 'none',
@@ -167,7 +175,7 @@ const stages: { [S in PrStage]: (github: GitHubAnswers, pull: Pull) => Promise<P
     const [header, page] = await Promise.all([stages.header(github, pull), github.page()]);
     const { stack } = layoutOf(page, pull);
     // The page puts everything it knows about this PR in its own entry; the header is what the stack itself needs.
-    const { bodyHtml, descriptionReactions, descriptionUrl, editableDescription, headOid, viewerCanUpdate, viewerDidAuthor, viewerLogin, stackSource, ...summary } = header;
+    const { bodyHtml, descriptionReactions, descriptionUrl, descriptionMarkdown, editableDescription, headOid, viewerCanUpdate, viewerDidAuthor, viewerLogin, stackSource, ...summary } = header;
     const current: PrSummary = {
       ...summary,
       reviewDecision: 'NONE',
@@ -296,7 +304,10 @@ const tabCountsAnswer = z.object({ filesChangedCount: z.nullish(z.number()), con
 /** page_data/diffstat (the fields read here). */
 const diffstatAnswer = z.object({ diffstat: z.nullish(z.object({ linesAdded: z.nullish(z.number()), linesDeleted: z.nullish(z.number()) })) });
 
-/** page_data/description (the fields read here), for a PR whose conversation renders no description. */
+/**
+ * page_data/description (the fields read here), for a PR whose conversation renders no description, or whose description
+ * the viewer may edit and its menu gives no Markdown for.
+ */
 const descriptionAnswer = z.object({ bodyHtml: z.nullish(z.string()), body: z.nullish(z.string()) });
 
 /** page_data/labels (the fields read here). */

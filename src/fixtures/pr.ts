@@ -488,6 +488,25 @@ const occupancyFeedJson = [
   ']',
 ];
 
+/** #42's description as GitHub keeps its Markdown, which the viewer may also edit. */
+const description42 = [
+  'Lets the adapter move a facility between PARCS zones, refusing zones that are closed.',
+  '',
+  '## Changes',
+  '',
+  '- `zones.ts`: zone model, `findZone`, `isOpen` and `switchZone`',
+  '- `ParcsAdapter.changeZone` replaces `setZone`',
+  '- Drops the v1 `legacy.ts` toggle',
+  '',
+  '## Testing',
+  '',
+  '```ts',
+  "await adapter.changeZone('north' as ZoneId);",
+  '```',
+  '',
+  'Stacked on #41; the console change is #43.',
+].join('\n');
+
 const detail42: PrDetail = {
   ...summary42,
   bodyHtml: [
@@ -507,23 +526,8 @@ const detail42: PrDetail = {
     { content: 'ROCKET', count: 1, viewerHasReacted: true, reactors: [] },
   ],
   descriptionUrl: 'https://github.com/acme/widgets/pull/42#issue-4200',
-  editableDescription: [
-    'Lets the adapter move a facility between PARCS zones, refusing zones that are closed.',
-    '',
-    '## Changes',
-    '',
-    '- `zones.ts`: zone model, `findZone`, `isOpen` and `switchZone`',
-    '- `ParcsAdapter.changeZone` replaces `setZone`',
-    '- Drops the v1 `legacy.ts` toggle',
-    '',
-    '## Testing',
-    '',
-    '```ts',
-    "await adapter.changeZone('north' as ZoneId);",
-    '```',
-    '',
-    'Stacked on #41; the console change is #43.',
-  ].join('\n'),
+  descriptionMarkdown: description42,
+  editableDescription: description42,
   headOid: 'c0ffee42c0ffee42c0ffee42c0ffee42c0ffee42',
   baseOid: 'bead4141bead4141bead4141bead4141bead4141',
   headRepository: { owner: 'acme', name: 'widgets' },
@@ -770,6 +774,7 @@ const detail41: PrDetail = {
   descriptionReactions: [],
   // A conversation that names no permalink for its description: nothing to copy.
   descriptionUrl: null,
+  descriptionMarkdown: 'A small typed wrapper around the PARCS REST API, so the adapter stops hand-rolling `fetch` calls.',
   editableDescription: 'A small typed wrapper around the PARCS REST API, so the adapter stops hand-rolling `fetch` calls.',
   headOid: 'bead4141bead4141bead4141bead4141bead4141',
   baseOid: '0000aaaa0000aaaa0000aaaa0000aaaa0000aaaa',
@@ -890,7 +895,9 @@ const detail43: PrDetail = {
   ...summary43,
   bodyHtml: '<p>The operator console gets a zone switcher on top of <a href="https://github.com/acme/widgets/pull/42">#42</a>. The tests replay a recorded occupancy feed.</p>',
   descriptionReactions: [],
-  descriptionUrl: null,
+  // A description the viewer may copy and quote but not edit: its menu offers no Edit.
+  descriptionUrl: 'https://github.com/acme/widgets/pull/43#issue-4300',
+  descriptionMarkdown: 'The operator console gets a zone switcher on top of #42. The tests replay a recorded occupancy feed.',
   headOid: 'facade43facade43facade43facade43facade43',
   baseOid: '3f2a9c1d5e7b9a1c3e5d7f9b1d3f5a7c9e1b3d5f',
   headRepository: { owner: 'acme', name: 'widgets' },

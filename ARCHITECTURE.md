@@ -263,8 +263,10 @@ saves and Esc cancels; while GitHub saves the edit the box takes no input, then 
 conversation says who may edit what: a comment's or review's own options menu offers Edit only where the viewer may, its
 Copy Markdown holds the Markdown, and a comment's `data-body-version` its version (`editableMarkdown`, `bodyVersion` in
 `src/lib/github-web/timeline.ts`); a diff comment's come from `page_data/threads` (`viewerCanUpdate`, `body`, `bodyVersion`);
-the description is the viewer's to edit where the title is (`editableDescription`). See
-`docs/research/github-web-mutations.md`.
+the description is the viewer's to edit where the title is (`editableDescription`), its Markdown from its own menu's Copy
+Markdown or, where that gives none (as on signed-in pages it evidently does not) or the conversation renders no
+description, from `page_data/description`'s `body`, asked only for a viewer who may edit it; should neither give it, the
+header stage logs so (`[gg]`) and offers no Edit. See `docs/research/github-web-mutations.md`.
 
 Comment menus: every conversation comment, review summary and diff comment (in the diff and in the comments drawer) has a ⋯
 at the end of its header, after the Copy link and the Edit pencil, which stay, seen as they are (`CommentMenu` in
@@ -292,6 +294,12 @@ Unhide form (`form.js-comment-unminimize`), its bar the reason (`menuIn` in `src
 else's is reportable by login; a diff comment's come from `page_data/threads` (`viewerCanMinimize`, `viewerCanUnminimize`,
 `isHidden`, `minimizedReason`, `viewerCanReport`, `viewerCanReportToMaintainer`). A hidden conversation comment GitHub
 renders without a body (signed out) is still left out. See `docs/research/github-web-mutations.md`, Hiding comments.
+The description has the same ⋯ (`CommentMenu`, in its top corner after its Edit pencil and Copy link), listing what
+GitHub's description menu lists: Copy link (`descriptionUrl`), Copy Markdown and Quote reply (`descriptionMarkdown`: its
+menu's Copy Markdown, or `page_data/description`'s `body` where that was asked, as for editing above; Quote reply goes to
+the activity's new-comment box, whose `CommentBox` handle `PrView` holds and passes to `Activity`, a selection inside the
+description quoting only the selection), then a separator and Edit where `editableDescription` is set; no Reference in new
+issue, Hide, Delete or Report content, as GitHub's has none.
 
 File links: each file's header copies as Graphite's does (`FileCard` in `src/pr/Files.tsx`), each copy confirmed in a
 toast. A click on its path copies the path: `@pierre/diffs` draws the path in the diff's shadow root, so the card hears

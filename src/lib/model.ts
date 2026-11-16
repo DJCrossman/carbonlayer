@@ -406,6 +406,11 @@ export const prDetailSchema = z.extend(prSummarySchema, {
   /** GitHub's permalink to the description (`…/pull/<n>#issue-<id>`); null when the conversation names none. */
   descriptionUrl: z.nullable(z.string()),
   /**
+   * The description's Markdown as GitHub keeps it, which its menu copies and quotes; absent where the page did not give it
+   * (its menu's Copy Markdown, or page_data/description where that was asked).
+   */
+  descriptionMarkdown: z.optional(z.string()),
+  /**
    * The description's Markdown as GitHub keeps it, which editing it starts from, where GitHub lets the viewer edit it (as
    * it lets them edit the title, `viewerCanUpdate`); absent where it does not, or the page did not give it.
    */
@@ -488,6 +493,7 @@ export const prStagesSchema = z.object({
       bodyHtml: true,
       descriptionReactions: true,
       descriptionUrl: true,
+      descriptionMarkdown: true,
       editableDescription: true,
       headOid: true,
       headRepository: true,

@@ -197,6 +197,39 @@ describe('the PR page in stages', () => {
     expect(await loadStage('header')).toMatchObject({ bodyHtml: '<p>From the route</p>', editableDescription: 'From the route' });
   });
 
+  it.each([
+    [true, 'The **description**'],
+    [false, undefined],
+  ])("takes the description's Markdown from its Copy Markdown where the menu has it, asking page_data/description nothing (may edit: %s)", async (canEditTitle, editable) => {
+    const asked = serveDescription({ canEditTitle, menu: true, body: 'From the route' });
+    const header = await loadStage('header');
+    expect(header.descriptionMarkdown).toBe('The **description**');
+    expect(header.editableDescription).toBe(editable);
+    expect(asked).not.toContain('description');
+  });
+
+  it("asks page_data/description for the Markdown of a description the viewer may edit where its menu gives none", async () => {
+    const asked = serveDescription({ canEditTitle: true, menu: false, body: 'From the route' });
+    expect(await loadStage('header')).toMatchObject({ bodyHtml: '<p>The <strong>description</strong></p>', descriptionMarkdown: 'From the route', editableDescription: 'From the route' });
+    expect(asked).toContain('description');
+  });
+
+  it('asks page_data/description nothing for a viewer who may not edit the description, its menu giving no Markdown', async () => {
+    const asked = serveDescription({ canEditTitle: false, menu: false, body: 'From the route' });
+    const header = await loadStage('header');
+    expect(header).not.toHaveProperty('descriptionMarkdown');
+    expect(header).not.toHaveProperty('editableDescription');
+    expect(asked).not.toContain('description');
+  });
+
+  it("says so, for a report, where neither the menu nor page_data/description gives the Markdown of a description the viewer may edit", async () => {
+    serveDescription({ canEditTitle: true, menu: false, body: null });
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    const header = await loadStage('header');
+    expect(header).not.toHaveProperty('editableDescription');
+    expect(debug).toHaveBeenCalledWith('[gg]', expect.stringContaining("neither its menu's Copy Markdown nor page_data/description's body"), 'o/r#1');
+  });
+
   it("names the repository the head branch is in, a fork's for a PR from one, and none where GitHub names none", async () => {
     const answer = (head: object) => async (url: string) => {
       if (url.endsWith('/tab_counts') || url.endsWith('/diffstat') || url.endsWith('/page_data/description')) return Response.json({});
@@ -308,6 +341,33 @@ function serveGitHub(failing: Record<string, number> = {}, viewer = 'ana', answe
         return new Response(route === 'actions' ? String(routes.actions) : `<title>Running Copilot Code Review · o/r@${headSha}</title>`, { headers: { 'content-type': 'text/html' } });
       }
       return route in routes ? Response.json(routes[route]) : Response.json({ error: 'Not Found' }, { status: 404 });
+    }),
+  );
+  return asked;
+}
+
+/**
+ * github.com for o/r#1 with a rendered description, its Markdown in the description's options menu or not, for a viewer
+ * who may edit the title or not, page_data/description answering `body`; records each request as its route.
+ */
+function serveDescription({ canEditTitle, menu, body }: { canEditTitle: boolean; menu: boolean; body: string | null }): string[] {
+  const asked: string[] = [];
+  const layout = { pullRequest: { id: 1, relayId: 'PR_1', number: 1, title: 'T', state: 'OPEN', baseBranch: 'main', headBranch: 'fix', headSha: 'h', createdTime: '2026-10-01T00:00:00Z' }, user: { canEditTitle } };
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      asked.push(/\/page_data\/([a-z_]+)/.exec(url)?.[1] ?? 'page');
+      if (url.endsWith('/page_data/description')) return Response.json({ bodyHtml: '<p>From the route</p>', body });
+      if (url.endsWith('/tab_counts') || url.endsWith('/diffstat')) return Response.json({});
+      return new Response(
+        `<html><head><meta name="user-login" content="ana"></head><body>
+          <script type="application/json" data-target="react-app.embeddedData">${JSON.stringify({ payload: { pullRequestsLayoutRoute: layout } })}</script>
+          <div class="TimelineItem"><div id="pullrequest-1" class="timeline-comment js-comment">
+            ${menu ? '<div class="timeline-comment-actions"><clipboard-copy role="menuitem" value="The **description**">Copy Markdown</clipboard-copy></div>' : ''}
+            <div class="comment-body"><p>The <strong>description</strong></p></div></div></div>
+        </body></html>`,
+        { headers: { 'content-type': 'text/html' } },
+      );
     }),
   );
   return asked;

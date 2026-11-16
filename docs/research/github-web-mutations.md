@@ -408,7 +408,11 @@ CarbonLayer sends the React requests instead, which need no form token.
   edit without a version, as GitHub's classic page sends no `X-Body-Version` for it.
 - `page_data/description`: `{ body, bodyHtml, bodyVersion, editInformation: { lastUserContentEdit,
   viewerCanReadUserContentEdits }, reactionGroups, viewerCanReact }`, no can-edit flag. CarbonLayer reads the description's
-  Markdown from its menu's Copy Markdown, or this `body` where the conversation renders no description.
+  Markdown from its menu's Copy Markdown, or this `body` where the conversation renders no description or, for a viewer who
+  may edit the title (and so the description), where the menu gives no Markdown: signed in, David's pages showed no Edit,
+  so the menu evidently gave none there. UNVERIFIED: the signed-in description menu's markup (inline or deferred, and
+  whether it holds Copy Markdown at all); for a viewer who may not edit, nothing more is asked, and its Copy Markdown and
+  Quote reply show only where the menu gave the Markdown.
 - `page_data/threads` comments carry `body`, `bodyHTML`, `bodyVersion`, `databaseId`, `viewerCanUpdate`, `viewerCanDelete`,
   `viewerCanMinimize`, … (keys confirmed).
 - `page_data/conversation_comments` (what the Overview reads; 40 a page, `Link: <…?after=…>; rel="next"`, `?direction=desc`

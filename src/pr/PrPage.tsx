@@ -24,7 +24,8 @@ import { showToast, ToastHost } from '../ui/Toast';
 import { Activity } from './Activity';
 import { AssigneesCard } from './Assignees';
 import { useCheckReruns } from './check-reruns';
-import { CommentEditor, CopyLink, EditButton, Markdown } from './Comment';
+import { CommentEditor, CommentMenu, copyForViewer, CopyLink, EditButton, Markdown, type MenuItem } from './Comment';
+import { quotableSelection, quoteReply } from './comment-menu';
 import { CommentsDrawer } from './CommentsDrawer';
 import { FilesSection, useFileReview } from './Files';
 import { usePrKeybindings } from './keybindings';
@@ -33,7 +34,7 @@ import { MergeStackDialog } from './MergeStackDialog';
 import { nextActionFor, stackToMerge, type NextAction } from './next-action';
 import { followLink, goToPr, openOnGitHub } from './navigation';
 import { prDetailFrom, usePrPageData, type PrPageData } from './page-data';
-import { MarkdownPreview, MentionList, SavedReplyList, StageError, Staged, StatePill } from './primitives';
+import { MarkdownPreview, MentionList, SavedReplyList, StageError, Staged, StatePill, type CommentBox } from './primitives';
 import { PrReactions, Reactions, type ChangedReactions } from './Reactions';
 import { QuickApproveDialog, ReviewComposer, type ReviewEvent } from './ReviewComposer';
 import { ReviewersCard } from './Reviewers';
@@ -137,6 +138,10 @@ function PrView({
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [editingDescription, setEditingDescription] = useState(false);
   const editDescriptionButton = useRef<HTMLButtonElement | null>(null);
+  // What the reader had selected in the description as its menu opened, which its Quote reply quotes in place of the Markdown.
+  const descriptionSelection = useRef<string | null>(null);
+  // The new-comment box at the foot of the activity, where the description's Quote reply goes, as a comment's does.
+  const composer = useRef<CommentBox | null>(null);
   const [legendHidden, setLegendHidden] = useState(() => {
     try {
       return localStorage.getItem('gg:pr-legend-hidden') === '1';
@@ -514,6 +519,22 @@ function PrView({
     onCopied: () => showToast('Link copied'),
   };
 
+  const { descriptionUrl, descriptionMarkdown } = pr;
+  // GitHub's menu on the description, in its order: its link and Markdown and quoting it, then Edit where the viewer may; no
+  // Reference in new issue, Hide, Delete or Report content, as GitHub's has none.
+  const descriptionMenu: MenuItem[][] = [
+    [
+      ...(descriptionUrl ? [{ label: 'Copy link', icon: 'link', onSelect: () => copyForViewer(descriptionUrl, 'link to description') } satisfies MenuItem] : []),
+      ...(descriptionMarkdown !== undefined
+        ? [
+            { label: 'Copy Markdown', icon: 'markdown', onSelect: () => copyForViewer(descriptionMarkdown, 'description as Markdown') } satisfies MenuItem,
+            { label: 'Quote reply', icon: 'quote', onSelect: () => composer.current?.insertQuote(quoteReply(descriptionSelection.current ?? descriptionMarkdown)) } satisfies MenuItem,
+          ]
+        : []),
+    ],
+    pr.editableDescription !== undefined && data.header.status !== 'placeholder' ? [{ label: 'Edit', icon: 'pencil', onSelect: () => setEditingDescription(true) } satisfies MenuItem] : [],
+  ].filter((group) => group.length > 0);
+
   return (
     <PrReactions value={{ changed: edits.reactions, react, viewerLogin: header.viewerLogin }}>
       <div className={`pr-page ${legendHidden ? '' : 'has-legend'} ${commentsOpen ? 'has-comments-drawer' : ''}`}>
@@ -573,6 +594,15 @@ function PrView({
                   <EditButton ref={editDescriptionButton} subject="description" onClick={() => setEditingDescription(true)} />
                 )}
                 {pr.descriptionUrl && <CopyLink url={pr.descriptionUrl} subject="description" />}
+                {descriptionMenu.length > 0 && (
+                  <CommentMenu
+                    disabled={false}
+                    groups={descriptionMenu}
+                    onOpen={() => {
+                      descriptionSelection.current = quotableSelection(document.querySelector('#pr-description > .markdown-body'));
+                    }}
+                  />
+                )}
                 {/* The inbox's row has no description; the page's own header brings it. */}
                 {data.header.status === 'placeholder' ? (
                   <Skeleton width="100%" height={110} />
@@ -603,6 +633,7 @@ function PrView({
             onUnhideComment={(commentId) =>
               mutate(STAGES_A_WRITE_CHANGES['pr.unhideComment'], () => source.unhideComment(pr.id, commentId), 'Could not unhide the comment', { success: 'Comment unhidden' })
             }
+            composer={composer}
           />
         </div>
         <Sidebar

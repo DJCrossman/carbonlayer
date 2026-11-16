@@ -1,5 +1,5 @@
 // What a comment's ⋯ menu makes of the comment, as GitHub's own menu does: the quote its Quote reply puts in a comment box,
-// and the new issue its "Reference in new issue" starts.
+// what of the comment it quotes, and the new issue its "Reference in new issue" starts.
 
 /**
  * The text as GitHub's Quote reply puts it in a comment box: each of its lines after `> `, then an empty line, so that the
@@ -12,6 +12,16 @@ export function quoteReply(text: string): string {
     .split('\n')
     .map((line) => `> ${line}`)
     .join('\n')}\n\n`;
+}
+
+/**
+ * What the reader has selected inside a comment's body (the description's included), which GitHub's Quote reply quotes in
+ * place of the whole Markdown; null where nothing is selected there.
+ */
+export function quotableSelection(body: Element | null | undefined): string | null {
+  const selection = window.getSelection();
+  const range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+  return body && range && !range.collapsed && body.contains(range.startContainer) && body.contains(range.endContainer) && range.toString().trim() !== '' ? range.toString() : null;
 }
 
 /**

@@ -8,7 +8,7 @@ import { Icon, type IconName } from '../ui/Icon';
 import { Kbd } from '../ui/Kbd';
 import { RelativeTime } from '../ui/RelativeTime';
 import { showToast } from '../ui/Toast';
-import { newIssueReferencing, quoteReply } from './comment-menu';
+import { newIssueReferencing, quotableSelection, quoteReply } from './comment-menu';
 import { HideCommentDialog } from './HideCommentDialog';
 import { focusComment, followLink, openInNewTab } from './navigation';
 import { CommentInput } from './primitives';
@@ -22,7 +22,7 @@ export interface Editable {
 }
 
 /** One item of a comment's ⋯ menu. */
-interface MenuItem {
+export interface MenuItem {
   label: string;
   icon: IconName;
   danger?: boolean;
@@ -159,12 +159,7 @@ export function Comment({
             disabled={deleting}
             groups={menu}
             onOpen={() => {
-              // A selection inside the comment's own body, as GitHub's Quote reply quotes it.
-              const selection = window.getSelection();
-              const body = root.current?.querySelector(':scope > .markdown-body');
-              const range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
-              selected.current =
-                body && range && !range.collapsed && body.contains(range.startContainer) && body.contains(range.endContainer) && range.toString().trim() !== '' ? range.toString() : null;
+              selected.current = quotableSelection(root.current?.querySelector(':scope > .markdown-body'));
             }}
           />
         )}
@@ -233,9 +228,9 @@ export function EditButton({ subject = 'comment', onClick, ref }: { subject?: 'c
 /**
  * The ⋯ at the end of a comment's header, as GitHub's comment menu, seen as the Copy link is (comment.css): its groups of
  * items, a separator between each two, Delete in red. `onOpen` runs as it opens, before the click moves anything. Esc closes
- * it and gives the focus back to the ⋯.
+ * it and gives the focus back to the ⋯. The description has one too, in its top corner (PrPage).
  */
-function CommentMenu({ disabled, groups, onOpen }: { disabled: boolean; groups: MenuItem[][]; onOpen: () => void }) {
+export function CommentMenu({ disabled, groups, onOpen }: { disabled: boolean; groups: MenuItem[][]; onOpen: () => void }) {
   const [open, setOpen] = useState(false);
   const menu = useRef<HTMLDivElement | null>(null);
   const button = useRef<HTMLButtonElement | null>(null);
@@ -351,7 +346,7 @@ export function Markdown({ html, className }: { html: string; className?: string
 }
 
 /** Copies text for the viewer, saying so in a toast as GitHub's Copy link and Copy Markdown do, or why it could not. */
-function copyForViewer(text: string, what: string) {
+export function copyForViewer(text: string, what: string) {
   navigator.clipboard.writeText(text).then(
     () => showToast(`Copied ${what}`),
     (reason: unknown) => showToast(`Could not copy ${what}: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger'),

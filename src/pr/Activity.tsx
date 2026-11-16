@@ -1,6 +1,6 @@
 // The activity timeline: comments, reviews, commits (consecutive ones grouped) and one-line events, with
 // the PR-level comment composer at the bottom. A few skeleton rows stand in until the activity arrives.
-import { useRef, useState, type Ref } from 'react';
+import { useState, type Ref, type RefObject } from 'react';
 import type { HideReason, PrDetail, PrStages, TimelineItem } from '../lib/model';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
@@ -34,6 +34,7 @@ export function Activity({
   onDeleteComment,
   onHideComment,
   onUnhideComment,
+  composer,
 }: {
   pr: PrDetail;
   stage: StageState<PrStages['activity']>;
@@ -48,9 +49,9 @@ export function Activity({
   onHideComment: (commentId: string, reason: HideReason) => Promise<boolean>;
   /** Shows a hidden comment or review summary again, by its id; true once GitHub has. */
   onUnhideComment: (commentId: string) => Promise<boolean>;
+  /** The new-comment box at the foot of the activity, where a comment's, a review's and the description's Quote reply goes. */
+  composer: RefObject<CommentBox | null>;
 }) {
-  // The new-comment box at the foot of the activity, where a comment's or a review's Quote reply goes.
-  const composer = useRef<CommentBox | null>(null);
   const entries: Array<Exclude<TimelineItem, CommitItem> | { kind: 'commits'; id: string; commits: CommitItem[] }> = [];
   for (const item of pr.timeline) {
     const last = entries.at(-1);
