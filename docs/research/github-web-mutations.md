@@ -435,6 +435,75 @@ may delete it; a signed-out page has none. CarbonLayer offers Delete only on the
 comment with `viewerCanDelete`, a conversation comment whose menu holds `.js-comment-delete`, never another's, though
 GitHub lets a repository's admin delete anyone's. UNVERIFIED signed in: the classic menu's delete form, as for its Edit.
 
+## Hiding comments, and the rest of the comment menu (read from GitHub's bundles and public PR pages signed out, 2026-11-16; nothing sent)
+Read with `curl` GETs only: the public PR pages nodejs/node#62105 and rust-lang/rust#147000 signed out, and the 176 script
+chunks nodejs/node#62105 loads. Chunk names change with each deploy; the matched strings are in the table at the end.
+
+**What CarbonLayer sends** is what GitHub's React PR UI sends, through `q$` (its verified fetch with JSON, as for edits),
+and each answer is read only for success or GitHub's `{ error }`:
+- **Conversation comment**: `POST P/conversation_comments/issue/{databaseId}/hide`, JSON `{ classifier }`; unhide `POST
+  P/conversation_comments/issue/{databaseId}/unhide` with no body (the Overview, `10302-35b085fc8657ee40.js`:
+  ``i=`${D}/page_data/conversation_comments/issue/${t}/hide`,a=await (0,tb.q$)(i,{method:"POST",body:{classifier:n}})``).
+  `{databaseId}` is the conversation_comments item's `id`, the numeric id of `#issuecomment-<n>`.
+- **Review summary**: the same under `review_summary`: `POST P/conversation_comments/review_summary/{databaseId}/hide`
+  `{ classifier }`, `…/unhide` with no body (same chunk).
+- **Diff comment**: `POST P/hide_comment`, JSON `{ classifier, commentId: <databaseId> }`; unhide `POST P/unhide_comment`
+  `{ commentId: <databaseId> }` (the files view, `96099-abeecf302ae4cc07.js`: ``o=`${l}/page_data/${k.uT.hideComment}` ``
+  … `body:{classifier:n,commentId:t}`, with `t` the comment's `databaseId`). The route map (`uT`, `32378-41d78fa024847074.js`)
+  has `hideComment:"hide_comment",unhideComment:"unhide_comment"`.
+- **Answers**: GitHub's page then marks the comment `isHidden: true` and `minimizedReason` from the answer's `reason`
+  (`e.reason`; for a diff comment the answer also names `threadId` and `commentDatabaseId`). CarbonLayer reads none of it
+  and loads the comment's stage again. Failures in GitHub's words: "Failed to hide comment", "Failed to unhide comment".
+- **The reasons** (`classifier`), in the order GitHub's Hide submenu lists them (`HideCommentActionItems`,
+  `32261-a8d74fa61bd33ab9.js`): `SPAM` "Spam", `ABUSE` "Abuse", `OFF_TOPIC` "Off-topic", `OUTDATED` "Outdated", `DUPLICATE`
+  "Duplicate", `RESOLVED` "Resolved", then `LOW_QUALITY` "Low quality" (each item labelled "Hide comment as <label>"), a
+  divider, and "The reason will be displayed to others." with a link to the docs' "hiding a comment". GitHub's React UI
+  offers them as a submenu of Hide; CarbonLayer, after the classic page, as a dialog: "Choose a reason for hiding this
+  comment" (the classic dialog's title, from David's screenshot, not read from markup), the reasons, "Hide comment".
+
+**Who may, and how a hidden comment comes back.**
+- The React menu (`CommentActions`, `594-e678cb2599a4fabf.js`) shows Hide where `viewerCanMinimize` and the comment is not
+  hidden (`!!minimizedReason || isHidden`), Unhide where `viewerCanUnminimize` and it is, Delete where `viewerCanDelete`.
+  `page_data/threads` comments carry `isHidden`, `minimizedReason`, `viewerCanMinimize`, `viewerCanSeeMinimizeButton`,
+  `viewerCanSeeUnminimizeButton`, `viewerCanReport`, `viewerCanReportToMaintainer` (keys confirmed in a captured answer,
+  all false signed out) but no `viewerCanUnminimize`: GitHub's own files view then never lists Unhide for a diff comment
+  (INFERRED: it passes the thread's comment to the menu as it is), and neither does CarbonLayer, which reads `viewerCanUnminimize` should GitHub send it. A hidden comment's bar
+  in the React UI reads "Hidden as" and the reason with `_` as `-`, lowercased (`off-topic`).
+- The classic conversation page (its `core-7383d1a290d80b97.js`): the menu's `.js-comment-hide-button` reveals the
+  comment's `.js-minimize-comment` form (`.js-comment-minimize`, sent with the comment's `X-Body-Version`), and a minimized
+  comment's `form.js-comment-unminimize` unhides it; GitHub's JS then swaps `.unminimized-comment` and `.minimized-comment`
+  inside the `.js-minimizable-comment-group` by `d-none`, so both are in the page. Signed out (rust-lang/rust#147000) a
+  hidden comment is `.minimized-comment` alone: `h3.timeline-comment-header-text` "This comment has been minimized." and
+  "Sign in to view", no author, body or reason. CarbonLayer reads Hide where the comment's menu has
+  `.js-comment-hide-button`, Unhide where its group has `form.js-comment-unminimize`, hidden where a `.minimized-comment`
+  is not `d-none`, and the reason from that bar's "This comment was marked as <reason>." (a review's own only, outside its
+  threads' `turbo-frame`s), and leaves out a hidden comment with no body, as before.
+- UNVERIFIED signed in: all of the classic markup above (which elements hold Hide and the Unhide form, that the hidden
+  comment's body is in the page, the bar's exact words "This comment was marked as …"); that the Rails/React routes accept
+  these requests from CarbonLayer; whether a review summary can be hidden from the classic page at all; the dialog title.
+
+**The rest of the menu** (`CommentActions`, same chunk), in its order: Copy link; Copy Markdown (`bodyForClipboard || body`);
+"See in timeline" (some views only); Quote reply where `viewerCanQuoteReply` is not false; a divider and "Reference in a
+new issue" where `viewerCanReferenceInIssue` is not false (both also behind a check `M3()` in a chunk not loaded signed out,
+UNVERIFIED, presumably signed in); a divider where any of Edit, Pin, Unpin, Hide, Delete shows; Edit; Pin; Unpin; Hide;
+Unhide; Delete (red); a divider and Report content where `viewerCanReport || viewerCanReportToMaintainer` and the comment
+has an author; then Block / Unblock user. CarbonLayer lists Copy link, Copy Markdown, Quote reply, Reference in new issue, a
+separator, Edit, Hide or Unhide, Delete, a separator and Report content, as the classic menu (David's screenshot) names
+them; it has no Pin, Block or See in timeline.
+- **Quote reply** quotes, through `@github/quote-selection`, the rendered body or the selection when it lies inside the
+  comment's `.markdown-body` (module `925091`, `32261-…`), converted back to Markdown; every line after `> ` (its `s`).
+  CarbonLayer quotes the comment's Markdown, or the selection's text as the browser gives it (not converted back to
+  Markdown), each line after `> `, then an empty line.
+- **Reference in a new issue** opens GitHub's create-issue dialog with the body
+  `` `${body.replace(/^(?!>)/gm,"> ")} \n\n _Originally posted by @${login} in [${referenceText}](${url})_` `` (spaces
+  included), `referenceText` a diff comment's `reference.text ?? "#"+reference.number`. CarbonLayer opens
+  `https://github.com/<owner>/<name>/issues/new?body=<that body>` in a new tab, with `#<n>` the PR's number; that a
+  conversation comment's `referenceText` is `#<n>` too is UNVERIFIED, as is the classic page's own body (no signed-out
+  markup has the item).
+- **Report content** links to `` `${location.origin}/contact/report-content?content_url=${encodeURIComponent(url)}&report=${login}+(user)` ``
+  (a dialog instead where `viewerCanReportToMaintainer`); CarbonLayer always opens the link, in a new tab, on someone else's
+  comment (the conversation's by login; a diff comment's by GitHub's flags).
+
 ## Labels and assignees (classic sidebar forms; read from GitHub's page signed in, 2026-10-22, nothing sent)
 GitHub's own PR sidebar (`#partial-discussion-sidebar` on the classic conversation page) sets labels and assignees with
 classic Rails forms on the ISSUE path of the PR's number, `I = /{owner}/{repo}/issues/{n}`. Read on one PR's page with
@@ -506,6 +575,12 @@ one the write asks for a reload), the empty `issue[user_assignee_ids][]`, then t
 | `md-6857b71962c0d6d9.js` | `"The content you are editing has changed. Please review the latest changes and try again."` (module `qIa`: `q$`, `hp`, `R`, `C$`) |
 | `app-runtime-1a555c9bb4a1f269.js` | `QJ:()=>s` (`GitHub-Is-React` over `verifiedFetch`, module `VY`) |
 | `yga-dd50cf95593467fe.js` | `".js-comment .js-comment-update"`, `X-Body-Version` (the classic edit form) |
+| `10302-35b085fc8657ee40.js` | `` page_data/conversation_comments/issue/${t}/hide `` with `body:{classifier:n}`; `` review_summary/${t}/unhide `` |
+| `96099-abeecf302ae4cc07.js` | `` `${l}/page_data/${k.uT.hideComment}` `` with `body:{classifier:n,commentId:t}`; `k.uT.unhideComment` |
+| `32378-41d78fa024847074.js` | `hideComment:"hide_comment",unhideComment:"unhide_comment"` (the route map `uT`) |
+| `32261-a8d74fa61bd33ab9.js` | `SPAM:"Spam",ABUSE:"Abuse",OFF_TOPIC:"Off-topic"`; `"LOW_QUALITY"===e?"Low quality"`; `HideCommentActionItems` |
+| `594-e678cb2599a4fabf.js` | `"Reference in a new issue"`; `_Originally posted by @`; `/contact/report-content?`; `viewerCanUnminimize&&nv` |
+| `core-7383d1a290d80b97.js` | `".js-comment-hide-button"`; `".js-comment-unminimize"`; `".minimized-comment"` (the classic menu's Hide and Unhide) |
 
 Limits: no POST/PUT/DELETE was sent; bodies come from the code; the signed-out page loads 248 of 1,537
 chunks, but every action above is in those.

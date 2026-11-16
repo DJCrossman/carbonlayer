@@ -12,8 +12,8 @@
 .pr-comment-time { color: inherit; }
 .pr-comment-time:hover .gg-time { text-decoration: underline; }
 
-/* Copy link, at the header's end, Edit before it where the viewer may edit the comment, and the ⋯ after it on the viewer's
-   own: out of sight, though still in the tab order, until the pointer is on the comment or the keyboard reaches them (the
+/* Copy link, at the header's end, Edit before it where the viewer may edit the comment, and the ⋯ after it, GitHub's comment
+   menu: out of sight, though still in the tab order, until the pointer is on the comment or the keyboard reaches them (the
    ⋯ also while its menu is open). No taller than the header, so they never move anything. */
 .pr-comment-link,
 .pr-comment-edit,
@@ -54,6 +54,48 @@
 .pr-comment-edit + .pr-comment-menu { margin-left: 2px; }
 /* While GitHub deletes it. */
 .pr-comment.is-deleting { opacity: 0.5; pointer-events: none; }
+
+/* A hidden comment, as GitHub's: a muted line saying why under its header, in place of its body until "Show comment". */
+.pr-comment-hidden {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--gg-bg-subtle);
+  color: var(--gg-fg-muted);
+  font-style: italic;
+}
+.pr-comment-hidden-toggle {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--gg-accent);
+  font: inherit;
+  font-style: normal;
+  cursor: pointer;
+}
+.pr-comment-hidden-toggle:hover { text-decoration: underline; }
+.pr-comment-hidden + .markdown-body { margin-top: 6px; }
+
+/* Its Hide dialog (HideCommentDialog.tsx): GitHub's reasons, one under another. */
+.hide-comment-reasons {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+.hide-comment-reason {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.hide-comment-reason:hover { background: var(--gg-bg-hover); }
+.hide-comment-reason input { margin: 0; accent-color: var(--gg-accent); }
 
 /* The edit box, in place of the body: the comment box, then Cancel and Update comment at its right. */
 .pr-comment-header + .pr-comment-editor { margin-top: 6px; }

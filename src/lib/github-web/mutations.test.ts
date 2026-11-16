@@ -424,6 +424,30 @@ describe('mutations', () => {
     await expect(mutations['pr.deleteComment']({ prId: 'PR_1', commentId: 'pullrequestreview-21' })).rejects.toThrow('There is no comment pullrequestreview-21 to delete');
   });
 
+  it("hides and unhides as GitHub's own page does: a conversation comment or review summary by its database id, a diff comment by its own, the reason as `classifier`", async () => {
+    const writes: Array<{ method: string; url: string; body: unknown }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit = {}) => {
+        writes.push({ method: init.method ?? 'GET', url, body: typeof init.body === 'string' ? JSON.parse(init.body) : (init.body ?? null) });
+        return Response.json({});
+      }),
+    );
+    await mutations['pr.hideComment']({ prId: 'PR_1', commentId: 'issuecomment-11', classifier: 'OFF_TOPIC' });
+    await mutations['pr.hideComment']({ prId: 'PR_1', commentId: 'pullrequestreview-21', classifier: 'RESOLVED' });
+    await mutations['pr.unhideComment']({ prId: 'PR_1', commentId: 'issuecomment-11' });
+    await mutations['pr.hideThreadComment']({ prId: 'PR_1', commentId: '9001', classifier: 'SPAM' });
+    await mutations['pr.unhideThreadComment']({ prId: 'PR_1', commentId: '9001' });
+    expect(writes).toEqual([
+      { method: 'POST', url: `${P}/conversation_comments/issue/11/hide`, body: { classifier: 'OFF_TOPIC' } },
+      { method: 'POST', url: `${P}/conversation_comments/review_summary/21/hide`, body: { classifier: 'RESOLVED' } },
+      { method: 'POST', url: `${P}/conversation_comments/issue/11/unhide`, body: null },
+      { method: 'POST', url: `${P}/hide_comment`, body: { classifier: 'SPAM', commentId: 9001 } },
+      { method: 'POST', url: `${P}/unhide_comment`, body: { commentId: 9001 } },
+    ]);
+    await expect(mutations['pr.hideComment']({ prId: 'PR_1', commentId: 'commit-1', classifier: 'SPAM' })).rejects.toThrow('There is no comment commit-1 to hide');
+  });
+
   it('refuses to write to a pull request the app has not loaded', async () => {
     await expect(mutations['pr.comment']({ prId: 'PR_unknown', body: 'x' })).rejects.toThrow('Open the pull request first');
     await expect(mutations['pr.resolveThread']({ threadId: 'nope', resolved: true })).rejects.toThrow('Open the pull request first');

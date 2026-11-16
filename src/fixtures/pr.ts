@@ -2,7 +2,8 @@
 // acme/widgets. #41 (bottom) is approved and green, #42 (middle) has review feedback and a failing check, both
 // mona's; #43 (top) is the viewer's own draft; and mona's closed #40 branches off #41 beside #42, a fork off the stack's line.
 // The viewer, octocat, may edit #41's and #42's descriptions and some of #42's
-// comments, those with `editableMarkdown` (GitHub lets a repository's writers edit others' comments). Patches are written as line arrays so blank context lines keep their
+// comments, those with `editableMarkdown` (GitHub lets a repository's writers edit others' comments), and hide some of them,
+// those `hideable`; hubot's preview comment on #41 is hidden as outdated. Patches are written as line arrays so blank context lines keep their
 // leading space; every hunk header's counts match its body (the diff parser validates them).
 
 import type { PrDetail, PrSummary, ReviewThread, StackEntry, UserRef } from '../lib/model';
@@ -195,6 +196,9 @@ const threads42: ReviewThread[] = [
         url: 'https://github.com/acme/widgets/pull/42#discussion_r1',
         subjectId: 'PRRC_fixture1',
         reactions: [{ content: 'EYES', count: 1, viewerHasReacted: false, reactors: ['mona'] }],
+        markdown: "Should this throw instead? Callers can't tell a zone PARCS doesn't know from a lookup that failed.",
+        hideable: true,
+        reportable: true,
       },
       {
         id: 'PRRC_fixture2',
@@ -206,6 +210,9 @@ const threads42: ReviewThread[] = [
         subjectId: 'PRRC_fixture2',
         reactions: [{ content: 'THUMBS_UP', count: 2, viewerHasReacted: true, reactors: ['jlord'] }],
         editableMarkdown: '`listZones` already throws on transport errors, so `null` only ever means "unknown". I can add that to the doc comment.',
+        markdown: '`listZones` already throws on transport errors, so `null` only ever means "unknown". I can add that to the doc comment.',
+        hideable: true,
+        reportable: true,
       },
     ],
   },
@@ -227,6 +234,8 @@ const threads42: ReviewThread[] = [
         url: 'https://github.com/acme/widgets/pull/42#discussion_r3',
         subjectId: 'PRRC_fixture3',
         reactions: [],
+        markdown: 'The operator console still calls `setZone`.',
+        reportable: true,
       },
       {
         id: 'PRRC_fixture4',
@@ -236,6 +245,8 @@ const threads42: ReviewThread[] = [
         url: 'https://github.com/acme/widgets/pull/42#discussion_r4',
         subjectId: 'PRRC_fixture4',
         reactions: [],
+        markdown: 'Moved it to `changeZone` in #43.',
+        reportable: true,
       },
     ],
   },
@@ -263,6 +274,8 @@ const threads42: ReviewThread[] = [
         url: 'https://github.com/acme/widgets/pull/42#discussion_r5',
         subjectId: 'PRRC_fixture5',
         reactions: [],
+        markdown: 'This TODO should be a ticket.',
+        reportable: true,
       },
     ],
   },
@@ -285,6 +298,9 @@ const threads42: ReviewThread[] = [
         subjectId: 'PRRC_fixture6',
         reactions: [],
         editableMarkdown: 'Passing `now` in instead of `new Date()` would let the tests pin the clock.',
+        markdown: 'Passing `now` in instead of `new Date()` would let the tests pin the clock.',
+        hideable: true,
+        reportable: true,
       },
     ],
   },
@@ -552,6 +568,9 @@ const detail42: PrDetail = {
         { content: 'EYES', count: 1, viewerHasReacted: false, reactors: ['hubot'] },
       ],
       editableMarkdown: 'Does this also cover the overnight zones? Their `closesAt` is before `opensAt`.',
+      markdown: 'Does this also cover the overnight zones? Their `closesAt` is before `opensAt`.',
+      hideable: true,
+      reportable: true,
     },
     {
       kind: 'review',
@@ -564,6 +583,8 @@ const detail42: PrDetail = {
       threadIds: ['PRRT_fixture3'],
       subjectId: 'PRR_fixture1',
       reactions: [{ content: 'HOORAY', count: 1, viewerHasReacted: false, reactors: ['mona'] }],
+      markdown: 'Looks good. Left one note about the TODO.',
+      reportable: true,
     },
     {
       kind: 'review',
@@ -577,6 +598,9 @@ const detail42: PrDetail = {
       subjectId: 'PRR_fixture2',
       reactions: [],
       editableMarkdown: 'Two things before this goes in, see inline.',
+      markdown: 'Two things before this goes in, see inline.',
+      hideable: true,
+      reportable: true,
     },
     {
       kind: 'force-push',
@@ -777,6 +801,22 @@ const detail41: PrDetail = {
       // An approval without a body: GitHub offers nothing to react to.
       subjectId: null,
       reactions: [],
+    },
+    {
+      kind: 'comment',
+      id: 'IC_fixture41',
+      author: hubot,
+      bodyHtml: '<p>Preview deployed to <a href="https://preview-41.acme.example">preview-41.acme.example</a>.</p>',
+      createdAt: '2026-10-08T16:30:00Z',
+      url: 'https://github.com/acme/widgets/pull/41#issuecomment-41',
+      subjectId: 'IC_fixture41',
+      reactions: [],
+      markdown: 'Preview deployed to [preview-41.acme.example](https://preview-41.acme.example).',
+      // Hidden as outdated, which the viewer, a writer, may undo.
+      hidden: { reason: 'OUTDATED' },
+      hideable: true,
+      unhideable: true,
+      reportable: true,
     },
   ],
   threads: [

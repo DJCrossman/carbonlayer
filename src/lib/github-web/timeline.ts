@@ -1,7 +1,7 @@
 // The PR conversation, server-rendered by GitHub inside the React page: classic HTML with one
 // `.TimelineItem` per comment, review header, commit or event (events carry an octicon badge).
 
-import { REACTION_CONTENTS, type Reaction, type TimelineItem } from '../model';
+import { HIDE_REASONS, REACTION_CONTENTS, type HideReason, type Reaction, type TimelineItem } from '../model';
 import { githubUser } from './session';
 
 /**
@@ -59,6 +59,9 @@ export function timelineFrom(
         ...([...review.querySelectorAll('.js-comment-edit-history')].some((marker) => !review.contains(marker.closest('turbo-frame'))) && { edited: true }),
         ...reactionsIn(reactionForm),
         ...editingIn(actions, review),
+        ...menuIn(actions, review, (element) => !review.contains(element.closest('turbo-frame'))),
+        // Someone else's, which GitHub's menu offers the signed-in viewer to report.
+        ...(viewerLogin && actorLogin && actorLogin !== viewerLogin && { reportable: true }),
       });
       continue;
     }
@@ -68,8 +71,9 @@ export function timelineFrom(
 
     const comment = row.querySelector('.timeline-comment-group[id^="issuecomment-"]');
     if (comment) {
+      // Minimized (hidden) comments render without a body signed out ("Sign in to view"); signed in, GitHub's classic page
+      // renders the hidden comment in the group too, which is read as any other's, marked hidden.
       const body = comment.querySelector('.comment-body');
-      // Minimized (hidden) comments render without a body.
       if (body) {
         items.push({
           kind: 'comment',
@@ -84,6 +88,9 @@ export function timelineFrom(
           ...editingIn(comment.querySelector('.timeline-comment-actions'), comment.querySelector('.js-comment')),
           // The viewer's own, where its menu offers GitHub's Delete (`form.js-comment-delete`); GitHub deletes no review.
           ...(viewerLogin && actorLogin === viewerLogin && comment.querySelector('.timeline-comment-actions .js-comment-delete') && { deletable: true }),
+          ...menuIn(comment.querySelector('.timeline-comment-actions'), comment, () => true),
+          // Someone else's, which GitHub's menu offers the signed-in viewer to report.
+          ...(viewerLogin && actorLogin && actorLogin !== viewerLogin && { reportable: true }),
         });
       }
       continue;
@@ -181,4 +188,39 @@ function editingIn(actions: Element | null | undefined, comment: Element | null)
   if (markdown === null || markdown === undefined) return {};
   const version = comment?.getAttribute('data-body-version');
   return { editableMarkdown: markdown, ...(version && { bodyVersion: version }) };
+}
+
+/**
+ * What else a comment's options menu (`.timeline-comment-actions`) offers, as GitHub's classic page has it (its classic JS,
+ * 2026-11-16): the Markdown its Copy Markdown copies; Hide (`.js-comment-hide-button`, which opens the comment's form for a
+ * reason) where the viewer may hide the comment; and, the comment hidden, its `.minimized-comment` shown in place of it (GitHub
+ * toggles the two by `d-none`), the reason its bar says ("This comment was marked as off-topic.") and Unhide (its form
+ * `form.js-comment-unminimize`) where the viewer may unhide it. `own` says which of `group`'s elements are the comment's, a
+ * review's not those of the threads it opened. UNVERIFIED signed in: the markup of Hide, Unhide and a hidden comment.
+ */
+function menuIn(
+  actions: Element | null | undefined,
+  group: Element,
+  own: (element: Element) => boolean,
+): { markdown?: string; hidden?: { reason: HideReason | null }; hideable?: boolean; unhideable?: boolean } {
+  const markdown = actions?.querySelector('clipboard-copy[role="menuitem"][value]')?.getAttribute('value');
+  const minimized = [...group.querySelectorAll('.minimized-comment:not(.d-none)')].find(own);
+  return {
+    ...(typeof markdown === 'string' && { markdown }),
+    ...(minimized && {
+      hidden: {
+        reason:
+          HIDE_REASONS.find(
+            (reason) =>
+              reason ===
+              /was marked as (.+?)\.?$/
+                .exec((minimized.querySelector('.timeline-comment-header-text')?.textContent ?? '').replace(/\s+/g, ' ').trim())?.[1]
+                ?.toUpperCase()
+                .replace(/[- ]/g, '_'),
+          ) ?? null,
+      },
+    }),
+    ...(actions?.querySelector('.js-comment-hide-button') && { hideable: true }),
+    ...([...group.querySelectorAll('form.js-comment-unminimize')].some(own) && { unhideable: true }),
+  };
 }

@@ -262,6 +262,14 @@ export const reactionSchema = z.object({ content: z.enum(REACTION_CONTENTS), cou
 
 export type Reaction = z.infer<typeof reactionSchema>;
 
+/**
+ * GitHub's reasons for hiding a comment (its classifiers), in the order its Hide menu offers them: its bundle, 2026-11-16
+ * (docs/research/github-web-mutations.md, Hiding comments).
+ */
+export const HIDE_REASONS = ['SPAM', 'ABUSE', 'OFF_TOPIC', 'OUTDATED', 'DUPLICATE', 'RESOLVED', 'LOW_QUALITY'] as const;
+
+export type HideReason = (typeof HIDE_REASONS)[number];
+
 /** What a comment the viewer can react to has. */
 const reactable = {
   /** GitHub's node id for it (`IC_…`, `PRR_…`, `PRRC_…`), which a reaction names; null where GitHub's page offers no way to react. */
@@ -289,6 +297,23 @@ const editable = {
   deletable: z.optional(z.boolean()),
 };
 
+/** What else a comment's ⋯ menu offers, as GitHub's does. */
+const menuable = {
+  /**
+   * The comment's Markdown as GitHub keeps it, which Copy Markdown copies and Quote reply and Reference in new issue quote;
+   * absent where the page did not give it.
+   */
+  markdown: z.optional(z.string()),
+  /** Hidden (minimized), with GitHub's reason, null where the page did not say which; absent where it is not. */
+  hidden: z.optional(z.object({ reason: z.nullable(z.enum(HIDE_REASONS)) })),
+  /** GitHub lets the viewer hide it; absent where it does not. */
+  hideable: z.optional(z.boolean()),
+  /** GitHub lets the viewer unhide it once hidden; absent where it does not. */
+  unhideable: z.optional(z.boolean()),
+  /** Someone else's, which GitHub offers the viewer to report; absent on the viewer's own. */
+  reportable: z.optional(z.boolean()),
+};
+
 export const reviewThreadSchema = z.object({
   id: z.string(),
   path: z.string(),
@@ -299,7 +324,7 @@ export const reviewThreadSchema = z.object({
   isResolved: z.boolean(),
   isOutdated: z.boolean(),
   diffHunk: z.string(),
-  comments: z.array(z.object({ id: z.string(), author: userRefSchema, bodyHtml: z.string(), createdAt: z.string(), url: z.string(), ...reactable, ...editable })),
+  comments: z.array(z.object({ id: z.string(), author: userRefSchema, bodyHtml: z.string(), createdAt: z.string(), url: z.string(), ...reactable, ...editable, ...menuable })),
 });
 
 export type ReviewThread = z.infer<typeof reviewThreadSchema>;
@@ -316,6 +341,7 @@ export const timelineItemSchema = z.discriminatedUnion('kind', [
     edited: z.optional(z.boolean()),
     ...reactable,
     ...editable,
+    ...menuable,
   }),
   z.object({
     kind: z.literal('review'),
@@ -331,6 +357,7 @@ export const timelineItemSchema = z.discriminatedUnion('kind', [
     edited: z.optional(z.boolean()),
     ...reactable,
     ...editable,
+    ...menuable,
   }),
   z.object({
     kind: z.literal('commit'),

@@ -266,6 +266,26 @@ export const mutations: { [M in Exclude<keyof RpcMethods, 'inbox.fetch' | 'inbox
   'pr.deleteThreadComment': async ({ prId, commentId }) => {
     await send(`${pullRequestFor(prId).path}/page_data/review_comments/${commentId}`, 'DELETE');
   },
+  // Hiding goes as GitHub's React page sends it (its bundle, 2026-11-16; docs/research/github-web-mutations.md): a
+  // conversation comment or a review's summary to its own conversation_comments route by its database id, the reason as
+  // `classifier`, and unhiding with no body.
+  'pr.hideComment': async ({ prId, commentId, classifier }) => {
+    const [, kind, id] = /^(issuecomment|pullrequestreview)-(\d+)$/.exec(commentId) ?? [];
+    if (!id) throw new Error(`There is no comment ${commentId} to hide`);
+    await send(`${pullRequestFor(prId).path}/page_data/conversation_comments/${kind === 'issuecomment' ? 'issue' : 'review_summary'}/${id}/hide`, 'POST', { classifier });
+  },
+  'pr.unhideComment': async ({ prId, commentId }) => {
+    const [, kind, id] = /^(issuecomment|pullrequestreview)-(\d+)$/.exec(commentId) ?? [];
+    if (!id) throw new Error(`There is no comment ${commentId} to unhide`);
+    await send(`${pullRequestFor(prId).path}/page_data/conversation_comments/${kind === 'issuecomment' ? 'issue' : 'review_summary'}/${id}/unhide`, 'POST');
+  },
+  // A diff comment, as GitHub's files view hides one: the PR's hide_comment route, naming the comment by its database id.
+  'pr.hideThreadComment': async ({ prId, commentId, classifier }) => {
+    await send(`${pullRequestFor(prId).path}/page_data/hide_comment`, 'POST', { classifier, commentId: Number(commentId) });
+  },
+  'pr.unhideThreadComment': async ({ prId, commentId }) => {
+    await send(`${pullRequestFor(prId).path}/page_data/unhide_comment`, 'POST', { commentId: Number(commentId) });
+  },
 };
 
 /**

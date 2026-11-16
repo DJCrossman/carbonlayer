@@ -3,7 +3,7 @@
 // anchor is outdated: its path and diff excerpt are read from the thread as the conversation renders it.
 
 import { z } from 'zod/mini';
-import { REACTION_CONTENTS, type Reaction, type ReviewThread } from '../model';
+import { HIDE_REASONS, REACTION_CONTENTS, type Reaction, type ReviewThread } from '../model';
 import type { BaseComparison } from './files';
 import { githubUser } from './session';
 
@@ -70,6 +70,17 @@ export function reviewThreads(answer: ThreadsAnswer, comparison: BaseComparison,
           ...(comment.viewerCanUpdate && typeof comment.body === 'string' && { editableMarkdown: comment.body, ...(comment.bodyVersion && { bodyVersion: comment.bodyVersion }) }),
           // And whether they may delete it, which only their own offers.
           ...(comment.viewerCanDelete && viewerLogin && comment.author?.login === viewerLogin && { deletable: true }),
+          // Its Markdown for anyone, which GitHub's menu copies and quotes.
+          ...(typeof comment.body === 'string' && { markdown: comment.body }),
+          // Hidden, as GitHub's files view reads it: hidden, or with a reason (`OFF_TOPIC`, or GitHub's `off-topic`), and who
+          // may hide or unhide it.
+          ...((comment.isHidden || comment.minimizedReason) && {
+            hidden: { reason: HIDE_REASONS.find((reason) => reason === comment.minimizedReason?.toUpperCase().replace(/-/g, '_')) ?? null },
+          }),
+          ...(comment.viewerCanMinimize && { hideable: true }),
+          ...(comment.viewerCanUnminimize && { unhideable: true }),
+          // And whether GitHub offers to report it, someone else's.
+          ...((comment.viewerCanReport || comment.viewerCanReportToMaintainer) && comment.author?.login && comment.author.login !== viewerLogin && { reportable: true }),
         })),
       },
     ];
@@ -135,6 +146,12 @@ export const threadsAnswer = z.object({
                   bodyVersion: z.nullish(z.string()),
                   viewerCanUpdate: z.nullish(z.boolean()),
                   viewerCanDelete: z.nullish(z.boolean()),
+                  isHidden: z.nullish(z.boolean()),
+                  minimizedReason: z.nullish(z.string()),
+                  viewerCanMinimize: z.nullish(z.boolean()),
+                  viewerCanUnminimize: z.nullish(z.boolean()),
+                  viewerCanReport: z.nullish(z.boolean()),
+                  viewerCanReportToMaintainer: z.nullish(z.boolean()),
                   createdAt: z.nullish(z.string()),
                   publishedAt: z.nullish(z.string()),
                   url: z.nullish(z.string()),

@@ -397,6 +397,14 @@ function PrView({
       mutate(STAGES_A_WRITE_CHANGES['pr.deleteThreadComment'], () => source.deleteThreadComment(pr.id, commentId), 'Could not delete the comment', {
         success: 'Comment deleted',
       }),
+    hideComment: (commentId, reason) =>
+      mutate(STAGES_A_WRITE_CHANGES['pr.hideThreadComment'], () => source.hideThreadComment(pr.id, commentId, reason), 'Could not hide the comment', {
+        success: 'Comment hidden',
+      }),
+    unhideComment: (commentId) =>
+      mutate(STAGES_A_WRITE_CHANGES['pr.unhideThreadComment'], () => source.unhideThreadComment(pr.id, commentId), 'Could not unhide the comment', {
+        success: 'Comment unhidden',
+      }),
   };
 
   usePrKeybindings((action) => {
@@ -588,6 +596,12 @@ function PrView({
             }
             onDeleteComment={(commentId) =>
               mutate(STAGES_A_WRITE_CHANGES['pr.deleteComment'], () => source.deleteComment(pr.id, commentId), 'Could not delete the comment', { success: 'Comment deleted' })
+            }
+            onHideComment={(commentId, reason) =>
+              mutate(STAGES_A_WRITE_CHANGES['pr.hideComment'], () => source.hideComment(pr.id, commentId, reason), 'Could not hide the comment', { success: 'Comment hidden' })
+            }
+            onUnhideComment={(commentId) =>
+              mutate(STAGES_A_WRITE_CHANGES['pr.unhideComment'], () => source.unhideComment(pr.id, commentId), 'Could not unhide the comment', { success: 'Comment unhidden' })
             }
           />
         </div>

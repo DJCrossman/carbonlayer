@@ -14,7 +14,7 @@ import { Skeleton } from '../ui/Skeleton';
 import { Comment } from './Comment';
 import { drawerContents, type DrawerEntry, type DrawerFilters } from './comments-drawer';
 import type { StageState } from './page-data';
-import { CommentInput, Staged } from './primitives';
+import { CommentInput, Staged, type CommentBox } from './primitives';
 import { Reactions } from './Reactions';
 import type { NoteActions } from './Threads';
 import './comments-drawer.css';
@@ -203,6 +203,8 @@ function Conversation({
   // The reply being written; null while the reply box is closed.
   const [reply, setReply] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The reply box, once open, where a comment's Quote reply goes; the quote opens it if need be.
+  const replyBox = useRef<CommentBox | null>(null);
   const { lines } = entry;
   const thread = entry.kind === 'thread' ? entry.thread : null;
 
@@ -274,6 +276,16 @@ function Conversation({
               compact
               edit={comment.editableMarkdown === undefined ? undefined : { markdown: comment.editableMarkdown, save: (body) => actions.editComment(comment.id, comment.bodyVersion, body) }}
               onDelete={comment.deletable ? () => actions.deleteComment(comment.id) : undefined}
+              markdown={comment.markdown}
+              hidden={comment.hidden}
+              onQuote={(quote) => {
+                setReply((current) => current ?? '');
+                // A frame later, once a box just opened is there.
+                requestAnimationFrame(() => replyBox.current?.insertQuote(quote));
+              }}
+              onHide={comment.hideable ? (reason) => actions.hideComment(comment.id, reason) : undefined}
+              onUnhide={comment.unhideable ? () => actions.unhideComment(comment.id) : undefined}
+              reportable={comment.reportable}
             />
           ))
         ) : (
@@ -304,7 +316,7 @@ function Conversation({
         </div>
       ) : (
         <div className="comments-drawer-reply">
-          <CommentInput value={reply} onChange={setReply} onSubmit={sendReply} onCancel={closeReply} placeholder="Reply…" autoFocus disabled={busy} />
+          <CommentInput ref={replyBox} value={reply} onChange={setReply} onSubmit={sendReply} onCancel={closeReply} placeholder="Reply…" autoFocus disabled={busy} />
           <div className="comments-drawer-actions">
             <Button variant="ghost" size="sm" onClick={closeReply}>
               Cancel

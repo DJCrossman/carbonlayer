@@ -50,10 +50,10 @@ tooltip's sentence, the viewer first as You, is the pill's description, and its 
 it: the description as `page_data/update_description`, a diff comment as `page_data/update_review_comment`, and a
 conversation comment or a review's summary as form fields to its own address (`/issue_comments/{id}`,
 `/pull/{n}/reviews/{id}/update`), each with the comment's version when the edit started where the page gave one, so that
-GitHub refuses an edit made over a newer one. The viewer's own comments, where GitHub lets them delete them, offer Delete in a
-⋯ menu at the end of the header, asked first as GitHub asks: a diff comment goes as GitHub's files view deletes it,
-`DELETE page_data/review_comments/{id}`, and a conversation comment as its Overview does, `DELETE /issue_comments/{id}`;
-another's comment offers none, even to a repository's admin, and no review can be deleted. A comment box's Preview tab is GitHub's own rendering: the multipart POST to
+GitHub refuses an edit made over a newer one. The viewer's own comments, where GitHub lets them delete them, offer Delete
+last in the comment's ⋯ menu (see Comment menus below), asked first as GitHub asks: a diff comment goes as GitHub's files view
+deletes it, `DELETE page_data/review_comments/{id}`, and a conversation comment as its Overview does, `DELETE
+/issue_comments/{id}`; another's comment offers none, even to a repository's admin, and no review can be deleted. A comment box's Preview tab is GitHub's own rendering: the multipart POST to
 `/preview` GitHub's comment box sends for a comment on the PR (`markdown.preview`), which changes nothing. The comment
 boxes themselves (`CommentInput` in `src/pr/primitives.tsx`) work like GitHub's: its toolbar, shortcuts, lists that
 continue and links on paste, each a pure command in `src/pr/markdown-editing.ts`, and the emoji GitHub's box suggests
@@ -265,6 +265,33 @@ Copy Markdown holds the Markdown, and a comment's `data-body-version` its versio
 `src/lib/github-web/timeline.ts`); a diff comment's come from `page_data/threads` (`viewerCanUpdate`, `body`, `bodyVersion`);
 the description is the viewer's to edit where the title is (`editableDescription`). See
 `docs/research/github-web-mutations.md`.
+
+Comment menus: every conversation comment, review summary and diff comment (in the diff and in the comments drawer) has a ⋯
+at the end of its header, after the Copy link and the Edit pencil, which stay, seen as they are (`CommentMenu` in
+`src/pr/Comment.tsx`). It lists what GitHub's own comment menu lists, in its order, each item only where GitHub would offer
+it and the page gave what it needs: Copy link (the permalink, as `CopyLink` copies it, with its toast); Copy Markdown (the
+comment's Markdown as GitHub keeps it, `markdown`: a conversation comment's or review's from its own menu's Copy Markdown, a
+diff comment's `body`; toasted alike); Quote reply (`quoteReply` in `src/pr/comment-menu.ts`: each line of that Markdown, or
+of the reader's selection when it lies inside the comment's body as the menu opens, after `> `, then an empty line, appended
+to the box the reply goes in, which scrolls into view and takes the focus at its end: the new-comment box at the foot of the
+activity for a conversation comment or review summary, the thread's reply box for a diff comment, the drawer's opening if
+need be; `CommentInput`'s `insertQuote` handle, typed in as a command is so ⌘Z takes it out); Reference in new issue
+(`newIssueReferencing`: GitHub's new-issue page for the comment's repository in a new tab, its body the comment quoted and
+"_Originally posted by @login in [#n](permalink)_", as GitHub's dialog starts it); a separator; Edit (the pencil's edit box);
+Hide where GitHub lets the viewer hide the comment (`hideable`), which opens `HideCommentDialog` ("Choose a reason for hiding
+this comment", GitHub's seven reasons in its order, "Hide comment"), or Unhide on a hidden one where they may (`unhideable`);
+Delete, in red, on the viewer's own; then, after a separator, Report content on someone else's (`reportable`), GitHub's
+report form in a new tab (`/contact/report-content?content_url=<permalink>&report=<login>+(user)`). Hiding goes as GitHub's
+React page sends it (`pr.hideComment`, `pr.unhideComment`, `pr.hideThreadComment`, `pr.unhideThreadComment` in
+`src/lib/github-web/mutations.ts`), and the stage the comment is in loads again. A hidden comment (`hidden`, with GitHub's
+reason) keeps its header, menu included, then shows GitHub's line in place of its body and reactions, "This comment was
+marked as off-topic." (or "This comment has been minimized." without a reason), with Show comment / Hide comment to toggle
+it where the page gave its body. Who may hide, unhide and report: on the conversation, the comment's or review's own menu
+holds GitHub's Hide (`.js-comment-hide-button`) and, the comment hidden (its `.minimized-comment` shown in place of it), its
+Unhide form (`form.js-comment-unminimize`), its bar the reason (`menuIn` in `src/lib/github-web/timeline.ts`), and someone
+else's is reportable by login; a diff comment's come from `page_data/threads` (`viewerCanMinimize`, `viewerCanUnminimize`,
+`isHidden`, `minimizedReason`, `viewerCanReport`, `viewerCanReportToMaintainer`). A hidden conversation comment GitHub
+renders without a body (signed out) is still left out. See `docs/research/github-web-mutations.md`, Hiding comments.
 
 File links: each file's header copies as Graphite's does (`FileCard` in `src/pr/Files.tsx`), each copy confirmed in a
 toast. A click on its path copies the path: `@pierre/diffs` draws the path in the diff's shadow root, so the card hears

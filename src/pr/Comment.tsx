@@ -1,14 +1,16 @@
 // A GitHub comment as the PR page shows it (timeline comments, review bodies, thread comments), and the
 // Markdown HTML GitHub renders for it.
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode, type Ref } from 'react';
-import type { UserRef } from '../lib/model';
+import { Fragment, useEffect, useRef, useState, type MouseEvent, type ReactNode, type Ref } from 'react';
+import type { HideReason, UserRef } from '../lib/model';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
-import { Icon } from '../ui/Icon';
+import { Icon, type IconName } from '../ui/Icon';
 import { Kbd } from '../ui/Kbd';
 import { RelativeTime } from '../ui/RelativeTime';
 import { showToast } from '../ui/Toast';
-import { focusComment, followLink } from './navigation';
+import { newIssueReferencing, quoteReply } from './comment-menu';
+import { HideCommentDialog } from './HideCommentDialog';
+import { focusComment, followLink, openInNewTab } from './navigation';
 import { CommentInput } from './primitives';
 import './comment.css';
 import './markdown.css';
@@ -19,7 +21,33 @@ export interface Editable {
   save: (body: string) => Promise<boolean>;
 }
 
-export function Comment({ author, createdAt, bodyHtml, url, action, edited, aside, footer, compact, edit, onDelete }: {
+/** One item of a comment's ⋯ menu. */
+interface MenuItem {
+  label: string;
+  icon: IconName;
+  danger?: boolean;
+  onSelect: () => void;
+}
+
+export function Comment({
+  author,
+  createdAt,
+  bodyHtml,
+  url,
+  action,
+  edited,
+  aside,
+  footer,
+  compact,
+  edit,
+  onDelete,
+  markdown,
+  hidden,
+  onQuote,
+  onHide,
+  onUnhide,
+  reportable,
+}: {
   author: UserRef | null;
   createdAt: string;
   bodyHtml: string;
@@ -40,12 +68,67 @@ export function Comment({ author, createdAt, bodyHtml, url, action, edited, asid
    * ⋯ at the end of its header offers as GitHub's comment menu does.
    */
   onDelete?: () => Promise<boolean>;
+  /** The comment's Markdown as GitHub keeps it, which the menu copies and quotes; without it the menu offers neither. */
+  markdown?: string;
+  /** Hidden, with GitHub's reason: the comment collapses to a line saying why, which shows it on request, as GitHub's does. */
+  hidden?: { reason: HideReason | null };
+  /** Puts a quote of the comment in the comment box its reply goes in, which the menu's Quote reply offers. */
+  onQuote?: (quote: string) => void;
+  /** Where GitHub lets the viewer hide the comment, not hidden: what hides it for a reason (true once hidden), the menu's Hide. */
+  onHide?: (reason: HideReason) => Promise<boolean>;
+  /** Where GitHub lets the viewer unhide the hidden comment: what shows it again (true once shown), the menu's Unhide. */
+  onUnhide?: () => Promise<boolean>;
+  /** Someone else's, which the menu offers to report to GitHub. */
+  reportable?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [hiding, setHiding] = useState(false);
+  const [showingHidden, setShowingHidden] = useState(false);
   const editButton = useRef<HTMLButtonElement | null>(null);
+  const root = useRef<HTMLDivElement | null>(null);
+  // What the reader had selected in the comment's body as the menu opened, which Quote reply quotes in place of the Markdown.
+  const selected = useRef<string | null>(null);
+  const login = author?.login ?? 'ghost';
+  const newIssue = url && markdown !== undefined ? newIssueReferencing({ markdown, login, url }) : null;
+  // GitHub's menu, in its order: the comment's link and Markdown, quoting it here and in a new issue; then what the viewer
+  // may do to it; then reporting someone else's.
+  const menu: MenuItem[][] = [
+    [
+      ...(url ? [{ label: 'Copy link', icon: 'link', onSelect: () => copyForViewer(url, 'link to comment') } satisfies MenuItem] : []),
+      ...(markdown !== undefined ? [{ label: 'Copy Markdown', icon: 'markdown', onSelect: () => copyForViewer(markdown, 'comment as Markdown') } satisfies MenuItem] : []),
+      ...(onQuote && markdown !== undefined ? [{ label: 'Quote reply', icon: 'quote', onSelect: () => onQuote(quoteReply(selected.current ?? markdown)) } satisfies MenuItem] : []),
+      ...(newIssue ? [{ label: 'Reference in new issue', icon: 'issue-opened', onSelect: () => openInNewTab(newIssue) } satisfies MenuItem] : []),
+    ],
+    [
+      ...(edit ? [{ label: 'Edit', icon: 'pencil', onSelect: () => setEditing(true) } satisfies MenuItem] : []),
+      ...(onHide && !hidden ? [{ label: 'Hide', icon: 'eye-closed', onSelect: () => setHiding(true) } satisfies MenuItem] : []),
+      ...(onUnhide && hidden ? [{ label: 'Unhide', icon: 'eye', onSelect: () => void onUnhide() } satisfies MenuItem] : []),
+      ...(onDelete
+        ? [
+            {
+              label: 'Delete',
+              icon: 'trash',
+              danger: true,
+              onSelect: async () => {
+                // GitHub's own question before it deletes a comment.
+                if (!window.confirm('Are you sure you want to delete this?')) return;
+                // Faded while GitHub deletes it, until the page loads again without it; back as it was should GitHub refuse.
+                setDeleting(true);
+                if (!(await onDelete())) setDeleting(false);
+              },
+            } satisfies MenuItem,
+          ]
+        : []),
+    ],
+    // GitHub's report form, in a new tab, naming the comment and its author as GitHub's own item does.
+    ...(reportable && url && author
+      ? [[{ label: 'Report content', icon: 'report', onSelect: () => openInNewTab(`https://github.com/contact/report-content?content_url=${encodeURIComponent(url)}&report=${login}+(user)`) } satisfies MenuItem]]
+      : []),
+  ].filter((group) => group.length > 0);
+  const collapsed = !!hidden && !showingHidden;
   return (
-    <div className={`pr-comment ${compact ? 'is-compact' : ''} ${deleting ? 'is-deleting' : ''}`} aria-busy={deleting || undefined}>
+    <div ref={root} className={`pr-comment ${compact ? 'is-compact' : ''} ${deleting ? 'is-deleting' : ''}`} aria-busy={deleting || undefined}>
       <div className="pr-comment-header">
         {author && <Avatar user={author} size={compact ? 18 : 20} />}
         <strong>{author?.login ?? 'ghost'}</strong>
@@ -71,19 +154,34 @@ export function Comment({ author, createdAt, bodyHtml, url, action, edited, asid
         {aside}
         {edit && !editing && <EditButton ref={editButton} onClick={() => setEditing(true)} />}
         {url && <CopyLink url={url} />}
-        {onDelete && !editing && (
+        {menu.length > 0 && !editing && (
           <CommentMenu
             disabled={deleting}
-            onDelete={async () => {
-              // GitHub's own question before it deletes a comment.
-              if (!window.confirm('Are you sure you want to delete this?')) return;
-              // Faded while GitHub deletes it, until the page loads again without it; back as it was should GitHub refuse.
-              setDeleting(true);
-              if (!(await onDelete())) setDeleting(false);
+            groups={menu}
+            onOpen={() => {
+              // A selection inside the comment's own body, as GitHub's Quote reply quotes it.
+              const selection = window.getSelection();
+              const body = root.current?.querySelector(':scope > .markdown-body');
+              const range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+              selected.current =
+                body && range && !range.collapsed && body.contains(range.startContainer) && body.contains(range.endContainer) && range.toString().trim() !== '' ? range.toString() : null;
             }}
           />
         )}
       </div>
+      {hidden && !(edit && editing) && (
+        // GitHub's words for a hidden comment, its reason as GitHub writes it (`off-topic`), and its toggle.
+        <div className="pr-comment-hidden">
+          <Icon name="eye-closed" size={14} />
+          <span>{hidden.reason ? `This comment was marked as ${hidden.reason.replace(/_/g, '-').toLowerCase()}.` : 'This comment has been minimized.'}</span>
+          {bodyHtml.trim() !== '' && (
+            <button type="button" className="pr-comment-hidden-toggle" aria-expanded={!collapsed} onClick={() => setShowingHidden(collapsed)}>
+              {collapsed ? 'Show comment' : 'Hide comment'}
+            </button>
+          )}
+        </div>
+      )}
+      {hiding && onHide && <HideCommentDialog onHide={onHide} onClose={() => setHiding(false)} />}
       {edit && editing ? (
         <CommentEditor
           edit={edit}
@@ -94,10 +192,12 @@ export function Comment({ author, createdAt, bodyHtml, url, action, edited, asid
           }}
         />
       ) : (
-        <>
-          {bodyHtml.trim() !== '' && <Markdown html={bodyHtml} />}
-          {footer}
-        </>
+        !collapsed && (
+          <>
+            {bodyHtml.trim() !== '' && <Markdown html={bodyHtml} />}
+            {footer}
+          </>
+        )
       )}
     </div>
   );
@@ -114,12 +214,7 @@ export function CopyLink({ url, subject = 'comment' }: { url: string; subject?: 
       className="pr-comment-link"
       aria-label={`Copy link to ${subject}`}
       title="Copy link"
-      onClick={() =>
-        navigator.clipboard.writeText(url).then(
-          () => showToast(`Copied link to ${subject}`),
-          (reason: unknown) => showToast(`Could not copy link to ${subject}: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger'),
-        )
-      }
+      onClick={() => copyForViewer(url, `link to ${subject}`)}
     >
       <Icon name="link" size={14} />
     </button>
@@ -136,10 +231,11 @@ export function EditButton({ subject = 'comment', onClick, ref }: { subject?: 'c
 }
 
 /**
- * The ⋯ at the end of a comment's header, as GitHub's comment menu, seen as the Copy link is (comment.css): Delete, in
- * red, as GitHub's menu ends. Esc closes it and gives the focus back to the ⋯.
+ * The ⋯ at the end of a comment's header, as GitHub's comment menu, seen as the Copy link is (comment.css): its groups of
+ * items, a separator between each two, Delete in red. `onOpen` runs as it opens, before the click moves anything. Esc closes
+ * it and gives the focus back to the ⋯.
  */
-function CommentMenu({ disabled, onDelete }: { disabled: boolean; onDelete: () => void }) {
+function CommentMenu({ disabled, groups, onOpen }: { disabled: boolean; groups: MenuItem[][]; onOpen: () => void }) {
   const [open, setOpen] = useState(false);
   const menu = useRef<HTMLDivElement | null>(null);
   const button = useRef<HTMLButtonElement | null>(null);
@@ -175,25 +271,36 @@ function CommentMenu({ disabled, onDelete }: { disabled: boolean; onDelete: () =
         aria-haspopup="menu"
         aria-expanded={open}
         disabled={disabled}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          if (!open) onOpen();
+          setOpen(!open);
+        }}
       >
         <Icon name="kebab-horizontal" size={14} />
       </button>
       {open && (
         <div className="pr-menu-list" role="menu">
-          <button
-            type="button"
-            role="menuitem"
-            className="is-danger"
-            autoFocus
-            onClick={() => {
-              setOpen(false);
-              onDelete();
-            }}
-          >
-            <Icon name="trash" size={14} />
-            Delete
-          </button>
+          {groups.map((items, group) => (
+            <Fragment key={group}>
+              {group > 0 && <div className="pr-menu-separator" role="separator" />}
+              {items.map((item, index) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  role="menuitem"
+                  className={item.danger ? 'is-danger' : undefined}
+                  autoFocus={group === 0 && index === 0}
+                  onClick={() => {
+                    setOpen(false);
+                    item.onSelect();
+                  }}
+                >
+                  <Icon name={item.icon} size={14} />
+                  {item.label}
+                </button>
+              ))}
+            </Fragment>
+          ))}
         </div>
       )}
     </div>
@@ -241,4 +348,12 @@ export function Markdown({ html, className }: { html: string; className?: string
     followLink(anchor.href);
   };
   return <div className={`markdown-body ${className ?? ''}`} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+/** Copies text for the viewer, saying so in a toast as GitHub's Copy link and Copy Markdown do, or why it could not. */
+function copyForViewer(text: string, what: string) {
+  navigator.clipboard.writeText(text).then(
+    () => showToast(`Copied ${what}`),
+    (reason: unknown) => showToast(`Could not copy ${what}: ${reason instanceof Error ? reason.message : String(reason)}`, 'danger'),
+  );
 }

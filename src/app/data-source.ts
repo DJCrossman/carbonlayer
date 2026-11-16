@@ -3,7 +3,7 @@
 
 import { browser } from 'wxt/browser';
 import { z } from 'zod/mini';
-import type { AssigneeCandidate, ChangedFileDiff, Emoji, GraphiteStackPlace, LabelCandidate, Mention, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, ReviewThread, SavedReply, Stack, StackBranches, StackEntry, TimelineItem, TopRepository, View, ViewResult } from '../lib/model';
+import type { AssigneeCandidate, ChangedFileDiff, Emoji, GraphiteStackPlace, HideReason, LabelCandidate, Mention, Organization, OrgMember, PrDetail, PrEnrichment, PrStage, PrStages, PrSummary, ReactionContent, RepoCandidate, RepoRef, ReviewerCandidate, ReviewThread, SavedReply, Stack, StackBranches, StackEntry, TimelineItem, TopRepository, View, ViewResult } from '../lib/model';
 import { rpc, type DiffEntryLine, type InboxRowToEnrich, type LineRange, type MergeCommit, type MergeMethod, type RpcMethods } from '../lib/rpc';
 import { getSettings, setSettings, watchSettings, type Settings, type SettingsStorage } from '../lib/settings';
 import { STACK_MERGES, stackMergesSchema, type StackMerge, type StackMergeRequest, type stackMergeMessage } from '../lib/stack-merges';
@@ -111,6 +111,14 @@ export interface DataSource {
   deleteComment(prId: string, commentId: string): Promise<void>;
   /** Deletes a diff comment (by its id in its thread). */
   deleteThreadComment(prId: string, commentId: string): Promise<void>;
+  /** Hides a conversation comment or a review's summary (by its id in the activity) for GitHub's reason `classifier`. */
+  hideComment(prId: string, commentId: string, classifier: HideReason): Promise<void>;
+  /** Shows a hidden conversation comment or review summary again (by its id in the activity). */
+  unhideComment(prId: string, commentId: string): Promise<void>;
+  /** Hides a diff comment (by its id in its thread) for GitHub's reason `classifier`. */
+  hideThreadComment(prId: string, commentId: string, classifier: HideReason): Promise<void>;
+  /** Shows a hidden diff comment again (by its id in its thread). */
+  unhideThreadComment(prId: string, commentId: string): Promise<void>;
   /** A comment's Markdown the way GitHub renders it on the PR, in HTML: what a comment box's Preview tab shows. */
   previewMarkdown(text: string, prId: string): Promise<string>;
   /** The emoji a comment box suggests after a `:`, in GitHub's order. */
@@ -196,6 +204,10 @@ export function createRpcDataSource(): DataSource {
     editThreadComment: (prId, commentId, version, body) => rpc('pr.editThreadComment', { prId, commentId, version, body }),
     deleteComment: (prId, commentId) => rpc('pr.deleteComment', { prId, commentId }),
     deleteThreadComment: (prId, commentId) => rpc('pr.deleteThreadComment', { prId, commentId }),
+    hideComment: (prId, commentId, classifier) => rpc('pr.hideComment', { prId, commentId, classifier }),
+    unhideComment: (prId, commentId) => rpc('pr.unhideComment', { prId, commentId }),
+    hideThreadComment: (prId, commentId, classifier) => rpc('pr.hideThreadComment', { prId, commentId, classifier }),
+    unhideThreadComment: (prId, commentId) => rpc('pr.unhideThreadComment', { prId, commentId }),
     previewMarkdown: async (text, prId) => (await rpc('markdown.preview', { text, prId })).html,
     listEmojis: () => rpc('markdown.emojis', {}),
     listMentions: (prId) => rpc('markdown.mentions', { prId }),
@@ -287,6 +299,7 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
               reactions: [],
               editableMarkdown: draft.body,
               deletable: true,
+              markdown: draft.body,
             },
           ],
         };
@@ -299,10 +312,18 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
   // Each fixture comment's Markdown as the last edit left it, by its id on the page (the description's by its PR's id):
   // what the stages answer from then on, as GitHub would answer the reload that follows an edit.
   const edits = new Map<string, string>();
+  // Each fixture comment hidden since (with its reason) or shown again since (null), by its id on the page: what the stages
+  // answer from then on, as GitHub would answer the reload that follows hiding or unhiding it.
+  const hides = new Map<string, { reason: HideReason | null } | null>();
   const edited = (pr: PrDetail): PrDetail => {
-    const edit = <C extends { bodyHtml: string; editableMarkdown?: string }>(comment: C, id: string): C => {
+    const edit = <C extends { bodyHtml: string; editableMarkdown?: string; markdown?: string; hidden?: { reason: HideReason | null } }>(comment: C, id: string): C => {
       const markdown = edits.get(id);
-      return markdown === undefined ? comment : { ...comment, bodyHtml: renderedByGitHub(markdown), editableMarkdown: markdown };
+      const hide = hides.get(id);
+      return {
+        ...comment,
+        ...(markdown !== undefined && { bodyHtml: renderedByGitHub(markdown), editableMarkdown: markdown, markdown }),
+        ...(hide !== undefined && { hidden: hide ?? undefined }),
+      };
     };
     const description = edits.get(pr.id);
     const stateEvents = closesAndReopens.get(pr.id) ?? [];
@@ -607,6 +628,27 @@ export function createFixtureDataSource(fixtures: Fixtures): DataSource {
       await log('deleteThreadComment', prId, commentId);
       await new Promise((resolve) => setTimeout(resolve, 300));
       posted.set(prId, (posted.get(prId) ?? []).filter((thread) => !thread.comments.some((comment) => comment.id === commentId)));
+    },
+    // Each hide and unhide kept, a moment later, as GitHub keeps it: the stages answer the comment hidden, or shown, from then on.
+    hideComment: async (prId, commentId, classifier) => {
+      await log('hideComment', prId, commentId, classifier);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      hides.set(commentId, { reason: classifier });
+    },
+    unhideComment: async (prId, commentId) => {
+      await log('unhideComment', prId, commentId);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      hides.set(commentId, null);
+    },
+    hideThreadComment: async (prId, commentId, classifier) => {
+      await log('hideThreadComment', prId, commentId, classifier);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      hides.set(commentId, { reason: classifier });
+    },
+    unhideThreadComment: async (prId, commentId) => {
+      await log('unhideThreadComment', prId, commentId);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      hides.set(commentId, null);
     },
     // A moment later, rendered as the fixtures render Markdown.
     previewMarkdown: async (text) => {

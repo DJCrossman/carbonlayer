@@ -66,6 +66,7 @@ describe('reviewThreads', () => {
         { content: 'THUMBS_UP', count: 2, viewerHasReacted: true, reactors: [] },
         { content: 'EYES', count: 1, viewerHasReacted: false, reactors: [] },
       ],
+      markdown: 'nit',
     });
     expect(threads[1]?.comments[0]?.url).toBe('https://github.com/o/r/pull/1/files#r502');
     expect(threadIdsByReview.get('77')).toEqual(['1', '2']);
@@ -152,6 +153,38 @@ describe('reviewThreads, on diff comments the viewer may edit', () => {
       expect(comment).not.toHaveProperty('editableMarkdown');
       expect(comment).not.toHaveProperty('bodyVersion');
     }
+    // The Markdown the menu copies and quotes, though, whoever may edit the comment; none where GitHub sent none.
+    expect(comments.map((comment) => comment.markdown)).toEqual(['Mine\r\nto fix', 'Theirs', undefined]);
+  });
+});
+
+describe('reviewThreads, on diff comments the viewer may hide or report', () => {
+  it("reads a hidden comment's reason in either of GitHub's spellings, who may hide and unhide, and whom GitHub offers to report", () => {
+    const { threads } = reviewThreads(
+      threadsAnswer.parse({
+        threads: [
+          {
+            id: '6',
+            commentsData: {
+              comments: [
+                { databaseId: 701, author: { login: 'ana' }, bodyHTML: '<p>Spam</p>', isHidden: true, minimizedReason: 'spam', viewerCanMinimize: true, viewerCanUnminimize: true, viewerCanReport: true },
+                { databaseId: 702, author: { login: 'bo' }, bodyHTML: '<p>Old</p>', isHidden: true, minimizedReason: 'OFF_TOPIC', viewerCanReportToMaintainer: true },
+                { databaseId: 703, author: { login: 'cy' }, bodyHTML: '<p>Hidden, no reason</p>', isHidden: true, minimizedReason: null },
+                { databaseId: 704, author: { login: 'octocat' }, bodyHTML: '<p>Mine</p>', isHidden: false, minimizedReason: null, viewerCanMinimize: true, viewerCanReport: true },
+              ],
+            },
+          },
+        ],
+      }),
+      { diffSummaries: [] },
+      new DOMParser().parseFromString('<html><head><meta name="user-login" content="octocat"></head><body></body></html>', 'text/html'),
+    );
+    expect(threads[0]?.comments.map(({ id, hidden, hideable, unhideable, reportable }) => ({ id, hidden, hideable, unhideable, reportable }))).toEqual([
+      { id: '701', hidden: { reason: 'SPAM' }, hideable: true, unhideable: true, reportable: true },
+      { id: '702', hidden: { reason: 'OFF_TOPIC' }, hideable: undefined, unhideable: undefined, reportable: true },
+      { id: '703', hidden: { reason: null }, hideable: undefined, unhideable: undefined, reportable: undefined },
+      { id: '704', hidden: undefined, hideable: true, unhideable: undefined, reportable: undefined },
+    ]);
   });
 });
 

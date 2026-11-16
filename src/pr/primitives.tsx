@@ -1,7 +1,7 @@
 // PR-page pieces the shared primitives in src/ui/ do not cover: the Open / Draft / Merged / Closed state
 // pill, the comment box, and a part of the page fed by one stage of its data.
 import { skipToken, useQuery } from '@tanstack/react-query';
-import { createContext, Fragment, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { createContext, Fragment, useContext, useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode, type Ref, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { githubUser } from '../lib/github-web/session';
 import type { Emoji, Mention, PrSummary, SavedReply } from '../lib/model';
@@ -40,6 +40,12 @@ import { openInNewTab } from './navigation';
 import type { StageState } from './page-data';
 import './primitives.css';
 
+/** What a comment box lets the page put in it from outside: a comment's Quote reply. */
+export interface CommentBox {
+  /** Adds the quote at the end of the box's text, after an empty line, and takes the focus there, the box scrolled into view. */
+  insertQuote: (quote: string) => void;
+}
+
 /** Open / Draft / Merged / Closed. */
 export function StatePill({ pr }: { pr: Pick<PrSummary, 'state' | 'isDraft'> }) {
   if (pr.state === 'MERGED') return <StatusPill tone="done" icon="git-merge">Merged</StatusPill>;
@@ -68,6 +74,7 @@ export function CommentInput({
   disabled,
   minRows = 2,
   suggestion,
+  ref: box,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -79,6 +86,8 @@ export function CommentInput({
   minRows?: number;
   /** The commented lines' current text: adds GitHub's "Add a suggestion", which puts them in a suggestion block. */
   suggestion?: () => string;
+  /** Where the page hands the box a quote. */
+  ref?: Ref<CommentBox>;
 }) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
   const previewTab = useRef<HTMLButtonElement | null>(null);
@@ -179,6 +188,20 @@ export function CommentInput({
     }
     return true;
   };
+
+  // A quote goes in as typing would, so ⌘Z takes it out again, a frame after Write shows again should Preview have hidden it.
+  useImperativeHandle(box, () => ({
+    insertQuote: (quote) => {
+      setPreviewing(null);
+      requestAnimationFrame(() => {
+        carryOut(({ value }) => {
+          const text = `${value === '' || value.endsWith('\n\n') ? value : `${value.replace(/\n*$/, '')}\n\n`}${quote}`;
+          return { value: text, selectionStart: text.length, selectionEnd: text.length };
+        });
+        ref.current?.scrollIntoView({ block: 'center' });
+      });
+    },
+  }));
 
   const showPreview = (show: boolean) => {
     if (show === !!previewing) return;

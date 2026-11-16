@@ -229,6 +229,10 @@ describe('timelineFrom, on comments the viewer may edit', () => {
     expect(timeline[3]).toMatchObject({ kind: 'review', id: 'pullrequestreview-22' });
     expect(timeline[3]).not.toHaveProperty('editableMarkdown');
   });
+
+  it("reads every comment's and review's own Markdown from its Copy Markdown, which the menu copies and quotes, whoever may edit it", () => {
+    expect(timeline.map((item) => ('markdown' in item ? item.markdown : undefined))).toEqual(['Ship it?\n\n```ts\nx()\n```', 'Not yours', 'Looks good', 'By bo']);
+  });
 });
 
 describe('timelineFrom, on comments the viewer may delete', () => {
@@ -262,6 +266,68 @@ describe('timelineFrom, on comments the viewer may delete', () => {
       { id: 'issuecomment-13', deletable: undefined },
       { id: 'pullrequestreview-21', deletable: undefined },
     ]);
+  });
+});
+
+describe('timelineFrom, on hidden comments and those the viewer may hide', () => {
+  // GitHub's classic page signed in, as its classic JS handles it (2026-11-16): the menu's Hide (`.js-comment-hide-button`)
+  // where the viewer may hide the comment; a hidden one's `.minimized-comment` shown in place of its `.unminimized-comment`,
+  // with the reason on its bar and its Unhide form (`form.js-comment-unminimize`) where the viewer may unhide it.
+  const menu = (hideable: boolean) => `<div class="timeline-comment-actions"><details><details-menu>
+      <clipboard-copy role="menuitem" value="The Markdown">Copy Markdown</clipboard-copy>
+      ${hideable ? '<button type="button" class="dropdown-item btn-link js-comment-hide-button" role="menuitem">Hide</button>' : ''}
+    </details-menu></details></div>`;
+  const minimized = (reason: string, unhideable: boolean, shown: boolean) => `<div class="minimized-comment js-comment ${shown ? '' : 'd-none'}">
+      <details><summary><h3 class="timeline-comment-header-text">
+        ${reason}
+      </h3></summary></details>
+      ${unhideable ? '<form class="js-comment-unminimize" action="/o/r/comments/unminimize" method="post"><button type="submit">Unhide</button></form>' : ''}</div>`;
+  const comment = (id: number, author: string, inside: string) => `<div class="TimelineItem js-comment-container">
+      <div class="timeline-comment-group js-minimizable-comment-group TimelineItem-body" id="issuecomment-${id}">${inside}</div>
+    </div>`;
+  const unminimized = (author: string, hideable: boolean, shown: boolean) => `<div class="timeline-comment unminimized-comment js-comment ${shown ? '' : 'd-none'}">
+      <a class="author">${author}</a> commented <relative-time datetime="2026-10-20T10:00:00Z"></relative-time>${menu(hideable)}
+      <div class="comment-body"><p>By ${author}</p></div></div>`;
+  const page = new DOMParser().parseFromString(
+    `<html><head><meta name="user-login" content="octocat"></head><body>
+    ${comment(31, 'ana', `${unminimized('ana', true, true)}${minimized('This comment was marked as off-topic.', true, false)}`)}
+    ${comment(32, 'bo', `${unminimized('bo', true, false)}${minimized('This comment was marked as off-topic.', true, true)}`)}
+    ${comment(33, 'cy', `${unminimized('cy', false, false)}${minimized('This comment was marked as low quality.', false, true)}`)}
+    ${comment(34, 'dee', `${unminimized('dee', false, false)}${minimized('This comment has been minimized.', false, true)}`)}
+    ${comment(35, 'octocat', unminimized('octocat', false, true))}
+    <div id="pullrequestreview-41" class="js-comment">
+      <div class="TimelineItem"><div class="TimelineItem-body"><a class="author">ana</a> left a comment <relative-time datetime="2026-10-21T09:00:00Z"></relative-time></div></div>
+      <div class="TimelineItem"><div class="TimelineItem-body"><div id="pullrequestreview-41" class="timeline-comment-group">${menu(true)}
+        <div class="comment-body"><p>Looks good</p></div></div></div></div>
+      <div class="TimelineItem"><turbo-frame id="review-thread-or-comment-id-42">${minimized('This comment was marked as spam.', true, true)}<div class="comment-body"><p>A diff comment</p></div></turbo-frame></div>
+    </div></body></html>`,
+    'text/html',
+  );
+  const timeline = timelineFrom(page, { pageUrl: 'https://github.com/o/r/pull/1', threadIdsByReview: new Map(), commits: new Map() });
+  const read = timeline.map((item) => ({
+    id: item.id,
+    hidden: 'hidden' in item ? item.hidden : undefined,
+    hideable: 'hideable' in item ? item.hideable : undefined,
+    unhideable: 'unhideable' in item ? item.unhideable : undefined,
+  }));
+
+  it('reads a hidden comment, with its body and the reason its bar says, and who may hide and unhide which', () => {
+    expect(read.slice(0, 5)).toEqual([
+      { id: 'issuecomment-31', hidden: undefined, hideable: true, unhideable: true },
+      { id: 'issuecomment-32', hidden: { reason: 'OFF_TOPIC' }, hideable: true, unhideable: true },
+      { id: 'issuecomment-33', hidden: { reason: 'LOW_QUALITY' }, hideable: undefined, unhideable: undefined },
+      { id: 'issuecomment-34', hidden: { reason: null }, hideable: undefined, unhideable: undefined },
+      { id: 'issuecomment-35', hidden: undefined, hideable: undefined, unhideable: undefined },
+    ]);
+    expect(timeline[1]).toMatchObject({ author: { login: 'bo' }, bodyHtml: '<p>By bo</p>' });
+  });
+
+  it("reads a review's own Hide, not a hidden comment of a thread it opened", () => {
+    expect(read[5]).toEqual({ id: 'pullrequestreview-41', hidden: undefined, hideable: true, unhideable: undefined });
+  });
+
+  it("offers to report someone else's comment or review, not the viewer's own", () => {
+    expect(timeline.map((item) => ('reportable' in item ? item.reportable : undefined))).toEqual([true, true, true, true, undefined, true]);
   });
 });
 

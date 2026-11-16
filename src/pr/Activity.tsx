@@ -1,7 +1,7 @@
 // The activity timeline: comments, reviews, commits (consecutive ones grouped) and one-line events, with
 // the PR-level comment composer at the bottom. A few skeleton rows stand in until the activity arrives.
-import { useState } from 'react';
-import type { PrDetail, PrStages, TimelineItem } from '../lib/model';
+import { useRef, useState, type Ref } from 'react';
+import type { HideReason, PrDetail, PrStages, TimelineItem } from '../lib/model';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
@@ -11,7 +11,7 @@ import { Skeleton } from '../ui/Skeleton';
 import { Comment } from './Comment';
 import { followLink } from './navigation';
 import type { StageState } from './page-data';
-import { CommentInput, Staged } from './primitives';
+import { CommentInput, Staged, type CommentBox } from './primitives';
 import { Reactions } from './Reactions';
 import './activity.css';
 
@@ -32,6 +32,8 @@ export function Activity({
   onComment,
   onEditComment,
   onDeleteComment,
+  onHideComment,
+  onUnhideComment,
 }: {
   pr: PrDetail;
   stage: StageState<PrStages['activity']>;
@@ -42,7 +44,13 @@ export function Activity({
   onEditComment: (commentId: string, version: string | undefined, body: string) => Promise<boolean>;
   /** Deletes a comment of the viewer's, by its id; true once GitHub has. */
   onDeleteComment: (commentId: string) => Promise<boolean>;
+  /** Hides a comment or a review's summary, by its id, for GitHub's reason; true once GitHub has. */
+  onHideComment: (commentId: string, reason: HideReason) => Promise<boolean>;
+  /** Shows a hidden comment or review summary again, by its id; true once GitHub has. */
+  onUnhideComment: (commentId: string) => Promise<boolean>;
 }) {
+  // The new-comment box at the foot of the activity, where a comment's or a review's Quote reply goes.
+  const composer = useRef<CommentBox | null>(null);
   const entries: Array<Exclude<TimelineItem, CommitItem> | { kind: 'commits'; id: string; commits: CommitItem[] }> = [];
   for (const item of pr.timeline) {
     const last = entries.at(-1);
@@ -71,6 +79,12 @@ export function Activity({
                         footer={<Reactions subjectId={entry.subjectId} reactions={entry.reactions} />}
                         edit={entry.editableMarkdown === undefined ? undefined : { markdown: entry.editableMarkdown, save: (body) => onEditComment(entry.id, entry.bodyVersion, body) }}
                         onDelete={entry.deletable ? () => onDeleteComment(entry.id) : undefined}
+                        markdown={entry.markdown}
+                        hidden={entry.hidden}
+                        onQuote={(quote) => composer.current?.insertQuote(quote)}
+                        onHide={entry.hideable ? (reason) => onHideComment(entry.id, reason) : undefined}
+                        onUnhide={entry.unhideable ? () => onUnhideComment(entry.id) : undefined}
+                        reportable={entry.reportable}
                       />
                     </li>
                   );
@@ -99,6 +113,12 @@ export function Activity({
                         aside={bar && threads}
                         footer={<Reactions subjectId={entry.subjectId} reactions={entry.reactions} />}
                         edit={entry.editableMarkdown === undefined ? undefined : { markdown: entry.editableMarkdown, save: (body) => onEditComment(entry.id, entry.bodyVersion, body) }}
+                        markdown={entry.markdown}
+                        hidden={entry.hidden}
+                        onQuote={(quote) => composer.current?.insertQuote(quote)}
+                        onHide={entry.hideable ? (reason) => onHideComment(entry.id, reason) : undefined}
+                        onUnhide={entry.unhideable ? () => onUnhideComment(entry.id) : undefined}
+                        reportable={entry.reportable}
                       />
                       {!bar && threads}
                     </li>
@@ -179,7 +199,7 @@ export function Activity({
           </ol>
         )}
       </Staged>
-      <CommentComposer onComment={onComment} />
+      <CommentComposer onComment={onComment} box={composer} />
     </section>
   );
 }
@@ -208,7 +228,7 @@ function ActivitySkeleton() {
   );
 }
 
-function CommentComposer({ onComment }: { onComment: (body: string) => Promise<boolean> }) {
+function CommentComposer({ onComment, box }: { onComment: (body: string) => Promise<boolean>; box: Ref<CommentBox> }) {
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   const submit = async () => {
@@ -218,7 +238,7 @@ function CommentComposer({ onComment }: { onComment: (body: string) => Promise<b
   };
   return (
     <div className="timeline-composer">
-      <CommentInput value={body} onChange={setBody} onSubmit={submit} placeholder="Leave a comment" disabled={busy} minRows={3} />
+      <CommentInput ref={box} value={body} onChange={setBody} onSubmit={submit} placeholder="Leave a comment" disabled={busy} minRows={3} />
       <div className="timeline-composer-actions">
         <span className="pr-muted">Markdown supported</span>
         <Button variant="primary" onClick={submit} disabled={busy || body.trim() === ''}>

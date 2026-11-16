@@ -1,15 +1,15 @@
 // What renders inside a diff annotation, or under the header of a file without a diff for the notes on the whole file: a
 // review thread, a comment batched for the pending review, or the inline composer opened from the gutter "+" or from the
 // file header's "Comment on this file".
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReviewThreadDraft } from '../app/data-source';
-import type { ReviewThread } from '../lib/model';
+import type { HideReason, ReviewThread } from '../lib/model';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
 import { Kbd } from '../ui/Kbd';
 import { Comment } from './Comment';
 import type { ComposerAnchor, DiffNote } from './diff';
-import { CommentInput } from './primitives';
+import { CommentInput, type CommentBox } from './primitives';
 import { Reactions } from './Reactions';
 import './threads.css';
 
@@ -60,12 +60,18 @@ export interface NoteActions {
   editComment(commentId: string, version: string | undefined, body: string): Promise<boolean>;
   /** Deletes a diff comment of the viewer's, by its id; true once GitHub has. */
   deleteComment(commentId: string): Promise<boolean>;
+  /** Hides a diff comment, by its id, for GitHub's reason; true once GitHub has. */
+  hideComment(commentId: string, reason: HideReason): Promise<boolean>;
+  /** Shows a hidden diff comment again, by its id; true once GitHub has. */
+  unhideComment(commentId: string): Promise<boolean>;
 }
 
 function ThreadNote({ thread, current, actions }: { thread: ReviewThread; current: boolean; actions: NoteActions }) {
   const [expanded, setExpanded] = useState(!thread.isResolved);
   const [reply, setReply] = useState('');
   const [busy, setBusy] = useState(false);
+  // The thread's reply box, where its comments' Quote reply goes.
+  const replyBox = useRef<CommentBox | null>(null);
   const count = thread.comments.length;
 
   // Moving to a thread (n / p, a review's "inline comments" link) opens it even when resolved.
@@ -118,10 +124,16 @@ function ThreadNote({ thread, current, actions }: { thread: ReviewThread; curren
           compact
           edit={comment.editableMarkdown === undefined ? undefined : { markdown: comment.editableMarkdown, save: (body) => actions.editComment(comment.id, comment.bodyVersion, body) }}
           onDelete={comment.deletable ? () => actions.deleteComment(comment.id) : undefined}
+          markdown={comment.markdown}
+          hidden={comment.hidden}
+          onQuote={(quote) => replyBox.current?.insertQuote(quote)}
+          onHide={comment.hideable ? (reason) => actions.hideComment(comment.id, reason) : undefined}
+          onUnhide={comment.unhideable ? () => actions.unhideComment(comment.id) : undefined}
+          reportable={comment.reportable}
         />
       ))}
       <div className="diff-note-reply">
-        <CommentInput value={reply} onChange={setReply} onSubmit={sendReply} placeholder="Reply…" minRows={1} disabled={busy} />
+        <CommentInput ref={replyBox} value={reply} onChange={setReply} onSubmit={sendReply} placeholder="Reply…" minRows={1} disabled={busy} />
         <div className="diff-note-actions">
           {thread.isResolved && (
             <Button variant="ghost" size="sm" onClick={() => setExpanded(false)}>

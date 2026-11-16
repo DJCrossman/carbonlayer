@@ -11,6 +11,7 @@ import {
   ciSummarySchema,
   emojiSchema,
   graphiteStackPlaceSchema,
+  HIDE_REASONS,
   labelCandidateSchema,
   mentionSchema,
   mergeMethodSchema,
@@ -85,6 +86,10 @@ export const STAGES_A_WRITE_CHANGES = {
   'pr.editThreadComment': ['threads'],
   'pr.deleteComment': ['activity'],
   'pr.deleteThreadComment': ['threads'],
+  'pr.hideComment': ['activity'],
+  'pr.unhideComment': ['activity'],
+  'pr.hideThreadComment': ['threads'],
+  'pr.unhideThreadComment': ['threads'],
 } as const satisfies { [M in RpcMethod]?: readonly PrStage[] };
 
 export interface RpcRequest<M extends RpcMethod = RpcMethod> {
@@ -357,6 +362,17 @@ const RPC_SCHEMAS = {
   'pr.deleteComment': { args: z.object({ prId: z.string(), commentId: z.string() }), result: z.undefined() },
   /** Deletes a diff comment, by its id in its thread; GitHub drops a thread left without comments. */
   'pr.deleteThreadComment': { args: z.object({ prId: z.string(), commentId: z.string() }), result: z.undefined() },
+  /**
+   * Hides a conversation comment or a review's summary, by its id in the activity (`issuecomment-<n>`,
+   * `pullrequestreview-<n>`), for GitHub's reason `classifier`, which GitHub shows to others.
+   */
+  'pr.hideComment': { args: z.object({ prId: z.string(), commentId: z.string(), classifier: z.enum(HIDE_REASONS) }), result: z.undefined() },
+  /** Shows a hidden conversation comment or review summary again, by its id in the activity. */
+  'pr.unhideComment': { args: z.object({ prId: z.string(), commentId: z.string() }), result: z.undefined() },
+  /** Hides a diff comment, by its id in its thread, for GitHub's reason `classifier`. */
+  'pr.hideThreadComment': { args: z.object({ prId: z.string(), commentId: z.string(), classifier: z.enum(HIDE_REASONS) }), result: z.undefined() },
+  /** Shows a hidden diff comment again, by its id in its thread. */
+  'pr.unhideThreadComment': { args: z.object({ prId: z.string(), commentId: z.string() }), result: z.undefined() },
 };
 
 /** An answer the content script posted; `rpc` reads its result by the schema of the method it answers. */
