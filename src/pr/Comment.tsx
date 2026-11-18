@@ -21,6 +21,9 @@ export interface Editable {
   save: (body: string) => Promise<boolean>;
 }
 
+/** What inside a comment has a click of its own, which a click on the comment leaves to it. */
+const COMMENT_CONTROLS = 'a[href], button, input, textarea, select, summary, [role="menuitem"], [role="menu"], [contenteditable], dialog';
+
 /** One item of a comment's ⋯ menu. */
 export interface MenuItem {
   label: string;
@@ -128,7 +131,26 @@ export function Comment({
   ].filter((group) => group.length > 0);
   const collapsed = !!hidden && !showingHidden;
   return (
-    <div ref={root} className={`pr-comment ${compact ? 'is-compact' : ''} ${deleting ? 'is-deleting' : ''}`} aria-busy={deleting || undefined}>
+    <div
+      ref={root}
+      className={`pr-comment ${compact ? 'is-compact' : ''} ${deleting ? 'is-deleting' : ''}`}
+      aria-busy={deleting || undefined}
+      // Focusable from a click alone: the focus says the reader is at this comment, so the page does not scroll to it.
+      tabIndex={url ? -1 : undefined}
+      onClick={(event) => {
+        // A plain click on the comment puts its permalink in the address bar, replacing the entry rather than adding one so
+        // that clicking around comments leaves Back as it was. Its controls (its time, which makes an entry, reactions,
+        // its menu, links in its body) keep their clicks, as do a selection the reader dragged and the browser's clicks.
+        if (!url || deleting || editing || event.defaultPrevented || event.button !== 0) return;
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || document.getSelection()?.type === 'Range') return;
+        // React carries clicks out of portals (the reaction picker, the Hide dialog), which are not on the comment itself.
+        if (!(event.target instanceof Element) || !root.current?.contains(event.target)) return;
+        const control = event.target.closest(COMMENT_CONTROLS);
+        if (control && root.current.contains(control)) return;
+        root.current.focus({ preventScroll: true });
+        focusComment(url, { replace: true });
+      }}
+    >
       <div className="pr-comment-header">
         {author && <Avatar user={author} size={compact ? 18 : 20} />}
         <strong>{author?.login ?? 'ghost'}</strong>

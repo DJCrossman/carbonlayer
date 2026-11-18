@@ -30,8 +30,11 @@ export type ParentToAppMessage = z.infer<typeof parentToAppMessage>;
 /** What the app asks of the github.com page. */
 export const appToParentMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('gg:ready') }),
-  /** Navigate the top window (same tab unless `newTab`). */
-  z.object({ type: z.literal('gg:navigate'), url: z.string(), newTab: z.optional(z.boolean()) }),
+  /**
+   * Navigate the top window (same tab unless `newTab`). With `replace` the tab's current entry is replaced rather than a
+   * new one made, as for a comment chosen in place.
+   */
+  z.object({ type: z.literal('gg:navigate'), url: z.string(), newTab: z.optional(z.boolean()), replace: z.optional(z.boolean()) }),
   /** Replace the top window's URL without reloading (stack navigation that the app handled itself). */
   z.object({ type: z.literal('gg:replace-url'), url: z.string() }),
   z.object({ type: z.literal('gg:title'), title: z.string() }),

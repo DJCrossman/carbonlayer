@@ -176,6 +176,18 @@ describe('app hash round trip', () => {
     expect(toGitHubUrl(parseAppHash('#/inbox'))).toBe('https://github.com/');
     expect(toGitHubUrl(parseAppHash('#/inbox?import=' + encodeURIComponent('[{"id":"a","name":"A","query":"is:pr"}]')))).toBe('https://github.com/');
   });
+
+  it.each([
+    ['#/pr/acme/widgets/42?comment=discussion_r501', 'https://github.com/acme/widgets/pull/42#discussion_r501'],
+    // GitHub's files view names the same diff comment r<id>.
+    ['#/pr/acme/widgets/42?section=files&comment=discussion_r501', 'https://github.com/acme/widgets/pull/42/files#r501'],
+    ['#/pr/acme/widgets/42?comment=issuecomment-7', 'https://github.com/acme/widgets/pull/42#issuecomment-7'],
+    ['#/pr/acme/widgets/42?comment=pullrequestreview-9', 'https://github.com/acme/widgets/pull/42#pullrequestreview-9'],
+    ['#/pr/acme/widgets/42?section=files&comment=issuecomment-7', 'https://github.com/acme/widgets/pull/42/files#issuecomment-7'],
+  ])('maps %s to the URL naming its comment as GitHub spells it there, which reads back as the same route', (hash, url) => {
+    expect(toGitHubUrl(parseAppHash(hash))).toBe(url);
+    expect(parseGitHubLocation(new URL(url))).toEqual(parseAppHash(hash));
+  });
 });
 
 describe('fileAnchor', () => {

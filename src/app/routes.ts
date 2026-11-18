@@ -131,14 +131,17 @@ export function parseAppHash(hash: string): AppRoute {
   return { page: 'none' };
 }
 
-/** The github.com URL for a route (used for top-level navigation and "open on GitHub"). */
+/** The github.com URL for a route (used for top-level navigation and "open on GitHub"), with the comment it names. */
 export function toGitHubUrl(route: AppRoute): string {
   switch (route.page) {
     case 'inbox':
       return 'https://github.com/';
     case 'pr': {
       const base = `https://github.com/${route.repo.owner}/${route.repo.name}/pull/${route.number}`;
-      return route.section === 'conversation' ? base : `${base}/${route.section}`;
+      const page = route.section === 'conversation' ? base : `${base}/${route.section}`;
+      if (!route.comment) return page;
+      // The comment as GitHub spells it on that page: its files view names a diff comment `#r<id>` (parseGitHubLocation).
+      return `${page}#${route.section === 'files' ? route.comment.replace(/^discussion_r/, 'r') : route.comment}`;
     }
     case 'none':
       return 'https://github.com/';

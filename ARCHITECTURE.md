@@ -253,7 +253,12 @@ diff comment's file and thread, scrolls the comment into view unless the reader 
 page does not show (hidden, or gone) leaves the page as it is, as does the reader scrolling, typing or clicking first.
 A plain click on a comment's time, a link to its permalink as GitHub's is, does the same in place (`focusComment` in
 `src/pr/navigation.ts`): the top window moves to the permalink inside the app, a history entry, so the address bar holds
-the link to copy and Back takes the mark off; ⌘ / Ctrl / Shift / Alt clicks stay the browser's.
+the link to copy and Back takes the mark off; ⌘ / Ctrl / Shift / Alt clicks stay the browser's. A plain click anywhere
+else on a comment (not on its controls, its links or a selection the reader dragged) does the same but replaces the tab's
+entry rather than adding one (`gg:navigate` with `replace`), so clicking around comments leaves Back as it was. The URL
+keeps the reader's section (a diff comment clicked in the files view is `…/files#r<id>`, `toGitHubUrl`), and the clicked
+comment takes the focus, which tells `useLinkedComment` the reader is there: it is marked, never scrolled. A click on a
+diff comment's copy in the comments drawer focuses the copy, so the diff's thread is revealed and scrolled to as before.
 
 Editing comments: where GitHub lets the viewer edit a comment, its header has an Edit (a pencil before its Copy link, seen
 as the Copy link is; the description's in its top corner), which puts GitHub's edit box in place of the comment: the comment

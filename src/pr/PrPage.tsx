@@ -1229,15 +1229,22 @@ function useLinkedComment(anchor: string | undefined, pr: PrDetail, data: PrPage
   const readerMoved = useRef(false);
 
   useEffect(() => {
-    if (!anchor) return;
     readerMoved.current = false;
-    const moved = () => (readerMoved.current = true);
+  }, [anchor]);
+  useEffect(() => {
+    const moved = () => {
+      readerMoved.current = true;
+      // A comment the reader clicked holds the focus (Comment.tsx) only until they move on, so that Back or Forward to it
+      // later still brings it into view; a click elsewhere takes the focus by itself.
+      const focused = document.activeElement;
+      if (focused instanceof HTMLElement && focused.classList.contains('pr-comment')) focused.blur();
+    };
     const events = ['wheel', 'keydown', 'pointerdown'] as const;
     for (const type of events) window.addEventListener(type, moved, { passive: true });
     return () => {
       for (const type of events) window.removeEventListener(type, moved);
     };
-  }, [anchor]);
+  }, []);
 
   useEffect(() => {
     if (!anchor) lookedUp.current = null;
@@ -1259,8 +1266,9 @@ function useLinkedComment(anchor: string | undefined, pr: PrDetail, data: PrPage
       // In the diff's thread, not its copy in the comments drawer.
       const find = () => commentIn(`[data-thread-id="${CSS.escape(thread.id)}"]`, url);
       // Its file expanded and the thread opened, resolved or not; its diff may still be on its way. A comment the reader
-      // already sees stays where it is.
-      revealThread(thread.id, () => readerMoved.current || readerSees(find()));
+      // already sees stays where it is, as does one they clicked, which holds the focus (Comment.tsx); its copy in the
+      // drawer holding it does not, so a click there brings the diff to the comment.
+      revealThread(thread.id, () => readerMoved.current || readerIsAt(find()));
       setLinked({ anchor, find, block: 'center' });
     } else {
       if (data.activity.status === 'loading') return;
@@ -1283,7 +1291,7 @@ function useLinkedComment(anchor: string | undefined, pr: PrDetail, data: PrPage
       if (readerMoved.current) return;
       const element = shown.find();
       if (element && element.getClientRects().length > 0) {
-        if (!readerSees(element)) element.scrollIntoView({ block: shown.block });
+        if (!readerIsAt(element)) element.scrollIntoView({ block: shown.block });
         element.classList.add('is-linked');
         marked = element;
       } else if (performance.now() - started < 10_000) {
@@ -1368,6 +1376,15 @@ function useBackgroundMerges(source: DataSource, pr: PrDetail, reload: (stages: 
     });
   }, [source, owner, name, number]);
   return merges;
+}
+
+/**
+ * Whether the reader is at a comment: they see all of it, or clicked it, which focuses the comment itself (Comment.tsx).
+ * The focus on a control inside it says nothing: a click on its time focuses the link, and Back and Forward leave it there.
+ */
+function readerIsAt(element: Element | null | undefined): boolean {
+  const focused = document.activeElement;
+  return (!!focused?.classList.contains('pr-comment') && !!element?.contains(focused)) || readerSees(element);
 }
 
 /**

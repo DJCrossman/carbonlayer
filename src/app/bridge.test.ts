@@ -5,6 +5,11 @@ describe('the bridge between github.com and the app', () => {
   it("reads each side's messages, and none of what GitHub's own page posts", () => {
     expect(parentToAppMessage.safeParse({ type: 'gg:viewer', login: null }).data).toEqual({ type: 'gg:viewer', login: null });
     expect(appToParentMessage.safeParse({ type: 'gg:navigate', url: 'https://github.com/acme/web/pull/1', newTab: true }).success).toBe(true);
+    expect(appToParentMessage.safeParse({ type: 'gg:navigate', url: 'https://github.com/acme/web/pull/1#issuecomment-1', replace: true }).data).toEqual({
+      type: 'gg:navigate',
+      url: 'https://github.com/acme/web/pull/1#issuecomment-1',
+      replace: true,
+    });
     expect(parentToAppMessage.safeParse({ type: 'turbo:visit', url: '/' }).success).toBe(false);
     expect(parentToAppMessage.safeParse('{"source":"react-devtools-bridge"}').success).toBe(false);
   });

@@ -64,13 +64,17 @@ export default defineContentScript({
     const showsOurs = (route: AppRoute) => (route.page === 'inbox' && enabledHere('inboxEnabled')) || (route.page === 'pr' && enabledHere('prEnabled'));
     /**
      * Moves this tab to `url` inside the app, without loading a page, when the app shows that page here: the address bar
-     * and history follow (`pushState`), GitHub's page below stays as it was. False for any other page, which loads.
+     * and history follow (`pushState`, or `replaceState` with `replace`), GitHub's page below stays as it was. False for
+     * any other page, which loads.
      */
-    const moveInApp = (url: URL) => {
+    const moveInApp = (url: URL, replace = false) => {
       const signedIn = Boolean(document.querySelector('meta[name="user-login"]')?.getAttribute('content'));
       if (!routeInApp(url, { showsOurs, signedIn })) return false;
       if (url.href !== location.href) {
-        history.pushState(null, '', url.href);
+        // Replacing keeps history.state, as gg:replace-url does: Turbo keeps its restoration id there. The entry then no
+        // longer matches GitHub's page below, so it is the app's as a pushed one is.
+        if (replace) history.replaceState(history.state, '', url.href);
+        else history.pushState(null, '', url.href);
         const entry = window.navigation?.currentEntry;
         if (entry) movedInApp.add(entry.key);
       }
@@ -174,7 +178,7 @@ export default defineContentScript({
  * Hides GitHub's content below its header and shows the app there, until `release()` puts the page back as it was. A
  * page the app asks for moves the tab inside the app when `moveInApp` can, else loads.
  */
-function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute, themeSetting: Settings['theme'], moveInApp: (url: URL) => boolean) {
+function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute, themeSetting: Settings['theme'], moveInApp: (url: URL, replace?: boolean) => boolean) {
   const appOrigin = new URL(browser.runtime.getURL('/')).origin;
   const html = document.documentElement;
   // A style sheet rather than inline styles on GitHub's elements: it hides `main` before the parser reaches it and
@@ -330,9 +334,10 @@ function takeOverPage(ctx: ContentScriptContext, initialRoute: AppRoute, themeSe
           if (url.protocol !== 'https:' && url.protocol !== 'http:') return;
           if (message.newTab) {
             window.open(url.href, '_blank', 'noopener');
-          } else if (!moveInApp(url)) {
+          } else if (!moveInApp(url, message.replace)) {
             takeover.leavingFor = url.href;
-            location.assign(url.href);
+            if (message.replace) location.replace(url.href);
+            else location.assign(url.href);
           }
           break;
         }
