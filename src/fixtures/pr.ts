@@ -1,9 +1,9 @@
 // PR page fixtures for the dev harness (`app.html?fixtures=1#/pr/acme/widgets/42`): a three-PR stack in
 // acme/widgets. #41 (bottom) is approved and green, #42 (middle) has review feedback and a failing check, both
 // mona's; #43 (top) is the viewer's own draft; and mona's closed #40 branches off #41 beside #42, a fork off the stack's line.
-// The viewer, octocat, may edit #41's and #42's descriptions and some of #42's
-// comments, those with `editableMarkdown` (GitHub lets a repository's writers edit others' comments), and hide some of them,
-// those `hideable`; hubot's preview comment on #41 is hidden as outdated. Patches are written as line arrays so blank context lines keep their
+// The viewer, octocat, may edit #41's and #42's descriptions and their own comment on #42's diff, the one with
+// `editableMarkdown` (GitHub lets a repository's writers edit others' comments too, which CarbonLayer does not offer), and
+// hide some of #42's comments, those `hideable`; hubot's preview comment on #41 is hidden as outdated. Patches are written as line arrays so blank context lines keep their
 // leading space; every hunk header's counts match its body (the diff parser validates them).
 
 import type { PrDetail, PrSummary, ReviewThread, StackEntry, UserRef } from '../lib/model';
@@ -209,7 +209,6 @@ const threads42: ReviewThread[] = [
         url: 'https://github.com/acme/widgets/pull/42#discussion_r2',
         subjectId: 'PRRC_fixture2',
         reactions: [{ content: 'THUMBS_UP', count: 2, viewerHasReacted: true, reactors: ['jlord'] }],
-        editableMarkdown: '`listZones` already throws on transport errors, so `null` only ever means "unknown". I can add that to the doc comment.',
         markdown: '`listZones` already throws on transport errors, so `null` only ever means "unknown". I can add that to the doc comment.',
         hideable: true,
         reportable: true,
@@ -291,7 +290,8 @@ const threads42: ReviewThread[] = [
     comments: [
       {
         id: 'PRRC_fixture6',
-        author: hubot,
+        // The viewer's own, which they may edit.
+        author: octocat,
         bodyHtml: '<p>Passing <code>now</code> in instead of <code>new Date()</code> would let the tests pin the clock.</p>',
         createdAt: '2026-10-09T09:12:00Z',
         url: 'https://github.com/acme/widgets/pull/42#discussion_r6',
@@ -300,7 +300,6 @@ const threads42: ReviewThread[] = [
         editableMarkdown: 'Passing `now` in instead of `new Date()` would let the tests pin the clock.',
         markdown: 'Passing `now` in instead of `new Date()` would let the tests pin the clock.',
         hideable: true,
-        reportable: true,
       },
     ],
   },
@@ -571,7 +570,6 @@ const detail42: PrDetail = {
         { content: 'THUMBS_UP', count: 2, viewerHasReacted: true, reactors: ['mona'] },
         { content: 'EYES', count: 1, viewerHasReacted: false, reactors: ['hubot'] },
       ],
-      editableMarkdown: 'Does this also cover the overnight zones? Their `closesAt` is before `opensAt`.',
       markdown: 'Does this also cover the overnight zones? Their `closesAt` is before `opensAt`.',
       hideable: true,
       reportable: true,
@@ -601,7 +599,6 @@ const detail42: PrDetail = {
       threadIds: ['PRRT_fixture1', 'PRRT_fixture2'],
       subjectId: 'PRR_fixture2',
       reactions: [],
-      editableMarkdown: 'Two things before this goes in, see inline.',
       markdown: 'Two things before this goes in, see inline.',
       hideable: true,
       reportable: true,

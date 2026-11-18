@@ -66,8 +66,9 @@ export function reviewThreads(answer: ThreadsAnswer, comparison: BaseComparison,
             const others = (reactors ?? []).flatMap(({ login, typeName }) => (login && typeName !== 'Other' && login !== viewerLogin ? [login] : []));
             return content && (count > 0 || viewerHasReacted) ? [{ content, count, viewerHasReacted, reactors: others }] : [];
           }),
-          // GitHub says whether the viewer may edit it, and has its Markdown and the version an edit names.
-          ...(comment.viewerCanUpdate && typeof comment.body === 'string' && { editableMarkdown: comment.body, ...(comment.bodyVersion && { bodyVersion: comment.bodyVersion }) }),
+          // GitHub says whether the viewer may edit it, and has its Markdown and the version an edit names. Only their own is
+          // offered for editing: GitHub lets a maintainer edit anyone's comment, which CarbonLayer does not offer.
+          ...(comment.viewerCanUpdate && viewerLogin && comment.author?.login === viewerLogin && typeof comment.body === 'string' && { editableMarkdown: comment.body, ...(comment.bodyVersion && { bodyVersion: comment.bodyVersion }) }),
           // And whether they may delete it, which only their own offers.
           ...(comment.viewerCanDelete && viewerLogin && comment.author?.login === viewerLogin && { deletable: true }),
           // Its Markdown for anyone, which GitHub's menu copies and quotes.

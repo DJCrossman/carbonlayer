@@ -124,7 +124,7 @@ describe('timelineFrom', () => {
 
   it("reads a review's own body, reactions and menu inside the frame GitHub wraps the whole page in, still not its threads'", () => {
     // GitHub's full conversation page (nodejs/node#62105, 2026-10-28) puts everything in `repo-content-turbo-frame`.
-    const review = `<turbo-frame id="repo-content-turbo-frame" target="_top"><div id="pullrequestreview-97" class="js-comment">
+    const review = `<meta name="user-login" content="cy"><turbo-frame id="repo-content-turbo-frame" target="_top"><div id="pullrequestreview-97" class="js-comment">
       <div class="TimelineItem"><div class="TimelineItem-body"><a class="author">cy</a> approved these changes <relative-time datetime="2026-09-03T09:00:00Z"></relative-time></div></div>
       <div class="TimelineItem"><div class="TimelineItem-body"><div id="pullrequestreview-97" class="timeline-comment-group">
         <div class="timeline-comment-actions"><details><details-menu>
@@ -191,7 +191,7 @@ describe('timelineFrom, on comments the viewer may edit', () => {
       ${editable ? '<button type="button" class="dropdown-item btn-link js-comment-edit-button" aria-label="Edit comment">Edit</button>' : ''}
     </details-menu></details></div>`;
   const page = new DOMParser().parseFromString(
-    `<div class="TimelineItem js-comment-container">
+    `<meta name="user-login" content="ana"><div class="TimelineItem js-comment-container">
       <div class="timeline-comment-group TimelineItem-body" id="issuecomment-11"><div class="timeline-comment js-comment" data-body-version="v-11">
         <a class="author">ana</a> commented <relative-time datetime="2026-10-20T10:00:00Z"></relative-time>${menu('Ship it?\n\n```ts\nx()\n```', true)}
         <div class="comment-body"><p>Ship it?</p><div class="zeroclipboard-container"><clipboard-copy aria-label="Copy" value="x()"></clipboard-copy></div></div></div></div>
@@ -228,6 +228,30 @@ describe('timelineFrom, on comments the viewer may edit', () => {
     expect(timeline[2]).not.toHaveProperty('bodyVersion');
     expect(timeline[3]).toMatchObject({ kind: 'review', id: 'pullrequestreview-22' });
     expect(timeline[3]).not.toHaveProperty('editableMarkdown');
+  });
+
+  it("offers no Markdown to edit on another's comment or review whose menu offers Edit, as GitHub's does a maintainer", () => {
+    const [comment, review] = timelineFrom(
+      new DOMParser().parseFromString(
+        `<meta name="user-login" content="ana"><div class="TimelineItem js-comment-container">
+          <div class="timeline-comment-group TimelineItem-body" id="issuecomment-13"><div class="timeline-comment js-comment" data-body-version="v-13">
+            <a class="author">bo</a> commented <relative-time datetime="2026-10-20T12:00:00Z"></relative-time>${menu('By bo, editable', true)}
+            <div class="comment-body"><p>By bo, editable</p></div></div></div>
+        </div>
+        <div id="pullrequestreview-24" class="js-comment">
+          <div class="TimelineItem"><div class="TimelineItem-body"><a class="author">bo</a> left a comment <relative-time datetime="2026-10-21T11:00:00Z"></relative-time></div></div>
+          <div class="TimelineItem"><div class="TimelineItem-body"><div id="pullrequestreview-24" class="timeline-comment-group">${menu('A review by bo', true)}
+            <div class="comment-body"><p>A review by bo</p></div></div></div></div>
+        </div>`,
+        'text/html',
+      ),
+      { pageUrl: 'https://github.com/o/r/pull/1', threadIdsByReview: new Map(), commits: new Map() },
+    );
+    expect(comment).toMatchObject({ id: 'issuecomment-13', markdown: 'By bo, editable' });
+    expect(comment).not.toHaveProperty('editableMarkdown');
+    expect(comment).not.toHaveProperty('bodyVersion');
+    expect(review).toMatchObject({ kind: 'review', id: 'pullrequestreview-24', markdown: 'A review by bo' });
+    expect(review).not.toHaveProperty('editableMarkdown');
   });
 
   it("reads every comment's and review's own Markdown from its Copy Markdown, which the menu copies and quotes, whoever may edit it", () => {

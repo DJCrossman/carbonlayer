@@ -263,6 +263,8 @@ saves and Esc cancels; while GitHub saves the edit the box takes no input, then 
 conversation says who may edit what: a comment's or review's own options menu offers Edit only where the viewer may, its
 Copy Markdown holds the Markdown, and a comment's `data-body-version` its version (`editableMarkdown`, `bodyVersion` in
 `src/lib/github-web/timeline.ts`); a diff comment's come from `page_data/threads` (`viewerCanUpdate`, `body`, `bodyVersion`);
+both readers keep them only on the viewer's own comments and reviews, as Delete is kept, so CarbonLayer offers Edit on no one
+else's, though GitHub lets a maintainer edit anyone's;
 the description is the viewer's to edit where the title is (`editableDescription`), its Markdown from its own menu's Copy
 Markdown or, where that gives none (as on signed-in pages it evidently does not) or the conversation renders no
 description, from `page_data/description`'s `body`, asked only for a viewer who may edit it; should neither give it, the

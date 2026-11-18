@@ -415,6 +415,8 @@ CarbonLayer sends the React requests instead, which need no form token.
   Quote reply show only where the menu gave the Markdown.
 - `page_data/threads` comments carry `body`, `bodyHTML`, `bodyVersion`, `databaseId`, `viewerCanUpdate`, `viewerCanDelete`,
   `viewerCanMinimize`, … (keys confirmed).
+- CarbonLayer offers Edit only on the viewer's own comments, though GitHub lets a maintainer edit anyone's (its menu's Edit,
+  `viewerCanUpdate`): both are read only where the comment's author is the viewer, as Delete is.
 - `page_data/conversation_comments` (what the Overview reads; 40 a page, `Link: <…?after=…>; rel="next"`, `?direction=desc`
   newest first, one item at `…/conversation_comments/{type}/{id}`) lists `issue` and `review_summary` items with `id`
   (database id), `relayId`, `body`, `bodyHTML`, `bodyVersion`, `viewerCanUpdate`, `viewerCanDelete`, …. CarbonLayer does not

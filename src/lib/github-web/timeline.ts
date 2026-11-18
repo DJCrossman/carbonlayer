@@ -58,7 +58,7 @@ export function timelineFrom(
         // Its summary edited, which its header marks as a comment's is, not a comment edited in a thread it opened.
         ...([...review.querySelectorAll('.js-comment-edit-history')].some((marker) => !review.contains(marker.closest('turbo-frame'))) && { edited: true }),
         ...reactionsIn(reactionForm),
-        ...editingIn(actions, review),
+        ...(viewerLogin && actorLogin === viewerLogin && editingIn(actions, review)),
         ...menuIn(actions, review, (element) => !review.contains(element.closest('turbo-frame'))),
         // Someone else's, which GitHub's menu offers the signed-in viewer to report.
         ...(viewerLogin && actorLogin && actorLogin !== viewerLogin && { reportable: true }),
@@ -85,7 +85,7 @@ export function timelineFrom(
           // GitHub's header marks an edited comment with its edit history, "• edited" (or "edited by mona") opening it.
           ...(comment.querySelector('.js-comment-edit-history') && { edited: true }),
           ...reactionsIn(comment.querySelector('form.js-pick-reaction')),
-          ...editingIn(comment.querySelector('.timeline-comment-actions'), comment.querySelector('.js-comment')),
+          ...(viewerLogin && actorLogin === viewerLogin && editingIn(comment.querySelector('.timeline-comment-actions'), comment.querySelector('.js-comment'))),
           // The viewer's own, where its menu offers GitHub's Delete (`form.js-comment-delete`); GitHub deletes no review.
           ...(viewerLogin && actorLogin === viewerLogin && comment.querySelector('.timeline-comment-actions .js-comment-delete') && { deletable: true }),
           ...menuIn(comment.querySelector('.timeline-comment-actions'), comment, () => true),
@@ -181,7 +181,8 @@ export function reactionsIn(form: Element | null | undefined): { subjectId: stri
  * What editing a comment starts from, as its options menu (`.timeline-comment-actions`) and its `.js-comment` element have
  * it: GitHub offers the viewer Edit in the menu (`.js-comment-edit-button`) only on a comment they may edit, the menu's
  * Copy Markdown holds the comment's Markdown, and the element its version (`data-body-version`), which GitHub's page
- * sends with an edit. Nothing where the menu offers no Edit, or no Markdown to start from.
+ * sends with an edit. Nothing where the menu offers no Edit, or no Markdown to start from. The callers ask it only for the
+ * viewer's own comment or review: GitHub offers a maintainer Edit on anyone's, which CarbonLayer does not offer.
  */
 function editingIn(actions: Element | null | undefined, comment: Element | null): { editableMarkdown?: string; bodyVersion?: string } {
   const markdown = actions?.querySelector('.js-comment-edit-button') ? actions.querySelector('clipboard-copy[role="menuitem"][value]')?.getAttribute('value') : null;

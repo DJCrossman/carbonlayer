@@ -145,7 +145,7 @@ describe('reviewThreads, on diff comments the viewer may edit', () => {
         ],
       }),
       { diffSummaries: [] },
-      new DOMParser().parseFromString('<html><body></body></html>', 'text/html'),
+      new DOMParser().parseFromString('<html><head><meta name="user-login" content="ana"></head><body></body></html>', 'text/html'),
     );
     const comments = threads[0]?.comments ?? [];
     expect(comments[0]).toMatchObject({ id: '601', editableMarkdown: 'Mine\r\nto fix', bodyVersion: 'v-601' });
@@ -155,6 +155,31 @@ describe('reviewThreads, on diff comments the viewer may edit', () => {
     }
     // The Markdown the menu copies and quotes, though, whoever may edit the comment; none where GitHub sent none.
     expect(comments.map((comment) => comment.markdown)).toEqual(['Mine\r\nto fix', 'Theirs', undefined]);
+  });
+
+  it("offers no Markdown to edit on another's comment that GitHub lets a maintainer edit, only on the viewer's own", () => {
+    const { threads } = reviewThreads(
+      threadsAnswer.parse({
+        threads: [
+          {
+            id: '4',
+            commentsData: {
+              comments: [
+                { databaseId: 611, author: { login: 'bo' }, body: 'Theirs', bodyHTML: '<p>Theirs</p>', bodyVersion: 'v-611', viewerCanUpdate: true },
+                { databaseId: 612, author: { login: 'ana' }, body: 'Mine', bodyHTML: '<p>Mine</p>', bodyVersion: 'v-612', viewerCanUpdate: true },
+              ],
+            },
+          },
+        ],
+      }),
+      { diffSummaries: [] },
+      new DOMParser().parseFromString('<html><head><meta name="user-login" content="ana"></head><body></body></html>', 'text/html'),
+    );
+    const [theirs, mine] = threads[0]?.comments ?? [];
+    expect(theirs).toMatchObject({ id: '611', markdown: 'Theirs' });
+    expect(theirs).not.toHaveProperty('editableMarkdown');
+    expect(theirs).not.toHaveProperty('bodyVersion');
+    expect(mine).toMatchObject({ id: '612', editableMarkdown: 'Mine', bodyVersion: 'v-612' });
   });
 });
 
