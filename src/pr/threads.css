@@ -2,6 +2,10 @@
    the diff's shadow root as light-DOM children, so page styles and tokens apply. */
 
 .diff-note {
+  /* Its own width never sizes the diff's column: in the split layout a note sits in one side's column, and a long line
+     (a stale thread's old hunk) would widen that side and squeeze the other to a character a row. Sized by the column,
+     the note scrolls what does not fit inside. */
+  contain: inline-size;
   margin: 6px 10px 6px 12px;
   padding: 8px 10px;
   max-width: 760px;
