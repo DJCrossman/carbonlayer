@@ -48,7 +48,7 @@ export function MergeStackDialog({
   const [method, setMethod] = useState(openedWith);
   const [busy, setBusy] = useState(false);
   const [ignoreOptionalChecks, setIgnoreOptionalChecks] = useState(true);
-  const [rebaseFirst, setRebaseFirst] = useState(true);
+  const [rebaseFirst, setRebaseFirst] = useState(false);
   // Asking whether to start over, in place of the merge already under way.
   const [replacing, setReplacing] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -244,7 +244,7 @@ export function MergeStackDialog({
             <Icon
               name="info"
               size={14}
-              title={`Ticked, when GitHub says the stack is out of date with ${pr.stack.trunk} or must be rebased, CarbonLayer first rebases it with GitHub's "Rebase stack" (each branch is rebased onto the one below it and force-pushed), then waits for the checks again before merging. Unticked, it never rebases: an out-of-date stack merges as it is, and one GitHub says must be rebased stops the merge.`}
+              title={`Ticked, when GitHub says the stack is out of date with ${pr.stack.trunk} or must be rebased, CarbonLayer first rebases it with GitHub's "Rebase stack" (each branch is rebased onto the one below it and force-pushed), then waits for the checks again before merging. Unticked, it rebases only a stack GitHub says must be rebased: one out of date with ${pr.stack.trunk} merges as it is.`}
             />
           </label>
         </div>

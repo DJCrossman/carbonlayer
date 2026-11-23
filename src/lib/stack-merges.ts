@@ -4,9 +4,11 @@
 // (`pr.merge`, enqueue_stack DIRECT_MERGE from the PR at its top), but waits for nothing short of auto-merge: here,
 // CarbonLayer waits. The same runner merges a stack when it is ready ("Merge when ready", a stack merge `whenReady`) where
 // GitHub refuses its own stack auto-merge to the repository (mergeStackWhenReady): that one waits as long as it takes,
-// through whatever its author can still fix. A stack merge lives in storage.local (STACK_MERGES), so a restarted worker or
-// browser carries on with it, and moves a step at a time (advanceStackMerge), asking GitHub through a github.com tab's
-// content script.
+// through whatever its author can still fix. GitHub's stack merge takes a stack that is only behind its base as it is, so
+// CarbonLayer rebases one only where GitHub says it must be rebased, or, with the dialog's tick, behind its base too
+// (otherwise it would force-push every branch and run the checks again for nothing). A stack merge lives in storage.local
+// (STACK_MERGES), so a restarted worker or browser carries on with it, and moves a step at a time (advanceStackMerge),
+// asking GitHub through a github.com tab's content script.
 
 import { z } from 'zod/mini';
 import { mergeMethodSchema, repoRefSchema, type StackReadiness } from './model';
@@ -16,13 +18,14 @@ import { mergeCommit, type MergeMethod, type RpcMethod, type RpcMethods } from '
 export const STACK_MERGES = 'stackMerges';
 
 /**
- * The stack merge one step on, from what GitHub says now: started, it looks at the stack and rebases it first when asked
- * to and GitHub says it needs it; then it waits until nothing stands in the way (whatTheStackWaitsFor), merges, and
- * follows the merge until GitHub says it is done. Merging when ready, it rebases the stack wherever whatTheStackWaitsFor
- * says to, then waits again. GitHub's refusal of a rebase or a merge stops it, in GitHub's words; a request that could
- * not reach GitHub, or a read that failed, leaves it where it was, saying why (`trouble`), for the next step to try
- * again. Six hours after it started, a merge still waiting stops; one merging when ready has no time cap, and looks at
- * the stack less often the longer it has waited unchanged. A step with nothing to do yet returns `merge` itself.
+ * The stack merge one step on, from what GitHub says now: started, it looks at the stack and rebases it first where
+ * GitHub says it must be rebased, or, when asked to, where it is behind its base; then it waits until nothing stands in
+ * the way (whatTheStackWaitsFor), merges, and follows the merge until GitHub says it is done. Waiting, it rebases the
+ * stack wherever whatTheStackWaitsFor says to, then waits again. GitHub's refusal of a rebase or a merge stops it, in
+ * GitHub's words; a request that could not reach GitHub, or a read that failed, leaves it where it was, saying why
+ * (`trouble`), for the next step to try again. Six hours after it started, a merge still waiting stops; one merging
+ * when ready has no time cap, and looks at the stack less often the longer it has waited unchanged. A step with nothing
+ * to do yet returns `merge` itself.
  */
 export async function advanceStackMerge(merge: StackMerge, github: GitHubThroughATab, now: number): Promise<StackMerge> {
   const { step } = merge;
@@ -146,17 +149,16 @@ export async function advanceStackMerge(merge: StackMerge, github: GitHubThrough
 /**
  * What stands between the stack and its merge, first things first: a PR merged or closed meanwhile, or pushed to since
  * the merge started (`heads`), and what GitHub's merge box says of the stack's branches (conflicts; a rebase, which is
- * done when `rebase` is asked for, and stops the merge where GitHub requires one); then the checks of every PR: each
+ * done where GitHub says the stack must be rebased, and where it is only behind its base when `rebase` is asked for, as
+ * GitHub's stack merge takes an out-of-date stack as it is); then the checks of every PR: each
  * required one must pass, and unless optional ones are ignored, every other one must finish successfully too (success,
  * neutral or skipped); a failure stops the merge. Last, GitHub must say each PR can merge with those below it (its
  * verdict READY, its merge requirements MERGEABLE). Nothing in the way: merge.
  * Merging when ready (`whenReady`) waits through what the stack's author can still fix: a failing check (until it passes,
  * run again or after a push) and new commits. It also waits for every optional check to finish, though one that fails
  * does not hold it, and for the checks a PR's head before had to show up on a new head (`notStarted`, by PR number): a
- * pipeline GitHub starts through a webhook reports a moment after the push. It rebases a stack GitHub says must be
- * rebased at once, as it could never merge otherwise, and one behind its base last, where it would merge, so the checks
- * run once more on what merges rather than each time the base moves while it waits. It merges the PRs still open,
- * whichever merged meanwhile, and only a closed PR and conflicts stop it.
+ * pipeline GitHub starts through a webhook reports a moment after the push. It merges the PRs still open, whichever
+ * merged meanwhile, and only a closed PR and conflicts stop it.
  */
 export function whatTheStackWaitsFor(
   readiness: StackReadiness,
@@ -177,8 +179,7 @@ export function whatTheStackWaitsFor(
   const section = readiness.stackSection?.kind;
   if (section === 'current-conflicts' || readiness.mergeStatus === 'DIRTY') return { kind: 'stop', reason: 'This branch has conflicts that must be resolved' };
   if (section === 'conflicts') return { kind: 'stop', reason: 'This stack has conflicts that must be resolved' };
-  if (rebase && (section === 'rebase-required' || section === 'rebase-optional')) return { kind: 'rebase' };
-  if (section === 'rebase-required') return whenReady ? { kind: 'rebase' } : { kind: 'stop', reason: 'Some branches in this stack have diverged and must be rebased' };
+  if (section === 'rebase-required' || (rebase && section === 'rebase-optional')) return { kind: 'rebase' };
 
   let requiredPassed = 0;
   let required = 0;
@@ -206,7 +207,7 @@ export function whatTheStackWaitsFor(
   }
   const notReady = prs.find(({ verdict }) => verdict.status !== 'READY' || (verdict.mergeState !== null && verdict.mergeState !== 'MERGEABLE'));
   if (notReady) return { kind: 'github', number: notReady.number, status: notReady.verdict.status };
-  return whenReady && section === 'rebase-optional' ? { kind: 'rebase' } : { kind: 'merge' };
+  return { kind: 'merge' };
 }
 
 /** Whether the stack merge is still under way: not merged, and not stopped. */
@@ -219,8 +220,8 @@ export function isUnderWay(merge: StackMerge): boolean {
  * this one): GitHub's own stack auto-merge first (`pr.setAutoMerge`). Where GitHub refuses it because the repository does
  * not have it ("Stack auto-merge is not enabled.", whatever the case), CarbonLayer merges the stack when it is ready
  * instead, in the background: a stack merge `whenReady`, which goes by GitHub's own merge rules and also waits for every
- * optional check to finish (one that fails does not hold it, as on GitHub), rebases the stack before it merges where
- * GitHub says it must be rebased or is behind its base (whatTheStackWaitsFor), and merges with the commit GitHub proposes
+ * optional check to finish (one that fails does not hold it, as on GitHub), rebases the stack before it merges only where
+ * GitHub says it must be rebased (whatTheStackWaitsFor), and merges with the commit GitHub proposes
  * then. Any other refusal is GitHub's, for the page to
  * show as it does. Resolves with who will merge it.
  */
@@ -299,13 +300,17 @@ export const stackMergeRequestSchema = z.object({
   expectedHeadOid: z.string(),
   /** "Ignore optional CI status checks during merge process": unticked, every check must finish successfully too. */
   ignoreOptionalChecks: z.boolean(),
-  /** "Always rebase branches before merge": GitHub's Rebase stack first, when its merge box says the stack needs it. */
+  /**
+   * "Always rebase branches before merge": GitHub's Rebase stack first also when its merge box says the stack is only
+   * behind its base. A stack GitHub says must be rebased is rebased either way; unticked, one behind its base merges as
+   * it is, as GitHub's stack merge takes it.
+   */
   rebaseFirst: z.boolean(),
   /**
    * Armed by "Merge when ready" where GitHub has no stack auto-merge for the repository (mergeStackWhenReady), rather than
    * started from the merge dialog: it waits with no time cap through failing checks, missing reviews and new commits, and
-   * for every check to finish, optional ones too whatever `ignoreOptionalChecks` says, rebases the stack itself where it
-   * must be rebased or is behind its base, and stops only on a closed PR, conflicts, or a rebase or merge GitHub refused.
+   * for every check to finish, optional ones too whatever `ignoreOptionalChecks` says, rebases the stack itself only where
+   * it must be rebased, and stops only on a closed PR, conflicts, or a rebase or merge GitHub refused.
    */
   whenReady: z.boolean(),
 });

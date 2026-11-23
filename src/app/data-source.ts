@@ -77,8 +77,8 @@ export interface DataSource {
   /** Rebases the PR's native stack onto its base branch; `complete` is false when GitHub was still at it as the answer was due. */
   rebaseStack(prId: string): Promise<{ complete: boolean }>;
   /**
-   * Merges the stack up to a PR once it can, rebased first when asked, in the background (src/lib/stack-merges.ts), so it
-   * carries on when this page goes; in place of any merge of the same PRs.
+   * Merges the stack up to a PR once it can, rebased first where GitHub says it must be or when asked, in the background
+   * (src/lib/stack-merges.ts), so it carries on when this page goes; in place of any merge of the same PRs.
    */
   startStackMerge(request: StackMergeRequest): Promise<void>;
   /** Forgets a stack merge: one under way stops where it is (nothing done on GitHub is undone), one that stopped is dismissed. */

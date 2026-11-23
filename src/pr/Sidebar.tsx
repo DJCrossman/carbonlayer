@@ -327,7 +327,7 @@ function StatusCard({
       {armed && (
         <p className="pr-muted side-checks-empty side-merge-when-ready">
           {armed.step.kind === 'merging' ? 'Merging… ' : armed.step.kind === 'rebasing' ? 'Rebasing the stack… ' : ''}
-          CarbonLayer will rebase and merge this stack when it's ready: GitHub's stack auto-merge isn't available for this repository.
+          CarbonLayer will merge this stack when it's ready, rebasing it only if GitHub says it must be: GitHub's stack auto-merge isn't available for this repository.
         </p>
       )}
       {armed?.trouble && (

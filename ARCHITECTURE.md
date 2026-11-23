@@ -478,24 +478,25 @@ Graphite's "Ignore optional CI status checks during merge process" and "Always r
 engine's; GitHub's stack merge has neither (its rebase is a request of its own, and it waits for nothing short of
 auto-merge), so CarbonLayer does them itself: the dialog's button starts a stack merge in the background service worker
 (`src/lib/stack-merges.ts`, run by `entrypoints/background.ts`), shows a toast and closes, and the merge carries on when
-the PR's tab closes. A stack merge is kept in `storage.local` (`stackMerges`, read by its schema; what another build wrote
-is forgotten, saying what differs), so a restarted worker or browser carries on with it, and is moved a step on at once
-and then every 30 s by an alarm (`alarms` permission; set again at browser start), a step at a time
+the PR's tab closes. A stack merge is kept in `storage.local` (`stackMerges`, read by its schema; what another build
+wrote is forgotten, saying what differs), so a restarted worker or browser carries on with it, and is moved a step on at
+once and then every 30 s by an alarm (`alarms` permission; set again at browser start), a step at a time
 (`advanceStackMerge`): it looks at the stack (`pr.fetchStackReadiness`: the PR page's own header, checks and merge box
 stages, GitHub's dynamic workflow runs included, and each PR's `stack_mergeability`), rebases it first with GitHub's
-Rebase stack when "Always rebase" is ticked and the merge box says the stack is out of date or must be rebased
-(`pr.rebaseStack`, then `pr.followStackRebase` while GitHub is still at it), waits (`whatTheStackWaitsFor`) until every
-required check of every PR it merges has passed (and, with "Ignore optional CI" unticked, every other check has finished
-successfully: success, neutral or skipped) and GitHub says each can merge with those below it (READY, its requirements
-MERGEABLE), then sends `pr.merge` from this PR with the dialog's method and commit, and follows it until the PR's header
-says MERGED. A failing required check (an optional one too when unticked), a PR merged or closed meanwhile or pushed to
-since the merge started (each PR's head as it first saw it, and again after its own rebase), conflicts, a stack GitHub
-says must be rebased when "Always rebase" is unticked, a rebase or merge GitHub refused (in its words), six hours of
-waiting, or ten minutes without GitHub merging what it was asked to, stop it, saying why. A step that could not reach
-GitHub stays where it was, saying why, and is tried again; a write whose tab went away before answering is followed by
-GitHub's state rather than sent again. Each step asks GitHub through a github.com tab's content script
-(`browser.tabs.sendMessage` with an RPC request, which the content script reads and answers as it does the frame's):
-the tab that answered last, else one showing the PR, else any; the content script writes only to a PR whose page it has
+Rebase stack where the merge box says the stack must be rebased, and, only when "Always rebase" is ticked (it starts
+unticked), where it says the stack is out of date: GitHub's stack merge takes an out-of-date stack as it is, and a
+rebase force-pushes every branch and runs the checks again (`pr.rebaseStack`, then `pr.followStackRebase` while GitHub
+is still at it), waits (`whatTheStackWaitsFor`) until every required check of every PR it merges has passed (and, with
+"Ignore optional CI" unticked, every other check has finished successfully: success, neutral or skipped) and GitHub says
+each can merge with those below it (READY, its requirements MERGEABLE), then sends `pr.merge` from this PR with the
+dialog's method and commit, and follows it until the PR's header says MERGED. A failing required check (an optional one
+too when unticked), a PR merged or closed meanwhile or pushed to since the merge started (each PR's head as it first saw
+it, and again after its own rebase), conflicts, a rebase or merge GitHub refused (in its words), six hours of waiting,
+or ten minutes without GitHub merging what it was asked to, stop it, saying why. A step that could not reach GitHub
+stays where it was, saying why, and is tried again; a write whose tab went away before answering is followed by GitHub's
+state rather than sent again. Each step asks GitHub through a github.com tab's content script
+(`browser.tabs.sendMessage` with an RPC request, which the content script reads and answers as it does the frame's): the
+tab that answered last, else one showing the PR, else any; the content script writes only to a PR whose page it has
 loaded, so a step that writes loads its header first. With no tab to ask, the worker opens the PR's own GitHub page
 (`?gh=1`) in a tab in the background (never in front), uses it for the rest of the merge, and closes it once the merge
 ends, unless the viewer is looking at it; which tab it opened lives in `storage.session`. While a merge from the dialog
@@ -514,32 +515,30 @@ Graphite's "will merge when ready" after its age: the PRs the viewed PR's merge 
 
 Where GitHub refuses its stack auto-merge to the repository, in its words "Stack auto-merge is not enabled." (matched
 whatever the case; any other refusal is a toast, as ever), CarbonLayer merges the stack when it is ready itself
-(`mergeStackWhenReady` in `src/lib/stack-merges.ts`): a stack merge as above of the open PRs from the bottom through this
-one, from this one, marked `whenReady`, which the same background runner moves on by other rules. It goes by GitHub's own
-merge rules and has no time cap, and it also waits for every optional check to finish (one that fails does not hold it, as
-on GitHub; a stack's optional CodeQL run had still been going when one merged). On a head new since it last looked (a
-push, or its own rebase) it waits, too, for the checks the head before had to show up, since a pipeline GitHub starts
-through a webhook reports a moment later: for 10 minutes at most, as a workflow that skips the new head never does
-(`headChecks` on the merge, `notStarted` in `whatTheStackWaitsFor`). A PR alone keeps GitHub's auto-merge, which waits for
-required checks only. It waits through failing checks, missing reviews
-and new commits (it merges the heads it saw last, and a merge `pr.merge` refuses because the PR was pushed to since sends
-it back to looking), and PRs merged meanwhile are left out. It rebases the stack itself, with GitHub's Rebase stack as
-above: at once when GitHub says it must be rebased, as it could never merge otherwise, and, when it is only behind its
-base, last, once every required check of the PRs still open has passed and GitHub says each can merge with those below
-it, so the checks run once more on what merges rather than each time the base moves while it waits. Then it waits again
-for the new heads (rebasing again if the base moved meanwhile), and once nothing stands in the way it sends `pr.merge`
-with the switch's method and the commit GitHub proposes then, and follows it as above. Only a closed PR, conflicts (in
-GitHub's words), and a rebase or merge GitHub refused or stopped (in its words, a rebase stopped on conflicts among them)
-stop it. Since it may wait for days, it looks at the stack again after a quarter of the time the stack has waited for the
-same thing at the same heads, from every 30 s (checks that just started) up to every 5 minutes (a review that comes after
-a day merges within 5 minutes), and a tab the worker opens to ask GitHub closes after each look, so an idle stack keeps
-none open; none comes to the front. While it is under way the switch is on, with "CarbonLayer will rebase and merge this
-stack when it's ready: GitHub's stack auto-merge isn't available for this repository." under it in place of GitHub's
-sentence (led by "Rebasing the stack…" while it rebases and "Merging…" while it merges), the rows of the open PRs it merges
-read "will merge when ready", and the next step shows as ever; the page of every PR it merges shows the same, read from
-`storage.local`. The switch turned off cancels it (nothing on GitHub to undo), another method merges the same PRs with it,
-and once it stopped the switch is off and the status card says why, with Dismiss. A PR alone, and a stack only Graphite's
-comment lists, keep GitHub's `enable_auto_merge`.
+(`mergeStackWhenReady` in `src/lib/stack-merges.ts`): a stack merge as above of the open PRs from the bottom through
+this one, from this one, marked `whenReady`, which the same background runner moves on by other rules. It goes by
+GitHub's own merge rules and has no time cap, and it also waits for every optional check to finish (one that fails does
+not hold it, as on GitHub; a stack's optional CodeQL run had still been going when one merged). On a head new since it
+last looked (a push, or its own rebase) it waits, too, for the checks the head before had to show up, since a pipeline
+GitHub starts through a webhook reports a moment later: for 10 minutes at most, as a workflow that skips the new head
+never does (`headChecks` on the merge, `notStarted` in `whatTheStackWaitsFor`). A PR alone keeps GitHub's auto-merge,
+which waits for required checks only. It waits through failing checks, missing reviews and new commits (it merges the
+heads it saw last, and a merge `pr.merge` refuses because the PR was pushed to since sends it back to looking), and PRs
+merged meanwhile are left out. It rebases the stack itself, with GitHub's Rebase stack as above, only when GitHub says
+it must be rebased, as it could never merge otherwise; a stack only behind its base merges as it is, as from the dialog
+unticked. Then it waits again for the new heads, and once nothing stands in the way it sends `pr.merge` with the
+switch's method and the commit GitHub proposes then, and follows it as above. Only a closed PR, conflicts (in GitHub's
+words), and a rebase or merge GitHub refused or stopped (in its words, a rebase stopped on conflicts among them) stop
+it. Since it may wait for days, it looks at the stack again after a quarter of the time the stack has waited for the
+same thing at the same heads, from every 30 s (checks that just started) up to every 5 minutes (a review that comes
+after a day merges within 5 minutes), and a tab the worker opens to ask GitHub closes after each look, so an idle stack
+keeps none open; none comes to the front. While it is under way the switch is on, with "CarbonLayer will merge this
+stack when it's ready, rebasing it only if GitHub says it must be: GitHub's stack auto-merge isn't available for this
+repository." under it in place of GitHub's sentence (led by "Rebasing the stack…" while it rebases and "Merging…" while
+it merges), the rows of the open PRs it merges read "will merge when ready", and the next step shows as ever; the page
+of every PR it merges shows the same, read from `storage.local`. The switch turned off cancels it (nothing on GitHub to
+undo), another method merges the same PRs with it, and once it stopped the switch is off and the status card says why,
+with Dismiss. A PR alone, and a stack only Graphite's comment lists, keep GitHub's `enable_auto_merge`.
 
 A native stack's branches: GitHub's merge box shows one section about them, the first that applies (module `MDN` in its
 bundle), which the merge box stage reads (`stackSection` in `mergeState`, `src/lib/github-web/merge-box.ts`, from the

@@ -62,13 +62,13 @@ describe('whatTheStackWaitsFor', () => {
     expect(waitsFor(stack(), { heads: { '41': 'h41', '42': 'older' } })).toEqual({ kind: 'stop', reason: 'New commits were pushed to #42 since the merge started. Review them, then merge again.' });
   });
 
-  it("rebases first when asked and GitHub says the stack needs it; otherwise merges an out-of-date stack and stops on one GitHub says must be rebased, in GitHub's words", () => {
+  it("rebases a stack GitHub says must be rebased, and one behind its base only when asked; stops on conflicts, in GitHub's words", () => {
     const outdated = { ...stack(), stackSection: { kind: 'rebase-optional', baseRefName: 'main', viewerCanRebase: true } } as const;
     const diverged = { ...stack(), stackSection: { kind: 'rebase-required', baseRefName: 'main', viewerCanRebase: true } } as const;
     expect(waitsFor(outdated, { rebase: true })).toEqual({ kind: 'rebase' });
     expect(waitsFor(diverged, { rebase: true })).toEqual({ kind: 'rebase' });
     expect(waitsFor(outdated)).toEqual({ kind: 'merge' });
-    expect(waitsFor(diverged)).toEqual({ kind: 'stop', reason: 'Some branches in this stack have diverged and must be rebased' });
+    expect(waitsFor(diverged)).toEqual({ kind: 'rebase' });
     expect(waitsFor({ ...stack(), stackSection: { kind: 'conflicts', baseRefName: 'main', viewerCanRebase: false } }, { rebase: true })).toEqual({
       kind: 'stop',
       reason: 'This stack has conflicts that must be resolved',
@@ -116,13 +116,13 @@ describe('whatTheStackWaitsFor', () => {
       expect(waitsFor(diverged, whenReady)).toEqual({ kind: 'rebase' });
     });
 
-    it('waits for the checks of a stack behind its base before rebasing it', () => {
+    it('waits for the checks of a stack behind its base', () => {
       const outdated = { ...stack({ 41: [check('build', 'PENDING'), check('lint', 'SUCCESS')] }), stackSection: { kind: 'rebase-optional', baseRefName: 'main', viewerCanRebase: true } } as const;
       expect(waitsFor(outdated, whenReady)).toEqual({ kind: 'checks', requiredPassed: 3, required: 4, optionalRunning: 0 });
     });
 
-    it('rebases a stack behind its base where it would merge it', () => {
-      expect(waitsFor({ ...stack(), stackSection: { kind: 'rebase-optional', baseRefName: 'main', viewerCanRebase: true } }, whenReady)).toEqual({ kind: 'rebase' });
+    it('merges a stack behind its base as it is, as GitHub\'s stack merge takes it', () => {
+      expect(waitsFor({ ...stack(), stackSection: { kind: 'rebase-optional', baseRefName: 'main', viewerCanRebase: true } }, whenReady)).toEqual({ kind: 'merge' });
     });
 
     it('stops on a closed PR and on conflicts, in GitHub\'s words', () => {
@@ -166,6 +166,15 @@ describe('advanceStackMerge', () => {
     // Unticked, the same stack merges as it is.
     const asIs = await advanceStackMerge(merge({ rebaseFirst: false }), github, START);
     expect(asIs.step).toEqual({ kind: 'merging', sentAt: null });
+  });
+
+  it('rebases a stack GitHub says must be rebased first, unticked too, as it could never merge otherwise', async () => {
+    const diverged = { ...stack(), stackSection: { kind: 'rebase-required', baseRefName: 'main', viewerCanRebase: true } } as const;
+    const github = gitHub({ 'pr.fetchStackReadiness': () => diverged, 'pr.fetchHeader': () => header(), 'pr.rebaseStack': () => ({ complete: true }) });
+    const rebasing = await advanceStackMerge(merge({ rebaseFirst: false }), github, START);
+    expect(rebasing.step).toEqual({ kind: 'rebasing', sent: false });
+    expect((await advanceStackMerge(rebasing, github, START + 1000)).step).toEqual({ kind: 'waiting', for: null });
+    expect(github.asked.map(([method]) => method)).toEqual(['pr.fetchStackReadiness', 'pr.fetchHeader', 'pr.rebaseStack']);
   });
 
   it('follows a rebase GitHub is still at, and stops on one it stopped, in its words', async () => {
@@ -309,8 +318,8 @@ describe('advanceStackMerge', () => {
       expect((await advanceStackMerge(waiting, blocked, START + 7 * 24 * HOUR)).step).toMatchObject({ kind: 'waiting', for: { kind: 'github', number: 42, status: 'NOT_READY' } });
     });
 
-    it('rebases a stack behind its base once it could merge, waits for the checks of the new heads, then merges them', async () => {
-      let readiness: StackReadiness = { ...stack(), stackSection: { kind: 'rebase-optional', baseRefName: 'main', viewerCanRebase: true } };
+    it('rebases a stack GitHub says must be rebased, waits for the checks of the new heads, then merges them', async () => {
+      let readiness: StackReadiness = { ...stack(), stackSection: { kind: 'rebase-required', baseRefName: 'main', viewerCanRebase: true } };
       let state: PrStages['header']['state'] = 'OPEN';
       const github = gitHub({
         'pr.fetchStackReadiness': () => readiness,
@@ -345,7 +354,7 @@ describe('advanceStackMerge', () => {
         const checks = stack({ 42: [check('build', 'SUCCESS'), check('test', 'SUCCESS'), ...analyze] });
         return { ...checks, prs: checks.prs.map((pr) => ({ ...pr, headOid: `${pr.headOid}${head}` })) };
       };
-      let readiness: StackReadiness = { ...withAnalyze('', [check('Analyze', 'SUCCESS')]), stackSection: { kind: 'rebase-optional', baseRefName: 'main', viewerCanRebase: true } };
+      let readiness: StackReadiness = { ...withAnalyze('', [check('Analyze', 'SUCCESS')]), stackSection: { kind: 'rebase-required', baseRefName: 'main', viewerCanRebase: true } };
       const github = gitHub({ 'pr.fetchStackReadiness': () => readiness, 'pr.fetchHeader': () => header({ headOid: 'h42-rebased' }), 'pr.rebaseStack': () => ({ complete: true }) });
       const rebasing = await advanceStackMerge(merge({ whenReady: true, rebaseFirst: false, step: { kind: 'waiting', for: null } }), github, START);
       const rebased = await advanceStackMerge(rebasing, github, START);
